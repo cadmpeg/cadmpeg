@@ -343,7 +343,7 @@ fn plan_encode_set<E: EncoderBackend>(
         payloads.push(bytes);
         match &mut planned {
             None => planned = Some((report, coverage)),
-            Some((merged, _)) => merge_output(merged, output, report),
+            Some((merged, _)) => merge_output(merged, output, report)?,
         }
     }
     let (report, coverage) = planned.ok_or_else(|| {
@@ -355,7 +355,11 @@ fn plan_encode_set<E: EncoderBackend>(
 /// Adds the report of `output`, an output other than the root's, to
 /// `merged`: its losses and notes, its census where both count on one basis,
 /// and a note naming the output and its write path.
-fn merge_output(merged: &mut ExportReport, output: &PlannedOutput, report: ExportReport) {
+fn merge_output(
+    merged: &mut ExportReport,
+    output: &PlannedOutput,
+    report: ExportReport,
+) -> Result<(), EncodeError> {
     let name = output.name.as_ref().map_or("", NonBlankString::as_str);
     let definition = output
         .definition
@@ -373,7 +377,11 @@ fn merge_output(merged: &mut ExportReport, output: &PlannedOutput, report: Expor
     if merged.census.basis == report.census.basis {
         for (key, count) in report.census.counts {
             let total = merged.census.counts.entry(key).or_default();
-            *total = total.saturating_add(count);
+            *total = total.checked_add(count).ok_or_else(|| {
+                EncodeError::Backend(CodecError::malformed(
+                    "the census of the encode set overflows",
+                ))
+            })?;
         }
     } else {
         merged.notes.push(format!(
@@ -383,6 +391,7 @@ fn merge_output(merged: &mut ExportReport, output: &PlannedOutput, report: Expor
     }
     merged.losses.extend(report.losses);
     merged.notes.extend(report.notes);
+    Ok(())
 }
 
 /// `export:definition.placed` for a payload that carries bodies and no

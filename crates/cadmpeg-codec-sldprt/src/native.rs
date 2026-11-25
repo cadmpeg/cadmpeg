@@ -348,7 +348,12 @@ impl SldprtNative {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy { limits };
         // Reconstruction adds the record root above a field's containers.
-        policy.limits.max_recursion_depth = limits.max_recursion_depth.saturating_add(1);
+        policy.limits.max_recursion_depth =
+            limits.max_recursion_depth.checked_add(1).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "the recursion limit leaves no level for the record root",
+                )
+            })?;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         Self::load_with_context(&ctx, namespace)
     }
