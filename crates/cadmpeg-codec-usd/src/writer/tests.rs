@@ -75,13 +75,22 @@ fn a_definition_no_occurrence_places_is_a_prototype_with_no_reference() {
     mesh.of = cadmpeg_ir::tessellation::Meshed::definition(spare.id.clone());
     ir.model.tessellations.push(mesh);
     ir.model.product_definitions.push(spare);
-    let (text, _) = encode(&ir);
+    let (text, report) = encode(&ir);
     let prototypes = text
         .split("class \"Prototypes\"")
         .nth(1)
         .unwrap_or_else(|| panic!("a Prototypes prim: {text}"));
     assert!(prototypes.contains("\"Spare\""), "{text}");
     assert!(!text.contains("references = </Prototypes/"), "{text}");
+    // The layer holds the definition, so nothing is placed for it.
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "definition.placed"),
+        "{:?}",
+        report.losses
+    );
 }
 
 #[test]
