@@ -17,7 +17,7 @@ use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_f
 use crate::{IgesCodec, IgesVersion};
 
 /// A tetrahedron solid as a document of another codec states it: with no
-/// IGES native records.
+/// IGES native records and no entity labels or levels.
 fn tetrahedron() -> CadIr {
     let mut ir = IgesCodec
         .decode(
@@ -28,6 +28,8 @@ fn tetrahedron() -> CadIr {
         .ir()
         .clone();
     ir.native = cadmpeg_ir::native::Native::default();
+    ir.model.attributes.clear();
+    ir.model.presentation_layers.clear();
     ir
 }
 
@@ -88,9 +90,9 @@ fn a_solid_with_design_content_is_written_and_the_content_reported() {
     assert_eq!(
         omitted,
         [
-            "the iges write does not represent model arena `features`: 1 record(s) omitted",
-            "the iges write does not represent model arena `parameters`: 1 record(s) omitted",
-            "the iges write does not represent model arena `attributes`: 1 record(s) omitted",
+            "the iges write does not represent model arena `features`: 1 record(s) omitted: cadir:model:feature#boss",
+            "the iges write does not represent model arena `parameters`: 1 record(s) omitted: cadir:model:parameter#height",
+            "the iges write does not represent model arena `attributes`: 1 record(s) omitted: cadir:model:attribute#finish",
         ]
     );
     let decoded = IgesCodec

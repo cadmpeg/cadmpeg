@@ -1111,13 +1111,14 @@ impl Native {
         })
     }
 
-    /// Keeps the first record of each id in each sorted namespace arena and
-    /// drops the later ones, returning each repeated id whose copies differ.
+    /// States one record of each id in each sorted namespace arena whose
+    /// copies hold one value and none of an id whose copies differ,
+    /// returning each such id.
     pub(crate) fn drop_repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
         let mut repeated = Vec::new();
         for (format, namespace) in &mut self.0 {
             for (arena, records) in &mut namespace.arenas {
-                crate::document::keep_first_ids(
+                crate::document::drop_repeated_copies(
                     records,
                     NativeRecord::id,
                     &format!("native.{format}.{arena}"),

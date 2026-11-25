@@ -80,7 +80,24 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D7",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D7"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ENCLOSE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -91,7 +108,20 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "curve": "iges:model:curve#D7",
+                "kind": "curve"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [],

@@ -56,9 +56,6 @@ pub mod document;
 pub mod draft;
 pub mod drawings;
 pub mod eval;
-// `test` keeps fixtures available for this crate's unit tests; dependents that
-// need them in their test graphs still enable the `examples` feature explicitly.
-#[cfg(any(feature = "examples", test))]
 pub mod examples;
 pub mod features;
 pub mod geometry;
@@ -189,17 +186,22 @@ pub fn decode_sidecar_json_schema() -> schemars::Schema {
     wire_schema::<source_fidelity::DecodeSidecar>()
 }
 
-/// The schema of `T`'s JSON form. A member that its object does not require
-/// is omitted for `None` and is never `null` (§2.5); a list element, an array
-/// element, and a map value keep their `null`.
+/// The schema of `T`'s JSON form, its definitions sorted by name. A member
+/// that its object does not require is omitted for `None` and is never `null`
+/// (§2.5); a list element, an array element, and a map value keep their
+/// `null`.
 #[cfg(feature = "schema")]
 fn wire_schema<T: schemars::JsonSchema>() -> schemars::Schema {
-    schemars::generate::SchemaSettings::draft2020_12()
+    let mut schema = schemars::generate::SchemaSettings::draft2020_12()
         .with_transform(schemars::transform::RecursiveTransform(
             omit_null_from_optional_members,
         ))
         .into_generator()
-        .into_root_schema_for::<T>()
+        .into_root_schema_for::<T>();
+    if let Some(serde_json::Value::Object(defs)) = schema.get_mut("$defs") {
+        defs.sort_keys();
+    }
+    schema
 }
 
 #[cfg(feature = "schema")]
@@ -243,7 +245,7 @@ fn omit_null(member: &mut serde_json::Map<String, serde_json::Value>) {
         values.retain(|value| !value.is_null());
         if let [value] = values.as_slice() {
             let value = value.clone();
-            member.remove("enum");
+            member.retain(|key, _| key != "enum");
             member.insert("const".into(), value);
         }
     }
@@ -261,7 +263,7 @@ fn omit_null(member: &mut serde_json::Map<String, serde_json::Value>) {
             .keys()
             .all(|key| key == "anyOf" || !member.contains_key(key))
         {
-            member.remove("anyOf");
+            member.retain(|key, _| key != "anyOf");
             member.extend(arm);
         }
     }

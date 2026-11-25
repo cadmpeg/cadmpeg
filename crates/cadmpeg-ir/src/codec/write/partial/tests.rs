@@ -6,6 +6,7 @@ use super::without_partial_topology;
 
 fn cube_with_partial_face() -> (crate::CadIr, String) {
     let mut ir = crate::examples::unit_cube().unwrap();
+    crate::examples::add_document_root(&mut ir);
     let face = &mut ir.geometry.faces[0];
     let loops = face.loops.stated().cloned().collect();
     face.loops = FaceLoops::PartialUnspecified { loops };
@@ -55,6 +56,7 @@ fn a_partial_face_is_left_out_and_its_solid_is_written_as_a_valid_sheet() {
 #[test]
 fn a_marked_region_lists_its_shells_and_keeps_every_face() {
     let mut ir = crate::examples::unit_cube().unwrap();
+    crate::examples::add_document_root(&mut ir);
     ir.geometry.regions[0].unstated = Some(RegionUnstated::Voids);
     let (written, losses) = without_partial_topology(&ir, "TEST", "shells")
         .unwrap()
