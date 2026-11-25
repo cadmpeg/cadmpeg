@@ -469,9 +469,6 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     })?;
     let mut range_losses = Vec::new();
     let ranged = state_open_edge_ranges(lowered.as_ref(), &mut range_losses)?;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let ctx = &ctx;
     let brep = has_brep_topology(ranged.as_ref());
     let planar = if brep {
         Cow::Borrowed(ranged.as_ref())
@@ -481,10 +478,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     let restated = if brep {
         Cow::Borrowed(planar.as_ref())
     } else {
-        rational_support::rational_analytic_supports(ctx, planar.as_ref())
+        rational_support::rational_analytic_supports(planar.as_ref())?
     };
     let ir = restated.as_ref();
     let index = TopologyIndex::new(ir);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    let ctx = &ctx;
     reject_unsupported_model(ir)?;
     reject_owned_wire_topology(ir)?;
     let unbounded_analytic = validate_analytic_surface_context(ir)?;

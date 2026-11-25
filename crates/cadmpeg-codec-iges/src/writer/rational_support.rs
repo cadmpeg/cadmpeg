@@ -3,8 +3,10 @@
 //! a trimmed surface (Type 144 over Type 128) can bound.
 
 use crate::entities::curve_conversion::{elliptical_arc_nurbs, ANGULAR_TOLERANCE};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::pcurve_uv;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -20,20 +22,26 @@ use std::f64::consts::TAU;
 /// restated as the rational B-spline surface that equals it over the domain
 /// its faces' parameter curves bound, and those curves restated on it. A
 /// support whose parameter curves are not all isoparametric stays analytic.
-pub(super) fn rational_analytic_supports<'ir>(
-    ctx: &DecodeContext<'_>,
-    ir: &'ir CadIr,
-) -> Cow<'ir, CadIr> {
+pub(super) fn rational_analytic_supports(ir: &CadIr) -> Result<Cow<'_, CadIr>, CodecError> {
+    let forms = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Solved(geometry) => {
+                Some((surface.id.as_str(), Revolved::of(geometry)?))
+            }
+            SurfaceGeometry::Procedural { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    if forms.is_empty() {
+        return Ok(Cow::Borrowed(ir));
+    }
+    let ends = pcurve_ends(ir)?;
     let mut surfaces = Vec::new();
     let mut pcurves = BTreeMap::new();
-    for surface in &ir.geometry.surfaces {
-        let SurfaceGeometry::Solved(geometry) = &surface.geometry else {
-            continue;
-        };
-        let Some(form) = Revolved::of(geometry) else {
-            continue;
-        };
-        let Some(restated) = restated_support(ctx, ir, surface.id.as_str(), &form) else {
+    for (surface, form) in forms {
+        let Some(restated) = restated_support(&ends, ir, surface, &form) else {
             continue;
         };
         if restated
@@ -43,11 +51,11 @@ pub(super) fn rational_analytic_supports<'ir>(
         {
             continue;
         }
-        surfaces.push((surface.id.as_str(), restated.surface));
+        surfaces.push((surface, restated.surface));
         pcurves.extend(restated.pcurves);
     }
     if surfaces.is_empty() {
-        return Cow::Borrowed(ir);
+        return Ok(Cow::Borrowed(ir));
     }
     let mut restated = ir.clone();
     for (id, nurbs) in surfaces {
@@ -65,7 +73,29 @@ pub(super) fn rational_analytic_supports<'ir>(
             pcurve.geometry = PcurveGeometry::Nurbs { nurbs };
         }
     }
-    Cow::Owned(restated)
+    Ok(Cow::Owned(restated))
+}
+
+/// The finite start and end points of each bounded parameter curve.
+fn pcurve_ends(ir: &CadIr) -> Result<BTreeMap<&str, [Point2; 2]>, CodecError> {
+    let mut ends = BTreeMap::new();
+    for pcurve in &ir.geometry.pcurves {
+        let Some(range) = pcurve.parameter_range() else {
+            continue;
+        };
+        let [start, end] = range.get();
+        let at = |parameter| {
+            finite_or_refusal(pcurve_uv(
+                EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                parameter,
+            ))
+        };
+        if let (Some(start), Some(end)) = (at(start)?, at(end)?) {
+            ends.insert(pcurve.id.as_str(), [start.get(), end.get()]);
+        }
+    }
+    Ok(ends)
 }
 
 /// An analytic surface as `O + ρ(v)(cos u X + k sin u Y) + h(v) Z`.
@@ -149,7 +179,7 @@ struct Isoparametric {
 }
 
 fn restated_support(
-    ctx: &DecodeContext<'_>,
+    ends: &BTreeMap<&str, [Point2; 2]>,
     ir: &CadIr,
     surface: &str,
     form: &Revolved,
@@ -195,12 +225,7 @@ fn restated_support(
                             return None;
                         }
                     }
-                    let at = |parameter| {
-                        pcurve_uv(ctx, &pcurve.geometry, parameter)
-                            .ok()
-                            .map(cadmpeg_ir::units::FinitePoint2::get)
-                    };
-                    let (start, end) = (at(range[0])?, at(range[1])?);
+                    let [start, end] = *ends.get(pcurve.id.as_str())?;
                     let points = match &pcurve.geometry {
                         PcurveGeometry::Line(_) => vec![start, end],
                         PcurveGeometry::Nurbs { nurbs } => nurbs
