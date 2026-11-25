@@ -127,6 +127,19 @@ pub(crate) fn measured_canonical_json(
     Ok((bytes, measured))
 }
 
+/// The refusal of the canonical JSON of `value`, where its walk is refused.
+/// The walk notes no bound for a later measured walk.
+pub(crate) fn canonical_refusal<T: Serialize + ?Sized>(value: &T) -> Option<CanonicalJsonError> {
+    let refusal = finite_json::write_canonical_json(
+        finite_json::admission::CanonicalAdmission::unlimited(),
+        &mut std::io::sink(),
+        value,
+    )
+    .err();
+    crate::bounds::take_expression_past();
+    refusal
+}
+
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,

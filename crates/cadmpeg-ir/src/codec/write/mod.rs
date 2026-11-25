@@ -684,13 +684,25 @@ impl EncoderBackend for CadirEncoder {
         let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
             CodecError::Malformed(error.to_string())
         };
-        let (canonical, mut losses) = match canonical::canonical_form(input.ir)? {
+        let (mut canonical, mut losses) = match canonical::canonical_form(input.ir)? {
             Some((ir, losses)) => (Some(ir), losses),
             None => (None, Vec::new()),
         };
-        let source = canonical.as_ref().unwrap_or(input.ir);
         let (mut bytes, measured) =
-            crate::hash::measured_canonical_json(source).map_err(malformed)?;
+            match crate::hash::measured_canonical_json(canonical.as_ref().unwrap_or(input.ir)) {
+                Ok(measured) => measured,
+                Err(refusal) => {
+                    let (ir, unwritable) = without_unwritable_records(
+                        canonical.as_ref().unwrap_or(input.ir),
+                        &refusal,
+                    )?;
+                    losses.extend(unwritable);
+                    let measured = crate::hash::measured_canonical_json(&ir).map_err(malformed)?;
+                    canonical = Some(ir);
+                    measured
+                }
+            };
+        let source = canonical.as_ref().unwrap_or(input.ir);
         let written;
         let ir = if measured.records.is_empty() && measured.outside.is_empty() {
             source
@@ -714,6 +726,51 @@ impl EncoderBackend for CadirEncoder {
         body.losses = losses;
         Ok(body)
     }
+}
+
+/// A copy of `ir` without each record whose canonical JSON is refused and
+/// without each record that needs one, as §3.3 drops a record (§3.4). A
+/// record that holds a non-finite number charges `export:value.unwritable`,
+/// and any other refused record `export:record.invalid`, naming it and the
+/// records dropped and marked with it.
+///
+/// # Errors
+///
+/// `refusal`, of the whole document, where no record alone is refused.
+fn without_unwritable_records(
+    ir: &CadIr,
+    refusal: &crate::hash::finite_json::CanonicalJsonError,
+) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+    let unwritable: std::collections::BTreeMap<_, _> =
+        ir.arenas().unwritable().into_iter().collect();
+    if unwritable.is_empty() {
+        return Err(CodecError::Malformed(refusal.to_string()));
+    }
+    let mut ir = ir.clone();
+    ir.finalize();
+    let removed = canonical::drop_seeds(&mut ir, unwritable.keys().cloned().collect())?;
+    let losses = removed
+        .into_iter()
+        .filter_map(|(seed, released)| {
+            let refusal = unwritable.get(&seed)?;
+            let code = match refusal {
+                crate::hash::finite_json::CanonicalJsonError::NonFinite { .. } => {
+                    loss::ExportLossCode::ValueUnwritable
+                }
+                _ => canonical::record_invalid_code(&seed.arena),
+            };
+            Some(code.note(format!(
+                "the {} write drops record {} of arena {}, whose canonical JSON is refused \
+                 ({refusal}), with each record that needs it; dropped=[{}], marked=[{}]",
+                CadirEncoder::FORMAT.as_str(),
+                seed.id,
+                seed.arena,
+                canonical::listed(&released.dropped),
+                canonical::listed(&released.marked)
+            )))
+        })
+        .collect();
+    Ok((ir, losses))
 }
 
 /// A copy of `ir` within the bounds of §2.5 (§3.4). Each value outside every

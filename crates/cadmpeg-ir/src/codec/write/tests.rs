@@ -1546,3 +1546,194 @@ fn the_cadir_writer_writes_repro_past_the_document_bound_unstated() {
         .expect("the written bytes read back");
     assert!(read.repro.is_none());
 }
+
+/// Plans a CADIR write of `ir`, which must not refuse, and returns the
+/// messages of its losses of `code` and the document its bytes read back as.
+fn written_with_losses(ir: &CadIr, code: &str) -> (Vec<String>, CadIr) {
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .expect("the CADIR writer drops what it cannot write and does not refuse");
+    let messages = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == code)
+        .map(|loss| loss.message.clone())
+        .collect();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let read = CadIr::from_json(std::str::from_utf8(&written).unwrap())
+        .expect("the written bytes read back");
+    (messages, read)
+}
+
+/// A feature parent relation the model refuses is a record CADIR cannot
+/// write (§3.4): the writer drops the relation, writes the rest, and names
+/// the feature whose relation it drops.
+#[test]
+fn the_cadir_writer_drops_an_invalid_feature_parent_relation() {
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    const PARENT: &str = "test:writer:feature#0-parent";
+    const CHILD: &str = "test:writer:feature#1-child";
+    let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).unwrap(),
+        ordinal,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+    };
+    let stored = || FeatureDefinition::Operation(FeatureOperation::StoredGeometry {});
+    let tree_node = || {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: TreeChildren::new(vec![FeatureId::mint(CHILD).unwrap()], None).unwrap(),
+        })
+    };
+    for mutation in [
+        "missing parent",
+        "missing child",
+        "ordinal",
+        "tree ownership",
+        "two tree parents",
+    ] {
+        let mut ir = unit_cube().unwrap();
+        ir.model.features.push(feature(PARENT, 0, stored()));
+        ir.model.features.push(feature(CHILD, 1, stored()));
+        ir.model
+            .set_feature_regeneration_parent(
+                &FeatureId::mint(CHILD).unwrap(),
+                &FeatureId::mint(PARENT).unwrap(),
+            )
+            .unwrap();
+        let unit_cube_features = ir.model.features.len() - 2;
+        let expected = match mutation {
+            "missing parent" => {
+                ir.model.features.remove(unit_cube_features);
+                1
+            }
+            "missing child" => {
+                ir.model.features.remove(unit_cube_features + 1);
+                1
+            }
+            "ordinal" => {
+                ir.model.features[unit_cube_features + 1].ordinal = 0;
+                1
+            }
+            "tree ownership" => {
+                ir.model.features[unit_cube_features]
+                    .evaluation
+                    .set_definition(tree_node());
+                1
+            }
+            "two tree parents" => {
+                ir.model
+                    .features
+                    .push(feature("test:writer:feature#2-node", 2, tree_node()));
+                ir.model
+                    .features
+                    .push(feature("test:writer:feature#3-node", 3, tree_node()));
+                2
+            }
+            _ => unreachable!(),
+        };
+        assert!(ir.to_canonical_json().is_err(), "{mutation}");
+        let (invalid, _) = written_with_losses(&ir, "record.invalid");
+        assert_eq!(invalid.len(), expected, "{mutation}: {invalid:?}");
+        assert!(
+            invalid.iter().all(|message| message.contains(CHILD)),
+            "{mutation}: {invalid:?}"
+        );
+    }
+}
+
+/// A procedural construction that no carrier or more than one carrier owns
+/// is a record CADIR cannot write (§3.4): the writer drops it with each
+/// carrier that needs it, as §3.3 drops a record, and names the construction
+/// and those carriers.
+#[test]
+fn the_cadir_writer_drops_a_procedural_construction_without_one_owner() {
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
+    use crate::ids::{CurveId, ProceduralCurveId};
+
+    const ORPHAN: &str = "test:writer:curve-construction#orphan";
+    const SHARED: &str = "test:writer:curve-construction#shared";
+    let mut ir = CadIr::empty();
+    for carrier in ["test:writer:curve#a", "test:writer:curve#b"] {
+        ir.geometry.curves.push(Curve {
+            parameter_range: None,
+            id: CurveId::mint(carrier).unwrap(),
+            geometry: CurveGeometry::Procedural {
+                construction: ProceduralCurveId::mint(SHARED).unwrap(),
+                cache: None,
+            },
+            source_object: None,
+            native_ref: None,
+        });
+    }
+    for construction in [ORPHAN, SHARED] {
+        ir.geometry.procedural_curves.push(ProceduralCurve::new(
+            ProceduralCurveId::mint(construction).unwrap(),
+            ProceduralCurveDefinition::Exact { cache: None },
+        ));
+    }
+    assert!(ir.to_canonical_json().is_err());
+
+    let (invalid, read) = written_with_losses(&ir, "record.invalid");
+    let [orphan, shared] = invalid.as_slice() else {
+        panic!("one loss for each construction: {invalid:?}");
+    };
+    assert!(orphan.contains(ORPHAN), "{orphan}");
+    assert!(
+        shared.contains(SHARED)
+            && shared.contains("test:writer:curve#a")
+            && shared.contains("test:writer:curve#b"),
+        "{shared}"
+    );
+    assert!(read.geometry.procedural_curves.is_empty());
+    assert!(read.geometry.curves.is_empty());
+}
+
+/// An expression whose tree has no canonical text is a record CADIR cannot
+/// write (§3.4): the writer drops the record that holds it, writes the
+/// rest, and names the record.
+#[test]
+fn the_cadir_writer_drops_a_record_whose_expression_does_not_print() {
+    use crate::design::expr::{Expression, Neutral, Node};
+    use crate::design::parameter::ParameterDefinition;
+
+    let mut ir = unit_cube().unwrap();
+    ir.design.parameters.push(negated_parameter("kept", 1));
+    let mut empty = negated_parameter("empty", 1);
+    empty.definition =
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::All(Vec::new()))));
+    ir.design.parameters.push(empty);
+    assert!(ir.to_canonical_json().is_err());
+
+    let (invalid, read) = written_with_losses(&ir, "record.invalid");
+    let [loss] = invalid.as_slice() else {
+        panic!("one loss for the one record: {invalid:?}");
+    };
+    assert!(
+        loss.contains("test:design:parameter#empty")
+            && loss.contains("design.parameters")
+            && !loss.contains("#kept"),
+        "{loss}"
+    );
+    let kept = read
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(kept, ["test:design:parameter#kept"]);
+}

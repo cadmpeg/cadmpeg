@@ -118,6 +118,67 @@ pub(crate) fn validate<'a>(models: &[&'a Model]) -> Result<(), ParentError<'a>> 
     Ok(())
 }
 
+/// Drops each parent relation of `model` that [`validate`] refuses, given
+/// that `model` states each feature id once: each tree child of a node after
+/// the first node in arena order that lists it, and each regeneration edge
+/// whose child or parent is missing, whose child has a tree parent, or whose
+/// parent does not precede its child. Returns the child of each dropped
+/// relation with what the drop removed.
+pub(crate) fn release_invalid(model: &mut Model) -> Vec<(FeatureId, String)> {
+    let mut released = Vec::new();
+    let mut tree_parents: HashMap<FeatureId, FeatureId> = HashMap::new();
+    for node in &mut model.features {
+        let node_id = &node.id;
+        node.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
+                definition
+            else {
+                return;
+            };
+            children.retain(|child| {
+                if let Some(first) = tree_parents.get(child) {
+                    released.push((
+                        child.clone(),
+                        format!(
+                            "drops feature `{child}` from the children of tree node \
+                             `{node_id}`: tree node `{first}` lists it first"
+                        ),
+                    ));
+                    return false;
+                }
+                tree_parents.insert(child.clone(), node_id.clone());
+                true
+            });
+        });
+    }
+    let mut ordinals = HashMap::new();
+    for feature in &model.features {
+        ordinals.entry(&feature.id).or_insert(feature.ordinal);
+    }
+    model
+        .feature_regeneration_parents
+        .0
+        .retain(|child, parent| {
+            let why = match (ordinals.get(child), ordinals.get(parent)) {
+                (None, _) => "names a missing child".to_owned(),
+                _ if tree_parents.contains_key(child) => {
+                    format!("the child has tree parent `{}`", tree_parents[child])
+                }
+                (Some(_), None) => "names a missing parent".to_owned(),
+                (Some(child_ordinal), Some(parent_ordinal)) if parent_ordinal >= child_ordinal => {
+                    "the parent does not precede the child".to_owned()
+                }
+                (Some(_), Some(_)) => return true,
+            };
+            released.push((
+                child.clone(),
+                format!("drops regeneration parent `{parent}` of feature `{child}`: {why}"),
+            ));
+            false
+        });
+    released
+}
+
 /// Insert `value` for an absent `id`; return the value already present otherwise.
 fn insert_first<'a, T: Copy>(
     facts: &mut HashMap<&'a FeatureId, T>,

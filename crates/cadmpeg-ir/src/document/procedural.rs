@@ -292,7 +292,7 @@ impl Topology {
     }
 }
 
-pub(super) fn standard_owners<'a, T>(
+pub(crate) fn standard_owners<'a, T>(
     carriers: impl Iterator<Item = (&'a str, &'a T)>,
 ) -> HashMap<&'a str, Option<&'a T>> {
     let mut owners = HashMap::new();

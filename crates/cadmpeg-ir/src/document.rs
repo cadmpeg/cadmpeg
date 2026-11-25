@@ -1673,6 +1673,26 @@ macro_rules! declare_arena_name {
                 written
             }
 
+            /// Each record of an arena the CADIR wire carries whose canonical
+            /// JSON, written alone, is refused, with the refusal.
+            pub(crate) fn unwritable(self) -> Vec<(crate::give_up::Seed, crate::hash::finite_json::CanonicalJsonError)> {
+                let mut unwritable = Vec::new();
+                $(if !ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    for record in &self.$home.$field {
+                        if let Some(refusal) = crate::hash::canonical_refusal(record) {
+                            unwritable.push((
+                                crate::give_up::Seed {
+                                    arena: crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) },
+                                    id: crate::schema::ArenaRecord::record_identity(record).to_owned(),
+                                },
+                                refusal,
+                            ));
+                        }
+                    }
+                })*
+                unwritable
+            }
+
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
