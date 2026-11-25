@@ -393,15 +393,24 @@ impl<'a> Reduction<'a> {
             return;
         }
         let ir = self.ir.to_mut();
+        // A cage's body is not written without its cage (§5.6).
+        let cage_bodies = cadmpeg_ir::codec::write::remove_cage_bodies(ir);
         let subds = std::mem::take(&mut ir.geometry.subds);
         let assets = std::mem::take(&mut ir.model.assets);
         let tessellations = std::mem::take(&mut ir.model.tessellations);
-        self.losses.extend(named_loss(
-            F3dLossCode::WriterSubdOmitted,
-            "subdivision surface",
-            "the source-less F3D generator has no T-spline form",
-            subds.iter().map(|row| row.id.to_string()),
-        ));
+        self.losses.extend(
+            named_loss(
+                F3dLossCode::WriterSubdOmitted,
+                "subdivision surface",
+                "the source-less F3D generator has no T-spline form",
+                subds.iter().map(|row| row.id.to_string()),
+            )
+            .map(|mut loss| {
+                loss.message
+                    .push_str(&cadmpeg_ir::codec::write::cage_bodies_clause(&cage_bodies));
+                loss
+            }),
+        );
         self.losses.extend(named_loss(
             F3dLossCode::WriterAssetOmitted,
             "document asset",

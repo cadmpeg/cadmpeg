@@ -283,7 +283,7 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
     check_cage_shells(ir, findings);
 }
 
-/// A subdivision cage belongs to at most one shell, and a shell whose
+/// A subdivision cage belongs to exactly one shell, and a shell whose
 /// `members` name a cage names nothing else, holds no face, and is the only
 /// shell of its body's only region (§5.6).
 fn check_cage_shells(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -295,15 +295,15 @@ fn check_cage_shells(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     });
     for cage in &ir.geometry.subds {
-        if cage_owners.match_count(cage.id.as_str()) > 1 {
+        if cage_owners.match_count(cage.id.as_str()) != 1 {
             record_finding(
                 findings,
                 Check::WireTopology,
                 Severity::Error,
                 Some(cage.id.as_str()),
                 crate::rule!(
-                    "topology.cage-belongs-more-one-shell",
-                    "subdivision cage belongs to more than one shell"
+                    "topology.cage-must-belong-exactly-one",
+                    "subdivision cage must belong to exactly one shell"
                 ),
             );
         }

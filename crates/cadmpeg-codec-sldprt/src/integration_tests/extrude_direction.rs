@@ -445,7 +445,7 @@ type Written = (Vec<u8>, Vec<(cadmpeg_ir::report::loss::LossKind, String)>);
 fn edit_and_write(
     decoded: cadmpeg_ir::codec::DecodeResult,
     edit: impl FnOnce(&mut cadmpeg_ir::CadIr),
-) -> Result<Written, cadmpeg_core::CodecError> {
+) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
@@ -457,7 +457,7 @@ fn edit_and_write(
 /// Writes `decoded` through `Inherit` with its sidecar.
 fn write_editable(
     decoded: &cadmpeg_test_support::EditableDecodeResult,
-) -> Result<Written, cadmpeg_core::CodecError> {
+) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec.plan(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),

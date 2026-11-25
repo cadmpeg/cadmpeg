@@ -683,36 +683,6 @@ fn errors(ir: &CadIr) -> BTreeSet<(String, Option<String>)> {
 fn a_shell_that_loses_its_cage_states_its_members_unstated() {
     let mut ir = crate::examples::directed_subd_sum().unwrap();
     let cage = ir.geometry.subds[0].id.clone();
-    if !ir
-        .geometry
-        .shells
-        .iter()
-        .any(|shell| shell.subds().any(|held| *held == cage))
-    {
-        let body = crate::ids::BodyId::mint("synthetic:subd:body#cage").unwrap();
-        let region = crate::ids::RegionId::mint("synthetic:subd:region#cage").unwrap();
-        let shell = crate::ids::ShellId::mint("synthetic:subd:shell#cage").unwrap();
-        let mut cage_shell = Shell::new(shell.clone(), region.clone());
-        cage_shell
-            .members
-            .push(crate::topology::ShellMember::Subd { id: cage.clone() });
-        ir.geometry.shells.push(cage_shell);
-        ir.geometry.regions.push(crate::topology::Region::new(
-            region,
-            body.clone(),
-            vec![shell],
-        ));
-        ir.geometry.bodies.push(crate::topology::Body {
-            id: body,
-            kind: crate::topology::BodyKind::Sheet,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-            unstated: None,
-            native_ref: None,
-        });
-    }
     let holder = ir
         .geometry
         .shells
