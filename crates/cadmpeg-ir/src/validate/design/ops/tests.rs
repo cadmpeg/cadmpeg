@@ -20,8 +20,7 @@ use crate::design::ops::assembly::{
 use crate::design::ops::body::{
     Combine, DeleteBodies, InstanceChange, InstanceOverride, Kept, NewComponent, Pattern,
     PatternInstances, PatternSeeds, PieceForm, ScaleFactors, Split, SplitMethod, SplitMode,
-    SplitTool, TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep,
-    Transformation,
+    SplitTool, TransformBodies, TransformMode, TransformStep, Transformation,
 };
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::dressup::{
@@ -769,40 +768,6 @@ fn a_transformation_has_steps_and_counts_of_one_or_more() {
         divisions: None,
     };
     assert_finding(&with(transform(vec![step], Some(copy))), "it is at least 1");
-}
-
-#[test]
-fn a_template_input_pick_names_an_input_of_its_instance() {
-    let instance = TemplateInstance {
-        template: crate::design::ops::body::Template {
-            name: None,
-            library: None,
-            variant: None,
-        },
-        inputs: vec![TemplateInput {
-            role: None,
-            reference: named(vec![entity(NameKind::Face, 1)]),
-        }],
-        parameters: Vec::new(),
-        members: vec![feature("fillet")],
-        native_options: BTreeMap::new(),
-        source_settings: BTreeMap::new(),
-    };
-    let mut ir = with(FeatureOperation::TemplateInstance(Box::new(instance)));
-    let input = |input| {
-        let mut picking = extrude();
-        picking.profile = named(vec![pick(PickTarget::TemplateInput {
-            instance: feature("extrude"),
-            input,
-        })]);
-        FeatureOperation::Extrude(Box::new(picking))
-    };
-    ir.design.features[1].definition.operation = input(0);
-    assert!(!design_findings(&ir)
-        .iter()
-        .any(|f| f.message.contains("TemplateInput")));
-    ir.design.features[1].definition.operation = input(1);
-    assert_finding(&ir, "TemplateInput picks input 1");
 }
 
 // ----------------------------------------------------------------- surfacing, sheet metal, meshes
@@ -1553,6 +1518,50 @@ fn sketch_entity_pick(key: &str) -> Picked {
 }
 
 #[test]
+fn a_louver_open_edge_is_a_curve_of_its_profile_sketch() {
+    use crate::design::ops::sheet_metal::StampForm;
+    let louver = |edge: &str| {
+        sheet(SheetMetalKind::Stamp {
+            entry: None,
+            form: StampForm::Louver {
+                profile: named(vec![sketch_pick()]),
+                open_edge: named(vec![sketch_entity_pick(edge)]),
+                depth: Dimension::Literal(positive(1.0)),
+                flap_angle: Dimension::Literal(crate::scalar::Angle::new(0.5).unwrap()),
+                wall_angle: Dimension::Literal(crate::scalar::Angle::new(0.5).unwrap()),
+                rim_radius: None,
+            },
+            rule: None,
+        })
+    };
+    let open_edge = "Louver.open_edge picks";
+    let mut ir = sketched();
+    ir.design.sketches.push(Sketch {
+        id: sketch_id("other"),
+        ..profile_sketch()
+    });
+    ir.design.sketch_entities.push(SketchEntity {
+        sketch: sketch_id("other"),
+        ..sketch_entity(
+            "elsewhere",
+            PlanarCurve::Line {
+                start: point(0.0, 1.0),
+                end: point(1.0, 1.0),
+            },
+            Vec::new(),
+        )
+    });
+    ir.design.features[1].definition.operation = louver("line");
+    assert!(!design_findings(&ir)
+        .iter()
+        .any(|f| f.message.contains(open_edge)));
+    ir.design.features[1].definition.operation = louver("start");
+    assert_finding(&ir, open_edge);
+    ir.design.features[1].definition.operation = louver("elsewhere");
+    assert_finding(&ir, open_edge);
+}
+
+#[test]
 fn a_helix_start_circle_picks_a_circle_or_arc() {
     let helical = |key| {
         FeatureOperation::HelicalSweep(Box::new(HelicalSweep {
@@ -1632,6 +1641,7 @@ mod assembly_rules;
 mod bounds;
 mod chain_links;
 mod forms;
+mod generators;
 mod pattern_coordinates;
 mod run_ranges;
 mod split_tools;

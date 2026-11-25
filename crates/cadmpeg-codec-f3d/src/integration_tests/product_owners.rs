@@ -73,10 +73,10 @@ fn root_sketch_owner_follows_document_membership() {
         .filter(|definition| definition.sketches.contains(&model.sketches[0].id))
         .collect::<Vec<_>>();
     assert_eq!(holders.len(), 1);
-    assert!(holders[0]
-        .id
-        .as_str()
-        .ends_with("archive:product-definition#0"));
+    assert_eq!(
+        crate::ids::member_definition_key(holders[0].id.as_str()),
+        Some(format!("role-{XREF_ROLE}/reference-0/occurrence-0").as_str())
+    );
     assert!(model
         .occurrences
         .iter()

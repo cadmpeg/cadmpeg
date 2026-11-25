@@ -156,7 +156,7 @@ fn check_native_refs(index: &DesignRecords<'_>, ids: &ModelIndex<'_>, findings: 
     for feature in &design.features {
         check(feature.id.as_str(), feature.native_ref.as_ref());
     }
-    for (holder, definition) in index.feature_definitions() {
+    for (holder, _, definition) in index.feature_definitions() {
         let link = match &definition.operation {
             FeatureOperation::Stored {
                 origin: StoredOrigin::Linked(link),

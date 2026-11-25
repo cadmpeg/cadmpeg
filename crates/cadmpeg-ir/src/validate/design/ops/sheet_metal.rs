@@ -12,8 +12,8 @@ use crate::design::ops::sheet_metal::{
     Flange, FlangeHeight, FlangeWidth, HeightDatum, KFactorTable, Rip, RipPath, SheetMetal,
     SheetMetalKind, StampForm, StampOutline,
 };
-use crate::design::options::{Thickness, WallSide};
-use crate::design::selection::{PickContext, SetSelection};
+use crate::design::options::{ProfileRef, Thickness, WallSide};
+use crate::design::selection::{PickContext, PickTarget, SetSelection};
 use crate::report::check::Finding;
 
 use super::super::records::DesignRecords;
@@ -547,6 +547,7 @@ pub(super) fn check_sheet_metal(
                         allowed,
                         findings,
                     );
+                    check_open_edge(index, site, profile, open_edge, findings);
                 }
                 StampForm::Bead { path, .. } => {
                     options::check_profile(site, "StampForm::Bead.path", path, findings);
@@ -631,6 +632,62 @@ pub(super) fn check_sheet_metal(
         SheetMetalKind::ApplyRule { .. }
         | SheetMetalKind::FlatPattern { fixed: None }
         | SheetMetalKind::Native(_) => {}
+    }
+}
+
+/// A `Louver.open_edge` picks a curve of the sketch its profile picks, where
+/// the profile names its sketch.
+fn check_open_edge(
+    index: &DesignRecords<'_>,
+    site: Site<'_>,
+    profile: &ProfileRef,
+    open_edge: &SetSelection,
+    findings: &mut Vec<Finding>,
+) {
+    let (Some(profile), Some(open_edge)) = (picks::named(profile), picks::named(open_edge)) else {
+        return;
+    };
+    let sketch_of = |entity: &str| {
+        index
+            .ir
+            .design
+            .sketch_entities
+            .iter()
+            .find(|record| record.id.as_str() == entity)
+            .map(|record| record.sketch.as_str())
+    };
+    let mut sketches = BTreeSet::new();
+    for pick in profile {
+        let sketch = match &pick.target {
+            PickTarget::Sketch(sketch) | PickTarget::SketchRegion { sketch, .. } => {
+                Some(sketch.as_str())
+            }
+            PickTarget::SketchEntity(entity) => sketch_of(entity.as_str()),
+            _ => None,
+        };
+        let Some(sketch) = sketch else {
+            return;
+        };
+        sketches.insert(sketch);
+    }
+    for pick in open_edge {
+        let PickTarget::SketchEntity(entity) = &pick.target else {
+            continue;
+        };
+        let Some(sketch) = sketch_of(entity.as_str()) else {
+            continue;
+        };
+        if !sketches.contains(sketch) || super::sketches::picks_point(index, &pick.target) {
+            error(
+                findings,
+                site.entity,
+                crate::rule!(
+                    "design.louver-open-edge-no-curve-profile-sketch",
+                    "Louver.open_edge picks {}, which is no curve of its profile's sketch",
+                    entity.as_str()
+                ),
+            );
+        }
     }
 }
 
