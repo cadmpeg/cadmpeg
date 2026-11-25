@@ -429,12 +429,13 @@ impl DecodeResult {
     /// Records the SHA-256 of the canonical JSON of the document the decode
     /// returns as the sidecar's `content_digest` (§3.1, Rule B). The digest
     /// walks the document in a session of its own under `policy`, the
-    /// decode's, so a ceiling it meets refuses no part of the decode. A
-    /// document with no canonical JSON states no digest, so every writer reads
-    /// it as edited, and a `decode/content-digest.unavailable` Warning says why.
+    /// decode's, so a ceiling it meets refuses no part of the decode.
     ///
     /// The same walk finds each record the decoder stated past a bound of
-    /// §2.5, which §2.8 states none of. Each such record is given up as a
+    /// §2.5, which §2.8 states none of. Each expression past the bound of an
+    /// expression is stated `Source` with no tokens, the form §3.3 gives an
+    /// expression of which nothing is read, with a `decode/record.unreadable`
+    /// Error that names its record. Each other such record is given up as a
     /// part (§3.3), with a `decode/record.unreadable` Error that names it and
     /// the records its give-up drops and marks, and the document is digested
     /// again without it. Each value outside every record past a bound is
@@ -465,6 +466,9 @@ impl DecodeResult {
             Ok::<_, CodecError>(crate::hash::measured_content_digest(&ctx, ir))
         };
         let (mut digest, mut measured) = walk(&self.ir)?;
+        if self.restate_expressions_past_the_bound(&measured.records) {
+            (digest, measured) = walk(&self.ir)?;
+        }
         while self.give_up_records_past_the_bounds(&policy, format, &measured.records)? {
             (digest, measured) = walk(&self.ir)?;
         }
@@ -505,19 +509,48 @@ impl DecodeResult {
                 .with_severity(crate::report::Severity::Error),
             );
         }
-        match digest.map_err(CodecError::from) {
-            Ok(digest) => self.source_fidelity.content_digest = Some(digest),
-            Err(error) => {
-                self.source_fidelity.content_digest = None;
-                self.report
-                    .losses
-                    .push(DecodeLossCode::ContentDigestUnavailable.note(format!(
-                        "the decode wrapper took no content digest of the document ({error}), \
-                         so a writer reads the document as edited and replays no source file"
-                    )));
-            }
-        }
+        self.source_fidelity.content_digest = Some(digest.map_err(CodecError::from)?);
         Ok(())
+    }
+
+    /// States `Source` with no tokens each expression past its bound in the
+    /// records of `records` that pass that bound, the partial form §3.3 gives
+    /// an expression, so that each such record and each record that needs it
+    /// stays, and returns whether it restated one. Each restated record
+    /// charges one `decode/record.unreadable` Error that names it.
+    fn restate_expressions_past_the_bound(
+        &mut self,
+        records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    ) -> bool {
+        if !records
+            .values()
+            .any(|bound| *bound == crate::bounds::Bound::Expression)
+        {
+            return false;
+        }
+        self.ir.finalize();
+        let seeds: Vec<crate::give_up::Seed> = records
+            .iter()
+            .filter(|(_, bound)| **bound == crate::bounds::Bound::Expression)
+            .filter_map(|(place, _)| self.ir.record_at(place))
+            .collect();
+        let restated = crate::give_up::restate_past_the_bound(&mut self.ir, &seeds);
+        for seed in &restated {
+            self.report.losses.push(
+                DecodeLoss::new(
+                    crate::unknown::part::record_unreadable_kind(),
+                    format!(
+                        "record {} of arena {} {}, so the decode wrapper states each such \
+                         expression Source with no tokens",
+                        seed.id,
+                        seed.arena,
+                        crate::bounds::Bound::Expression.describe()
+                    ),
+                )
+                .with_severity(crate::report::Severity::Error),
+            );
+        }
+        !restated.is_empty()
     }
 
     /// Gives up each record of `records` as a part (§3.3) and returns

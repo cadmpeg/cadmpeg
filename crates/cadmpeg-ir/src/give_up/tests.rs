@@ -2,7 +2,7 @@
 //! The give-up of a record: the part it leaves, the records it drops, and
 //! the records it states in a partial form.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use serde_json::json;
@@ -19,13 +19,16 @@ use crate::NativeUnknownRecord;
 
 const CODEC: &str = "test";
 
-/// What one give-up left: its stub, and the records it dropped and marked.
+/// What one give-up left: its stub, the records it dropped and marked, and
+/// the records of the delta of each stored state it dropped and marked, by
+/// the state's path.
 #[derive(Debug, Default)]
 struct Outcome {
     stub: String,
     path: String,
     dropped: BTreeSet<String>,
     marked: BTreeSet<String>,
+    states: BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)>,
 }
 
 fn seed(home: &str, field: &str, id: &str) -> Seed {
@@ -55,6 +58,13 @@ fn run(ir: &mut CadIr, seed: Seed) -> (Outcome, SourceFidelity) {
                 path: released.path.clone(),
                 dropped: released.dropped.clone(),
                 marked: released.marked.clone(),
+                states: released
+                    .states
+                    .iter()
+                    .map(|(path, state)| {
+                        (path.clone(), (state.dropped.clone(), state.marked.clone()))
+                    })
+                    .collect(),
             };
             LossNote::new(record_unreadable_kind(), released.tail(&[]))
         },
@@ -79,21 +89,22 @@ fn holds(ir: &CadIr, id: &str) -> bool {
     ir.references().held.contains_key(id)
 }
 
+/// No referential-integrity finding of `ir` names an id the give-up
+/// removed.
 #[track_caller]
 fn assert_closed(ir: &CadIr, seed: &str, outcome: &Outcome) {
     let gone = gone(ir, seed, outcome);
-    let document = crate::hash::finite_json::to_json_value(ir).unwrap();
-    let mut names = Vec::new();
-    crate::reference_walk::visit_edges(
-        &document,
-        "",
-        true,
-        &|text| gone.get(text).map(String::as_str).into_iter().collect(),
-        &mut |path, target: &str| {
-            names.push(format!("{path} -> {target}"));
-            true
-        },
-    );
+    let names: Vec<String> = crate::validate::validate_neutral(ir, Vec::new())
+        .expect("validation runs")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == crate::report::check::Check::ReferentialIntegrity)
+        .filter(|finding| {
+            gone.iter()
+                .any(|id| finding.message.contains(id.as_str()) || finding.related.contains(id))
+        })
+        .map(|finding| finding.message)
+        .collect();
     assert!(
         names.is_empty(),
         "the document names a removed id: {names:?}"
@@ -787,7 +798,11 @@ fn a_stored_state_loses_only_what_of_its_delta_needs_a_given_up_record() {
     let evaluation = after_extrude(&ir).id.as_str().to_owned();
     assert!(!outcome.dropped.contains(&evaluation), "{outcome:?}");
     assert!(outcome.marked.contains(&evaluation), "{outcome:?}");
-    assert!(outcome.dropped.contains(&own), "{outcome:?}");
+    assert!(!outcome.dropped.contains(&own), "{outcome:?}");
+    assert!(
+        outcome.states[&state_path(&evaluation)].0.contains(&own),
+        "{outcome:?}"
+    );
     assert!(delta(&ir).records.faces.is_empty());
     assert!(delta(&ir).removed.is_empty());
     assert_no_dangling_reference(&ir);
@@ -896,4 +911,235 @@ fn a_carrier_left_with_no_user_is_dropped() {
     assert!(!holds(&ir, face.surface.as_str()));
     let after = findings(&ir, &checks);
     assert!(after.is_empty(), "{after:#?}");
+}
+
+/// The path in a loss of the stored state `evaluation`.
+fn state_path(evaluation: &str) -> String {
+    format!("design.evaluations/{evaluation}")
+}
+
+/// A scope that loses one of its roots keeps its other roots in their
+/// order (§5.2). A scope left with no root and no record that names it is
+/// dropped (§5.1).
+#[test]
+fn a_scope_that_loses_a_root_keeps_its_other_roots() {
+    use crate::design::container::{Container, UnorderedKind};
+    use crate::design::scope::DesignScope;
+    use crate::validate::design::fixture::id;
+
+    let group = |key: &str| Container::Unordered {
+        id: id("container", key),
+        kind: UnorderedKind::Group,
+        members: BTreeSet::new(),
+    };
+    let mut ir = crate::validate::design::fixture::document();
+    let part: String = id("definition", "part");
+    let timeline: String = id("container", "timeline");
+    let shown: String = id("container", "shown");
+    let features = ir.design.features.clone();
+    ir.design.containers.push(group("shown"));
+    ir.design
+        .scopes
+        .iter_mut()
+        .find(|scope| scope.definition.as_str() == part)
+        .expect("the fixture's scope")
+        .roots
+        .push(id("container", "shown"));
+    ir.finalize();
+    assert_no_dangling_reference(&ir);
+
+    let (outcome, _) = run(&mut ir, seed("design", "containers", &shown));
+    assert!(outcome.dropped.is_empty(), "{outcome:?}");
+    assert_eq!(outcome.marked, BTreeSet::from([part.clone()]));
+    let scope = ir
+        .design
+        .scopes
+        .iter()
+        .find(|scope| scope.definition.as_str() == part)
+        .expect("the scope stays");
+    let roots: Vec<&str> = scope
+        .roots
+        .iter()
+        .map(crate::design::ids::ContainerId::as_str)
+        .collect();
+    assert_eq!(roots, [timeline.as_str()]);
+    assert_eq!(ir.design.features, features);
+    assert_no_dangling_reference(&ir);
+
+    let mut ir = crate::validate::design::fixture::document();
+    let other: String = id("definition", "other");
+    ir.design.containers.push(group("other"));
+    ir.design.scopes.push(DesignScope {
+        definition: id("definition", "other"),
+        roots: vec![id("container", "other")],
+        active_configuration: None,
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: Vec::new(),
+        unproduced: BTreeSet::new(),
+    });
+    ir.finalize();
+    let (outcome, _) = run(
+        &mut ir,
+        seed("design", "containers", &id::<String>("container", "other")),
+    );
+    assert_eq!(outcome.dropped, BTreeSet::from([other.clone()]));
+    assert!(outcome.marked.is_empty(), "{outcome:?}");
+    assert!(ir
+        .design
+        .scopes
+        .iter()
+        .all(|scope| scope.definition.as_str() != other));
+}
+
+/// The edges of the loops of `face`.
+fn edges_of(ir: &CadIr, face: &str) -> BTreeSet<String> {
+    let loops: BTreeSet<&str> = ir
+        .geometry
+        .loops
+        .iter()
+        .filter(|held| held.face.as_str() == face)
+        .map(|held| held.id.as_str())
+        .collect();
+    ir.geometry
+        .coedges
+        .iter()
+        .filter(|coedge| loops.contains(coedge.owner_loop.as_str()))
+        .map(|coedge| coedge.edge.as_str().to_owned())
+        .collect()
+}
+
+/// A record a delta drops is the state's own: the loss names it under its
+/// state, and the document's record of the same id keeps its own mark
+/// (§3.3, §5.4).
+#[test]
+fn a_record_a_delta_drops_leaves_the_document_record_of_its_id() {
+    let mut ir = crate::validate::design::fixture::document();
+    let face = ir.geometry.faces[0].clone();
+    let edges = edges_of(&ir, face.id.as_str());
+    let neighbour = ir
+        .geometry
+        .faces
+        .iter()
+        .find(|other| other.id != face.id && !edges_of(&ir, other.id.as_str()).is_disjoint(&edges))
+        .expect("a face that shares an edge")
+        .clone();
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta
+        .records
+        .faces = vec![crate::topology::Face {
+        surface: neighbour.surface.clone(),
+        ..face.clone()
+    }];
+    ir.finalize();
+
+    let (outcome, _) = run(
+        &mut ir,
+        seed("geometry", "surfaces", neighbour.surface.as_str()),
+    );
+    let evaluation = after_extrude(&ir).id.as_str().to_owned();
+    let id = face.id.as_str().to_owned();
+    assert!(
+        outcome.dropped.contains(neighbour.id.as_str()),
+        "{outcome:?}"
+    );
+    assert!(!outcome.dropped.contains(&id), "{outcome:?}");
+    assert!(outcome.marked.contains(&id), "{outcome:?}");
+    assert!(outcome.marked.contains(&evaluation), "{outcome:?}");
+    let (dropped, _) = &outcome.states[&state_path(&evaluation)];
+    assert_eq!(dropped, &BTreeSet::from([id.clone()]));
+    assert!(ir.geometry.faces.iter().any(|held| held.id == face.id));
+    assert!(delta(&ir).records.faces.is_empty());
+    assert_no_dangling_reference(&ir);
+}
+
+/// A carrier of a delta that the delta's drops leave with no user is
+/// dropped with them and named under its state.
+#[test]
+fn a_carrier_a_delta_leaves_with_no_user_is_dropped() {
+    let (mut ir, shell, face, own) = stored_state();
+    let carrier = crate::geometry::Surface {
+        id: crate::ids::SurfaceId::mint("test:design:surface#delta").unwrap(),
+        ..ir.geometry.surfaces[0].clone()
+    };
+    let records = &mut ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta
+        .records;
+    records.surfaces = vec![carrier.clone()];
+    for held in &mut records.faces {
+        if held.id.as_str() == own {
+            held.surface = carrier.id.clone();
+        }
+    }
+    ir.finalize();
+
+    let (outcome, _) = run(&mut ir, seed("geometry", "shells", &shell));
+    let evaluation = after_extrude(&ir).id.as_str().to_owned();
+    let (dropped, _) = &outcome.states[&state_path(&evaluation)];
+    assert_eq!(
+        dropped,
+        &BTreeSet::from([face, own, carrier.id.as_str().to_owned()])
+    );
+    assert!(!outcome.dropped.contains(carrier.id.as_str()));
+    assert!(delta(&ir).records.surfaces.is_empty());
+    let naming: Vec<String> = crate::validate::validate_neutral(&ir, Vec::new())
+        .expect("validation runs")
+        .findings
+        .into_iter()
+        .map(|finding| finding.message)
+        .filter(|message| message.contains(carrier.id.as_str()))
+        .collect();
+    assert!(naming.is_empty(), "{naming:#?}");
+}
+
+/// An owner entry of a delta that names a given-up definition goes with the
+/// body of the delta it assigns, and an entry of a body of the base states
+/// no owner: the state falls back to no owner the source did not state.
+#[test]
+fn an_owner_entry_of_a_given_up_definition_takes_the_body_it_assigns() {
+    use crate::ids::{BodyId, ProductDefinitionId};
+    use crate::products::{ProductDefinition, Storage};
+    use crate::validate::design::fixture::id;
+
+    let mut ir = crate::validate::design::fixture::document();
+    let other: ProductDefinitionId = id("definition", "other");
+    ir.model
+        .product_definitions
+        .push(ProductDefinition::new(other.clone(), Storage::Embedded));
+    let base = ir.geometry.bodies[0].id.clone();
+    let own = crate::topology::Body {
+        id: BodyId::mint("test:design:body#delta").unwrap(),
+        ..ir.geometry.bodies[0].clone()
+    };
+    let stored = &mut ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta;
+    stored.records.bodies = vec![own.clone()];
+    stored.owners = BTreeMap::from([
+        (base.clone(), Some(other.clone())),
+        (own.id.clone(), Some(other.clone())),
+    ]);
+    ir.finalize();
+    assert_no_dangling_reference(&ir);
+
+    let (outcome, _) = run(
+        &mut ir,
+        seed("model", "product_definitions", other.as_str()),
+    );
+    let evaluation = after_extrude(&ir).id.as_str().to_owned();
+    assert!(outcome.dropped.is_empty(), "{outcome:?}");
+    assert_eq!(outcome.marked, BTreeSet::from([evaluation.clone()]));
+    let (dropped, _) = &outcome.states[&state_path(&evaluation)];
+    assert_eq!(dropped, &BTreeSet::from([own.id.as_str().to_owned()]));
+    assert!(delta(&ir).records.bodies.is_empty());
+    assert_eq!(delta(&ir).owners, BTreeMap::from([(base, None)]));
+    assert_no_dangling_reference(&ir);
 }

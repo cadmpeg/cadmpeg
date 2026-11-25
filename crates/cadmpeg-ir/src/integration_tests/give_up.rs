@@ -20,7 +20,7 @@ use crate::products::{Occurrence, ProductDefinition, ProductDefinitionKind, Stor
 use crate::report::Severity;
 use crate::validate::design::fixture::{document, id, parameter};
 use crate::validate::validate_neutral;
-use crate::CadIr;
+use crate::{CadIr, DecodeResult};
 
 /// Each Error finding of `ir`, by rule and record.
 fn errors(ir: &CadIr) -> BTreeSet<(String, Option<String>)> {
@@ -165,6 +165,72 @@ fn the_cadir_writer_keeps_a_scope_that_holds_an_expression_past_its_bound() {
         after.is_subset(&before),
         "new errors: {:?}",
         after.difference(&before).collect::<Vec<_>>()
+    );
+}
+
+/// The decode wrapper states `Source` an expression past its bound as the
+/// CADIR writer does, and keeps the scope that holds it (§3.3).
+#[test]
+fn the_decode_wrapper_keeps_a_scope_that_holds_an_expression_past_its_bound() {
+    use crate::codec::{DecodeBody, Decoded, FormatId};
+    use crate::report::decode::DecodeTransfer;
+    use crate::report::strictness::Strictness;
+    use crate::source_fidelity::SourceFidelity;
+
+    let ir = placing_a_bolt(negations(MAX_EXPRESSION_DEPTH + 1));
+    let part: ProductDefinitionId = id("definition", "part");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("a decode context");
+    let decoded = Decoded {
+        ir: ir.clone(),
+        body: DecodeBody::new(DecodeTransfer::full(true)),
+        source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+            b"test source",
+        )),
+    };
+    let result =
+        DecodeResult::from_decoded(&ctx, decoded, FormatId::new("test"), &Strictness::default())
+            .expect("an expression past the bound does not refuse the decode");
+
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one restated scope: {unreadable:?}");
+    };
+    assert_eq!(loss.severity, Severity::Error);
+    assert!(
+        loss.message.contains(part.as_str()) && loss.message.contains("design.scopes"),
+        "{}",
+        loss.message
+    );
+    assert!(result.source_fidelity().content_digest.is_some());
+    let decoded = result.ir();
+    assert_eq!(decoded.design.scopes.len(), ir.design.scopes.len());
+    assert_eq!(decoded.design.containers, ir.design.containers);
+    assert_eq!(decoded.design.features, ir.design.features);
+    let scope = decoded
+        .design
+        .scopes
+        .iter()
+        .find(|scope| scope.definition == part)
+        .expect("the part's scope stays");
+    let overrides: Vec<_> = scope
+        .occurrences
+        .values()
+        .flat_map(|occurrence| occurrence.parameters.values())
+        .collect();
+    let [only] = overrides.as_slice() else {
+        panic!("one override: {overrides:?}");
+    };
+    assert!(
+        matches!(&only.expression, Some(Expression::Source { tokens, .. }) if tokens.is_empty()),
+        "{:?}",
+        only.expression
     );
 }
 
