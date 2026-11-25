@@ -2242,7 +2242,7 @@ pub(super) fn circle_axis_from_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
-            close_length(center.vector_from(origin).dot(*normal), 0.0)
+            close_coordinate_incidence(center.vector_from(origin).dot(*normal), &[center, origin])
                 .then_some(*plane_surface.frame().axis())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -2252,8 +2252,9 @@ pub(super) fn circle_axis_from_carrier(
             let offset = center.vector_from(origin);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
-            (close_length(radial.norm(), 0.0) && close_length(circle_radius, radius))
-                .then_some(*cylinder_surface.frame().axis())
+            (close_coordinate_incidence(radial.norm(), &[center, origin])
+                && close_length(circle_radius, radius))
+            .then_some(*cylinder_surface.frame().axis())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
@@ -2264,8 +2265,9 @@ pub(super) fn circle_axis_from_carrier(
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
             let section_radius = (radius + axial * half_angle.tan()).abs();
-            (close_length(radial.norm(), 0.0) && close_length(circle_radius, section_radius))
-                .then_some(*cone_surface.frame().axis())
+            (close_coordinate_incidence(radial.norm(), &[center, origin])
+                && close_length(circle_radius, section_radius))
+            .then_some(*cone_surface.frame().axis())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let sphere_center = sphere_surface.center();
@@ -2288,12 +2290,12 @@ pub(super) fn circle_axis_from_carrier(
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
             let radial_distance = radial.norm();
-            if close_length(axial, 0.0)
+            if close_coordinate_incidence(axial, &[center, *torus_center])
                 && close_length(radial_distance, major_radius)
                 && close_length(circle_radius, minor_radius)
             {
                 unit_vector((*axis).cross(radial))
-            } else if close_length(radial_distance, 0.0)
+            } else if close_coordinate_incidence(radial_distance, &[center, *torus_center])
                 && close_squared_lengths((circle_radius - major_radius).hypot(axial), minor_radius)
             {
                 Some(*torus_surface.frame().axis())
@@ -2309,6 +2311,20 @@ pub(super) fn circle_axis_from_carrier(
         )
         | SurfaceGeometry::Procedural { .. } => None,
     }
+}
+
+fn close_coordinate_incidence(residual: f64, points: &[Point3]) -> bool {
+    const BASE_LENGTH_TOLERANCE: f64 = 1.0e-5;
+    const BINARY32_COORDINATE_ULPS: f64 = 4.0;
+    if !residual.is_finite() {
+        return false;
+    }
+    let scale = points.iter().fold(1.0_f64, |acc, point| {
+        acc.max(point.x.abs()).max(point.y.abs()).max(point.z.abs())
+    });
+    let tolerance =
+        BASE_LENGTH_TOLERANCE.max(BINARY32_COORDINATE_ULPS * f64::from(f32::EPSILON) * scale);
+    residual.abs() <= tolerance
 }
 
 pub(super) fn close_length(left: f64, right: f64) -> bool {
@@ -2428,5 +2444,31 @@ pub(super) fn plane_for_face(
             Some((origin, *normal))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod incidence_tests {
+    use super::circle_axis_from_carrier;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::units::OrthonormalFrame3;
+
+    #[test]
+    fn circle_axis_admits_binary32_coordinate_roundoff_far_from_origin() {
+        const AXIS_TOLERANCE: f64 = 1.0e-12;
+        let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+            FinitePoint3::new(Point3::new(1500.0, 2000.0, 500.0)).expect("plane origin"),
+            OrthonormalFrame3::IDENTITY,
+        )));
+        let center_rounded = Point3::new(1500.0, 2000.0, 500.0 + 1.0e-4);
+        let axis = circle_axis_from_carrier(center_rounded, 12.0, &plane)
+            .expect("binary32 roundoff should remain incident");
+        assert!((axis.as_raw().z - 1.0).abs() < AXIS_TOLERANCE);
+
+        let center_far = Point3::new(1500.0, 2000.0, 500.1);
+        assert!(circle_axis_from_carrier(center_far, 12.0, &plane).is_none());
     }
 }

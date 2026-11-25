@@ -230,14 +230,11 @@ fn surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<Surfa
         compact_int(tail, &mut cursor)?,
     ];
     let extra = cursor.checked_sub(layout::PARAMETERS)?;
-    if !owned && extra != 0 {
-        return None;
-    }
     let tail_len = tail.len().checked_sub(extra)?;
     let continuation_bytes = match tail_len {
         133 => 56,
         layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
-        _ if owned && tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
+        _ if tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
     let flags: [u8; 3] = tail
@@ -277,18 +274,18 @@ fn surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<Surfa
     let fixed_suffix = fixed_surface_suffix(tail_len, flags, suffix, owned);
     let descriptors = if owned {
         Some(owned_surface_suffix(suffix)?)
+    } else if !fixed_suffix && tail_len >= layout::LEN {
+        owned_surface_suffix(suffix)
     } else {
         None
     };
-    (fixed_suffix || owned && tail_len >= layout::LEN && descriptors.is_some()).then_some(
-        SurfaceTail {
-            parameters,
-            descriptors,
-            continuation,
-            flags,
-            fixed_suffix,
-        },
-    )
+    (fixed_suffix || tail_len >= layout::LEN && descriptors.is_some()).then_some(SurfaceTail {
+        parameters,
+        descriptors,
+        continuation,
+        flags,
+        fixed_suffix,
+    })
 }
 
 fn fixed_surface_suffix(length: usize, flags: [u8; 3], suffix: &[u8], owned: bool) -> bool {
@@ -2327,13 +2324,8 @@ fn a5_int(byte: u8) -> Option<u32> {
     (byte % 4 == 1).then(|| u32::from((byte - 1) / 4))
 }
 
-fn a5_distinct_count(bytes: &[u8], at: &mut usize, owned: bool) -> Option<usize> {
-    if owned {
-        return usize::try_from(compact_int(bytes, at)?).ok();
-    }
-    let count = usize::try_from(a5_int(*bytes.get(*at)?)?).ok()?;
-    *at += 1;
-    Some(count)
+fn a5_distinct_count(bytes: &[u8], at: &mut usize, _owned: bool) -> Option<usize> {
+    usize::try_from(compact_int(bytes, at)?).ok()
 }
 
 fn a5_array_marker(

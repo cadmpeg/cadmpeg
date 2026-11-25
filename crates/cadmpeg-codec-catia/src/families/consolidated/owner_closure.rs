@@ -72,10 +72,11 @@ impl OwnerClosureIndex {
             else {
                 continue;
             };
-            let mut owners: [Option<(usize, B2CountedOwner)>; 127] = std::array::from_fn(|_| None);
+            let mut owners: Vec<(usize, B2CountedOwner)> =
+                Vec::with_capacity(usize::from(references.owner_count));
             let mut at = references.owner_lane.start;
             let mut complete = true;
-            for slot in 0..usize::from(references.owner_count) {
+            for _ in 0..usize::from(references.owner_count) {
                 let Some(reference) = allocation_reference(payload, &mut at) else {
                     complete = false;
                     break;
@@ -95,10 +96,7 @@ impl OwnerClosureIndex {
                 };
                 if owner_record.family() != ConsolidatedFamily::B
                     || owner_record.class() != 0x62
-                    || owners[..slot]
-                        .iter()
-                        .flatten()
-                        .any(|(index, _)| *index == owner_index)
+                    || owners.iter().any(|(index, _)| *index == owner_index)
                 {
                     complete = false;
                     break;
@@ -126,12 +124,12 @@ impl OwnerClosureIndex {
                     complete = false;
                     break;
                 }
-                owners[slot] = Some((owner_index, owner));
+                owners.push((owner_index, owner));
             }
             if !complete || at != references.owner_lane.end {
                 continue;
             }
-            for (owner_index, owner) in owners.into_iter().flatten() {
+            for (owner_index, owner) in owners {
                 let support_slot = owner.references.len() - 1;
                 for (references, encodings) in owner.references[..support_slot]
                     .chunks_exact(2)
@@ -144,7 +142,8 @@ impl OwnerClosureIndex {
                     };
                     if !matches!(
                         (representation.family(), representation.class()),
-                        (ConsolidatedFamily::A, 0x20) | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20)
+                        (ConsolidatedFamily::A, 0x20 | 0x21)
+                            | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20 | 0x21)
                     ) {
                         continue;
                     }
@@ -172,12 +171,22 @@ impl OwnerClosureIndex {
                         continue;
                     };
                     let mut at = 0;
-                    let Some(support) = CompactUnsigned::read(payload, &mut at) else {
-                        continue;
-                    };
-                    if journal.resolve_weighted_distance(representation_index, support.value())
-                        != Some(carrier)
-                    {
+                    let support_match =
+                        if let Some(support) = CompactUnsigned::read(payload, &mut at) {
+                            journal.resolve_weighted_distance(representation_index, support.value())
+                                == Some(carrier)
+                        } else {
+                            let mut ref_at = 0;
+                            allocation_reference(payload, &mut ref_at).is_some_and(|reference| {
+                                owner_reference(
+                                    journal,
+                                    representation_index,
+                                    reference.value,
+                                    reference.encoding,
+                                ) == Some(carrier)
+                            })
+                        };
+                    if !support_match {
                         continue;
                     }
                     by_edge
@@ -223,6 +232,10 @@ impl OwnerClosureIndex {
             return None;
         };
         Some(sides)
+    }
+
+    pub(crate) fn all_edge_occurrences(&self, edge_index: usize) -> &[OwnerOccurrence] {
+        self.by_edge.get(&edge_index).map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn edge_occurrences(
@@ -297,7 +310,7 @@ fn surface_carrier(record: &ConsolidatedRecord) -> bool {
         (ConsolidatedFamily::A, 0x32 | 0x34)
             | (
                 ConsolidatedFamily::B,
-                0x27 | 0x28 | 0x29 | 0x2a | 0x2b | 0x2d
+                0x27 | 0x28 | 0x29 | 0x2a | 0x2b | 0x2c | 0x2d | 0x2e | 0x30 | 0x31 | 0x37
             )
     )
 }

@@ -21,7 +21,9 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use super::{ConsolidatedCarrierChart, FamilyEntityAdmission};
 use crate::families::b2::records::{
-    b2_edge_nodes_from_records, b2_plane_carriers_from_records, b2_plane_geometry,
+    b2_cone_geometry, b2_cones_from_records, b2_cylinders_from_records, b2_edge_nodes_from_records,
+    b2_parameter_points_from_records, b2_plane_carriers_from_records, b2_plane_geometry,
+    b2_sphere_geometry, b2_spheres_from_records, b2_tori_from_records, b2_torus_geometry,
 };
 use crate::families::consolidated::a5_chart::{chart_side_payload, ChartAxis};
 use crate::families::consolidated::allocation::AllocationJournal;
@@ -30,13 +32,15 @@ use crate::families::consolidated::parameter_representation::{
     b18_support, class25_representations,
 };
 use crate::families::consolidated::records::class25::{self, Class25SourceRelation};
-use crate::wire::bytes::AllocationReferenceEncoding;
+use crate::wire::bytes::{allocation_reference, AllocationReference, AllocationReferenceEncoding};
 use crate::wire::compact_unsigned::CompactUnsigned;
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord};
 
 const PLANE_OFFSET_TOLERANCE: f64 = 2.0e-3;
 const PARAMETER_TOLERANCE: f64 = 1.0e-9;
 const PLANE_NORMAL_TOLERANCE: f64 = 8.0 / 8_388_608.0;
+const LIFTED_ENDPOINT_TOLERANCE_MM: f64 = 0.02;
+const LIFTED_CURVE_FIT_TOLERANCE_MM: f64 = 0.0005;
 
 struct Plan {
     edge: usize,
@@ -115,18 +119,550 @@ fn curve_record<'a>(
     value: u32,
     encoding: AllocationReferenceEncoding,
 ) -> Option<&'a ConsolidatedRecord> {
+    let is_class25 = |record: &ConsolidatedRecord| {
+        matches!(
+            (record.family(), record.class()),
+            (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x25)
+        )
+    };
     let record = match encoding {
         AllocationReferenceEncoding::WidthCoded => journal.resolve_weighted_distance(origin, value),
-        AllocationReferenceEncoding::BackwardDistance => {
-            journal.resolve_record_distance(origin, value)
-        }
+        AllocationReferenceEncoding::BackwardDistance => journal
+            .resolve_record_distance(origin, value)
+            .filter(|candidate| is_class25(candidate))
+            .or_else(|| journal.resolve_weighted_distance(origin, value)),
         AllocationReferenceEncoding::OwnedChild => journal.resolve_owned_child(origin, value),
         AllocationReferenceEncoding::Selector2
         | AllocationReferenceEncoding::TaggedU8
         | AllocationReferenceEncoding::TaggedU16
         | AllocationReferenceEncoding::TaggedU24 => None,
     }?;
-    (record.family() == ConsolidatedFamily::B && record.class() == 0x25).then_some(record)
+    is_class25(record).then_some(record)
+}
+
+struct CompactEdgeEndpoints {
+    start_vertex: AllocationReference,
+    end_vertex: AllocationReference,
+}
+
+fn parse_four_ref_edge_node(payload: &[u8]) -> Option<CompactEdgeEndpoints> {
+    let mut at = 0;
+    let start_vertex = allocation_reference(payload, &mut at)?;
+    let end_vertex = allocation_reference(payload, &mut at)?;
+    let _start_param = allocation_reference(payload, &mut at)?;
+    let _end_param = allocation_reference(payload, &mut at)?;
+    let terminal_at = at;
+    let terminal = allocation_reference(payload, &mut at)?;
+    let terminal_ok = at == payload.len()
+        && at == terminal_at + 1
+        && matches!(
+            (terminal.encoding, terminal.value),
+            (
+                AllocationReferenceEncoding::BackwardDistance,
+                0 | 8 | 9 | 10
+            ) | (AllocationReferenceEncoding::Selector2, 0 | 4 | 6 | 8 | 10)
+        );
+    terminal_ok.then_some(CompactEdgeEndpoints {
+        start_vertex,
+        end_vertex,
+    })
+}
+
+fn decode_representation_candidates(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+    opt_range: Option<[f64; 2]>,
+    jets: &HashMap<usize, crate::wire::records::ConsolidatedPcurve>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Vec<(PcurveGeometry, [f64; 2], Option<AllocationReference>)> {
+    let mut out = Vec::new();
+    match (record.family(), record.class()) {
+        (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x20) => {
+            if let Some(jet) = jets.get(&record.byte_offset()) {
+                if let Some(pcurve) = super::consolidated_jet_pcurve(
+                    jet,
+                    &ConsolidatedCarrierChart::Identity,
+                    refusal,
+                ) {
+                    let support_ref =
+                        record
+                            .payload()
+                            .and_then(|range| data.get(range))
+                            .and_then(|payload| {
+                                let mut at = 0;
+                                allocation_reference(payload, &mut at)
+                            });
+                    out.push((
+                        pcurve,
+                        opt_range.unwrap_or_else(|| jet.range.endpoints()),
+                        support_ref,
+                    ));
+                }
+            } else if let Some((support_ref, pcurve, range)) =
+                super::standard_carriers::decode_u32_jet_pcurve(data, record, refusal)
+            {
+                out.push((pcurve, opt_range.unwrap_or(range), Some(support_ref)));
+            }
+        }
+        (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x21) => {
+            if let Some((support_ref, nurbs, range)) =
+                super::standard_carriers::decode_u32_bspline_pcurve(data, record)
+            {
+                out.push((
+                    PcurveGeometry::Nurbs { nurbs },
+                    opt_range.unwrap_or(range),
+                    Some(support_ref),
+                ));
+            }
+        }
+        (ConsolidatedFamily::B, 0x18) => {
+            let Some(payload) = record.payload().and_then(|range| data.get(range)) else {
+                return out;
+            };
+            let mut at = 0;
+            let Some(support_ref) = allocation_reference(payload, &mut at) else {
+                return out;
+            };
+            if let Some(range) = opt_range {
+                let mut cu_at = 0;
+                if let Some(operand) = CompactUnsigned::read(payload, &mut cu_at) {
+                    if let Some(side) =
+                        chart_side_payload(payload, record.byte_offset(), operand.value())
+                    {
+                        for sign in [1.0, -1.0] {
+                            if sign < 0.0 && !side.line.sign_ambiguous {
+                                continue;
+                            }
+                            if let Ok(line) = LinePcurve::try_new(
+                                Point2::new(side.line.origin[0], side.line.origin[1]),
+                                Point2::new(
+                                    sign * side.line.direction[0],
+                                    sign * side.line.direction[1],
+                                ),
+                            ) {
+                                out.push((PcurveGeometry::Line(line), range, Some(support_ref)));
+                            }
+                        }
+                    }
+                }
+            }
+            if out.is_empty() {
+                if let Some(param_pt) =
+                    b2_parameter_points_from_records(data, std::slice::from_ref(record)).next()
+                {
+                    if let Some([uv0, uv1]) = param_pt.axis_line() {
+                        if let Ok(line) = LinePcurve::try_new(
+                            Point2::new(uv0[0], uv0[1]),
+                            Point2::new(uv1[0] - uv0[0], uv1[1] - uv0[1]),
+                        ) {
+                            out.push((PcurveGeometry::Line(line), [0.0, 1.0], Some(support_ref)));
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+struct LiftedPlanContext<'a> {
+    ctx: &'a DecodeContext<'a>,
+    ir: &'a CadIr,
+    data: &'a [u8],
+    journal: &'a AllocationJournal<'a>,
+    a5_by_pos: &'a HashMap<usize, &'a cadmpeg_ir::geometry::nurbs::NurbsSurface>,
+    jets: &'a HashMap<usize, crate::wire::records::ConsolidatedPcurve>,
+    planes: &'a HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
+    cylinders: &'a HashMap<usize, crate::families::b2::records::B2Cylinder>,
+    cones: &'a HashMap<usize, crate::families::b2::records::B2Cone>,
+    spheres: &'a HashMap<usize, crate::families::b2::records::B2Sphere>,
+    tori: &'a HashMap<usize, crate::families::b2::records::B2Torus>,
+    loop_faces: &'a HashMap<cadmpeg_ir::ids::LoopId, cadmpeg_ir::ids::FaceId>,
+    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, &'a cadmpeg_ir::topology::Face>,
+    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, &'a cadmpeg_ir::geometry::Surface>,
+    edge_coedges: &'a HashMap<cadmpeg_ir::ids::EdgeId, Vec<usize>>,
+    vertex_indices: &'a HashMap<cadmpeg_ir::ids::VertexId, usize>,
+}
+
+struct LiftedEdgeTarget {
+    edge_index: usize,
+    curve_index: usize,
+    procedure_index: usize,
+    start_pos: cadmpeg_ir::math::Point3,
+    end_pos: cadmpeg_ir::math::Point3,
+}
+
+fn resolve_support_surface_and_chart<'a>(
+    env: &'a LiftedPlanContext<'a>,
+    rep_index: usize,
+    support_ref: Option<AllocationReference>,
+    face_surface: Option<&'a SolvedSurfaceGeometry>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<(SolvedSurfaceGeometry, ConsolidatedCarrierChart<'a>, bool)> {
+    if let Some(sref) = support_ref {
+        if let Some(support_rec) =
+            super::standard_carriers::resolve_ref(env.journal, rep_index, sref)
+        {
+            match (support_rec.family(), support_rec.class()) {
+                (ConsolidatedFamily::A, 0x34) => {
+                    if let Some(nurbs) = env.a5_by_pos.get(&support_rec.byte_offset()) {
+                        return Some((
+                            SolvedSurfaceGeometry::Nurbs((*nurbs).clone()),
+                            ConsolidatedCarrierChart::Identity,
+                            matches!(face_surface, Some(SolvedSurfaceGeometry::Nurbs(_))),
+                        ));
+                    }
+                    if let Some(owned) =
+                        crate::families::a5a8::records::a5_owned_surfaces_from_records(
+                            env.data,
+                            std::slice::from_ref(support_rec),
+                            refusal,
+                        )
+                        .ok()
+                        .and_then(|v| v.into_iter().next())
+                    {
+                        return Some((
+                            SolvedSurfaceGeometry::Nurbs(owned.geometry),
+                            ConsolidatedCarrierChart::Identity,
+                            matches!(face_surface, Some(SolvedSurfaceGeometry::Nurbs(_))),
+                        ));
+                    }
+                }
+                (ConsolidatedFamily::B, 0x27) => {
+                    if let Some(b2_plane) =
+                        super::standard_carriers::decode_b2_plane(env.data, support_rec, env.planes)
+                    {
+                        return Some((
+                            SolvedSurfaceGeometry::Plane(b2_plane),
+                            ConsolidatedCarrierChart::Identity,
+                            false,
+                        ));
+                    }
+                }
+                (ConsolidatedFamily::B, 0x28) => {
+                    if let Some(cylinder) = env.cylinders.get(&support_rec.byte_offset()) {
+                        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cyl)) =
+                            cylinder.surface_geometry()
+                        {
+                            return Some((
+                                SolvedSurfaceGeometry::Cylinder(cyl),
+                                ConsolidatedCarrierChart::Cylinder {
+                                    radius: cyl.radius().get(),
+                                },
+                                false,
+                            ));
+                        }
+                    }
+                }
+                (ConsolidatedFamily::B, 0x29) => {
+                    if let Some(cone) = env.cones.get(&support_rec.byte_offset()) {
+                        if let SurfaceGeometry::Solved(solved) = b2_cone_geometry(cone) {
+                            return Some((solved, ConsolidatedCarrierChart::Cone { cone }, false));
+                        }
+                    }
+                }
+                (ConsolidatedFamily::B, 0x2a) => {
+                    if let Some(sphere) = env.spheres.get(&support_rec.byte_offset()) {
+                        if let SurfaceGeometry::Solved(solved) = b2_sphere_geometry(sphere) {
+                            return Some((
+                                solved,
+                                ConsolidatedCarrierChart::Sphere {
+                                    radius: sphere.radius.get(),
+                                },
+                                false,
+                            ));
+                        }
+                    }
+                }
+                (ConsolidatedFamily::B, 0x2b) => {
+                    if let Some(torus) = env.tori.get(&support_rec.byte_offset()) {
+                        if let SurfaceGeometry::Solved(solved) = b2_torus_geometry(torus) {
+                            return Some((
+                                solved,
+                                ConsolidatedCarrierChart::Torus { torus },
+                                false,
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = face_surface {
+        return Some((
+            SolvedSurfaceGeometry::Nurbs(nurbs.clone()),
+            ConsolidatedCarrierChart::Identity,
+            true,
+        ));
+    }
+    None
+}
+
+fn lift_pcurve_with_chart(
+    ctx: &DecodeContext<'_>,
+    pcurve: &PcurveGeometry,
+    surface: &SolvedSurfaceGeometry,
+    chart: &ConsolidatedCarrierChart<'_>,
+    range: [f64; 2],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<NurbsCurve>, CodecError> {
+    if matches!(
+        (surface, chart),
+        (
+            SolvedSurfaceGeometry::Plane(_),
+            ConsolidatedCarrierChart::Identity
+        )
+    ) {
+        if let Some(exact) =
+            super::standard_carriers::lift_pcurve_to_3d(pcurve, surface, range, refusal)
+        {
+            return Ok(Some(exact));
+        }
+    }
+    let limit = std::cell::Cell::new(None);
+    let fitted = super::rolling_ball_patch::fit_edge_with_error(
+        range,
+        |t| {
+            let uv = match cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, t),
+            )
+            .and_then(cadmpeg_ir::eval::finite_or_refusal)
+            {
+                Ok(Some(value)) => value.get(),
+                Ok(None) => return None,
+                Err(error) => {
+                    limit.set(Some(error));
+                    return None;
+                }
+            };
+            let [cu, cv] = chart.point([uv.u, uv.v]);
+            let point = match cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point_solved(ctx, surface, cu, cv),
+            )
+            .and_then(cadmpeg_ir::eval::finite_or_refusal)
+            {
+                Ok(Some(value)) => value.get(),
+                Ok(None) => return None,
+                Err(error) => {
+                    limit.set(Some(error));
+                    return None;
+                }
+            };
+            Some([point.x, point.y, point.z])
+        },
+        LIFTED_CURVE_FIT_TOLERANCE_MM,
+    );
+    if let Some(error) = limit.into_inner() {
+        return Err(error.into());
+    }
+    Ok(fitted)
+}
+
+#[inline(never)]
+fn build_general_lifted_plan(
+    env: &LiftedPlanContext<'_>,
+    target: LiftedEdgeTarget,
+    candidates: &[(&ConsolidatedRecord, Option<[f64; 2]>, Option<u64>)],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<Plan>, CodecError> {
+    let LiftedPlanContext {
+        ctx,
+        ir,
+        data,
+        journal,
+        jets,
+        loop_faces,
+        faces,
+        surfaces,
+        edge_coedges,
+        vertex_indices,
+        ..
+    } = env;
+    let LiftedEdgeTarget {
+        edge_index,
+        curve_index,
+        procedure_index,
+        start_pos,
+        end_pos,
+    } = target;
+    let edge = &ir.geometry.edges[edge_index];
+    let Some(ends) = &edge.ends else {
+        return Ok(None);
+    };
+    let Some(&start_idx) = vertex_indices.get(&ends.start) else {
+        return Ok(None);
+    };
+    let Some(&end_idx) = vertex_indices.get(&ends.end) else {
+        return Ok(None);
+    };
+    let base_tols = [start_idx, end_idx].map(|index| {
+        ir.geometry.vertices[index]
+            .tolerance
+            .map_or(ir.tolerances.linear.get(), |t| {
+                t.get().max(ir.tolerances.linear.get())
+            })
+            .max(LIFTED_ENDPOINT_TOLERANCE_MM)
+    });
+
+    for &(rep, opt_range, opt_face_tag) in candidates {
+        let Some(rep_index) = journal.index(rep.source_index(), rep.source_range().start) else {
+            continue;
+        };
+        let coedge_index = opt_face_tag.and_then(|face_tag| {
+            let matching: Vec<usize> = edge_coedges
+                .get(&edge.id)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|&ci| {
+                    let c = &ir.geometry.coedges[ci];
+                    loop_faces
+                        .get(&c.owner_loop)
+                        .and_then(|f| faces.get(f))
+                        .and_then(|f| surfaces.get(&f.surface))
+                        .is_some_and(|s| {
+                            source_tag(s.source_object.as_ref(), "carrier") == Some(face_tag)
+                        })
+                })
+                .collect();
+            (matching.len() == 1).then_some(matching[0])
+        });
+        let face_surface = coedge_index
+            .and_then(|ci| loop_faces.get(&ir.geometry.coedges[ci].owner_loop))
+            .and_then(|f| faces.get(f))
+            .and_then(|f| surfaces.get(&f.surface))
+            .and_then(|s| match &s.geometry {
+                SurfaceGeometry::Solved(solved)
+                    if !matches!(solved, SolvedSurfaceGeometry::Unknown { .. }) =>
+                {
+                    Some(solved)
+                }
+                _ => None,
+            });
+
+        for (pcurve_raw, range, support_ref) in
+            decode_representation_candidates(data, rep, opt_range, jets, refusal)
+        {
+            if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
+                continue;
+            }
+            let Some((eval_surface, chart, mut attach_nurbs_pcurve)) =
+                resolve_support_surface_and_chart(
+                    env,
+                    rep_index,
+                    support_ref,
+                    face_surface,
+                    refusal,
+                )
+            else {
+                continue;
+            };
+            let Some(mut lifted) =
+                lift_pcurve_with_chart(*ctx, &pcurve_raw, &eval_surface, &chart, range, refusal)?
+            else {
+                continue;
+            };
+            let mut lifted_endpoints = Vec::with_capacity(2);
+            for parameter in range {
+                let point =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::nurbs_curve_point_at(*ctx, &lifted, parameter),
+                    )?)?;
+                if let Some(point) = point {
+                    lifted_endpoints.push(point.get());
+                }
+            }
+            if lifted_endpoints.len() != 2 {
+                continue;
+            }
+            let direct = lifted_endpoints[0]
+                .distance(start_pos)
+                .max(lifted_endpoints[1].distance(end_pos));
+            let reverse = lifted_endpoints[0]
+                .distance(end_pos)
+                .max(lifted_endpoints[1].distance(start_pos));
+            let direct_ok = endpoint_matches(lifted_endpoints[0], start_pos, base_tols[0])
+                && endpoint_matches(lifted_endpoints[1], end_pos, base_tols[1]);
+            let reverse_ok = endpoint_matches(lifted_endpoints[0], end_pos, base_tols[1])
+                && endpoint_matches(lifted_endpoints[1], start_pos, base_tols[0]);
+            if !direct_ok && !reverse_ok {
+                continue;
+            }
+            let mut pcurve_out = pcurve_raw;
+            if reverse_ok && (!direct_ok || reverse < direct) {
+                let Ok(rev_curve) = crate::nurbs::reverse_nurbs_curve(&lifted, range) else {
+                    continue;
+                };
+                lifted = rev_curve;
+                if attach_nurbs_pcurve {
+                    if let Some(rev_pc) = crate::nurbs::reverse_pcurve_geometry(
+                        &pcurve_out,
+                        range,
+                        refusal,
+                        "lifted consolidated pcurve",
+                    ) {
+                        pcurve_out = rev_pc;
+                    } else {
+                        attach_nurbs_pcurve = false;
+                    }
+                }
+            }
+            let geom = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(lifted.clone()));
+            let Some(canonical) = crate::nurbs::canonical_model_curve_range(
+                &geom,
+                range,
+                refusal,
+                "lifted consolidated curve",
+            ) else {
+                continue;
+            };
+            let Ok(curve_range) = ParameterInterval::new(canonical) else {
+                continue;
+            };
+            let mut matched_ends = 0;
+            for (parameter, stored) in [
+                (curve_range.endpoints()[0], start_pos),
+                (curve_range.endpoints()[1], end_pos),
+            ] {
+                let point =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::nurbs_curve_point_at(*ctx, &lifted, parameter),
+                    )?)?;
+                let Some(point) = point else { break };
+                let miss = point.get().distance(stored);
+                if miss > LIFTED_ENDPOINT_TOLERANCE_MM && !rounds_to_stored(point.get(), stored) {
+                    break;
+                }
+                matched_ends += 1;
+            }
+            if matched_ends != 2 {
+                continue;
+            }
+            let face_pcurves = if let Some(ci) = coedge_index {
+                if attach_nurbs_pcurve && ir.geometry.coedges[ci].pcurves.is_empty() {
+                    vec![(ci, pcurve_out, curve_range, rep.byte_offset())]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            };
+            return Ok(Some(Plan {
+                edge: edge_index,
+                curve: curve_index,
+                procedure: procedure_index,
+                face_pcurves,
+                curve_cache: lifted,
+                curve_range,
+                plane_pcurve: None,
+                plane_fit_tolerance: None,
+                plane_projection_gap: None,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 fn line_curve(
@@ -272,11 +808,9 @@ pub(in crate::families) fn attach(
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<AttachResult, CodecError> {
-    if freeform_surfaces.is_empty() {
-        return Ok(AttachResult::default());
-    }
     let journal = AllocationJournal::new(records);
     let mut nodes = HashMap::new();
+    let mut four_ref_nodes = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if record.family() != ConsolidatedFamily::B || record.class() != 0x5e {
             continue;
@@ -284,27 +818,51 @@ pub(in crate::families) fn attach(
         let Some(tag) = journal.absolute_address(index) else {
             continue;
         };
-        let Some(node) = b2_edge_nodes_from_records(data, std::slice::from_ref(record)).next()
-        else {
-            continue;
-        };
-        nodes
-            .entry(tag)
-            .and_modify(|entry| *entry = None)
-            .or_insert(Some((index, node)));
+        if let Some(node) = b2_edge_nodes_from_records(data, std::slice::from_ref(record)).next() {
+            nodes
+                .entry(tag)
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some((index, node)));
+        } else if let Some(endpoints) = record
+            .payload()
+            .and_then(|range| data.get(range))
+            .and_then(parse_four_ref_edge_node)
+        {
+            four_ref_nodes
+                .entry(tag)
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some((index, endpoints)));
+        }
     }
-    if nodes.is_empty() {
+    if nodes.is_empty() && four_ref_nodes.is_empty() {
         return Ok(AttachResult::default());
     }
     let owners = OwnerClosureIndex::new(data, records, &journal);
-    let jets: HashMap<_, _> =
-        crate::wire::records::family_pcurves_from_records(data, records, ConsolidatedFamily::B)
-            .into_iter()
-            .map(|jet| (jet.pos, jet))
-            .collect();
+    let mut jets = HashMap::new();
+    for family in [ConsolidatedFamily::A, ConsolidatedFamily::B] {
+        for jet in crate::wire::records::family_pcurves_from_records(data, records, family) {
+            jets.insert(jet.pos, jet);
+        }
+    }
+    let a5_by_pos: HashMap<_, _> = freeform_surfaces
+        .iter()
+        .map(|surface| (surface.pos, &surface.geometry))
+        .collect();
     let planes: HashMap<_, _> = b2_plane_carriers_from_records(data, records)
         .into_iter()
         .map(|plane| (plane.pos, plane))
+        .collect();
+    let cylinders: HashMap<_, _> = b2_cylinders_from_records(data, records)
+        .map(|cylinder| (cylinder.pos, cylinder))
+        .collect();
+    let cones: HashMap<_, _> = b2_cones_from_records(data, records)
+        .map(|cone| (cone.pos, cone))
+        .collect();
+    let spheres: HashMap<_, _> = b2_spheres_from_records(data, records)
+        .map(|sphere| (sphere.pos, sphere))
+        .collect();
+    let tori: HashMap<_, _> = b2_tori_from_records(data, records)
+        .map(|torus| (torus.pos, torus))
         .collect();
     let curve_indices: HashMap<_, _> = ir
         .geometry
@@ -396,9 +954,6 @@ pub(in crate::families) fn attach(
         let Some(tag) = source_tag(curve.source_object.as_ref(), "edge-support") else {
             continue;
         };
-        let Some(Some((node_index, node))) = nodes.get(&tag) else {
-            continue;
-        };
         let Some(start) = edge.start().and_then(|vertex| vertices.get(vertex)) else {
             continue;
         };
@@ -409,6 +964,69 @@ pub(in crate::families) fn attach(
             continue;
         };
         let Some(end_tag) = source_tag(end.source_object.as_ref(), "vertex") else {
+            continue;
+        };
+        let Some(Some((node_index, node))) = nodes.get(&tag) else {
+            if let Some(Some((node_index, compact))) = four_ref_nodes.get(&tag) {
+                let (Some(a), Some(b)) = (
+                    endpoint_address(
+                        &journal,
+                        *node_index,
+                        compact.start_vertex.value,
+                        compact.start_vertex.encoding,
+                    ),
+                    endpoint_address(
+                        &journal,
+                        *node_index,
+                        compact.end_vertex.value,
+                        compact.end_vertex.encoding,
+                    ),
+                ) else {
+                    continue;
+                };
+                if !((a == start_tag && b == end_tag) || (a == end_tag && b == start_tag)) {
+                    continue;
+                }
+                let candidates: Vec<_> = owners
+                    .all_edge_occurrences(*node_index)
+                    .iter()
+                    .filter_map(|occ| {
+                        let rep = journal.record(occ.representation_index)?;
+                        Some((rep, None, Some(occ.face_tag)))
+                    })
+                    .collect();
+                if let Some(plan) = build_general_lifted_plan(
+                    &LiftedPlanContext {
+                        ctx: admission.context(),
+                        ir,
+                        data,
+                        journal: &journal,
+                        a5_by_pos: &a5_by_pos,
+                        jets: &jets,
+                        planes: &planes,
+                        cylinders: &cylinders,
+                        cones: &cones,
+                        spheres: &spheres,
+                        tori: &tori,
+                        loop_faces: &loop_faces,
+                        faces: &faces,
+                        surfaces: &surfaces,
+                        edge_coedges: &edge_coedges,
+                        vertex_indices: &vertex_indices,
+                    },
+                    LiftedEdgeTarget {
+                        edge_index,
+                        curve_index,
+                        procedure_index,
+                        start_pos: start.position().get(),
+                        end_pos: end.position().get(),
+                    },
+                    &candidates,
+                    refusal,
+                )? {
+                    plans.push(plan);
+                }
+            }
             continue;
         };
         let Some(a) = endpoint_address(
@@ -446,71 +1064,17 @@ pub(in crate::families) fn attach(
         let Some(map) = map_record
             .payload()
             .and_then(|range| data.get(range))
-            .and_then(class25::parse)
+            .and_then(|payload| {
+                if map_record.family() == ConsolidatedFamily::A {
+                    class25::parse_a(payload)
+                } else {
+                    class25::parse(payload)
+                }
+            })
         else {
             continue;
         };
         let reps = class25_representations(&journal, map_index, &map);
-        let [Some(first), Some(second)] = [reps.target, reps.source] else {
-            continue;
-        };
-        let mut representation_indices = Vec::new();
-        let mut carrier_indices = Vec::new();
-        for representation in [first, second] {
-            let Some(index) = journal.index(
-                representation.source_index(),
-                representation.source_range().start,
-            ) else {
-                break;
-            };
-            let Some(payload) = representation.payload().and_then(|range| data.get(range)) else {
-                break;
-            };
-            let mut at = 0;
-            let Some(operand) = CompactUnsigned::read(payload, &mut at) else {
-                break;
-            };
-            let Some(carrier) = journal.resolve_weighted_distance(index, operand.value()) else {
-                break;
-            };
-            let Some(carrier_index) =
-                journal.index(carrier.source_index(), carrier.source_range().start)
-            else {
-                break;
-            };
-            representation_indices.push(index);
-            carrier_indices.push(carrier_index);
-        }
-        let (Ok(representation_indices), Ok(carrier_indices)) = (
-            <[usize; 2]>::try_from(representation_indices),
-            <[usize; 2]>::try_from(carrier_indices),
-        ) else {
-            continue;
-        };
-        let face_tags: Vec<_> = edge_coedges
-            .get(&edge.id)
-            .into_iter()
-            .flatten()
-            .filter_map(|index| {
-                let coedge = &ir.geometry.coedges[*index];
-                let surface = loop_faces
-                    .get(&coedge.owner_loop)
-                    .and_then(|face| faces.get(face))
-                    .and_then(|face| surfaces.get(&face.surface))?;
-                source_tag(surface.source_object.as_ref(), "carrier")
-            })
-            .collect();
-        let Ok(face_tags) = <[u64; 2]>::try_from(face_tags) else {
-            continue;
-        };
-        let Some(occurrences) = owners.bind(
-            *node_index,
-            representation_indices,
-            carrier_indices,
-            face_tags,
-        ) else {
-            continue;
-        };
         let ranges = [
             Some(map.target_range.endpoints()),
             match &map.source {
@@ -519,383 +1083,480 @@ pub(in crate::families) fn attach(
                 Class25SourceRelation::Absent => None,
             },
         ];
-        let mut plan: Option<Plan> = None;
-        for ((representation, range), occurrence) in [reps.target, reps.source]
-            .into_iter()
-            .zip(ranges)
-            .zip(occurrences)
-        {
-            let (Some(line), Some(range)) = (representation, range) else {
-                continue;
+        let occurrences = (|| {
+            let [Some(first), Some(second)] = [reps.target, reps.source] else {
+                return None;
             };
-            if line.family() != ConsolidatedFamily::B || line.class() != 0x18 {
-                continue;
+            let mut representation_indices = Vec::new();
+            let mut carrier_indices = Vec::new();
+            for representation in [first, second] {
+                let index = journal.index(
+                    representation.source_index(),
+                    representation.source_range().start,
+                )?;
+                let payload = representation.payload().and_then(|range| data.get(range))?;
+                let mut at = 0;
+                let operand = CompactUnsigned::read(payload, &mut at)?;
+                let carrier = journal.resolve_weighted_distance(index, operand.value())?;
+                let carrier_index =
+                    journal.index(carrier.source_index(), carrier.source_range().start)?;
+                representation_indices.push(index);
+                carrier_indices.push(carrier_index);
             }
-            let Some(line_index) = journal.index(line.source_index(), line.source_range().start)
-            else {
-                continue;
-            };
-            let Some(carrier) = b18_support(data, &journal, line_index) else {
-                continue;
-            };
-            if carrier.family() != ConsolidatedFamily::A || carrier.class() != 0x34 {
-                continue;
-            }
-            let Some(surface) = freeform_surfaces
-                .iter()
-                .find(|s| s.pos == carrier.byte_offset())
-            else {
-                continue;
-            };
-            let face_coedges: Vec<_> = edge_coedges
+            let representation_indices = <[usize; 2]>::try_from(representation_indices).ok()?;
+            let carrier_indices = <[usize; 2]>::try_from(carrier_indices).ok()?;
+            let face_tags: Vec<_> = edge_coedges
                 .get(&edge.id)
                 .into_iter()
                 .flatten()
-                .copied()
-                .filter(|i| {
-                    let c = &ir.geometry.coedges[*i];
-                    loop_faces
-                        .get(&c.owner_loop)
-                        .and_then(|f| faces.get(f))
-                        .and_then(|f| surfaces.get(&f.surface))
-                        .is_some_and(|s| {
-                            source_tag(s.source_object.as_ref(), "carrier")
-                                == Some(occurrence.face_tag)
-                                && s.geometry
-                                    == SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                        surface.geometry.clone(),
-                                    ))
-                        })
+                .filter_map(|index| {
+                    let coedge = &ir.geometry.coedges[*index];
+                    let surface = loop_faces
+                        .get(&coedge.owner_loop)
+                        .and_then(|face| faces.get(face))
+                        .and_then(|face| surfaces.get(&face.surface))?;
+                    source_tag(surface.source_object.as_ref(), "carrier")
                 })
                 .collect();
-            if face_coedges.len() != 1 {
-                continue;
-            }
-            let add_face_pcurve = ir.geometry.coedges[face_coedges[0]].pcurves.is_empty();
-            let Some(ends) = &edge.ends else {
-                continue;
-            };
-            let Some(&start_index) = vertex_indices.get(&ends.start) else {
-                continue;
-            };
-            let Some(&end_index) = vertex_indices.get(&ends.end) else {
-                continue;
-            };
-            let endpoint_tolerances = [start_index, end_index].map(|index| {
-                ir.geometry.vertices[index]
-                    .tolerance
-                    .map_or(ir.tolerances.linear.get(), |t| {
-                        t.get().max(ir.tolerances.linear.get())
-                    })
-            });
-            let Some((cache, line_geometry, interval)) = line_curve(
-                admission.context(),
-                refusal,
-                data,
-                line,
-                &surface.geometry,
-                range,
-                [
-                    (start.position().get(), endpoint_tolerances[0]),
-                    (end.position().get(), endpoint_tolerances[1]),
-                ],
-            )?
-            else {
-                continue;
-            };
-            if let Some(existing) = &mut plan {
-                if add_face_pcurve
-                    && !existing
-                        .face_pcurves
-                        .iter()
-                        .any(|(index, _, _, _)| *index == face_coedges[0])
-                {
-                    existing.face_pcurves.push((
-                        face_coedges[0],
-                        line_geometry,
-                        interval,
-                        line.byte_offset(),
-                    ));
-                }
-                continue;
-            }
-            let mut curve_cache = cache;
-            let mut curve_range = interval;
-            let mut plane_pcurve = None;
-            let mut plane_fit_tolerance = None;
-            let mut plane_projection_gap = None;
-            for ((other, other_range), other_occurrence) in [reps.target, reps.source]
+            let face_tags = <[u64; 2]>::try_from(face_tags).ok()?;
+            owners.bind(
+                *node_index,
+                representation_indices,
+                carrier_indices,
+                face_tags,
+            )
+        })();
+        let mut plan: Option<Plan> = None;
+        if let Some(occurrences) = occurrences {
+            for ((representation, range), occurrence) in [reps.target, reps.source]
                 .into_iter()
                 .zip(ranges)
                 .zip(occurrences)
             {
-                let (Some(other), Some(other_range)) = (other, other_range) else {
+                let (Some(line), Some(range)) = (representation, range) else {
                     continue;
                 };
-                if other.family() != ConsolidatedFamily::B || other.class() != 0x20 {
+                if line.family() != ConsolidatedFamily::B || line.class() != 0x18 {
                     continue;
                 }
-                let Some(jet) = jets.get(&other.byte_offset()) else {
-                    continue;
-                };
-                let Some(other_index) =
-                    journal.index(other.source_index(), other.source_range().start)
+                let Some(line_index) =
+                    journal.index(line.source_index(), line.source_range().start)
                 else {
                     continue;
                 };
-                let Some(support) = journal.resolve_weighted_distance(other_index, jet.support_id)
+                let Some(carrier) = b18_support(data, &journal, line_index) else {
+                    continue;
+                };
+                if carrier.family() != ConsolidatedFamily::A || carrier.class() != 0x34 {
+                    continue;
+                }
+                let Some(surface) = freeform_surfaces
+                    .iter()
+                    .find(|s| s.pos == carrier.byte_offset())
                 else {
                     continue;
                 };
-                if support.family() != ConsolidatedFamily::B || support.class() != 0x27 {
-                    continue;
-                }
-                let plane = planes
-                    .get(&support.byte_offset())
-                    .and_then(b2_plane_geometry)
-                    .and_then(|geometry| match geometry {
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
-                        _ => None,
-                    })
-                    .or_else(|| {
-                        crate::families::consolidated::packed_plane::packed_plane(
-                            cadmpeg_core::decode::View::over_retained(data),
-                            support,
-                        )
-                    });
-                let Some(plane) = plane else {
-                    continue;
-                };
-                let plane_coedges: Vec<_> = edge_coedges
+                let face_coedges: Vec<_> = edge_coedges
                     .get(&edge.id)
                     .into_iter()
                     .flatten()
                     .copied()
                     .filter(|i| {
                         let c = &ir.geometry.coedges[*i];
-                        let Some(face_surface) = loop_faces
+                        loop_faces
                             .get(&c.owner_loop)
                             .and_then(|f| faces.get(f))
                             .and_then(|f| surfaces.get(&f.surface))
-                        else {
-                            return false;
-                        };
-                        if source_tag(face_surface.source_object.as_ref(), "carrier")
-                            != Some(other_occurrence.face_tag)
-                        {
-                            return false;
-                        }
-                        matches!(
-                            face_surface.geometry,
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-                        )
+                            .is_some_and(|s| {
+                                source_tag(s.source_object.as_ref(), "carrier")
+                                    == Some(occurrence.face_tag)
+                                    && s.geometry
+                                        == SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                                            surface.geometry.clone(),
+                                        ))
+                            })
                     })
                     .collect();
-                if plane_coedges.len() != 1 {
+                if face_coedges.len() != 1 {
                     continue;
                 }
-                let Some(native_pcurve) = super::consolidated_jet_pcurve(
-                    jet,
-                    &ConsolidatedCarrierChart::Identity,
-                    refusal,
-                ) else {
+                let add_face_pcurve = ir.geometry.coedges[face_coedges[0]].pcurves.is_empty();
+                let Some(ends) = &edge.ends else {
                     continue;
                 };
-                let Some(lifted) =
-                    super::weighted_plane::lift_plane_pcurve(&native_pcurve, &plane, refusal)
+                let Some(&start_index) = vertex_indices.get(&ends.start) else {
+                    continue;
+                };
+                let Some(&end_index) = vertex_indices.get(&ends.end) else {
+                    continue;
+                };
+                let endpoint_tolerances = [start_index, end_index].map(|index| {
+                    ir.geometry.vertices[index]
+                        .tolerance
+                        .map_or(ir.tolerances.linear.get(), |t| {
+                            t.get().max(ir.tolerances.linear.get())
+                        })
+                });
+                let Some((cache, line_geometry, interval)) = line_curve(
+                    admission.context(),
+                    refusal,
+                    data,
+                    line,
+                    &surface.geometry,
+                    range,
+                    [
+                        (start.position().get(), endpoint_tolerances[0]),
+                        (end.position().get(), endpoint_tolerances[1]),
+                    ],
+                )?
                 else {
                     continue;
                 };
-                let Ok(source_range) = ParameterInterval::new(other_range) else {
+                if let Some(existing) = &mut plan {
+                    if add_face_pcurve
+                        && !existing
+                            .face_pcurves
+                            .iter()
+                            .any(|(index, _, _, _)| *index == face_coedges[0])
+                    {
+                        existing.face_pcurves.push((
+                            face_coedges[0],
+                            line_geometry,
+                            interval,
+                            line.byte_offset(),
+                        ));
+                    }
                     continue;
-                };
-                let mut lifted_endpoints = Vec::new();
-                for parameter in other_range {
+                }
+                let mut curve_cache = cache;
+                let mut curve_range = interval;
+                let mut plane_pcurve = None;
+                let mut plane_fit_tolerance = None;
+                let mut plane_projection_gap = None;
+                for ((other, other_range), other_occurrence) in [reps.target, reps.source]
+                    .into_iter()
+                    .zip(ranges)
+                    .zip(occurrences)
+                {
+                    let (Some(other), Some(other_range)) = (other, other_range) else {
+                        continue;
+                    };
+                    if other.family() != ConsolidatedFamily::B || other.class() != 0x20 {
+                        continue;
+                    }
+                    let Some(jet) = jets.get(&other.byte_offset()) else {
+                        continue;
+                    };
+                    let Some(other_index) =
+                        journal.index(other.source_index(), other.source_range().start)
+                    else {
+                        continue;
+                    };
+                    let Some(support) =
+                        journal.resolve_weighted_distance(other_index, jet.support_id)
+                    else {
+                        continue;
+                    };
+                    if support.family() != ConsolidatedFamily::B || support.class() != 0x27 {
+                        continue;
+                    }
+                    let plane = planes
+                        .get(&support.byte_offset())
+                        .and_then(b2_plane_geometry)
+                        .and_then(|geometry| match geometry {
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
+                                Some(plane)
+                            }
+                            _ => None,
+                        })
+                        .or_else(|| {
+                            crate::families::consolidated::packed_plane::packed_plane(
+                                cadmpeg_core::decode::View::over_retained(data),
+                                support,
+                            )
+                        });
+                    let Some(plane) = plane else {
+                        continue;
+                    };
+                    let plane_coedges: Vec<_> = edge_coedges
+                        .get(&edge.id)
+                        .into_iter()
+                        .flatten()
+                        .copied()
+                        .filter(|i| {
+                            let c = &ir.geometry.coedges[*i];
+                            let Some(face_surface) = loop_faces
+                                .get(&c.owner_loop)
+                                .and_then(|f| faces.get(f))
+                                .and_then(|f| surfaces.get(&f.surface))
+                            else {
+                                return false;
+                            };
+                            if source_tag(face_surface.source_object.as_ref(), "carrier")
+                                != Some(other_occurrence.face_tag)
+                            {
+                                return false;
+                            }
+                            matches!(
+                                face_surface.geometry,
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                            )
+                        })
+                        .collect();
+                    if plane_coedges.len() != 1 {
+                        continue;
+                    }
+                    let Some(native_pcurve) = super::consolidated_jet_pcurve(
+                        jet,
+                        &ConsolidatedCarrierChart::Identity,
+                        refusal,
+                    ) else {
+                        continue;
+                    };
+                    let Some(lifted) =
+                        super::weighted_plane::lift_plane_pcurve(&native_pcurve, &plane, refusal)
+                    else {
+                        continue;
+                    };
+                    let Ok(source_range) = ParameterInterval::new(other_range) else {
+                        continue;
+                    };
+                    let mut lifted_endpoints = Vec::new();
+                    for parameter in other_range {
+                        let point = cadmpeg_ir::eval::finite_or_refusal(
+                            cadmpeg_ir::eval::decode::outer_refusal(
+                                cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                                    admission.context(),
+                                    &lifted,
+                                    parameter,
+                                ),
+                            )?,
+                        )?;
+                        if let Some(point) = point {
+                            lifted_endpoints.push(point.get());
+                        }
+                    }
+                    if lifted_endpoints.len() != 2 {
+                        continue;
+                    }
+                    let endpoint_positions = [start.position().get(), end.position().get()];
+                    let direct = lifted_endpoints[0]
+                        .distance(endpoint_positions[0])
+                        .max(lifted_endpoints[1].distance(endpoint_positions[1]));
+                    let reverse = lifted_endpoints[0]
+                        .distance(endpoint_positions[1])
+                        .max(lifted_endpoints[1].distance(endpoint_positions[0]));
+                    let direct_matches = endpoint_matches(
+                        lifted_endpoints[0],
+                        endpoint_positions[0],
+                        endpoint_tolerances[0],
+                    ) && endpoint_matches(
+                        lifted_endpoints[1],
+                        endpoint_positions[1],
+                        endpoint_tolerances[1],
+                    );
+                    let reverse_matches = endpoint_matches(
+                        lifted_endpoints[0],
+                        endpoint_positions[1],
+                        endpoint_tolerances[1],
+                    ) && endpoint_matches(
+                        lifted_endpoints[1],
+                        endpoint_positions[0],
+                        endpoint_tolerances[0],
+                    );
+                    if !direct_matches && !reverse_matches {
+                        continue;
+                    }
+                    let coedge = &ir.geometry.coedges[plane_coedges[0]];
+                    let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(face_plane))) =
+                        loop_faces
+                            .get(&coedge.owner_loop)
+                            .and_then(|f| faces.get(f))
+                            .and_then(|f| surfaces.get(&f.surface))
+                            .map(|s| &s.geometry)
+                    else {
+                        continue;
+                    };
+                    let source_u = *plane.frame().reference().as_raw();
+                    let source_v = plane.frame().axis().as_raw().cross(source_u);
+                    let face_u = *face_plane.frame().reference().as_raw();
+                    let face_v = face_plane.frame().axis().as_raw().cross(face_u);
+                    let offset = plane.origin().get().vector_from(face_plane.origin().get());
+                    let face_axis = *face_plane.frame().axis().as_raw();
+                    let source_axis = *plane.frame().axis().as_raw();
+                    let compatible = source_axis.cross(face_axis).norm() <= PLANE_NORMAL_TOLERANCE
+                        && source_axis.dot(offset).abs() <= PLANE_OFFSET_TOLERANCE;
+                    let chart = ConsolidatedCarrierChart::Rigid {
+                        linear: [
+                            [source_u.dot(face_u), source_v.dot(face_u)],
+                            [source_u.dot(face_v), source_v.dot(face_v)],
+                        ],
+                        offset: [offset.dot(face_u), offset.dot(face_v)],
+                    };
+                    let mut pcurve = compatible
+                        .then(|| super::consolidated_jet_pcurve(jet, &chart, refusal))
+                        .flatten();
+                    let mut lifted = lifted;
+                    if reverse_matches && (!direct_matches || reverse < direct) {
+                        let Ok(reversed) = crate::nurbs::reverse_nurbs_curve(&lifted, other_range)
+                        else {
+                            continue;
+                        };
+                        lifted = reversed;
+                        pcurve = pcurve.and_then(|pcurve| {
+                            crate::nurbs::reverse_pcurve_geometry(
+                                &pcurve,
+                                other_range,
+                                refusal,
+                                "weighted plane pcurve",
+                            )
+                        });
+                    }
+                    let geometry =
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(lifted.clone()));
+                    let Some(canonical) = crate::nurbs::canonical_model_curve_range(
+                        &geometry,
+                        source_range.endpoints(),
+                        refusal,
+                        "weighted plane curve",
+                    ) else {
+                        continue;
+                    };
+                    let Ok(source_range) = ParameterInterval::new(canonical) else {
+                        continue;
+                    };
+                    if compatible {
+                        if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
+                            plane_pcurve = pcurve
+                                .map(|pcurve| {
+                                    (plane_coedges[0], pcurve, source_range, other.byte_offset())
+                                })
+                                .or_else(|| {
+                                    let (projected, bound) = super::weighted_plane::project_curve(
+                                        &curve_cache,
+                                        face_plane,
+                                        refusal,
+                                    )?;
+                                    plane_projection_gap = Some(bound.get());
+                                    plane_fit_tolerance = Some(bound);
+                                    Some((
+                                        plane_coedges[0],
+                                        projected,
+                                        curve_range,
+                                        line.byte_offset(),
+                                    ))
+                                });
+                            if let (None, class25::Class25Accuracy::Fitted { fit_tolerance, .. }) =
+                                (plane_projection_gap, &map.accuracy)
+                            {
+                                plane_fit_tolerance =
+                                    FitTolerance::try_new(fit_tolerance.get()).ok();
+                            }
+                        }
+                        break;
+                    }
+                    curve_cache = lifted;
+                    curve_range = source_range;
+                    if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
+                        plane_pcurve = pcurve.map(|pcurve| {
+                            (plane_coedges[0], pcurve, source_range, other.byte_offset())
+                        });
+                    }
+                    break;
+                }
+                let mut matched_ends = 0;
+                for (parameter, vertex_id, stored) in [
+                    (
+                        curve_range.endpoints()[0],
+                        &ends.start,
+                        start.position().get(),
+                    ),
+                    (curve_range.endpoints()[1], &ends.end, end.position().get()),
+                ] {
                     let point = cadmpeg_ir::eval::finite_or_refusal(
                         cadmpeg_ir::eval::decode::outer_refusal(
                             cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                                 admission.context(),
-                                &lifted,
+                                &curve_cache,
                                 parameter,
                             ),
                         )?,
                     )?;
-                    if let Some(point) = point {
-                        lifted_endpoints.push(point.get());
-                    }
-                }
-                if lifted_endpoints.len() != 2 {
-                    continue;
-                }
-                let endpoint_positions = [start.position().get(), end.position().get()];
-                let direct = lifted_endpoints[0]
-                    .distance(endpoint_positions[0])
-                    .max(lifted_endpoints[1].distance(endpoint_positions[1]));
-                let reverse = lifted_endpoints[0]
-                    .distance(endpoint_positions[1])
-                    .max(lifted_endpoints[1].distance(endpoint_positions[0]));
-                let direct_matches = endpoint_matches(
-                    lifted_endpoints[0],
-                    endpoint_positions[0],
-                    endpoint_tolerances[0],
-                ) && endpoint_matches(
-                    lifted_endpoints[1],
-                    endpoint_positions[1],
-                    endpoint_tolerances[1],
-                );
-                let reverse_matches = endpoint_matches(
-                    lifted_endpoints[0],
-                    endpoint_positions[1],
-                    endpoint_tolerances[1],
-                ) && endpoint_matches(
-                    lifted_endpoints[1],
-                    endpoint_positions[0],
-                    endpoint_tolerances[0],
-                );
-                if !direct_matches && !reverse_matches {
-                    continue;
-                }
-                let coedge = &ir.geometry.coedges[plane_coedges[0]];
-                let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(face_plane))) =
-                    loop_faces
-                        .get(&coedge.owner_loop)
-                        .and_then(|f| faces.get(f))
-                        .and_then(|f| surfaces.get(&f.surface))
-                        .map(|s| &s.geometry)
-                else {
-                    continue;
-                };
-                let source_u = *plane.frame().reference().as_raw();
-                let source_v = plane.frame().axis().as_raw().cross(source_u);
-                let face_u = *face_plane.frame().reference().as_raw();
-                let face_v = face_plane.frame().axis().as_raw().cross(face_u);
-                let offset = plane.origin().get().vector_from(face_plane.origin().get());
-                let face_axis = *face_plane.frame().axis().as_raw();
-                let source_axis = *plane.frame().axis().as_raw();
-                let compatible = source_axis.cross(face_axis).norm() <= PLANE_NORMAL_TOLERANCE
-                    && source_axis.dot(offset).abs() <= PLANE_OFFSET_TOLERANCE;
-                let chart = ConsolidatedCarrierChart::Rigid {
-                    linear: [
-                        [source_u.dot(face_u), source_v.dot(face_u)],
-                        [source_u.dot(face_v), source_v.dot(face_v)],
-                    ],
-                    offset: [offset.dot(face_u), offset.dot(face_v)],
-                };
-                let mut pcurve = compatible
-                    .then(|| super::consolidated_jet_pcurve(jet, &chart, refusal))
-                    .flatten();
-                let mut lifted = lifted;
-                if reverse_matches && (!direct_matches || reverse < direct) {
-                    let Ok(reversed) = crate::nurbs::reverse_nurbs_curve(&lifted, other_range)
-                    else {
-                        continue;
+                    let Some(point) = point else { break };
+                    let point = point.get();
+                    let miss = point.distance(stored);
+                    let Some(&vertex_index) = vertex_indices.get(vertex_id) else {
+                        break;
                     };
-                    lifted = reversed;
-                    pcurve = pcurve.and_then(|pcurve| {
-                        crate::nurbs::reverse_pcurve_geometry(
-                            &pcurve,
-                            other_range,
-                            refusal,
-                            "weighted plane pcurve",
-                        )
-                    });
-                }
-                let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(lifted.clone()));
-                let Some(canonical) = crate::nurbs::canonical_model_curve_range(
-                    &geometry,
-                    source_range.endpoints(),
-                    refusal,
-                    "weighted plane curve",
-                ) else {
-                    continue;
-                };
-                let Ok(source_range) = ParameterInterval::new(canonical) else {
-                    continue;
-                };
-                if compatible {
-                    if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
-                        plane_pcurve = pcurve
-                            .map(|pcurve| {
-                                (plane_coedges[0], pcurve, source_range, other.byte_offset())
-                            })
-                            .or_else(|| {
-                                let (projected, bound) = super::weighted_plane::project_curve(
-                                    &curve_cache,
-                                    face_plane,
-                                    refusal,
-                                )?;
-                                plane_projection_gap = Some(bound.get());
-                                plane_fit_tolerance = Some(bound);
-                                Some((plane_coedges[0], projected, curve_range, line.byte_offset()))
-                            });
-                        if let (None, class25::Class25Accuracy::Fitted { fit_tolerance, .. }) =
-                            (plane_projection_gap, &map.accuracy)
-                        {
-                            plane_fit_tolerance = FitTolerance::try_new(fit_tolerance.get()).ok();
-                        }
+                    let existing = ir.geometry.vertices[vertex_index]
+                        .tolerance
+                        .map_or(ir.tolerances.linear.get(), |t| {
+                            t.get().max(ir.tolerances.linear.get())
+                        });
+                    if miss > existing && !rounds_to_stored(point, stored) {
+                        break;
                     }
-                    break;
+                    matched_ends += 1;
                 }
-                curve_cache = lifted;
-                curve_range = source_range;
-                if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
-                    plane_pcurve = pcurve.map(|pcurve| {
-                        (plane_coedges[0], pcurve, source_range, other.byte_offset())
-                    });
+                if matched_ends != 2 {
+                    continue;
                 }
-                break;
+                plan = Some(Plan {
+                    edge: edge_index,
+                    curve: curve_index,
+                    procedure: procedure_index,
+                    face_pcurves: if add_face_pcurve {
+                        vec![(face_coedges[0], line_geometry, interval, line.byte_offset())]
+                    } else {
+                        Vec::new()
+                    },
+                    curve_cache,
+                    curve_range,
+                    plane_pcurve,
+                    plane_fit_tolerance,
+                    plane_projection_gap,
+                });
             }
-            let mut matched_ends = 0;
-            for (parameter, vertex_id, stored) in [
-                (
-                    curve_range.endpoints()[0],
-                    &ends.start,
-                    start.position().get(),
-                ),
-                (curve_range.endpoints()[1], &ends.end, end.position().get()),
-            ] {
-                let point =
-                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                            admission.context(),
-                            &curve_cache,
-                            parameter,
-                        ),
-                    )?)?;
-                let Some(point) = point else { break };
-                let point = point.get();
-                let miss = point.distance(stored);
-                let Some(&vertex_index) = vertex_indices.get(vertex_id) else {
-                    break;
-                };
-                let existing = ir.geometry.vertices[vertex_index]
-                    .tolerance
-                    .map_or(ir.tolerances.linear.get(), |t| {
-                        t.get().max(ir.tolerances.linear.get())
-                    });
-                if miss > existing && !rounds_to_stored(point, stored) {
-                    break;
-                }
-                matched_ends += 1;
-            }
-            if matched_ends != 2 {
-                continue;
-            }
-            plan = Some(Plan {
-                edge: edge_index,
-                curve: curve_index,
-                procedure: procedure_index,
-                face_pcurves: if add_face_pcurve {
-                    vec![(face_coedges[0], line_geometry, interval, line.byte_offset())]
-                } else {
-                    Vec::new()
+        }
+        if plan.is_none() {
+            let candidates: Vec<_> = [reps.target, reps.source]
+                .into_iter()
+                .zip(ranges)
+                .enumerate()
+                .filter_map(|(slot, (rep, range))| {
+                    let face_tag = occurrences.map(|occ| occ[slot].face_tag);
+                    Some((rep?, range, face_tag))
+                })
+                .collect();
+            plan = build_general_lifted_plan(
+                &LiftedPlanContext {
+                    ctx: admission.context(),
+                    ir,
+                    data,
+                    journal: &journal,
+                    a5_by_pos: &a5_by_pos,
+                    jets: &jets,
+                    planes: &planes,
+                    cylinders: &cylinders,
+                    cones: &cones,
+                    spheres: &spheres,
+                    tori: &tori,
+                    loop_faces: &loop_faces,
+                    faces: &faces,
+                    surfaces: &surfaces,
+                    edge_coedges: &edge_coedges,
+                    vertex_indices: &vertex_indices,
                 },
-                curve_cache,
-                curve_range,
-                plane_pcurve,
-                plane_fit_tolerance,
-                plane_projection_gap,
-            });
+                LiftedEdgeTarget {
+                    edge_index,
+                    curve_index,
+                    procedure_index,
+                    start_pos: start.position().get(),
+                    end_pos: end.position().get(),
+                },
+                &candidates,
+                refusal,
+            )?;
         }
         if let Some(plan) = plan {
             plans.push(plan);

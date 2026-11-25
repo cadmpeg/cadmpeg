@@ -2209,7 +2209,14 @@ fn try_decode_standard_population(
         curved_surfaces.push(surface);
     }
     let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
-    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    let mut plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    crate::families::freeform::standard_carriers::recover_missing_plane_normals(
+        &scan.data,
+        &consolidated_records,
+        brep,
+        &records,
+        &mut plane_normals,
+    );
     let plane_rows = crate::families::standard::records::plane_params(brep, &records, &plane_normals);
     let mut planes = HashMap::new();
     for plane in plane_rows {
@@ -2826,6 +2833,20 @@ fn try_decode_standard_population(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
         Err(_) => return None,
     };
+    consolidated_curve_bindings.standard_face_surfaces +=
+        match crate::families::freeform::standard_carriers::bind_journal_standard_surfaces(
+            ctx,
+            &mut ir,
+            &mut annotations,
+            &scan.data,
+            &consolidated_records,
+            &a5_carriers,
+            refusal,
+        ) {
+            Ok(bound) => bound,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+            Err(_) => return None,
+        };
     consolidated_curve_bindings.standard_face_surfaces +=
         match counted_owner::bind_counted_owner_surfaces(
             ctx,
