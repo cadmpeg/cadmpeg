@@ -106,6 +106,19 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "output.empty",
+            "kind": "no_exportable_solids",
+            "namespace": "export",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "the written USD layer holds no prim: the document states no occurrence, body, mesh, curve, point, material, or physics record this writer encodes",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "arena.omitted",
             "kind": "subd_omitted",
             "namespace": "export",

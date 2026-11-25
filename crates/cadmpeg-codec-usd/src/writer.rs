@@ -229,8 +229,14 @@ pub(crate) fn plan(
         writer.package = Some(Vec::new());
         writer.assets = input.assets;
     }
-    let text = writer.layer();
-    let losses = writer.losses();
+    let (text, holds_prims) = writer.layer();
+    let mut losses = writer.losses();
+    if !holds_prims {
+        losses.push(cadmpeg_ir::codec::write::output_empty(
+            "the written USD layer holds no prim: the document states no occurrence, body, \
+             mesh, curve, point, material, or physics record this writer encodes",
+        ));
+    }
     let members = writer.package.take().unwrap_or_default();
     let body = ExportBody {
         bytes: text.into_bytes(),
@@ -609,7 +615,9 @@ impl<'ir> Writer<'ir> {
         }
     }
 
-    fn layer(&mut self) -> String {
+    /// The layer text, and whether it holds a prim. Every prim writes a
+    /// record of the document; the layer metadata is the writer's own.
+    fn layer(&mut self) -> (String, bool) {
         // A root definition the source names, or one that owns bodies beside
         // stating structure, is written as the root prim; an unnamed one is
         // the layer itself, and its occurrences are the root prims.
@@ -731,7 +739,8 @@ impl<'ir> Writer<'ir> {
         header.line(&format!("    upAxis = {}", quoted(self.up_axis)));
         header.line(")");
         header.blank();
-        header.finish() + &prims
+        let holds_prims = !prims.trim().is_empty();
+        (header.finish() + &prims, holds_prims)
     }
 
     /// The `Looks` scope with one material per appearance, under the root
