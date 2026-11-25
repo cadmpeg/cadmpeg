@@ -38,17 +38,11 @@ fn derived_studio_keeps_neutral_reference_and_generated_boolean_operands() {
     );
     let wire = timeline(&model);
     let reference = design_reference(&wire);
-    assert_eq!(reference["schema"], "dutchman.design-reference/1");
+    assert_eq!(reference["schema"], "dutchman.design-reference/2");
     assert_eq!(reference["bodies"][0]["name"], "Tool");
     // The fixture's STEP export leaves the sole solid unnamed; the captured design names it.
     assert_eq!(reference["ir"]["geometry"]["bodies"][0]["name"], "Tool");
-    assert_eq!(
-        reference["ir"]["model"]["features"]
-            .as_array()
-            .unwrap()
-            .len(),
-        2
-    );
+    assert_eq!(reference_features(&reference), 2);
     assert!(reference["step"]
         .as_str()
         .unwrap()
@@ -373,10 +367,7 @@ fn derived_studios_validate_their_own_pin_and_continue_after_a_bad_reference_rec
         );
         let captured = design_reference(&timeline(&model));
         assert_eq!(
-            captured["ir"]["model"]["features"]
-                .as_array()
-                .unwrap()
-                .len(),
+            reference_features(&captured),
             if bad_record { 1 } else { 2 }
         );
         assert!(!has_unsupported(&report), "{:?}", report.losses());
@@ -550,4 +541,13 @@ fn derived_bundle_owns_members_of_a_host_studio_whose_id_ends_in_partstudios() {
         "{:?}",
         report.losses()
     );
+}
+
+/// The feature count of the captured design: the CADIR wire leaves feature
+/// history out of `ir`, so the reference states it under `omitted`.
+fn reference_features(reference: &Value) -> usize {
+    assert!(reference["ir"]["model"]["features"]
+        .as_array()
+        .is_none_or(Vec::is_empty));
+    reference["omitted"]["features"].as_array().unwrap().len()
 }

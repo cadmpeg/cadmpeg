@@ -12,7 +12,7 @@ use super::{definition, features, id, rows, text, topology, Mapping, Report, Ses
 use crate::error::Error;
 
 /// The pinned design-reference payload schema.
-const REFERENCE_SCHEMA: &str = "dutchman.design-reference/1";
+const REFERENCE_SCHEMA: &str = "dutchman.design-reference/2";
 /// Name of a referenced studio whose element row states no name.
 const REFERENCED_STUDIO: &str = "Referenced studio";
 
@@ -90,11 +90,15 @@ fn reference(feature: &Value) -> Mapping<(&str, &str, &str)> {
 }
 
 /// The wire payload of one captured neutral design. Fields stay in key order.
+/// `ir` is the CADIR wire form, which leaves out the arenas of
+/// `ArenaName::WIRE_OMITTED`; `omitted` states those arenas, feature history
+/// among them, keyed by arena.
 #[derive(Serialize)]
 struct DesignReference<'a> {
     bodies: Vec<Value>,
     ir: &'a cadmpeg_ir::CadIr,
     name: &'a str,
+    omitted: Value,
     schema: &'static str,
     step: &'a str,
 }
@@ -422,10 +426,12 @@ pub(super) fn map(
         }
         _ => &source.ir,
     };
+    let omitted = ir.model.omitted_arenas_value().map_err(|e| e.to_string())?;
     let payload = serde_json::to_string(&DesignReference {
         bodies,
         ir,
         name: element_name,
+        omitted,
         schema: REFERENCE_SCHEMA,
         step,
     })
