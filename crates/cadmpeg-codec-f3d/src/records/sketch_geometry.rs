@@ -525,12 +525,14 @@ impl SketchPointClosure10 {
     }
 }
 
-/// Version-10 inline-typed closure: `(0, 0)`, `(0, 1)`, or `(2, 1)`.
+/// Version-10 inline-typed closure: `(0, 0)`, `(0, 1)`, `(1, 0)`, `(2, 1)`, or `(4, 0)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SketchPointClosure10Inline {
     Selector0State0,
     Selector0State1,
+    Selector1State0,
     Selector2State1,
+    Selector4State0,
 }
 
 impl SketchPointClosure10Inline {
@@ -538,8 +540,10 @@ impl SketchPointClosure10Inline {
         match closure {
             SketchPointClosure::Selector0State0 => Some(Self::Selector0State0),
             SketchPointClosure::Selector0State1 => Some(Self::Selector0State1),
+            SketchPointClosure::Selector1State0 => Some(Self::Selector1State0),
             SketchPointClosure::Selector2State1 => Some(Self::Selector2State1),
-            _ => None,
+            SketchPointClosure::Selector4State0 => Some(Self::Selector4State0),
+            SketchPointClosure::Selector1State1 | SketchPointClosure::Selector4State1 => None,
         }
     }
 
@@ -547,7 +551,9 @@ impl SketchPointClosure10Inline {
         match self {
             Self::Selector0State0 => SketchPointClosure::Selector0State0,
             Self::Selector0State1 => SketchPointClosure::Selector0State1,
+            Self::Selector1State0 => SketchPointClosure::Selector1State0,
             Self::Selector2State1 => SketchPointClosure::Selector2State1,
+            Self::Selector4State0 => SketchPointClosure::Selector4State0,
         }
     }
 }
