@@ -134,7 +134,7 @@ fn boards(records: &[Record], states: &[usize]) -> Result<Vec<Vec<i64>>, CodecEr
         .filter(|record| record.name == "body")
         .map(|record| record.index)
         .collect::<Vec<_>>();
-    let mut owner = vec![None::<usize>; slots];
+    let mut owner = vec![None::<usize>; records.len()];
     for (state, &body) in states.iter().enumerate() {
         let start = *bodies
             .get(body)
