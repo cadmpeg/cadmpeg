@@ -97,6 +97,10 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) edge: TrimEdge,
     pub(super) owner_loop: usize,
     radial_next: usize,
+    /// Whether the trim runs against its edge. A 3DM loop runs
+    /// counterclockwise in its surface's parameters, so the trim runs the
+    /// coedge's way on a forward face and the other way on a reversed face.
+    pub(super) reversed: bool,
     pub(super) c2: ([u8; 16], Vec<u8>),
     /// The trim's parameter interval: its pcurve's, or its edge's where the
     /// trim is the edge's projection.
@@ -112,6 +116,8 @@ pub(super) struct WritablePcurve<'a> {
     pub(super) domain_extent_points: Vec<cadmpeg_ir::math::Point2>,
     /// The parameter interval the trim runs over.
     pub(super) domain: [f64; 2],
+    /// Whether `payload` runs the pcurve record backwards over `domain`.
+    pub(super) reversed: bool,
 }
 
 pub(super) struct WritableLoop<'a> {
@@ -759,7 +765,7 @@ impl<'a> WritableModel<'a> {
                         loop_.id.as_str()
                     )));
                 }
-                let coedges = loop_
+                let mut coedges = loop_
                     .coedges()
                     .iter()
                     .map(|id| {
@@ -772,6 +778,9 @@ impl<'a> WritableModel<'a> {
                         resolve(&coedge_positions, id.as_str())
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                if faces[face].source.sense == Sense::Reversed {
+                    coedges.reverse();
+                }
                 Ok(WritableLoop {
                     source: loop_,
                     face,
@@ -803,6 +812,9 @@ impl<'a> WritableModel<'a> {
                         coedge.id.as_str()
                     )));
                 }
+                let face_reversed =
+                    faces[loops[owner_loop].face].source.sense == Sense::Reversed;
+                let reversed = (coedge.sense == Sense::Reversed) != face_reversed;
                 let pcurve = match coedge.pcurves.as_slice() {
                     [] => None,
                     [use_] => {
@@ -823,7 +835,15 @@ impl<'a> WritableModel<'a> {
                                     id.as_str()
                                 ))
                             })?;
-                        Some(admit_pcurve(edge_domain, pcurve)?)
+                        let against_coedge = use_.parameter_range.is_some_and(|range| {
+                            let [start, end] = range.endpoints();
+                            start > end
+                        });
+                        Some(admit_pcurve(
+                            edge_domain,
+                            pcurve,
+                            against_coedge != face_reversed,
+                        )?)
                     }
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
@@ -865,6 +885,7 @@ impl<'a> WritableModel<'a> {
                             edge: TrimEdge::Singular(vertex),
                             owner_loop,
                             radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
+                            reversed,
                             c2: pcurve.payload,
                             domain: pcurve.domain,
                             fit_tolerance,
@@ -876,7 +897,7 @@ impl<'a> WritableModel<'a> {
                 let (c2, domain) = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {
                         let generated = generated_projected_brep_c2_curve(
-                            &vertices, &edges[edge], coedge.sense, origin, u_axis,
+                            &vertices, &edges[edge], reversed, origin, u_axis,
                             normal.cross(u_axis),
                         )?;
                         match pcurve {
@@ -901,10 +922,10 @@ impl<'a> WritableModel<'a> {
                                 "coedge {} has no explicit pcurve", coedge.id.as_str(),
                             ))
                         })?;
-                        let (from, to) = if coedge.sense == Sense::Forward {
-                            (edges[edge].start, edges[edge].end)
-                        } else {
+                        let (from, to) = if reversed {
                             (edges[edge].end, edges[edge].start)
+                        } else {
+                            (edges[edge].start, edges[edge].end)
                         };
                         if let Some(finding) = validate_nurbs_trim(
                             surface, face_tolerance, &edges[edge],
@@ -920,6 +941,7 @@ impl<'a> WritableModel<'a> {
                     edge: TrimEdge::Edge(edge),
                     owner_loop,
                     radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
+                    reversed,
                     c2,
                     domain,
                     fit_tolerance,
@@ -1157,10 +1179,10 @@ impl<'a> WritableModel<'a> {
             TrimEdge::Edge(edge) => &self.edges[edge],
             TrimEdge::Singular(vertex) => return (vertex, vertex),
         };
-        if coedge.source.sense == Sense::Forward {
-            (edge.start, edge.end)
-        } else {
+        if coedge.reversed {
             (edge.end, edge.start)
+        } else {
+            (edge.start, edge.end)
         }
     }
 }
