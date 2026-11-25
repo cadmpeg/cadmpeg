@@ -91,7 +91,7 @@ fn an_archive_70_cage_reports_its_end_sharpness() {
 fn assert_control_mesh(report: &ExportReport, decoded: &CadIr, cage: &CageBody) {
     assert!(
         report.losses.iter().any(|loss| {
-            loss.code.local_code() == "writer.subd-control-mesh"
+            loss.code.local_code() == crate::loss::RhinoLossCode::WriterSubdControlMesh.code()
                 && loss.message.contains(cage.subd.as_str())
         }),
         "{:#?}",

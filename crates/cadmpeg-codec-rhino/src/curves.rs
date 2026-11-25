@@ -940,12 +940,12 @@ fn piece_ends(
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => [0.0, TAU],
         _ => return Ok(None),
     };
-    let point = |parameter| match cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter) {
-        Ok(point) => Ok(Some(point.get())),
-        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-            Err(GeometryError::Codec(limit.into()))
+    let point = |parameter| -> Result<Option<Point3>, CodecError> {
+        match cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter) {
+            Ok(point) => Ok(Some(point.get())),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => Err(limit.into()),
+            Err(_) => Ok(None),
         }
-        Err(_) => Ok(None),
     };
     Ok(point(domain[0])?.zip(point(domain[1])?).map(Into::into))
 }
