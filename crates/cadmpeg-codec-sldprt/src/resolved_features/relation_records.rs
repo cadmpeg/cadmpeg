@@ -311,37 +311,6 @@ impl<'l> DimensionClaims<'l> {
     }
 }
 
-/// Whether the sketch points that `scalar`'s operands name measure its
-/// value as a relation of `family`, by the operand binding that its formed
-/// relation receives.
-fn sketch_measures_dimension(
-    family: FeatureInputRelationFamily,
-    scalar: &FeatureInputScalar,
-    index: &RelationOperandIndex<'_>,
-) -> bool {
-    let Some(feature_ref) = scalar.feature_ref.clone() else {
-        return false;
-    };
-    let Ok(scalars) =
-        crate::records::relation_scalars::RelationScalars::from_scalars(std::iter::once(scalar))
-    else {
-        return false;
-    };
-    let mut relation = FeatureInputRelationInstance {
-        id: String::new(),
-        parent: String::new(),
-        ordinal: 0,
-        offset: scalar.offset,
-        family,
-        class_ref: String::new(),
-        feature_ref,
-        scalars,
-        operands: scalar.operands.clone(),
-    };
-    bind_relation_geometry(&mut relation, index);
-    relation_measures_its_value(&relation, index)
-}
-
 /// Whether a point-distance relation's bound operands are two sketch points
 /// whose distance, along the family's axis, is the relation's value.
 fn relation_measures_its_value(
@@ -663,15 +632,15 @@ pub(super) fn relation_instances(
     // An unclaimed dimension has the relation class its own relation-class
     // token names, of the quantity its record states (§2). A compound-file
     // lane does not state which tokens are its own (open item EV-05); there
-    // the class holds only where the sketch points its operands name
-    // measure the dimension's value.
+    // the class holds only where the sketch points its relation binds
+    // measure the relation's value, and the lane is grouped again without
+    // each declaration whose relation they do not measure.
     let compound = compound_opening(&lane.native_payload);
     let token_classes = if claims.unclaimed.is_empty() {
         HashMap::new()
     } else {
         token_relation_classes(lane, &sketch_features)
     };
-    let mut operand_index = None;
     for scalar in claims.unclaimed {
         let Some(class) = token_classes.get(scalar.id.as_str()) else {
             continue;
@@ -689,17 +658,71 @@ pub(super) fn relation_instances(
         {
             continue;
         }
-        if compound {
-            let index = operand_index.get_or_insert_with(|| RelationOperandIndex::new(lane));
-            if !sketch_measures_dimension(family, scalar, index) {
-                continue;
-            }
-        }
         declarations.insert(
             scalar.id.as_str(),
             (class.offset, family, class.id.as_str(), compound),
         );
     }
+    let index = RelationOperandIndex::new(lane);
+    loop {
+        let (mut instances, gated) = form_relations(
+            lane,
+            &sketch_features,
+            &declarations,
+            &candidate_counts,
+            &index,
+        )?;
+        let unmeasured = instances
+            .iter()
+            .filter(|relation| {
+                gated.contains(&relation.id) && !relation_measures_its_value(relation, &index)
+            })
+            .map(|relation| relation.id.clone())
+            .collect::<HashSet<_>>();
+        if unmeasured.is_empty() {
+            return Ok(instances);
+        }
+        let withdrawn = instances
+            .iter()
+            .filter(|relation| unmeasured.contains(&relation.id))
+            .flat_map(FeatureInputRelationInstance::scalar_refs)
+            .filter(|id| {
+                declarations
+                    .get(id.as_str())
+                    .is_some_and(|declaration| declaration.3)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if withdrawn.is_empty() {
+            instances.retain(|relation| !unmeasured.contains(&relation.id));
+            for (ordinal, relation) in instances.iter_mut().enumerate() {
+                relation.ordinal = u32::try_from(ordinal).map_err(|_| {
+                    CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
+                })?;
+            }
+            return Ok(instances);
+        }
+        for id in &withdrawn {
+            declarations.remove(id.as_str());
+        }
+    }
+}
+
+/// A relation-class declaration: the class's offset, family and identity,
+/// and whether the class comes only from a compound-file lane's
+/// relation-class token (open item EV-05).
+type Declaration<'l> = (u64, FeatureInputRelationFamily, &'l str, bool);
+
+/// The lane's relation instances under `declarations`, with their operands
+/// bound, and the identities of the instances whose class comes only from a
+/// compound-file lane's relation-class tokens.
+fn form_relations<'l>(
+    lane: &'l FeatureInputLane,
+    sketch_features: &HashSet<&str>,
+    declarations: &HashMap<&'l str, Declaration<'l>>,
+    candidate_counts: &HashMap<&'l str, usize>,
+    index: &RelationOperandIndex<'_>,
+) -> Result<(Vec<FeatureInputRelationInstance>, HashSet<String>), CodecError> {
     let mut relation_class_offsets = lane
         .classes
         .iter()
@@ -929,21 +952,10 @@ pub(super) fn relation_instances(
     }
     bind_detached_relation_drivers(&mut instances, lane)?;
     bind_circle_dimension_centers(&mut instances, lane)?;
-    let index = operand_index.unwrap_or_else(|| RelationOperandIndex::new(lane));
     for relation in &mut instances {
-        bind_relation_geometry(relation, &index);
+        bind_relation_geometry(relation, index);
     }
-    if !gated.is_empty() {
-        instances.retain(|relation| {
-            !gated.contains(&relation.id) || relation_measures_its_value(relation, &index)
-        });
-        for (ordinal, relation) in instances.iter_mut().enumerate() {
-            relation.ordinal = u32::try_from(ordinal).map_err(|_| {
-                CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
-            })?;
-        }
-    }
-    Ok(instances)
+    Ok((instances, gated))
 }
 
 pub(super) fn bind_circle_dimension_centers(

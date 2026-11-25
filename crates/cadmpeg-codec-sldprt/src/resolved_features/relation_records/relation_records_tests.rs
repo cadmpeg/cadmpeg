@@ -796,11 +796,12 @@ fn compound_refused_dimension_lane(display: f64, reach: f64) -> (FeatureInputLan
 const DRIVING_METRES: f64 = 0.025;
 
 /// In a compound-file lane, a refused dimension takes the relation class
-/// its relation-class token names where the sketch points its operands name
-/// measure its value, and its relation binds those points.
+/// its relation-class token names where the sketch points that its relation
+/// binds measure the relation's driving value, also when its display scalar
+/// stores another value.
 #[test]
 fn a_refused_dimension_of_a_compound_lane_forms_where_its_sketch_points_measure_it() {
-    let (lane, angle) = compound_refused_dimension_lane(DRIVING_METRES, DRIVING_METRES);
+    let (lane, angle) = compound_refused_dimension_lane(0.0176, DRIVING_METRES);
     let distance = lane
         .classes
         .iter()
