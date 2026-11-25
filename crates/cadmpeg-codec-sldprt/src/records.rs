@@ -348,6 +348,13 @@ impl Feature {
 
 /// The revolution axis, filled from the feature-input lane.
 pub(crate) const REVOLUTION_AXIS_PROPERTIES: [&str; 2] = ["AxisOrigin", "AxisDirection"];
+/// Which way a revolution turns about its stored axis direction, filled with
+/// its axis.
+pub(crate) const TURN_SENSE_PROPERTY: &str = "TurnSense";
+/// What the decoder fills from the feature-input lane while a revolution's
+/// record states none of its axis: the axis and its turn sense.
+pub(crate) const REVOLUTION_AXIS_DERIVED_PROPERTIES: [&str; 3] =
+    ["AxisOrigin", "AxisDirection", TURN_SENSE_PROPERTY];
 /// The frame of a coordinate system, filled from the feature-input lane.
 pub(crate) const COORDINATE_SYSTEM_PROPERTIES: [&str; 4] = ["Origin", "XAxis", "YAxis", "ZAxis"];
 /// The frame of a reference plane, filled from the feature-input lane.
@@ -404,7 +411,7 @@ pub(crate) struct LaneDerivedGroup {
 pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 7] = [
     LaneDerivedGroup {
         gate: &REVOLUTION_AXIS_PROPERTIES,
-        properties: &REVOLUTION_AXIS_PROPERTIES,
+        properties: &REVOLUTION_AXIS_DERIVED_PROPERTIES,
         parameters: &[],
     },
     LaneDerivedGroup {

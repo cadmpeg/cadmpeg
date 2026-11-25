@@ -1594,3 +1594,58 @@ fn temporary_axis_handles_are_not_read_as_a_line_reference_tail() {
     );
     assert!(notes.is_empty(), "{notes:?}");
 }
+
+/// [`revolution_with_tail_records`] of one tail axis along `direction`, with
+/// a turn block whose reverse byte is `reverse` at lane offset 220.
+fn revolution_turning(
+    direction: [f64; 3],
+    reverse: Option<u8>,
+) -> ([FeatureHistory; 1], FeatureInputLane) {
+    let (histories, mut lane) =
+        revolution_with_tail_records(&[(300, [0.0, length(9), 0.0], direction)]);
+    if let Some(reverse) = reverse {
+        let mut payload = lane.native_payload.to_vec();
+        let mut block = vec![0, 0, reverse, 0, 0, 0, 0, 0, 0, 0x52, 0x80, 0, 0];
+        block.extend(3u32.to_le_bytes());
+        block.extend(1u32.to_le_bytes());
+        block.extend(CLASS_MARKER);
+        payload[220..220 + block.len()].copy_from_slice(&block);
+        lane.native_payload = payload.into();
+    }
+    (histories, lane)
+}
+
+#[test]
+fn the_reverse_byte_turns_the_stored_axis_direction() {
+    for (reverse, direction, sense) in [
+        (Some(0), "0,0,-1", Some("Stored")),
+        (Some(1), "0,0,1", Some("Reversed")),
+        (None, "0,0,-1", None),
+    ] {
+        let (mut histories, lane) = revolution_turning([0.0, 0.0, -1.0], reverse);
+        enrich_history_revolution_inputs_test(&mut histories, &[lane]);
+        let revolution = &histories[0].features[1];
+        assert_eq!(
+            revolution.properties.get("AxisDirection").map(String::as_str),
+            Some(direction)
+        );
+        assert_eq!(
+            revolution.properties.get("TurnSense").map(String::as_str),
+            sense
+        );
+    }
+}
+
+#[test]
+fn lanes_that_disagree_on_the_turn_state_no_sense() {
+    let (mut histories, stored) = revolution_turning([0.0, 0.0, -1.0], Some(0));
+    let (_, mut reversed) = revolution_turning([0.0, 0.0, -1.0], Some(1));
+    reversed.id = "lane-2".into();
+    enrich_history_revolution_inputs_test(&mut histories, &[stored, reversed]);
+    let revolution = &histories[0].features[1];
+    assert_eq!(
+        revolution.properties.get("AxisDirection").map(String::as_str),
+        Some("0,0,-1")
+    );
+    assert_eq!(revolution.properties.get("TurnSense"), None);
+}

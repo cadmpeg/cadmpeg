@@ -5,6 +5,7 @@
 
 use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
+use crate::layout::revolution_turn_block as turn;
 
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
 
@@ -1860,6 +1861,36 @@ fn is76_bytes(t: &[u8]) -> bool {
 
 const REVOLVES: &[&str] = &["moRevolution_c", "moRevCut_c", "moRevolutionThin_c"];
 
+/// Whether the bytes at `at` are a revolve's turn block with a `suObList`
+/// after it.
+fn is_turn_block(reader: &Reader<'_>, at: usize) -> Res<bool> {
+    if at.checked_add(turn::LEN + 2).is_none_or(|end| end > reader.len()) {
+        return Ok(false);
+    }
+    Ok(reader.eq(at + turn::LEAD, &turn::LEAD_VALUE)
+        && matches!(reader.byte(at + turn::REVERSE)?, 0 | 1)
+        && reader.eq(at + turn::PAD, &turn::PAD_VALUE)
+        && matches!(reader.pu32(at + turn::WORD)?, 0 | 1)
+        && isclass(reader, at + turn::LEN, &["suObList"])?)
+}
+
+/// The turn block of a revolve that writes zero bytes in place of its
+/// `moPMarkRecord_c`: the first turn block at `at + 31` or later whose bytes
+/// before it are zero.
+fn turn_block_after_zeros(reader: &Reader<'_>, at: usize) -> Res<Option<usize>> {
+    const MIN_ZEROS: usize = 31;
+    let mut zeros = 0;
+    while at + zeros < reader.len() && reader.byte(at + zeros)? == 0 && zeros < 4096 {
+        zeros += 1;
+    }
+    for block in at + MIN_ZEROS..=at + zeros {
+        if is_turn_block(reader, block)? {
+            return Ok(Some(block));
+        }
+    }
+    Ok(None)
+}
+
 /// The extrusion family (`moExtrusion_c`, `moRevolution_c`, `moSweepCut_c`,
 /// `moSMBaseFlange_c`, ...).
 pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
@@ -1876,9 +1907,13 @@ pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
     if hx == Some(1) {
         units(reader)?;
     }
-    if REVOLVES.contains(&cls) && zrun_to(reader, reader.p, "suObList")? >= 40 {
-        let z = zrun_to(reader, reader.p, "suObList")?;
-        reader.skip(z - 9);
+    let zero_mark = if REVOLVES.contains(&cls) {
+        turn_block_after_zeros(reader, reader.p)?
+    } else {
+        None
+    };
+    if let Some(block) = zero_mark {
+        reader.p = block;
     } else if !REVOLVES.contains(&cls) && zrun_to(reader, reader.p, "moEndSpec_c")? >= 40 {
         // Zero bytes in place of the mark record (64; extruded cuts).
         let z = zrun_to(reader, reader.p, "moEndSpec_c")?;
@@ -1938,11 +1973,8 @@ pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
         ]));
     }
     if REVOLVES.contains(&cls) {
-        if reader.zeros(reader.p, 5)
-            && reader.eq(reader.p + 5, &[1, 0, 0, 0])
-            && isclass(reader, reader.p + 9, &["suObList"])?
-        {
-            reader.skip(9);
+        if is_turn_block(reader, reader.p)? {
+            reader.skip(turn::LEN);
         } else {
             reader.expect_zeros(9, "revolve 9 zero")?;
         }
@@ -3819,3 +3851,6 @@ pub(crate) fn lineaxis(r: &mut Reader<'_>) -> Res<V> {
     axistail(r)?;
     Ok(list(v))
 }
+
+#[cfg(test)]
+mod tests;

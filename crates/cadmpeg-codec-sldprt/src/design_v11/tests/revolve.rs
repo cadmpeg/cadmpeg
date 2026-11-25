@@ -2,7 +2,7 @@
 //! Revolves typed from the decoder's revolutions: the profile sketch, the
 //! axis picked as a line of that sketch, the angle, and the boolean.
 
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{AxisValue, InputReference, InputRole, Relation, Subject};
@@ -95,11 +95,17 @@ fn derived(mut revolution: Value) -> Value {
 
 /// The `AxisOrigin` and `AxisDirection` properties the decoder gives a
 /// revolution whose record stores its axis, and none where `"stored"` is
-/// `false` or the construction holds no axis.
+/// `false` or the construction holds no axis, with the `TurnSense` of a
+/// revolution that states a `"sense"`.
 fn axis_properties(revolution: &Value) -> Vec<(&'static str, String)> {
+    let mut properties = revolution["sense"]
+        .as_str()
+        .map(|sense| ("TurnSense", sense.to_owned()))
+        .into_iter()
+        .collect::<Vec<_>>();
     let axis = &revolution["value"]["axis"];
     if revolution["stored"] == json!(false) || axis.is_null() {
-        return Vec::new();
+        return properties;
     }
     let triple = |value: &Value, unit: &str| {
         ["x", "y", "z"]
@@ -108,10 +114,17 @@ fn axis_properties(revolution: &Value) -> Vec<(&'static str, String)> {
             .collect::<Vec<_>>()
             .join(",")
     };
-    vec![
+    properties.extend([
         ("AxisOrigin", triple(&axis["origin"], "mm")),
         ("AxisDirection", triple(&axis["direction"], "")),
-    ]
+    ]);
+    properties
+}
+
+/// `revolution`, whose record stores the turn sense `sense`.
+fn sensed(mut revolution: Value, sense: &str) -> Value {
+    revolution["sense"] = json!(sense);
+    revolution
 }
 
 /// A part whose history holds the built-in planes, the origin, a sketch
@@ -749,4 +762,70 @@ fn an_option_of_another_format_leaves_the_revolve_unresolved() {
     let (ir, native) = part("", &with_centreline(), &[revolution]);
     let message = typed(&ir, &native, "Revolve1").unwrap_err();
     assert!(message.contains("option of another format"), "{message}");
+}
+
+#[test]
+fn a_partial_turn_whose_record_stores_its_sense_is_typed_with_a_warning() {
+    for sense in ["Stored", "Reversed"] {
+        let (ir, native) = part(
+            r#"<Dimension Name="D1">90deg</Dimension>"#,
+            &with_centreline(),
+            &[sensed(
+                revolution([0.0, 0.0, 0.0], [0.0, -1.0, 0.0], &one_sided(FRAC_PI_2), "join"),
+                sense,
+            )],
+        );
+        let revolve = typed(&ir, &native, "Revolve1").unwrap();
+        assert_eq!(axis_pick(&revolve), (Some(entity("axis")), Some(true)));
+        let Some(Span::Between { start, end }) = &revolve.span else {
+            panic!("a one-sided span: {:?}", revolve.span);
+        };
+        assert!(matches!(**start, Limit::AtOrigin));
+        assert!(matches!(**end, Limit::Amount(Dimension::Parameter(_))));
+        let (timeline, _, typed) = typed_timeline(&ir, &native);
+        let note = typed
+            .revolve_sense_assumed
+            .expect("the partial turn is named");
+        assert_eq!(note.code, SldprtLossCode::DesignRevolveSenseAssumed.kind());
+        assert_eq!(note.severity, Severity::Warning);
+        let feature = timeline_feature(&timeline, "Revolve1");
+        assert!(
+            note.message.contains(feature.id.as_str()) && note.message.contains("EV-25"),
+            "{}",
+            note.message
+        );
+    }
+}
+
+#[test]
+fn a_full_turn_or_an_unsensed_partial_turn_names_no_sense() {
+    let (ir, native) = part("", &with_centreline(), &[sensed(about_y(), "Reversed")]);
+    typed(&ir, &native, "Revolve1").unwrap();
+    let (_, _, projected) = typed_timeline(&ir, &native);
+    assert!(projected.revolve_sense_assumed.is_none());
+    for revolve in [
+        derived(sensed(
+            revolution([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], &one_sided(PI), "join"),
+            "Stored",
+        )),
+        sensed(
+            json!({"kind": "resolved", "value": {
+                "profile": {"kind": "sketch", "value": SKETCH},
+                "axis": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                    "direction": {"x": 0.0, "y": 1.0, "z": 0.0}},
+                "extent": {"kind": "two_sided",
+                    "first": {"kind": "angle", "angle": PI},
+                    "second": {"kind": "angle", "angle": 1.0}},
+                "solid": true},
+                "op": "join"}),
+            "Stored",
+        ),
+    ] {
+        let (ir, native) = part("", &with_centreline(), &[revolve]);
+        let message = typed(&ir, &native, "Revolve1").unwrap_err();
+        assert!(
+            message.contains("less than a full turn on one side") || message.contains("two-sided"),
+            "{message}"
+        );
+    }
 }

@@ -1132,15 +1132,18 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### EV-25. Turn sense of a partial revolution
 
-**Question.** Which way does the travel of a partial `moRevolution_c` or `moRevCut_c` turn about the stored axis direction, and which stored field reverses it?
+**Question.** Is the turn of a partial `moRevolution_c` or `moRevCut_c` whose reverse byte is `0` right-handed about the axis direction its record stores, or about another direction that agrees with it in the stored forms below, such as the drawn direction of the sketch line on the axis?
 
-**Known.** `sldprt.md` §2 "The revolution object interval may contain a declared or repeated" stores a point on the axis and a unit axis direction. `sldprt.md` §2 "An `moRevolution_c` or `moRevCut_c` history record" stores positive angles. Neither paragraph gives the turn sense.
+**Known.** The revolve body's turn block (`sldprt.md` §2.3) holds the reverse byte at +2, `0` or `1`. The tail of the record's `moLineRef_w` stores a point on the axis and a unit axis direction (`sldprt.md` §2). These stored forms show the turn:
 
-**Need.** A partial revolution with a stored solid whose end faces show the side of the travel, compared with the stored axis direction.
+- The axis passes through the origin with stored direction (0, 1, 0). The profile is a 10 mm by 10 mm rectangle on the plane z = 0, at x from 10 to 20 mm and y from 0 to 10 mm, and a construction line of the sketch runs from (0, 0) to (0, 64.77) mm. The angle is 90° on one side. With reverse byte `0` the stored solid lies at z from -20 to 0 mm. With reverse byte `1` it lies at z from 0 to 20 mm.
+- The axis passes through (0, 0, -10) mm with stored direction (0, 0, 1). The profile is a half disc of radius 10 mm on the plane y = 0 at x from -10 to 0 mm, and its straight edge runs along the axis from z = -10 to z = 10 mm. The angle is 180° on one side and the reverse byte is `1`. The stored solid lies at y from 0 to 10 mm.
 
-**Conflict.** CADIR states a right-handed turn about `RevolutionAxis.direction`, and this codec writes the stored direction to that field unchanged. No partial revolution has shown that the two agree.
+In each form, reverse byte `0` gives the right-handed turn about the stored direction and reverse byte `1` the opposite turn, and the sketch line on the axis runs along the stored direction. The decoder writes the stored direction to `RevolutionAxis.direction`, reversed for reverse byte `1`, and charges `design.revolve-sense-assumed` for each typed revolve that turns less than a full turn on one side.
 
-**Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
+**Need.** Save one profile revolved 90° on one side about a sketch centreline, once with the centreline drawn in the direction of the axis and once against it, both with reverse byte `0`. Compare the stored axis direction, the reverse byte and the side of the stored solid in the two records.
+
+**Note.** A full turn and a mid-plane angle sweep the same region in either sense, so they do not answer this question.
 
 ### EV-27. Sketch curve records with selector bit 0 set or on the geometry locus
 

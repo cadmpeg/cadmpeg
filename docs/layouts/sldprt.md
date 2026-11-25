@@ -2793,6 +2793,21 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `revolution_turn_block`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 9 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/turn_sense.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `lead` | `bytes[2]` | little | spec | the nine-byte turn block: two zero bytes · value `[0, 0]` |
+| 2 | 1 | `reverse` | `u8` | little | spec | the reverse byte at +2 |
+| 3 | 2 | `pad` | `bytes[2]` | little | spec | the reverse byte at +2, two zero bytes · value `[0, 0]` |
+| 5 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +5 |
+
 ## `revolution_line_reference_record_tail`
 
 Spec §2 · layout: byte offsets · size: 57 B

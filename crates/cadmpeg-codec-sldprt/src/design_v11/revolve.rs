@@ -20,9 +20,12 @@
 //! did not read is a new body where nothing precedes it that can hold a body,
 //! and states no boolean after one.
 //!
-//! A partial or two-sided turn, whose sense the decoder does not read, stays
-//! `Unresolved`, and so does a revolution whose axis lies outside its
-//! sketch's plane (open item DI-85) or whose sketch holds no profile curve.
+//! A partial turn on one side is typed where its record stores the axis and
+//! the turn sense: it turns about the axis direction the record stores,
+//! reversed where the reverse byte is `1`, with a warning (open item EV-25).
+//! A partial turn whose sense the decoder does not read, a two-sided turn,
+//! a revolution whose axis lies outside its sketch's plane (open item DI-85),
+//! and one whose sketch holds no profile curve stay `Unresolved`.
 
 use std::collections::HashMap;
 
@@ -84,6 +87,9 @@ pub(super) struct Revolves {
     /// The typed revolves whose sketch's closed regions the check did not
     /// compare with the stored profile, with their name and why.
     pub(super) unchecked: Vec<(FeatureId, Option<String>, Unchecked)>,
+    /// The typed revolves that turn less than a full turn on one side, in
+    /// the sense their record stores, with their name.
+    pub(super) sense_assumed: Vec<(FeatureId, Option<String>)>,
 }
 
 /// The line a revolve's axis picks, and how many of its sketch's lines lie
@@ -105,6 +111,8 @@ struct Notes {
     /// How its sketch's closed regions differ from the stored profile, or
     /// why the check did not compare them.
     profile: Option<Result<Vec<Difference>, Unchecked>>,
+    /// Whether it turns less than a full turn on one side.
+    partial: bool,
 }
 
 /// Type each `Unresolved` revolve of `features`, in member order.
@@ -118,6 +126,9 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Revolv
                 let (id, name) = (feature.id.clone(), feature.name.clone());
                 if let Some(why) = notes.boolean_unstated {
                     out.boolean_unstated.push((id.clone(), name.clone(), why));
+                }
+                if notes.partial {
+                    out.sense_assumed.push((id.clone(), name.clone()));
                 }
                 if let Some((line, among)) = notes.line {
                     let picks = if notes.stored {
@@ -193,8 +204,15 @@ fn revolve(
             .as_ref(),
         _ => return Err("the revolve's profile is no whole sketch"),
     };
-    let span = span(
+    let stored = source.source_properties.contains_key("AxisOrigin")
+        && source.source_properties.contains_key("AxisDirection");
+    let sensed = stored
+        && source
+            .source_properties
+            .contains_key(crate::records::TURN_SENSE_PROPERTY);
+    let (span, partial) = span(
         extent,
+        sensed,
         |angle| angle_dimension(&feature.id, context, angle),
         bound,
     )?;
@@ -215,8 +233,6 @@ fn revolve(
             .flat_map(|history| &history.features)
             .find(|record| record.id == native)
     });
-    let stored = source.source_properties.contains_key("AxisOrigin")
-        && source.source_properties.contains_key("AxisDirection");
     let (axis, line) = axis_construction(axis, sketch, context)?;
     if !stored && line.is_none() {
         return Err(
@@ -228,6 +244,7 @@ fn revolve(
     let boolean = boolean(*op, adds, before.body);
     notes.line = line;
     notes.stored = stored;
+    notes.partial = partial;
     notes.boolean_unstated = boolean.is_none().then_some(if adds {
         "it adds material after an earlier member, and the decoder reads no stored field that \
          tells a new body from a join"
@@ -274,13 +291,17 @@ fn boolean(op: DecodedOp, adds: bool, body_before: bool) -> Option<Boolean> {
 }
 
 /// The span of `extent`, each angle bound to the dimension `dimension`
-/// gives for it. A full turn on one side and a mid-plane angle are the same
-/// solid in either sense of the axis; the others are not.
+/// gives for it, and whether it turns less than a full turn on one side. A
+/// full turn on one side and a mid-plane angle are the same solid in either
+/// sense of the axis; the others are not, and a partial turn on one side
+/// takes its sense from the record only where the record stores it
+/// (`sensed`).
 fn span(
     extent: &RevolveExtent,
+    sensed: bool,
     dimension: impl Fn(f64) -> Option<ParameterId>,
     bound: &mut HashMap<ParameterId, Quantity>,
-) -> Result<Span<Angle>, &'static str> {
+) -> Result<(Span<Angle>, bool), &'static str> {
     let mut amount = |termination: &AngularTermination| {
         let AngularTermination::Angle { angle } = termination else {
             return Err("the revolve's limit is no angle");
@@ -300,18 +321,25 @@ fn span(
     match extent {
         RevolveExtent::OneSided { termination } => {
             let (angle, amount) = amount(termination)?;
-            if (angle - std::f64::consts::TAU).abs() > EPS_REVOLVE_ANGLE_RAD {
+            let partial = (angle - std::f64::consts::TAU).abs() > EPS_REVOLVE_ANGLE_RAD;
+            if partial && !sensed {
                 return Err("the revolve turns less than a full turn on one side, and its sense is not read");
             }
-            Ok(Span::Between {
-                start: Box::new(Limit::AtOrigin),
-                end: Box::new(Limit::Amount(amount)),
-            })
+            Ok((
+                Span::Between {
+                    start: Box::new(Limit::AtOrigin),
+                    end: Box::new(Limit::Amount(amount)),
+                },
+                partial,
+            ))
         }
-        RevolveExtent::Symmetric { termination } => Ok(Span::Symmetric {
-            amount: amount(termination)?.1,
-            measure: Some(SymmetricMeasure::Total),
-        }),
+        RevolveExtent::Symmetric { termination } => Ok((
+            Span::Symmetric {
+                amount: amount(termination)?.1,
+                measure: Some(SymmetricMeasure::Total),
+            },
+            false,
+        )),
         RevolveExtent::TwoSided { .. } => {
             Err("the revolve is two-sided, and its sense is not read")
         }
