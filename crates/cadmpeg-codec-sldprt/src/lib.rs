@@ -322,7 +322,7 @@ impl SldprtCodec {
                 &source.source_fidelity.annotations,
                 source_digests,
                 records,
-                writer::HistoryEdits {
+                writer::SemanticWriteControls {
                     withheld: &[],
                     shaped: &[],
                 },
@@ -349,7 +349,7 @@ impl SldprtCodec {
                     annotations,
                     digests,
                     records,
-                    writer::HistoryEdits { withheld, shaped },
+                    writer::SemanticWriteControls { withheld, shaped },
                     &mut cache,
                     &mut bytes,
                 )?;
