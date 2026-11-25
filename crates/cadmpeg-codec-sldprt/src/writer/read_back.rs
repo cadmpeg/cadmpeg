@@ -173,7 +173,7 @@ impl SourceDefinitions {
 }
 
 fn value(definition: &FeatureDefinition) -> Value {
-    serde_json::to_value(definition).unwrap_or(Value::Null)
+    cadmpeg_core::serde_erase::to_json_value(definition).unwrap_or(Value::Null)
 }
 
 struct Comparison<'a> {

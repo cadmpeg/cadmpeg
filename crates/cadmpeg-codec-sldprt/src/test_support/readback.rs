@@ -356,7 +356,7 @@ pub(crate) fn edited_json(
     edit: &mut dyn FnMut(&mut Value),
     id: &dyn Fn(&str) -> String,
 ) -> CadIr {
-    let value = serde_json::to_value(ir).expect("the document serializes");
+    let value = cadmpeg_core::serde_erase::to_json_value(ir).expect("the document serializes");
     apply_edited_json(ir, value, edit, id)
 }
 
@@ -371,9 +371,11 @@ fn apply_edited_json(
     macro_rules! arenas {
         ($($arena:ident),*) => {$(
             if !ir.model.$arena.is_empty() {
-                let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
+                let mut value = cadmpeg_core::serde_erase::to_json_value(&ir.model.$arena)
+                    .expect("the arena serializes");
                 edit(&mut value);
-                edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+                edited.model.$arena = cadmpeg_core::serde_erase::from_json_value(&value)
+                    .expect("the edited arena reads");
             }
         )*};
     }

@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bodies whose transforms the writer places into their geometry: geometry
-//! that bodies under different transforms share, and a copied record that
-//! has no placed image.
+//! and topology that bodies under different transforms share, and a copied
+//! record that has no placed image.
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::{add_document_root, unit_cube};
+use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 use crate::{IgesCodec, IgesVersion};
 
@@ -21,6 +23,10 @@ use crate::{IgesCodec, IgesVersion};
 const TOPOLOGY_KINDS: [&str; 8] = [
     "body", "region", "shell", "face", "loop", "coedge", "edge", "vertex",
 ];
+
+/// The kinds of record that a second body on shared edges and vertices
+/// renames.
+const FACE_KINDS: [&str; 6] = ["body", "region", "shell", "face", "loop", "coedge"];
 
 /// Bound on the distance between a read-back point and its expected place.
 const PLACED: f64 = 1.0e-9;
@@ -51,63 +57,89 @@ fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
         .collect()
 }
 
-/// Appends `-instance` to the key of each topology identity in `value`.
-fn renamed(value: &mut Value) {
+/// Appends `-instance` to the key of each identity of a kind in `kinds` in
+/// `value`.
+fn renamed(value: &mut Value, kinds: &[&str]) {
     match value {
         Value::String(text) => {
             if let Some((head, _)) = text.split_once('#') {
-                if TOPOLOGY_KINDS
-                    .iter()
-                    .any(|kind| head.ends_with(&format!(":{kind}")))
-                {
+                if kinds.iter().any(|kind| head.ends_with(&format!(":{kind}"))) {
                     text.push_str("-instance");
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                renamed(item);
+                renamed(item, kinds);
             }
         }
         Value::Object(fields) => {
             for field in fields.values_mut() {
-                renamed(field);
+                renamed(field, kinds);
             }
         }
         _ => {}
     }
 }
 
-/// `records` with each topology identity renamed for the second body.
-fn instance<T: Serialize + DeserializeOwned>(records: &[T]) -> Vec<T> {
+/// `records` with each identity of a kind in `kinds` renamed for the second
+/// body.
+fn instance<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str]) -> Vec<T> {
     let mut value = serde_json::to_value(records).expect("the records serialize");
-    renamed(&mut value);
+    renamed(&mut value, kinds);
     serde_json::from_value(value).expect("the renamed records deserialize")
 }
 
-/// The example cube under `first`, and a second cube body on the same
-/// points, curves and surfaces under `second`.
-fn shared_cubes(first: Option<Transform>, second: Option<Transform>) -> CadIr {
+/// The example cube under `first`, and a second cube body under `second` on
+/// the same records of each kind outside `kinds`. The radial ring of an edge
+/// that both bodies use holds the coedges of the first body, then those of
+/// the second.
+fn shared_cubes(first: Option<Transform>, second: Option<Transform>, kinds: &[&str]) -> CadIr {
     let mut ir = unit_cube().expect("the example cube builds");
     let geometry = &mut ir.geometry;
     geometry.bodies[0].transform = first;
-    let mut bodies = instance(&geometry.bodies);
+    let mut bodies = instance(&geometry.bodies, kinds);
     bodies[0].transform = second;
-    let regions = instance(&geometry.regions);
-    let shells = instance(&geometry.shells);
-    let faces = instance(&geometry.faces);
-    let loops = instance(&geometry.loops);
-    let coedges = instance(&geometry.coedges);
-    let edges = instance(&geometry.edges);
-    let vertices = instance(&geometry.vertices);
+    let regions = instance(&geometry.regions, kinds);
+    let shells = instance(&geometry.shells, kinds);
+    let faces = instance(&geometry.faces, kinds);
+    let loops = instance(&geometry.loops, kinds);
+    let coedges = instance(&geometry.coedges, kinds);
+    let edges = instance(&geometry.edges, kinds);
+    let vertices = instance(&geometry.vertices, kinds);
+    let shared_edges = !kinds.contains(&"edge");
     geometry.bodies.extend(bodies);
     geometry.regions.extend(regions);
     geometry.shells.extend(shells);
     geometry.faces.extend(faces);
     geometry.loops.extend(loops);
     geometry.coedges.extend(coedges);
-    geometry.edges.extend(edges);
-    geometry.vertices.extend(vertices);
+    if shared_edges {
+        let mut rings = BTreeMap::<String, Vec<String>>::new();
+        for coedge in &geometry.coedges {
+            rings
+                .entry(coedge.edge.as_str().to_owned())
+                .or_default()
+                .push(coedge.id.as_str().to_owned());
+        }
+        let next = rings
+            .values()
+            .flat_map(|ring| {
+                ring.iter()
+                    .zip(ring.iter().cycle().skip(1))
+                    .map(|(coedge, next)| (coedge.clone(), next.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for coedge in &mut geometry.coedges {
+            coedge.radial_next = CoedgeId::try_from(next[coedge.id.as_str()].clone())
+                .expect("the coedge identity is valid");
+        }
+    } else {
+        geometry.edges.extend(edges);
+    }
+    if kinds.contains(&"vertex") {
+        geometry.vertices.extend(vertices);
+    }
     add_document_root(&mut ir);
     ir.finalize();
     ir
@@ -218,8 +250,9 @@ fn stretched(point: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-#[test]
-fn geometry_that_bodies_under_different_transforms_share_is_placed_once_for_each_body() {
+/// Writes two cubes that share the records of each kind outside `kinds`, the
+/// second stretched, and reads back each body at its own corners.
+fn placed_once_for_each_body(kinds: &[&str]) {
     let ir = shared_cubes(
         None,
         Transform::affine([
@@ -227,6 +260,7 @@ fn geometry_that_bodies_under_different_transforms_share_is_placed_once_for_each
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 3.0, -1.0],
         ]),
+        kinds,
     );
     let (losses, read) = written(&ir);
     for code in ["iges/writer.body-omitted", "iges/writer.face-omitted"] {
@@ -247,8 +281,10 @@ fn geometry_that_bodies_under_different_transforms_share_is_placed_once_for_each
     );
 }
 
-#[test]
-fn a_copied_record_with_no_placed_image_drops_only_the_faces_of_its_body() {
+/// Writes two cubes that share the records of each kind outside `kinds`,
+/// the second under a transform that has no finite image of five of its
+/// faces, and reads back the first body and the sixth face of the second.
+fn drops_only_instance_faces(kinds: &[&str]) {
     // The image of each cube corner at x = 10 leaves the finite range; the
     // instance face on the plane x = 0 keeps a finite image.
     let ir = shared_cubes(
@@ -258,6 +294,7 @@ fn a_copied_record_with_no_placed_image_drops_only_the_faces_of_its_body() {
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
         ]),
+        kinds,
     );
     let (losses, read) = written(&ir);
     let omitted = charged(&losses, "iges/writer.face-omitted");
@@ -291,4 +328,24 @@ fn a_copied_record_with_no_placed_image_drops_only_the_faces_of_its_body() {
         bodies.iter().any(|body| holds(body, &placed_face)),
         "the instance face on x = 0 does not read back: {bodies:?}"
     );
+}
+
+#[test]
+fn geometry_that_bodies_under_different_transforms_share_is_placed_once_for_each_body() {
+    placed_once_for_each_body(&TOPOLOGY_KINDS);
+}
+
+#[test]
+fn edges_and_vertices_that_bodies_under_different_transforms_share_are_placed_once_for_each_body() {
+    placed_once_for_each_body(&FACE_KINDS);
+}
+
+#[test]
+fn a_copied_record_with_no_placed_image_drops_only_the_faces_of_its_body() {
+    drops_only_instance_faces(&TOPOLOGY_KINDS);
+}
+
+#[test]
+fn a_copied_edge_or_vertex_with_no_placed_image_drops_only_the_faces_of_its_body() {
+    drops_only_instance_faces(&FACE_KINDS);
 }

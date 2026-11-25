@@ -705,14 +705,15 @@ macro_rules! declare_home_arenas {
             }
 
             /// States one record of each id in each sorted arena whose copies
-            /// hold one value, and returns each id whose copies differ, all of
-            /// whose copies it keeps.
-            pub(crate) fn repeated_ids(&mut self, home: &'static str) -> Vec<RepeatedId> {
+            /// hold one value, and returns each id whose copies differ, whose
+            /// copies `differing` keeps.
+            pub(crate) fn repeated_ids(&mut self, home: &'static str, differing: DifferingCopies) -> Vec<RepeatedId> {
                 let mut repeated = Vec::new();
                 $(drop_repeated_copies(
                     &mut self.$field,
                     crate::schema::ArenaRecord::record_identity,
                     &crate::give_up::Arena::Home { home, field: stringify!($field) },
+                    differing,
                     &mut repeated,
                 );)*
                 repeated
@@ -1414,7 +1415,7 @@ macro_rules! declare_document_arenas {
                         if !rewrite(&mut value) {
                             return false;
                         }
-                        let Ok(entity) = serde_json::from_value(value) else {
+                        let Ok(entity) = cadmpeg_core::serde_erase::from_json_value(&value) else {
                             return false;
                         };
                         rewritten.push(entity);
@@ -1505,13 +1506,23 @@ pub(crate) struct RepeatedId {
     pub(crate) copies: usize,
 }
 
+/// What [`drop_repeated_copies`] keeps of an id whose copies differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DifferingCopies {
+    /// Every copy, for the decode wrapper's give-up (§2.8).
+    Keep,
+    /// The first copy in arena order, as a CADIR writer states it (§3.4).
+    First,
+}
+
 /// States one record for each id of a sorted arena whose copies hold one
-/// value, and records in `repeated` each id whose copies differ, keeping
-/// every copy of it for the give-up (§2.8).
+/// value, and records in `repeated` each id whose copies differ, keeping of
+/// it the copies `differing` names.
 pub(crate) fn drop_repeated_copies<T: PartialEq>(
     records: &mut Vec<T>,
     id: impl Fn(&T) -> &str,
     arena: &crate::give_up::Arena,
+    differing: DifferingCopies,
     repeated: &mut Vec<RepeatedId>,
 ) {
     let mut run: Option<(RepeatedId, bool)> = None;
@@ -1540,7 +1551,7 @@ pub(crate) fn drop_repeated_copies<T: PartialEq>(
                 ));
             }
         }
-        later == earlier
+        differing == DifferingCopies::First || later == earlier
     });
     repeated.extend(
         run.filter(|(_, differs)| *differs)
@@ -1613,7 +1624,55 @@ macro_rules! declare_arena_name {
             }
         }
 
-        impl Arenas<'_> {
+        impl ArenaName {
+            /// The kind of the records of the arena `field` of `home`.
+            pub(crate) fn record_kind(home: &str, field: &str) -> Option<crate::schema::EntityKind> {
+                $(if home == stringify!($home) && field == stringify!($field) {
+                    return Some(<$ty as crate::schema::ArenaRecord>::KIND);
+                })*
+                None
+            }
+        }
+
+        impl<'a> Arenas<'a> {
+            /// Each record of an arena of `class`, as the give-up names it.
+            pub(crate) fn seeds_of(self, class: ArenaClass) -> Vec<crate::give_up::Seed> {
+                let mut seeds = Vec::new();
+                $(if arena_class!($class) == class {
+                    seeds.extend(self.$home.$field.iter().map(|record| crate::give_up::Seed {
+                        arena: crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) },
+                        id: crate::schema::ArenaRecord::record_identity(record).to_owned(),
+                    }));
+                })*
+                seeds
+            }
+
+            /// The ids of the records of each arena, by the arena's name, with
+            /// the kind of its records.
+            pub(crate) fn record_ids(self) -> BTreeMap<ArenaName, (crate::schema::EntityKind, std::collections::BTreeSet<&'a str>)> {
+                let mut ids = BTreeMap::new();
+                $(ids.insert(
+                    arena_name!($field, $class, $home),
+                    (
+                        <$ty as crate::schema::ArenaRecord>::KIND,
+                        self.$home.$field.iter().map(crate::schema::ArenaRecord::record_identity).collect(),
+                    ),
+                );)*
+                ids
+            }
+
+            /// The ids of `among` that a record of an arena the CADIR wire
+            /// carries has.
+            pub(crate) fn written_among<'b>(self, among: &std::collections::BTreeSet<&'b str>) -> std::collections::BTreeSet<&'b str> {
+                let mut written = std::collections::BTreeSet::new();
+                $(if !ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    written.extend(self.$home.$field.iter().filter_map(|record| {
+                        among.get(crate::schema::ArenaRecord::record_identity(record)).copied()
+                    }));
+                })*
+                written
+            }
+
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
@@ -3311,22 +3370,47 @@ impl CadIr {
     /// The text is written through the same finite adapter the digest uses, so
     /// a non-finite float is refused rather than written as `null`.
     ///
+    /// §2.8 has serialization refuse no value of a checked type. A document
+    /// that holds a non-finite float or nests past a bound of §2.5 is outside
+    /// the `CadIr` type, so these refusals fall outside that rule. The CADIR
+    /// encoder is the writer that drops what CADIR cannot hold (§3.4).
+    ///
     /// # Errors
     ///
-    /// Refuses a document holding a non-finite float.
+    /// [`CanonicalJsonError::NonFinite`] for a document holding a non-finite
+    /// float, and [`CanonicalJsonError::PastBound`] for a document nesting
+    /// past a bound of §2.5.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         canonical.finalize();
-        crate::hash::finite_json::to_canonical_json_string_erased(&|serializer| {
-            canonical.serialize_erased(serializer)
+        let (bytes, measured) = crate::hash::measured_canonical_json(&canonical)?;
+        let past = measured
+            .records
+            .iter()
+            .map(|(place, bound)| {
+                let at = canonical.record_at(place).map_or_else(
+                    || "in a record".to_owned(),
+                    |seed| format!("in record {} of arena {}", seed.id, seed.arena),
+                );
+                (at, *bound)
+            })
+            .chain(measured.outside.iter().map(|(outside, bound)| {
+                (format!("outside every record ({})", outside.field), *bound)
+            }))
+            .next();
+        if let Some((at, bound)) = past {
+            return Err(CanonicalJsonError::PastBound { bound, at });
+        }
+        String::from_utf8(bytes).map_err(|error| {
+            CanonicalJsonError::Serialize(<serde_json::Error as serde::ser::Error>::custom(error))
         })
     }
 
     /// Parse canonical JSON and reject any unsupported `ir_version`, any
-    /// spelling or value [`CadIr::read`] repairs or gives up, a document whose
-    /// scope excludes a class it holds records of, or one that nests deeper
-    /// than a CADIR document's bound. Every float zero, `-0` and `-0.0`
-    /// included, reads as 0 (§2.5).
+    /// spelling or value [`CadIr::read`] repairs or gives up, a document
+    /// whose scope excludes a class it holds records of, or one that nests
+    /// deeper than a CADIR document's bound. Every float zero, `-0` and
+    /// `-0.0` included, reads as 0 (§2.5).
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
@@ -3354,17 +3438,47 @@ impl CadIr {
     }
 
     /// Sorts every arena of the document's homes and native namespaces by
-    /// id, then states one record of each id whose copies hold one value.
-    /// Returns each id whose copies differ, all of whose copies stay for the
-    /// give-up (§2.8). The arenas of a state's delta are left as they are.
-    pub(crate) fn repeated_ids(&mut self) -> Vec<RepeatedId> {
+    /// id, keeping the arena order of the copies of one id, then states one
+    /// record of each id whose copies hold one value. Returns each id whose
+    /// copies differ, whose copies `differing` keeps. The arenas of a state's
+    /// delta are left as they are.
+    pub(crate) fn repeated_ids(&mut self, differing: DifferingCopies) -> Vec<RepeatedId> {
         self.finalize();
-        let mut repeated = self.geometry.repeated_ids("geometry");
-        repeated.extend(self.model.repeated_ids("model"));
-        repeated.extend(self.design.repeated_ids("design"));
-        repeated.extend(self.process.repeated_ids("process"));
-        repeated.extend(self.native.repeated_ids());
+        let mut repeated = self.geometry.repeated_ids("geometry", differing);
+        repeated.extend(self.model.repeated_ids("model", differing));
+        repeated.extend(self.design.repeated_ids("design", differing));
+        repeated.extend(self.process.repeated_ids("process", differing));
+        repeated.extend(self.native.repeated_ids(differing));
         repeated
+    }
+
+    /// Whether every arena of the document's homes and native namespaces
+    /// states its ids once each, in increasing order.
+    pub(crate) fn ids_in_order(&self) -> bool {
+        self.geometry.unordered_arena().is_none()
+            && self.model.unordered_arena().is_none()
+            && self.design.unordered_arena().is_none()
+            && self.process.unordered_arena().is_none()
+            && self.native.unordered_arena().is_none()
+    }
+
+    /// Leaves the design class out of the model (§2.1): states each model
+    /// record without its references into the design class, and returns the
+    /// ids of those records with the give-up seeds of the records whose own
+    /// target is a design record.
+    pub(crate) fn leave_design_out(&mut self) -> (Vec<String>, Vec<crate::give_up::Seed>) {
+        let (kept, left_out) = design_references::leave_out(&mut self.model);
+        let seeds = left_out
+            .into_iter()
+            .map(|(arena, id)| crate::give_up::Seed {
+                arena: crate::give_up::Arena::Home {
+                    home: arena.home().as_str(),
+                    field: arena.key(),
+                },
+                id,
+            })
+            .collect();
+        (kept, seeds)
     }
 
     /// The record at `place`, as the give-up names it.
