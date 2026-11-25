@@ -105,7 +105,7 @@ fn rmfastload_native_admission_checks_the_owning_section_class_count() {
                 .unwrap()
                 .is_empty()
         );
-        let namespace = ir.native.namespace_mut("nx");
+        let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
         let original =
             serde_json::to_value(&namespace.arenas()["rmfastload_physical_storages"][0]).unwrap();
         let mut bad = original.clone();

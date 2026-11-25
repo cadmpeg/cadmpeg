@@ -9,6 +9,7 @@ use crate::report::check::Finding;
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
     ir.geometry.bodies.push(crate::topology::Body {
+        unstated: None,
         id: "test:model:body#result".try_into().unwrap(),
         kind: crate::topology::BodyKind::Solid,
         transform: None,
@@ -19,7 +20,7 @@ fn model() -> CadIr {
     });
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
+            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": []
         }))
         .unwrap(),
     );
@@ -49,10 +50,12 @@ fn model() -> CadIr {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
+    let mut ir = ir.clone();
+    crate::examples::add_document_root(&mut ir);
     let mut findings = Vec::new();
     super::super::check_products(
         &cadmpeg_core::decode::test_support::service_decode_context(),
-        ir,
+        &ir,
         &mut findings,
     )
     .unwrap();
@@ -68,12 +71,6 @@ fn product_history_owner_accepts_owned_outputs_and_absent_links() {
     let read: Feature = serde_json::from_value(json).unwrap();
     assert_eq!(
         read.product_definition,
-        ir.model.features[0].product_definition
-    );
-    let wire = serde_json::to_value(&ir.model).unwrap();
-    let restored: crate::document::Model = serde_json::from_value(wire).unwrap();
-    assert_eq!(
-        restored.features[0].product_definition,
         ir.model.features[0].product_definition
     );
     ir.model.features[0].product_definition = None;

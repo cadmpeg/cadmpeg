@@ -28,8 +28,8 @@ use cadmpeg_registry::{
 use crate::application::artifact_store::{self, FileDestination};
 use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
 use crate::application::transcoder::{
-    self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
-    SourceRequest, TargetSelection,
+    self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, SourceRequest,
+    StrictnessFlags, TargetSelection, Validation,
 };
 use crate::application::validators::validate_loaded;
 use crate::loader;
@@ -41,10 +41,11 @@ type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
 /// CLI-facing conversion arguments assembled from argv.
 pub(crate) struct ConversionArgs {
-    /// Decode and export loss refusal.
-    pub(crate) losses: LossPolicy,
-    /// Refuse export when validation reports an error in what the output writes.
-    pub(crate) reject_errors: bool,
+    /// The flags that set the decode's and the write's strictness.
+    pub(crate) strictness: StrictnessFlags,
+    /// The form of features whose states the target needs and the document
+    /// lacks.
+    pub(crate) missing_states: cadmpeg_ir::codec::write::MissingStateForm,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -383,8 +384,14 @@ pub(crate) fn dump(
                 TargetRequest::Inherit,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
-        let emission = emit_export_plan(plan, Format::Cadir, &destination, &loaded.origin)
-            .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
+        let emission = emit_export_plan(
+            plan,
+            Format::Cadir,
+            &destination,
+            &loaded.origin,
+            &loaded.ir,
+        )
+        .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
         print_export_emission(&mut io::stderr(), &emission)?;
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
@@ -399,7 +406,7 @@ pub(crate) fn dump(
             CommandReportBody::Ok {
                 decode_report: loaded.decode_report(),
                 check_report: None,
-                export: None,
+                export: Some(&emission.report),
             },
         )?;
         Ok(())
@@ -429,7 +436,6 @@ pub(crate) fn check_cmd(
             args.policy.limits.work_profile(),
         )?;
         let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-            operation: crate::application::refusal::CheckOperation::Check,
             decode_report: loaded.decode_report().cloned(),
             validation: report.clone(),
         });
@@ -462,8 +468,8 @@ pub(crate) fn convert(
 ) -> CommandResult<()> {
     let result = (|| {
         let policy = ConversionPolicy {
-            losses: conversion.losses,
-            reject_errors: conversion.reject_errors,
+            strictness: conversion.strictness,
+            missing_states: conversion.missing_states,
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;
@@ -480,7 +486,7 @@ pub(crate) fn convert(
             }
         }
 
-        let depth = if conversion.full_decode || conversion.losses.needs_full_decode() {
+        let depth = if conversion.full_decode || conversion.strictness.needs_full_decode() {
             DecodeDepth::Full
         } else {
             target.request()
@@ -501,19 +507,26 @@ pub(crate) fn convert(
                 print_decode_report(&mut stderr, report)?;
                 writeln!(stderr)?;
             }
-            print_check_report(&mut stderr, &prepared.validation)?;
-            let total = prepared.validation.error_count();
-            if total > 0 {
-                writeln!(
-                    stderr,
-                    "check: {} of {total} error(s) in what the {} output writes",
-                    planned.carried_errors(),
-                    prepared.format().name()
-                )?;
+            match &prepared.validation {
+                Validation::Complete(report) => {
+                    print_check_report(&mut stderr, report)?;
+                    let total = report.error_count();
+                    if total > 0 {
+                        writeln!(
+                            stderr,
+                            "check: {} of {total} error(s) in what the {} output writes",
+                            planned.carried_errors(),
+                            prepared.format().name()
+                        )?;
+                    }
+                }
+                Validation::Incomplete(reason) => {
+                    writeln!(stderr, "check: did not run to its end: {reason}")?;
+                }
             }
             (
                 prepared.document.decode_report().cloned(),
-                prepared.validation.clone(),
+                prepared.validation.report().cloned(),
             )
         };
         let emission = planned
@@ -526,7 +539,7 @@ pub(crate) fn convert(
             "convert",
             CommandReportBody::Ok {
                 decode_report: decode_report.as_ref(),
-                check_report: Some(&validation),
+                check_report: validation.as_ref(),
                 export: Some(&emission.report),
             },
         ) {

@@ -11,8 +11,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    AnchoredVertexUse, Body, BodyKind, Coedge, Face, FaceLoops, Loop, LoopBoundaryRole, Region,
-    Sense, Shell,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Face, FaceLoops, Loop, Region, Sense, Shell,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -390,6 +389,7 @@ pub(super) fn emit_faces(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     for (component_index, component_faces) in &components {
         let region_id = region_ids[component_index].clone();
@@ -413,12 +413,9 @@ pub(super) fn emit_faces(
         let region_shell_id = shell_id.clone();
         let region_shells = vec![region_shell_id];
         admission.charge()?;
-        ir.geometry.regions.push(Region {
-            id: region_record_id,
-            body: region_body_id,
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region_record_id, region_body_id, region_shells));
         annotate(
             annotations,
             &shell_id,
@@ -469,7 +466,6 @@ pub(super) fn emit_faces(
         let face_record_id = face_id.clone();
         let face_shell_id = shell_id.clone();
         let face_surface_id = surface_ids[&face.surface].clone();
-        let face_record_index = ir.geometry.faces.len();
         admission.charge()?;
         ir.geometry.faces.push(Face {
             id: face_record_id,
@@ -523,15 +519,8 @@ pub(super) fn emit_faces(
                 "62_loop",
                 Exactness::ByteExact,
             )?;
-            for field in ["face", "coedges", "vertex_uses"] {
+            for field in ["face", "boundary.coedges", "boundary.vertex_uses"] {
                 annotations.derived(loop_id.as_str(), field)?;
-            }
-            if ir.geometry.faces[face_record_index].loops.role(&loop_id)
-                != LoopBoundaryRole::Unspecified
-            {
-                annotations
-                    .derived(loop_id.as_str(), "boundary_role")
-                    .map_err(cadmpeg_core::CodecError::from)?;
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses) else {
                 return Ok(false);

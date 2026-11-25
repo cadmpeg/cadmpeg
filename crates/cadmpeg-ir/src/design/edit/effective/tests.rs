@@ -487,6 +487,7 @@ fn binding(
         id: id("appearance-binding", key),
         target,
         appearance: id("appearance", appearance),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -602,6 +603,7 @@ fn visibility_is_every_stated_gate_combined_with_and() {
         description: None,
         visible: Some(false),
         items,
+        native_ref: None,
     };
     document.model.presentation_layers =
         vec![layer(vec![InstanceTarget::new(PresentationItem::Body {
@@ -630,6 +632,7 @@ fn a_hidden_parent_layer_hides_its_sublayers_items() {
         description: None,
         visible,
         items,
+        native_ref: None,
     };
     document.model.presentation_layers = vec![
         layer(1, None, Some(false), Vec::new()),

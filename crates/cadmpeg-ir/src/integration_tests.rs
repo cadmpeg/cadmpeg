@@ -44,10 +44,6 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
         format: crate::codec_id!("step"),
         object_id: cadmpeg_core::text::NonBlankString::new(object_id)
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -66,14 +62,11 @@ fn source_association_is_a_free_carrier_root() {
                 "00000000-0000-0000-0000-000000000000",
             )
             .expect("nonempty source identity"),
-            name: Some("curve".into()),
-            color: None,
-            visible: Some(true),
-            layer: Some("layer-0".into()),
             instance_path: Vec::new(),
         }),
         native_ref: None,
     });
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
@@ -101,6 +94,7 @@ fn ir_strategy() -> impl Strategy<Value = CadIr> {
             ir.geometry.points.push(point(&id));
         }
         ir.finalize();
+        crate::examples::add_document_root(&mut ir);
         ir
     })
 }
@@ -140,6 +134,7 @@ fn insert_free_vertex_shell(
         .unwrap();
     draft
         .insert(Body {
+            unstated: None,
             id: BodyId::mint(body_id).expect("valid identity"),
             kind: BodyKind::Wire,
             transform: None,
@@ -150,12 +145,11 @@ fn insert_free_vertex_shell(
         })
         .unwrap();
     draft
-        .insert(Region {
-            id: RegionId::mint(region_id).expect("valid identity"),
-            body: BodyId::mint(body_id).expect("valid identity"),
-            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-            native_ref: None,
-        })
+        .insert(Region::new(
+            RegionId::mint(region_id).expect("valid identity"),
+            BodyId::mint(body_id).expect("valid identity"),
+            vec![ShellId::mint(shell_id).expect("valid identity")],
+        ))
         .unwrap();
     draft
         .insert(Shell::with_free_vertex(
@@ -292,6 +286,7 @@ proptest! {
         let mut base = CadIr::empty();
         draft.commit_model(&mut base, &cadmpeg_core::decode::test_support::service_decode_context()).unwrap().unwrap();
         base.finalize();
+        crate::examples::add_document_root(&mut base);
         let report = validate_neutral(&base, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(
             report.error_count(),

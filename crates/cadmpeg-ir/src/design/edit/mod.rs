@@ -14,8 +14,8 @@
 //! document.
 //!
 //! The edit helpers are the methods of an [`Editor`], which
-//! [`CadIr::edit`](crate::CadIr::edit) returns over a document on which
-//! validation reports no Error. Each changes one canonical fact and keeps
+//! [`CadIr::edit`](crate::CadIr::edit) returns over a document with the
+//! findings validation reports on it. Each changes one canonical fact and keeps
 //! every cache that depends on it honest: [`Editor::set_dimension`],
 //! [`Editor::set_parameter_expression`], and
 //! [`Editor::set_feature_definition`] mark the dependent states `Stale`,
@@ -24,8 +24,9 @@
 //! its records and delete one with what it owns, keeping every position
 //! valid; and [`Editor::set_active_configuration`] exchanges the current
 //! geometry of one scope for another configuration's state. An edit whose
-//! result validation reports an Error in is refused, and the document is left
-//! unchanged, so it stays valid from one edit to the next.
+//! result holds more Error findings of a rule on a record than the document
+//! held before it is refused, and the document is left unchanged, so no edit
+//! adds an Error. An Error the document held before the edit refuses nothing.
 //!
 //! Positions, references, measures, and constructions occur throughout the
 //! feature vocabulary. The helpers find them in a record's wire form, in which
@@ -64,9 +65,12 @@ pub use eval::{evaluate, EvalError, Value};
 /// Why an edit helper or a resolver refuses.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum EditError {
-    /// Validation reports an Error in the document, or would in the result
-    /// of the edit: the Error findings.
-    #[error("validation reports {} error(s)", .0.len())]
+    /// The result of the edit holds more Error findings of a rule on a
+    /// record than the document held before it: the added findings.
+    #[error(
+        "the edit adds {} Error finding(s) the document did not hold",
+        .0.len()
+    )]
     Invalid(Vec<Finding>),
     /// Validation could not run to its end on the document or on the result
     /// of the edit.
@@ -185,44 +189,62 @@ pub struct ConfigurationSwitch {
     pub unspelled: Vec<Position>,
 }
 
-/// An editing session over a document on which validation (part 10) reports
-/// no Error. The document changes only through its methods while it lives,
-/// and each refuses an edit whose result would hold an Error, leaving the
-/// document unchanged.
+/// An editing session over a document, holding the findings validation
+/// (part 10) reports on it. The document changes only through its methods
+/// while it lives, and each refuses an edit whose result holds an Error
+/// finding the document did not hold, leaving the document unchanged.
 #[derive(Debug)]
 pub struct Editor<'a> {
     document: &'a mut CadIr,
+    findings: Vec<Finding>,
 }
 
 impl CadIr {
-    /// Validates the document and returns an [`Editor`] over it (§4).
+    /// Validates the document and returns an [`Editor`] over it, which holds
+    /// the findings (§4). An Error the document holds refuses no edit.
     ///
     /// # Errors
     ///
-    /// Returns [`EditError::Invalid`] with the Error findings where
-    /// validation reports one, and [`EditError::Validation`] where it cannot
-    /// run to its end.
+    /// Returns [`EditError::Validation`] where validation cannot run to its
+    /// end.
     pub fn edit(&mut self) -> Result<Editor<'_>, EditError> {
-        errors(self)?;
-        Ok(Editor { document: self })
+        let findings = findings(self)?;
+        Ok(Editor {
+            document: self,
+            findings,
+        })
     }
 }
 
-/// Refuses a document on which validation reports an Error. A Warning never
-/// refuses.
-fn errors(document: &CadIr) -> Result<(), EditError> {
-    let report = crate::validate::validate_neutral(document, Vec::new())
-        .map_err(|error| EditError::Validation(error.to_string()))?;
-    let findings: Vec<Finding> = report
-        .findings
-        .into_iter()
-        .filter(|finding| finding.severity == Severity::Error)
-        .collect();
-    if findings.is_empty() {
-        Ok(())
-    } else {
-        Err(EditError::Invalid(findings))
+fn findings(document: &CadIr) -> Result<Vec<Finding>, EditError> {
+    crate::validate::validate_neutral(document, Vec::new())
+        .map(|report| report.findings)
+        .map_err(|error| EditError::Validation(error.to_string()))
+}
+
+/// The Error findings of `after` beyond those of `before`: for each rule
+/// and record, the findings past the count `before` holds. A finding that
+/// names no record counts under its rule alone. A Warning is never added.
+fn added_errors(before: &[Finding], after: &[Finding]) -> Vec<Finding> {
+    let rule = |finding: &Finding| (finding.rule.clone(), finding.entity.clone());
+    let mut held = std::collections::BTreeMap::<_, usize>::new();
+    for finding in before
+        .iter()
+        .filter(|finding| finding.severity >= Severity::Error)
+    {
+        *held.entry(rule(finding)).or_default() += 1;
     }
+    let mut added = Vec::new();
+    for finding in after
+        .iter()
+        .filter(|finding| finding.severity >= Severity::Error)
+    {
+        match held.get_mut(&rule(finding)) {
+            Some(count) if *count > 0 => *count -= 1,
+            _ => added.push(finding.clone()),
+        }
+    }
+    added
 }
 
 impl Editor<'_> {
@@ -232,16 +254,28 @@ impl Editor<'_> {
         self.document
     }
 
+    /// The findings validation reports on the document as it now stands.
+    #[must_use]
+    pub fn findings(&self) -> &[Finding] {
+        &self.findings
+    }
+
     /// Applies an edit to a copy of the document, and keeps the copy only
-    /// where the edit succeeds and validation reports no Error in it.
+    /// where the edit succeeds and its result holds no Error finding that
+    /// the document did not hold.
     fn apply<T>(
         &mut self,
         edit: impl FnOnce(&mut CadIr) -> Result<T, EditError>,
     ) -> Result<T, EditError> {
         let mut next = self.document.clone();
         let done = edit(&mut next)?;
-        errors(&next)?;
+        let findings = findings(&next)?;
+        let added = added_errors(&self.findings, &findings);
+        if !added.is_empty() {
+            return Err(EditError::Invalid(added));
+        }
         *self.document = next;
+        self.findings = findings;
         Ok(done)
     }
 
@@ -262,7 +296,7 @@ impl Editor<'_> {
     /// with a unit or a fraction for an integer kind, another variant, or any
     /// value for a `Native` kind); [`EditError::UnknownParameter`] for a
     /// parameter the design does not hold; and [`EditError::Invalid`] where
-    /// the result would hold an Error.
+    /// the edit adds an Error finding.
     pub fn set_dimension(
         &mut self,
         parameter: &ParameterId,
@@ -283,7 +317,7 @@ impl Editor<'_> {
     /// the parameter's kind, or that holds the law parameter or a bend
     /// variable; [`EditError::UnknownParameter`] for a parameter, or a
     /// referenced parameter, that the design does not hold; and
-    /// [`EditError::Invalid`] where the result would hold an Error. An
+    /// [`EditError::Invalid`] where the edit adds an Error finding. An
     /// integer-kind expression whose value is not whole is not refused: it
     /// has no cache (§5.13).
     pub fn set_parameter_expression(
@@ -301,8 +335,8 @@ impl Editor<'_> {
     /// # Errors
     ///
     /// Returns [`EditError::UnknownFeature`] for a feature the design does
-    /// not hold, and [`EditError::Invalid`] where the result would hold an
-    /// Error.
+    /// not hold, and [`EditError::Invalid`] where the edit adds an Error
+    /// finding.
     pub fn set_feature_definition(
         &mut self,
         feature: &FeatureId,
@@ -329,7 +363,7 @@ impl Editor<'_> {
     /// of their ids, [`EditError::UnknownContainer`] for a container the
     /// design does not hold, [`EditError::IndexOutOfRange`] for an index past
     /// the end of an ordered container, and [`EditError::Invalid`] where the
-    /// result would hold an Error.
+    /// edit adds an Error finding.
     pub fn insert_member(
         &mut self,
         container: &ContainerId,
@@ -369,7 +403,7 @@ impl Editor<'_> {
     /// Returns [`EditError::NotAMember`] for a member in no container,
     /// [`EditError::Referenced`] with the referring records where a record
     /// the removal keeps names a record it deletes by id, and
-    /// [`EditError::Invalid`] where the result would hold an Error.
+    /// [`EditError::Invalid`] where the edit adds an Error finding.
     pub fn remove_member(&mut self, member: &Member) -> Result<(), EditError> {
         self.apply(|document| document.remove_member(member))
     }
@@ -405,8 +439,8 @@ impl Editor<'_> {
     ///
     /// Returns [`EditError::UnknownScope`] for a definition with no scope,
     /// [`EditError::UnknownConfiguration`] for a configuration that is not
-    /// one of the scope's, and [`EditError::Invalid`] where the result would
-    /// hold an Error.
+    /// one of the scope's, and [`EditError::Invalid`] where the edit adds an
+    /// Error finding.
     pub fn set_active_configuration(
         &mut self,
         scope: &ProductDefinitionId,

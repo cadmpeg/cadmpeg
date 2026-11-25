@@ -57,10 +57,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "LINE",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],
@@ -142,26 +139,49 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "LINE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "curve": "iges:model:curve#D1",
+                "kind": "curve"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [
@@ -172,24 +192,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -436,7 +447,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -529,6 +539,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "25a16b013ab91abccc4bea7682a279c8cebe3f38f0f18afea2efed632fe700fc",
     "file_digests": {},
     "retained_records": {

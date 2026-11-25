@@ -58,14 +58,7 @@ fn decoded_without_baseline(members: &[(&str, &[u8])]) -> EditableDecodeResult {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded
-        .ir_mut()
-        .source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        .unwrap();
+    decoded.source_fidelity_mut().content_digest = None;
     decoded
 }
 

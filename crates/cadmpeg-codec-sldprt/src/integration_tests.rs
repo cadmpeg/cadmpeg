@@ -8,6 +8,7 @@ mod mesh_bodies;
 mod native_skeleton;
 mod profile_data;
 mod root_definition;
+mod saved_cadir;
 mod scalar_relation_values;
 mod sweep_path_section;
 mod swift_nominal;
@@ -207,21 +208,17 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
     let display = decode(sldprt_with_body_and_display_list(&triangle_body()));
     assert!(!display.ir().model.tessellations.is_empty());
     assert_eq!(
-        display.ir().model.tessellations[0].faces,
+        display.ir().model.tessellations[0].of.faces(),
         [display.ir().geometry.faces[0].id.clone()]
     );
     assert_eq!(
-        display.ir().model.tessellations[0].body.as_ref(),
+        display.ir().model.tessellations[0].of.body(),
         Some(&display.ir().geometry.bodies[0].id)
     );
     let tessellation_exactness = &display.source_fidelity().annotations.exactness()
         [display.ir().model.tessellations[0].id.as_str()];
     assert_eq!(
-        tessellation_exactness.fields()["body"],
-        cadmpeg_ir::Exactness::Derived
-    );
-    assert_eq!(
-        tessellation_exactness.fields()["faces"],
+        tessellation_exactness.fields()["of"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_valid(&display);
@@ -247,8 +244,7 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
     let mut decoded = decoded;
-    decoded.ir_mut().model.tessellations[0].body = None;
-    decoded.ir_mut().model.tessellations[0].faces.clear();
+    decoded.ir_mut().model.tessellations[0].of = cadmpeg_ir::tessellation::Meshed::Unresolved;
     let mut coincident = decoded.ir().geometry.faces[0].clone();
     coincident.id =
         cadmpeg_ir::ids::FaceId::mint("sldprt:brep:face#coincident").expect("identity grammar");
@@ -266,8 +262,8 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     )
     .unwrap();
 
-    assert!(decoded.ir().model.tessellations[0].body.is_none());
-    assert!(decoded.ir().model.tessellations[0].faces.is_empty());
+    assert!(decoded.ir().model.tessellations[0].of.body().is_none());
+    assert!(decoded.ir().model.tessellations[0].of.faces().is_empty());
 }
 
 #[test]
@@ -305,8 +301,8 @@ fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and
         .unwrap();
     let second = decode(bytes);
     assert_eq!(
-        crate::decode::document_local_sha256(first.ir()).unwrap(),
-        crate::decode::document_local_sha256(second.ir()).unwrap()
+        crate::test_support::document_local_sha256(first.ir()).unwrap(),
+        crate::test_support::document_local_sha256(second.ir()).unwrap()
     );
     semantic_writer_omits_subds_and_names_them();
 }
@@ -401,6 +397,50 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
     plan.write_to(&mut written).unwrap();
     assert_eq!(written, source);
     assert_eq!(classify(written), "sldprt:sw-version-12000-plus");
+}
+
+/// A document read back from CADIR JSON holds no feature history. Unedited,
+/// it replays its retained part; edited, it writes what the decoded part
+/// with the same edit writes, its history restored from the retained part
+/// rather than read as every feature removed.
+#[test]
+fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
+    let source = versioned_part();
+    let result = decode(source.clone());
+    assert!(!result.ir().model.features.is_empty());
+    let mut read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
+    assert!(read.model.features.is_empty());
+    assert!(!read.model.omitted_arenas_held());
+
+    let unedited = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&read, Some(result.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .expect("an unedited read replays");
+    assert!(matches!(
+        unedited.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
+    let mut written = Vec::new();
+    unedited.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
+
+    let written = |ir: &cadmpeg_ir::CadIr| {
+        let mut bytes = Vec::new();
+        SldprtCodec
+            .plan(
+                cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(result.source_fidelity())),
+                cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .map(|_| bytes)
+            .map_err(|error| error.to_string())
+    };
+    read.geometry.bodies[0].name = Some("edited".into());
+    let mut held = result.ir().clone();
+    held.geometry.bodies[0].name = Some("edited".into());
+    assert_eq!(written(&read), written(&held));
 }
 
 /// A source dialect outside the one-row catalog refuses under `Inherit` once
@@ -612,8 +652,8 @@ fn metadata_fallback_transfers_display_meshes_without_geometry() {
     assert!(!result.report().geometry_transferred());
     assert!(!result.ir().model.tessellations.is_empty());
     for mesh in &result.ir().model.tessellations {
-        assert!(mesh.body.is_none());
-        assert!(mesh.faces.is_empty());
+        assert!(mesh.of.body().is_none());
+        assert!(mesh.of.faces().is_empty());
         assert!(mesh.vertex_count() > 0);
     }
     assert!(result

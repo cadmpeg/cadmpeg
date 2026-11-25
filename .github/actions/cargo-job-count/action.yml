@@ -2,7 +2,10 @@
 name: Match cargo's job count to the runner
 description: >
   Export CARGO_BUILD_JOBS as the runner's core count, overriding the `jobs`
-  cap in .cargo/config.toml.
+  cap in .cargo/config.toml. Use it after Swatinem/rust-cache: that action
+  hashes every CARGO_* variable into its cache key, and macos-latest is a
+  3-core or a 5-core runner, so a count exported before the restore splits
+  the cache by runner size and a cold 3-core build outruns the job timeout.
 
 runs:
   using: composite

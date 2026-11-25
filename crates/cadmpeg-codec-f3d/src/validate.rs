@@ -191,6 +191,7 @@ fn push_constant_finding(
     findings.push(Finding {
         related: Vec::new(),
         check,
+        rule: cadmpeg_ir::rule_name!("f3d/validate.native-constant"),
         severity: Severity::Error,
         message: message.into(),
         entity,
@@ -338,6 +339,12 @@ impl<'a, 'd> Ctx<'a, 'd> {
     fn holds_design_intent(&self) -> bool {
         self.ir.scope().design && self.native.design_intent_failures.is_empty()
     }
+
+    /// Whether the neutral features that design-intent records project to
+    /// are held: a document read from CADIR JSON does not hold them.
+    fn holds_neutral_design(&self) -> bool {
+        self.holds_design_intent() && self.ir.model.omitted_arenas_held()
+    }
 }
 
 /// Validate the `f3d` native namespace of `ir` against its decoded IR.
@@ -358,6 +365,7 @@ pub(crate) fn validate_native(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(vec![Finding {
+                rule: cadmpeg_ir::rule_name!("f3d/validate.fusion-native-namespace-does-not-match"),
                 related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -368,6 +376,7 @@ pub(crate) fn validate_native(
     };
     let mut findings = validate_loaded(decode, ir, &native)?;
     findings.extend(skipped.into_iter().map(|reason| Finding {
+        rule: cadmpeg_ir::rule_name!("f3d/validate.skipped-native-arena-row"),
         check: Check::FragmentSkipped,
         severity: Severity::Info,
         entity: None,

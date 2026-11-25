@@ -88,10 +88,13 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
 
     let region = &decoded.ir().geometry.regions[0];
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
-    assert_eq!(region.shells.len(), 3);
-    assert_eq!(region.shells[0].as_str(), "step:data:shell#30");
+    assert_eq!(region.stated_shells().count(), 3);
     assert_eq!(
-        region.shells[1..]
+        region.stated_shells().cloned().collect::<Vec<_>>()[0].as_str(),
+        "step:data:shell#30"
+    );
+    assert_eq!(
+        region.stated_shells().cloned().collect::<Vec<_>>()[1..]
             .iter()
             .map(cadmpeg_ir::ids::ShellId::as_str)
             .collect::<Vec<_>>(),
@@ -100,16 +103,25 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
     let face_sense = |document: &CadIr, shell_id: &cadmpeg_ir::ids::ShellId| {
         document
             .geometry
-            .shell_faces(shell_id)
+            .stated_shell_faces(shell_id)
             .next()
             .expect("shell face")
             .sense
     };
     assert_eq!(
-        face_sense(decoded.ir(), &region.shells[0]),
+        face_sense(
+            decoded.ir(),
+            &region.stated_shells().cloned().collect::<Vec<_>>()[0]
+        ),
         cadmpeg_ir::topology::Sense::Forward
     );
-    for shell_id in region.shells.iter().skip(1) {
+    for shell_id in region
+        .stated_shells()
+        .cloned()
+        .collect::<Vec<_>>()
+        .iter()
+        .skip(1)
+    {
         assert_eq!(
             face_sense(decoded.ir(), shell_id),
             cadmpeg_ir::topology::Sense::Reversed
@@ -128,7 +140,13 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
             &DecodeOptions::default(),
         )
         .expect("decode reordered outer and void shell witness");
-    assert_eq!(reordered.ir().geometry.regions[0].shells, region.shells);
+    assert_eq!(
+        reordered.ir().geometry.regions[0]
+            .stated_shells()
+            .cloned()
+            .collect::<Vec<_>>(),
+        region.stated_shells().cloned().collect::<Vec<_>>()
+    );
 
     for document in [decoded.ir(), reordered.ir()] {
         let validation =
@@ -970,7 +988,7 @@ fn reversed_closed_shell_reverses_face_sense_and_loop_traversal() {
             } else {
                 min[axis]
             };
-            let face_loops = face.loops.to_vec();
+            let face_loops = face.loops.stated().cloned().collect::<Vec<_>>();
             let [loop_id] = face_loops.as_slice() else {
                 panic!("box face has one loop");
             };

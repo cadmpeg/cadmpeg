@@ -50,10 +50,6 @@ pub(crate) fn cgm_source_key(
         geometry_role: None,
         format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
         object_id,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -80,7 +76,7 @@ pub(crate) fn annotate(
 ///
 /// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
 /// sorts arenas by entity id before a document leaves the codec. Admission uses
-/// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
+/// [`cadmpeg_ir::CATIA_ADMISSION`], not full final-document validation.
 pub(crate) fn neutral_model_is_admissible(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
@@ -91,7 +87,7 @@ pub(crate) fn neutral_model_is_admissible(
         ctx,
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
-        cadmpeg_ir::CATIA_ADMISSION_CHECKS,
+        cadmpeg_ir::CATIA_ADMISSION,
         Vec::new(),
     )?
     .is_ok())
@@ -1208,6 +1204,20 @@ mod route_tests {
         assert!(!neutral_model_is_admissible(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut invalid,
+            &[]
+        )
+        .expect("check that the neutral model is admissible"));
+    }
+
+    /// A finding of a check outside the admission set does not drop a
+    /// candidate.
+    #[test]
+    fn neutral_model_admissibility_ignores_findings_outside_its_checks() {
+        let mut ir = cadmpeg_test_support::admissibility::rejected_outside_admission("catia:test")
+            .expect("fixture identities are valid");
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut ir,
             &[]
         )
         .expect("check that the neutral model is admissible"));

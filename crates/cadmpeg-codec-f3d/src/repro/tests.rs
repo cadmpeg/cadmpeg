@@ -52,7 +52,7 @@ fn repro_body_binding_accepts_anonymous_stream_and_blob() {
     let ctx = cadmpeg_core::decode::DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
     document
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_body_bindings", &[original.clone()])
         .unwrap();
     let replacements = redactions(&document).unwrap();
@@ -82,7 +82,7 @@ fn repro_xref_stream_keeps_occurrence_and_member_joins() {
     let ctx = cadmpeg_core::decode::DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
     document
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_body_bindings", &[original.clone()])
         .unwrap();
     let replacements = redactions(&document).unwrap();

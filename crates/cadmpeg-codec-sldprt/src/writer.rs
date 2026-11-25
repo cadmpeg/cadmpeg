@@ -18,6 +18,7 @@ pub(crate) mod native;
 mod ownership;
 mod read_back;
 mod reduce;
+pub(crate) mod saved;
 pub(crate) mod target;
 
 pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
@@ -38,7 +39,8 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{BodyKind, Color, LoopBoundary, Sense};
+use cadmpeg_ir::source_fidelity::CodecDigests;
+use cadmpeg_ir::topology::{BodyKind, Color, Face, FaceBoundary, LoopBoundary, Region, Sense};
 use cadmpeg_ir::Annotations;
 
 use crate::SourceRecord;
@@ -98,10 +100,12 @@ pub(crate) struct SemanticOutput {
 
 /// Writes a semantic document and returns the dialect and arena coverage it
 /// wrote. Each feature of `withheld` keeps its stored definition record, for
-/// the reason it is paired with.
+/// the reason it is paired with. `digests` are the codec digests the decode
+/// recorded.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
+    digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
     withheld: &[(cadmpeg_ir::features::FeatureId, String)],
     writer: &mut dyn Write,
@@ -138,7 +142,7 @@ pub(crate) fn write_semantic_with_records(
     normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
     let mut content_losses =
-        reduce::unwritable_content(&mut normalized, !retained_records.is_empty())?;
+        reduce::unwritable_content(&mut normalized, !retained_records.is_empty(), digests)?;
     content_losses.extend(reduce::unwritable_carriers(&mut normalized, false)?);
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -188,7 +192,7 @@ pub(crate) fn write_semantic_with_records(
         unwritten.record(&id, Unwritten::SavedProperty, held);
     }
     let retained_partition =
-        retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+        retained_partition(&normalized, digests, source_scan.as_ref(), native.as_ref())?;
     if native
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
@@ -212,7 +216,7 @@ pub(crate) fn write_semantic_with_records(
         losses.extend(reduce::unwritable_carriers(&mut normalized, true)?);
     }
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
-    let reducible = history_drop::HistoryDrop::applies(&normalized);
+    let reducible = history_drop::HistoryDrop::applies(digests);
     let mut displayed_values = history_drop::DisplayedValues::default();
     let mut renamed = history_drop::Renamed::default();
     let mut source_definitions = None;
@@ -236,6 +240,7 @@ pub(crate) fn write_semantic_with_records(
         )?;
         match prepare_history(
             &mut normalized,
+            digests,
             &mut native,
             annotations,
             retained_records,
@@ -306,6 +311,11 @@ pub(crate) fn write_semantic_with_records(
             generated.sections
         }
     } else {
+        losses.extend(cadmpeg_ir::codec::write::partial_topology_omitted(
+            "SLDPRT",
+            &ir.geometry,
+            "the body is not written",
+        ));
         let encoded = body_drop::encode_without_unwritable_bodies(ir, None, |ir| {
             generated_partitions(ir, length_scale)
         })?;
@@ -345,18 +355,13 @@ pub(crate) fn write_semantic_with_records(
         written: BTreeMap::new(),
     };
     let replay_swobjects = if owners.replay() {
-        let baseline = ir
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get(SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE));
+        let baseline = crate::codec_digests::baseline(digests, SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE);
         let current = swobjects_local_sha256(&digest_ctx, ir)?;
-        if baseline != Some(&current) {
-            let material_baseline = ir.source.as_ref().and_then(|source| {
-                source
-                    .attributes
-                    .get(SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE)
-            });
-            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?) {
+        if baseline != Some(current.as_str()) {
+            let material_baseline =
+                crate::codec_digests::baseline(digests, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
+            let material = swobjects_material_local_sha256(&digest_ctx, ir)?;
+            if material_baseline != Some(material.as_str()) {
                 let baseline =
                     retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
                 losses.extend(materials::retained_materials_kept(
@@ -1342,23 +1347,21 @@ fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
 /// The retained Parasolid partition to replay, when the decoded B-rep is
 /// untouched since the decode that recorded its baseline.
 ///
-/// The comparison is bitwise against the `brep_local_sha256` baseline, which is
-/// what an edit-detection question needs and all it can be; see
-/// [`crate::decode::brep_local_sha256`]. A document without the baseline — one
-/// synthesized rather than decoded, or decoded by a binary that named the
-/// attribute differently — has no partition to replay and is written out in full.
+/// The comparison is bitwise against the `brep_local_sha256` codec digest,
+/// which is what an edit-detection question needs and all it can be; see
+/// [`crate::decode::brep_local_sha256`]. A document without the digest — one
+/// synthesized rather than decoded, or written without its sidecar — has no
+/// partition to replay and is written out in full.
 fn retained_partition(
     ir: &CadIr,
+    digests: &CodecDigests,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
-    let Some(source) = ir.source.as_ref() else {
+    let Some(expected) = crate::codec_digests::baseline(digests, "brep_local_sha256") else {
         return Ok(None);
     };
-    let Some(expected) = source.attributes.get("brep_local_sha256") else {
-        return Ok(None);
-    };
-    if crate::decode::brep_local_sha256(ir)? != *expected {
+    if crate::decode::brep_local_sha256(ir)? != expected {
         return Ok(None);
     }
     let Some(scan) = source_scan else {
@@ -1668,7 +1671,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .regions
         .iter()
-        .flat_map(|region| region.shells.iter().cloned())
+        .flat_map(|region| region.stated_shells().cloned())
         .collect::<HashSet<_>>();
     subset
         .geometry
@@ -1682,7 +1685,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().cloned())
+        .flat_map(|face| face.loops.stated().cloned())
         .collect::<HashSet<_>>();
     subset
         .geometry
@@ -2337,6 +2340,7 @@ pub(crate) const CAPACITY_FIELDS: &[TextCapacity] = &[
 /// and the losses of the prepared features.
 fn prepare_history(
     normalized: &mut CadIr,
+    digests: &CodecDigests,
     native: &mut Option<SldprtNative>,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
@@ -2346,17 +2350,21 @@ fn prepare_history(
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::write::native_parameters_match_source(normalized, native.as_ref())?;
+        && crate::history::write::native_parameters_match_source(digests, native.as_ref())?;
     crate::history::write::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,
     );
     let ir = &*normalized;
-    let mut prepared = crate::history::write::prepare_features_for_write(ir, native, edits)?;
+    let mut prepared =
+        crate::history::write::prepare_features_for_write(ir, digests, native, edits)?;
     fit_feature_input_renames(&mut prepared.renames, cut);
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, edits, cut)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(
+        ir, digests, native, edits, cut,
+    )?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
+        digests,
         native,
         feature_parameter_changes_authorized,
         edits,
@@ -2366,6 +2374,7 @@ fn prepare_history(
     prepared.losses.extend(
         crate::history::write::configurations::prepare_configurations_for_write(
             ir,
+            digests,
             native,
             annotations,
             edits,
@@ -3910,15 +3919,13 @@ pub(crate) fn brep_body_from(
         let face = faces_by_id.get(&lp.face).copied().ok_or_else(|| {
             CodecError::malformed(format_args!("loop references missing face: {}", lp.id))
         })?;
-        let position = face
-            .loops
+        let position = face_boundary(face)?
             .iter()
             .position(|id| id == &lp.id)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("face does not own referenced loop: {}", lp.id))
             })?;
-        let next_loop = face
-            .loops
+        let next_loop = face_boundary(face)?
             .iter()
             .nth(position + 1)
             .map_or(0, |id| loops[id]);
@@ -3944,10 +3951,10 @@ pub(crate) fn brep_body_from(
         be32(&mut out, 0);
         pointer(&mut out, face_owners[&face.id])?;
         out.extend_from_slice(&MAGIC);
-        let first =
-            face.loops.iter().next().ok_or_else(|| {
-                CodecError::malformed(format_args!("face has no loop: {}", face.id))
-            })?;
+        let first = face_boundary(face)?
+            .iter()
+            .next()
+            .ok_or_else(|| CodecError::malformed(format_args!("face has no loop: {}", face.id)))?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
             pointer(&mut out, value)?;
         }
@@ -4018,8 +4025,9 @@ fn write_body_hierarchy(
     for body in &ir.geometry.bodies {
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
-        for region in ir.geometry.body_regions(&body.id) {
-            if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
+        for region in complete_regions(ir, body)? {
+            let region_shells = complete_shells(ir, region)?;
+            if body.kind == BodyKind::Sheet && region_shells.len() != 1 {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT sheet regions require exactly one shell: {}",
                     body.id
@@ -4028,12 +4036,12 @@ fn write_body_hierarchy(
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
-            for shell_id in &region.shells {
+            for shell_id in region_shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 let mut owned = Vec::new();
-                for face in ir.geometry.shell_faces(&shell.id) {
+                for face in ir.geometry.stated_shell_faces(&shell.id) {
                     let face = &face.id;
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
@@ -4158,14 +4166,12 @@ fn write_typed_body_hierarchy(
 
     for (index, body) in ir.geometry.bodies.iter().enumerate() {
         let body_attr = body_attrs[&body.id];
-        let first_body_region = ir
-            .geometry
-            .body_regions(&body.id)
+        let first_body_region = complete_regions(ir, body)?
+            .into_iter()
             .next()
             .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
         let first_region = region_attrs[&first_body_region.id];
-        let first_shell = first_body_region
-            .shells
+        let first_shell = complete_shells(ir, first_body_region)?
             .first()
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
@@ -4212,14 +4218,22 @@ fn write_typed_body_hierarchy(
             .geometry
             .regions
             .iter()
-            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .find(|region| {
+                region
+                    .stated_shells()
+                    .any(|candidate| candidate == &shell.id)
+            })
             .map(|region| &region.body)
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
         let region = ir
             .geometry
             .regions
             .iter()
-            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .find(|region| {
+                region
+                    .stated_shells()
+                    .any(|candidate| candidate == &shell.id)
+            })
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
         typed_prefix(
             out,
@@ -4234,8 +4248,7 @@ fn write_typed_body_hierarchy(
                     )
                 })?,
         )?;
-        let next_shell = region
-            .shells
+        let next_shell = complete_shells(ir, region)?
             .iter()
             .skip_while(|candidate| *candidate != &shell.id)
             .nth(1)
@@ -4256,9 +4269,14 @@ fn write_typed_body_hierarchy(
 
     for (index, region) in ir.geometry.regions.iter().enumerate() {
         let body = body_attrs[&region.body];
-        let body_regions = ir
+        let owner = ir
             .geometry
-            .body_regions(&region.body)
+            .bodies
+            .iter()
+            .find(|candidate| candidate.id == region.body)
+            .ok_or_else(|| CodecError::Malformed("typed region has no body".into()))?;
+        let body_regions = complete_regions(ir, owner)?
+            .into_iter()
             .map(|candidate| &candidate.id)
             .collect::<Vec<_>>();
         let position = body_regions
@@ -4272,8 +4290,7 @@ fn write_typed_body_hierarchy(
             .checked_sub(1)
             .and_then(|position| body_regions.get(position))
             .map_or(1, |id| region_attrs[*id]);
-        let shell_head = region
-            .shells
+        let shell_head = complete_shells(ir, region)?
             .first()
             .map(|id| shell_attrs[id])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
@@ -5246,7 +5263,9 @@ mod nurbs_write_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::hash::digest::Sha256Digest;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::source_fidelity::CodecDigests;
 
     #[test]
     fn pmi_without_its_baseline_is_dropped_and_named_and_an_edit_of_it_is_named() {
@@ -5268,18 +5287,11 @@ mod nurbs_write_tests {
             source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
-        ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
-            cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
-                    "sldprt:test"
-                )),
-            ),
-            std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_const!(PMI_LOCAL_DIGEST_ATTRIBUTE),
-                hash,
-            )]),
-        ));
-        assert!(super::reduce::unwritable_content(&mut ir, true)
+        let digests = CodecDigests::from([(
+            cadmpeg_core::nonblank_const!(PMI_LOCAL_DIGEST_ATTRIBUTE),
+            Sha256Digest::try_from(hash).expect("SHA-256 digest"),
+        )]);
+        assert!(super::reduce::unwritable_content(&mut ir, true, &digests)
             .expect("PMI digest")
             .is_empty());
         assert_eq!(ir.model.pmi.len(), 1);
@@ -5290,7 +5302,8 @@ mod nurbs_write_tests {
             panic!("datum definition");
         };
         *identification = "B".into();
-        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
+        let losses =
+            super::reduce::unwritable_content(&mut ir, true, &digests).expect("PMI digest");
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "edit.dropped");
         assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
@@ -5298,14 +5311,15 @@ mod nurbs_write_tests {
 
         // Without the retained SWIFT block, no PMI is written.
         let mut unretained = ir.clone();
-        let losses = super::reduce::unwritable_content(&mut unretained, false).expect("PMI digest");
+        let losses = super::reduce::unwritable_content(&mut unretained, false, &digests)
+            .expect("PMI digest");
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
         assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
         assert!(unretained.model.pmi.is_empty());
 
-        ir.source = None;
-        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
+        let losses = super::reduce::unwritable_content(&mut ir, true, &CodecDigests::new())
+            .expect("PMI digest");
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
         assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
@@ -5494,6 +5508,44 @@ mod conversion_correction_tests {
         assert!(tessellation_f32(f64::NAN, "position").is_err());
         assert!(tessellation_f32(f64::INFINITY, "position").is_err());
     }
+}
+
+/// The regions of `body` where it states every region. The B-rep encoder
+/// writes no body that does not; the failure names it, and the body is left
+/// out (§3.4, Content the target cannot hold).
+fn complete_regions<'a>(
+    ir: &'a CadIr,
+    body: &cadmpeg_ir::topology::Body,
+) -> Result<Vec<&'a Region>, CodecError> {
+    ir.geometry
+        .complete_body_regions(&body.id)
+        .map(Iterator::collect)
+        .ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "SLDPRT writes no body that does not state every region: {}",
+                body.id
+            ))
+        })
+}
+
+/// The shells of `region` where it states every shell, face, and loop.
+fn complete_shells<'a>(
+    ir: &CadIr,
+    region: &'a Region,
+) -> Result<&'a [cadmpeg_ir::ids::ShellId], CodecError> {
+    ir.geometry.complete_shells(region).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT writes no region that does not state every shell or face: {}",
+            region.id
+        ))
+    })
+}
+
+/// The loops of `face` where it states every loop.
+fn face_boundary(face: &Face) -> Result<FaceBoundary<'_>, CodecError> {
+    face.loops.boundary().ok_or_else(|| {
+        CodecError::NotImplemented(format!("SLDPRT writes no partial face: {}", face.id))
+    })
 }
 
 #[cfg(test)]

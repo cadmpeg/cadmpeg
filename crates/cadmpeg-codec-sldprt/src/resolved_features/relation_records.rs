@@ -1,6 +1,6 @@
 //! Relation instance records and scalar roles.
 
-use super::parameter_classes::{stated_parameters, Statement, DECLARATION_PREFIX};
+use super::parameter_classes::{relation_kind, stated_parameters, Statement, DECLARATION_PREFIX};
 use super::scalars::FeatureObjectNames;
 use super::{is_class_token, RELATION_INSTANCE_ID_PREFIX, SKETCH_POINT_TOLERANCE};
 use crate::classification::{native_object_class, NativeClassKind};
@@ -478,8 +478,17 @@ pub(super) fn relation_instances(
         sketch_features.insert(feature.id.as_str());
     }
     let intervals = feature_intervals(histories, lane);
-    let declaration_candidates =
+    // A dimension whose own record states a parameter of another quantity
+    // than the declared relation's (§2) is no dimension of that relation.
+    let stated = stated_parameters(lane, None);
+    let mut declaration_candidates =
         relation_declaration_candidates_impl(&lane.classes, &lane.scalars, &intervals, true);
+    declaration_candidates.retain(|(class, scalar, _)| {
+        match (relation_kind(&class.name), stated.get(scalar.id.as_str())) {
+            (Some(kind), Some(Statement::Parameter(parameter))) => parameter.class() == kind,
+            _ => true,
+        }
+    });
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &declaration_candidates {
         *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
@@ -2474,6 +2483,41 @@ mod relation_records_tests {
                 .collect::<Vec<_>>(),
             vec![vec![lane.scalars[0].id.clone()]]
         );
+    }
+
+    /// A relation class declared before a dimension whose record states a
+    /// parameter of another quantity claims none of its scalars, even where
+    /// their operands fit the declared family.
+    #[test]
+    fn a_declaration_claims_no_dimension_whose_tokens_name_another_relation() {
+        let mut lane = token_form_lane(0x30, 0x32);
+        let angle = class(lane.scalars[0].offset + 1, "sgAnglDim");
+        lane.classes.push(angle.clone());
+        for scalar in &mut lane.scalars[1..3] {
+            for operand in &mut scalar.operands {
+                operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
+            }
+        }
+        let distance = lane
+            .classes
+            .iter()
+            .find(|class| class.name == "sgPntPntDist")
+            .unwrap()
+            .id
+            .clone();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
+        assert!(instances
+            .iter()
+            .all(|relation| relation.class_ref != angle.id));
+        let dimension = instances
+            .iter()
+            .find(|relation| relation.scalar_refs().contains(&lane.scalars[2].id))
+            .expect("the dimension's relation");
+        assert_eq!(
+            dimension.family,
+            FeatureInputRelationFamily::PointPointDistance
+        );
+        assert_eq!(dimension.class_ref, distance);
     }
 
     #[test]

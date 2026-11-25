@@ -30,12 +30,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -64,9 +66,11 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
 mod closed_edge_range;
+mod design_content;
 mod encode;
 mod extrusion_directrix;
 mod ownership;
+mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;
@@ -79,6 +83,7 @@ fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTax
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
+            | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
     )
 }
 
@@ -88,11 +93,12 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxon
         cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
+            | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
     )
 }
 
 #[test]
-fn rejects_mixed_unclassified_bounded_surface_representation() {
+fn drops_a_mixed_unclassified_bounded_surface_representation() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
@@ -102,14 +108,14 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let model_only_loop_id = decoded.ir().geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("a decoded face states a loop")
         .clone();
     {
         let mut ir = decoded.ir_mut();
         for face in &mut ir.geometry.faces {
-            let ids = face.loops.to_vec();
+            let ids = face.loops.stated().cloned().collect::<Vec<_>>();
             face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
         }
         let coedge_ids = ir
@@ -141,47 +147,67 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .retain(|pcurve| used_pcurves.contains(&pcurve.id));
     }
 
-    let result = IgesCodec.plan(
-        EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("the representable part is written");
+    let losses = &plan.report().losses;
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "iges/writer.face-omitted"),
+        "{losses:#?}"
     );
-    assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+}
+
+fn line_pcurve(id: &str, direction: [f64; 2]) -> Pcurve {
+    Pcurve {
+        id: id.try_into().expect("valid identity"),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(direction[0], direction[1]),
+            )
+            .expect("valid LinePcurve fixture"),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+        native_ref: None,
+    }
 }
 
 #[test]
-fn type_508_requires_an_explicit_isoparametric_flag() {
-    let pcurve = PcurveUse {
-        pcurve: "test:model:pcurve#type-508"
-            .try_into()
-            .expect("valid identity"),
-        isoparametric: Some(false),
+fn type_508_writes_the_stated_isoparametric_flag_else_derives_it() {
+    let mut ir = CadIr::empty();
+    ir.geometry
+        .pcurves
+        .push(line_pcurve("test:model:pcurve#constant-u", [0.0, 2.0]));
+    ir.geometry
+        .pcurves
+        .push(line_pcurve("test:model:pcurve#diagonal", [1.0, 1.0]));
+    let index = TopologyIndex::new(&ir);
+    let uses = |id: &str, isoparametric| PcurveUse {
+        pcurve: id.try_into().expect("valid identity"),
+        isoparametric,
         parameter_range: None,
     };
     assert_eq!(
-        isoparametric_flag(&pcurve, "loop").expect("explicit false is supported"),
-        0
-    );
-
-    assert_eq!(
-        isoparametric_flag(
-            &PcurveUse {
-                isoparametric: Some(true),
-                ..pcurve.clone()
-            },
-            "loop"
-        )
-        .expect("explicit true is supported"),
+        isoparametric_flag(&uses("test:model:pcurve#diagonal", Some(true)), &index),
         1
     );
-
-    let pcurve = PcurveUse {
-        isoparametric: None,
-        ..pcurve
-    };
-    assert!(matches!(
-        isoparametric_flag(&pcurve, "loop"),
-        Err(CodecError::NotImplemented(_))
-    ));
+    assert_eq!(
+        isoparametric_flag(&uses("test:model:pcurve#constant-u", Some(false)), &index),
+        0
+    );
+    assert_eq!(
+        isoparametric_flag(&uses("test:model:pcurve#constant-u", None), &index),
+        1
+    );
+    assert_eq!(
+        isoparametric_flag(&uses("test:model:pcurve#diagonal", None), &index),
+        0
+    );
 }
 
 #[test]

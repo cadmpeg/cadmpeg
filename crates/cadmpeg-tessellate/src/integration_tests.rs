@@ -1801,3 +1801,20 @@ fn a_circular_segment_flatter_than_the_chord_tolerance_meshes_its_triangle() {
         area(&mesh)
     );
 }
+
+#[test]
+fn a_partial_face_has_no_mesh() {
+    let mut cube = cadmpeg_ir::examples::unit_cube().unwrap();
+    let stated = cube.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
+    cube.geometry.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: stated };
+    let face = cube.geometry.faces[0].id.clone();
+    let mut tessellator = Tessellator::new(&cube, Options::default());
+    assert!(tessellator.face(&face).is_err());
+    let other = cube.geometry.faces[1].id.clone();
+    assert!(tessellator.face(&other).is_ok());
+}

@@ -899,7 +899,7 @@ mod subset_carriers {
     /// The unit cube with its first edge on a chain of subsets over `basis`,
     /// innermost first, that maps the edge onto `RANGE` of the basis.
     fn chain(basis: Basis, links: &[([f64; 2], bool)]) -> CadIr {
-        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut ir = crate::support::rooted_cube();
         let edge = ir.geometry.edges[0].clone();
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
             let vertex = ir

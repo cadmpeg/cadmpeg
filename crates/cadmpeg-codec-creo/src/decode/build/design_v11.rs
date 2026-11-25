@@ -209,6 +209,7 @@ fn project_feature(
                 Some(typed) => typed,
                 None => self::operation(operation, sketches)?,
             },
+            assembly: None,
             refine,
             fuzzy_tolerance: None,
         },

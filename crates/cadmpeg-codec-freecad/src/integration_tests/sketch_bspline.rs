@@ -195,7 +195,11 @@ fn recipe_sketch_bspline_knots_and_points() {
                 "{label}"
             );
             assert_eq!(side.draft, None, "{label}: zero Pad.TaperAngle");
-            assert_eq!(pad.evaluation.outputs().len(), 1, "{label}");
+            assert_eq!(
+                crate::test_support::result_of(decoded.ir(), pad).1.len(),
+                1,
+                "{label}"
+            );
             let SketchGeometryDefinition::Nurbs { curve } = entities[0].geometry.definition()
             else {
                 panic!("{label}: expected neutral B-spline");
@@ -273,14 +277,15 @@ fn check_recipe_sketch_bspline_body_measures(version: &str) {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let model = &decoded.ir().model;
-        let report = measured(&label, decoded.ir()).unwrap();
         let pad = model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Pad"))
             .unwrap();
         assert_recipe_pad_topology(decoded.ir(), pad, periodic, height, &label);
-        let [result] = pad.evaluation.outputs().as_slice() else {
+        let (state, bodies) = crate::test_support::result_of(decoded.ir(), pad);
+        let report = measured(&label, &state).unwrap();
+        let [result] = bodies.as_slice() else {
             panic!("{label}: expected one pad body")
         };
         let pad_body = report
@@ -462,7 +467,9 @@ fn assert_recipe_pad_topology(
         "{label}: source face surfaces"
     );
 
-    let [body_id] = pad.evaluation.outputs().as_slice() else {
+    let (state, bodies) = crate::test_support::result_of(ir, pad);
+    let ir = &state;
+    let [body_id] = bodies.as_slice() else {
         panic!("{label}: one Pad output body")
     };
     let body = ir
@@ -472,10 +479,14 @@ fn assert_recipe_pad_topology(
         .find(|body| &body.id == body_id)
         .unwrap_or_else(|| panic!("{label}: Pad output body resolves"));
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid, "{label}");
-    let [region] = ir.geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
+    let [region] = ir
+        .geometry
+        .stated_body_regions(&body.id)
+        .collect::<Vec<_>>()[..]
+    else {
         panic!("{label}: one output region")
     };
-    let [shell_id] = region.shells.as_slice() else {
+    let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
         panic!("{label}: one output shell")
     };
     let shell = ir
@@ -486,7 +497,7 @@ fn assert_recipe_pad_topology(
         .unwrap_or_else(|| panic!("{label}: Pad shell resolves"));
     let face_ids = ir
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .map(|face| face.id.clone())
         .collect::<Vec<_>>();
     assert_eq!(face_ids.len(), 3, "{label}: output shell face uses");
@@ -525,8 +536,12 @@ fn assert_recipe_pad_topology(
                 panic!("{label}: unexpected decoded Pad face surface {other:?}")
             }
         }
-        assert_eq!(face.loops.len(), 1, "{label}: one loop per source face");
-        for loop_id in &face.loops {
+        assert_eq!(
+            face.loops.stated().count(),
+            1,
+            "{label}: one loop per source face"
+        );
+        for loop_id in face.loops.stated() {
             let loop_ = ir
                 .geometry
                 .loops

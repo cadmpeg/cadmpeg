@@ -32,6 +32,7 @@ use cadmpeg_test_support::spelling::SpellingSweep;
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
 
+mod annotation_paths;
 mod schema_sweep;
 
 #[test]
@@ -239,7 +240,6 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
     products.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
 
-        tessellations: Vec::new(),
         id: "test:model:product#0".try_into().expect("valid identity"),
         kind: Some(ProductDefinitionKind::Part),
         source_name: None,

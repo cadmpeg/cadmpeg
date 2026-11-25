@@ -377,6 +377,23 @@ fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
     .unwrap()
 }
 
+/// A CADIR write charges a record of an arena the wire omits only where no
+/// `design` record it writes restates the record under its id; a write that
+/// omits the design record too charges the omitted record.
+#[test]
+fn a_cadir_write_charges_only_omitted_records_no_written_design_record_restates() {
+    let mut ir = CadIr::empty();
+    ir.model.spreadsheets.push(v10_sheet());
+    let cadir = super::coverage::cadir_dispositions();
+    assert_eq!(cadir.omitted(&ir), ["spreadsheets"]);
+    ir.design.spreadsheets.push(design_sheet("v10"));
+    assert!(cadir.omitted(&ir).is_empty());
+    assert_eq!(
+        uniform_dispositions(ArenaDisposition::Omitted).omitted(&ir),
+        ["spreadsheets"]
+    );
+}
+
 /// `omitted` names the arenas the `arena.omitted` losses name: an omitted
 /// design arena that a v10 record restates is not among them.
 #[test]
@@ -560,6 +577,36 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     );
 }
 
+/// An `arena.omitted` loss lists every omitted id, sorted, after the count
+/// (§3.2).
+#[test]
+fn an_arena_omitted_loss_lists_the_sorted_ids_after_the_count() {
+    let mut ir = CadIr::empty();
+    for ordinal in [2, 10, 1] {
+        ir.process
+            .groups
+            .push(crate::process::groups::ProcessGroup {
+                id: crate::design::ids::ProcessGroupId::try_from(format!(
+                    "test:process:group#{ordinal}"
+                ))
+                .unwrap(),
+                kind: crate::process::groups::GroupKind::Method,
+                name: None,
+                parent: None,
+                native_ref: None,
+            });
+    }
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.process.groups = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(
+        losses[0].message,
+        "the cadir write does not represent model arena `process.groups`: 3 record(s) omitted: \
+         test:process:group#1, test:process:group#10, test:process:group#2"
+    );
+}
+
 #[test]
 fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
     assert!(super::edit_dropped(
@@ -662,6 +709,7 @@ fn finding(entity: Option<&str>, message: &str, severity: Severity) -> Finding {
     Finding {
         related: Vec::new(),
         check: Check::ReferentialIntegrity,
+        rule: crate::rule_name!("test.fixture-reference"),
         severity,
         entity: entity.map(str::to_owned),
         message: message.into(),
@@ -739,33 +787,46 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
 #[test]
 fn carried_errors_follow_native_format_and_complete_coverage() {
     let mut ir = CadIr::empty();
-    let id = "f3d:test:asm-history#0";
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
+    let f3d_id = "f3d:test:asm-history#0";
+    let nx_id = "nx:test:record#0";
+    let record = |id: &str| {
         vec![crate::NativeRecord::new(
             crate::ids::Identity::new(id).expect("valid native identity"),
             serde_json::Map::default(),
         )
-        .expect("valid native record")],
-    );
+        .expect("valid native record")]
+    };
+    ir.native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            record(f3d_id),
+        );
+    ir.native
+        .namespace_mut(crate::codec_id!("nx"))
+        .arenas_mut()
+        .insert(cadmpeg_core::nonblank_literal!("records"), record(nx_id));
     ir.finalize();
-    let report = validation_report(vec![finding(
-        Some(id),
-        "invalid native record",
-        Severity::Error,
-    )]);
+    let report = validation_report(vec![
+        finding(Some(f3d_id), "invalid native record", Severity::Error),
+        finding(Some(nx_id), "invalid native record", Severity::Error),
+    ]);
     let declared = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written));
-    let cadir = CoverageEncoder(declared)
+    let f3d = F3dCoverageEncoder(declared)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert!(cadir.carried_errors(&ir, &report).is_empty());
-    let f3d = F3dCoverageEncoder(declared)
+    assert_eq!(f3d.carried_errors(&ir, &report), vec![&report.findings[0]]);
+    let cadir = CoverageEncoder(declared)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
     let complete = CoverageEncoder(ArenaCoverage::Complete)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    for plan in [f3d, complete] {
-        assert_eq!(plan.carried_errors(&ir, &report), vec![&report.findings[0]]);
+    for plan in [cadir, complete] {
+        assert_eq!(
+            plan.carried_errors(&ir, &report),
+            report.findings.iter().collect::<Vec<_>>()
+        );
     }
 }

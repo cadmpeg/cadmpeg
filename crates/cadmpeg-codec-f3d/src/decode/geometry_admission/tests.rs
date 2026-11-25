@@ -99,13 +99,13 @@ fn exact_curve(offset: f64) -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
-        id: region.clone(),
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region::new(
+        region.clone(),
         body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+        vec![shell.clone()],
+    ));
     ir.geometry
         .shells
         .push(cadmpeg_ir::topology::Shell::with_members(
@@ -122,14 +122,14 @@ fn exact_curve(offset: f64) -> CadIr {
 }
 
 fn geometry_is_valid(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr) -> bool {
-    cadmpeg_ir::validate::admit::admit(
-        ctx,
-        ir,
-        &[cadmpeg_ir::report::check::Check::GeometricConsistency],
-        Vec::new(),
-    )
-    .unwrap()
-    .is_ok()
+    !cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())
+        .unwrap()
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+                && finding.severity >= cadmpeg_ir::report::Severity::Error
+        })
 }
 
 #[test]

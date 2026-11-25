@@ -11,26 +11,29 @@ use cadmpeg_core::CodecError;
 use super::records::ProcessRecords;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::FeatureOperation;
+use crate::design::feature::{FeatureOperation, OperationFamily};
 use crate::design::ids::MachiningFeatureId;
 use crate::document::CadIr;
 use crate::features::ConfigurationId;
 use crate::index::ModelIndex;
 use crate::process::state::{ProcessBase, ProcessState, ProcessStateOf};
 use crate::report::check::Finding;
-use crate::validate::design::evaluations::{check_position, state_chains};
+use crate::validate::design::evaluations::{
+    check_position, check_resulting_position, state_chains,
+};
 use crate::validate::design::records::{MemberKey, PositionKey};
 
 pub(super) fn check_evaluations(
     records: &ProcessRecords<'_>,
     max_chain_depth: u64,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     check_configuration_states(records, findings);
     check_toolpaths(records, findings);
     check_states(records, findings);
-    check_chains(records, max_chain_depth, findings);
+    check_chains(records, max_chain_depth, findings)?;
     check_material_removal(records, findings);
+    Ok(())
 }
 
 /// Whether `configuration` names a configuration of `scope`. A configuration
@@ -67,7 +70,7 @@ fn check_configuration_states(records: &ProcessRecords<'_>, findings: &mut Vec<F
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!("process.operation-suppressed-binds-parameter-states-no", 
                     "operation's `suppressed` binds a parameter, so it states no configuration state"
                 ),
             );
@@ -80,7 +83,7 @@ fn check_configuration_states(records: &ProcessRecords<'_>, findings: &mut Vec<F
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("process.operation-configuration-state-names-no-configuration", 
                         "operation's configuration state names {}, which is no configuration of its setup's scope",
                         configuration.as_str()
                     ),
@@ -105,7 +108,7 @@ fn check_toolpaths(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!("process.toolpath-repeats-operation-feature-configuration-toolpath", 
                     "toolpath repeats the operation, feature, and configuration of toolpath {first}"
                 ),
             );
@@ -122,7 +125,7 @@ fn check_toolpaths(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!("process.toolpath-names-no-configuration-setup-scope", 
                             "toolpath names {configuration}, which is no configuration of its setup's scope"
                         ),
                     );
@@ -135,7 +138,8 @@ fn check_toolpaths(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 operation,
-                format_args!(
+                crate::rule!(
+                    "process.operation-toolpaths-keyed-no-configuration-toolpaths",
                     "operation has toolpaths keyed by no configuration and toolpaths keyed by one"
                 ),
             );
@@ -199,7 +203,10 @@ fn check_states(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!("process state is of {target}, which is no {what}"),
+                crate::rule!(
+                    "process.process-state-no",
+                    "process state is of {target}, which is no {what}"
+                ),
             );
         }
         let setup = setup_of_state(records, state);
@@ -209,7 +216,8 @@ fn check_states(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.process-state-repeats-configuration-process-state",
                     "process state repeats the `of` and configuration of process state {first}"
                 ),
             );
@@ -223,7 +231,7 @@ fn check_states(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!("process.process-state-names-no-configuration-setup", 
                             "process state names {configuration}, which is no configuration of its setup's scope"
                         ),
                     );
@@ -239,7 +247,7 @@ fn check_states(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!("process.process-state-no-content-no-feature", 
                             "process state with no content and no feature has status `current`; it is `stale` or `failed`"
                         ),
                     );
@@ -253,7 +261,10 @@ fn check_states(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!("process states of one `of` are keyed by no configuration and by one"),
+                crate::rule!(
+                    "process.process-states-one-keyed-no-configuration",
+                    "process states of one `of` are keyed by no configuration and by one"
+                ),
             );
         }
     }
@@ -271,7 +282,8 @@ fn check_state_feature(
         super::error(
             findings,
             id,
-            format_args!(
+            crate::rule!(
+                "process.process-state-names-feature-only-removal",
                 "process state names feature {feature}, but only a `removal` state names one"
             ),
         );
@@ -291,8 +303,34 @@ fn check_state_feature(
         super::error(
             findings,
             id,
-            format_args!("process state names {feature}, which is no feature of its setup's scope"),
+            crate::rule!(
+                "process.process-state-names-no-feature-setup",
+                "process state names {feature}, which is no feature of its setup's scope"
+            ),
         );
+    }
+    if let Some(record) = records.design.features.get(feature) {
+        let configuration = state.configuration.as_ref().map(ConfigurationId::as_str);
+        let removal = matches!(
+            records
+                .design
+                .definition_in(record, configuration)
+                .operation,
+            FeatureOperation::MaterialRemoval
+                | FeatureOperation::Unresolved {
+                    family: OperationFamily::MaterialRemoval,
+                }
+        );
+        if !removal {
+            super::error(
+                findings,
+                id,
+                crate::rule!(
+                    "process.process-state-names-no-materialremoval-feature",
+                    "process state names {feature}, which is no `MaterialRemoval` feature"
+                ),
+            );
+        }
     }
 }
 
@@ -309,7 +347,8 @@ fn check_base(
             None if ir.fragment => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.fragment-does-not-hold-process-state",
                     "the fragment does not hold the process state's base {}",
                     base.as_str()
                 ),
@@ -317,12 +356,17 @@ fn check_base(
             None => super::error(
                 findings,
                 id,
-                format_args!("state base {} is no process state", base.as_str()),
+                crate::rule!(
+                    "process.state-base-no-process-state",
+                    "state base {} is no process state",
+                    base.as_str()
+                ),
             ),
             Some(base) if base.content.is_none() => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.state-base-process-state-no-content",
                     "state base {} is a process state with no content",
                     base.id.as_str()
                 ),
@@ -335,7 +379,8 @@ fn check_base(
                 None if ir.fragment => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "process.fragment-does-not-hold-process-state",
                         "the fragment does not hold the process state's base {}",
                         base.as_str()
                     ),
@@ -343,7 +388,8 @@ fn check_base(
                 None => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "process.state-base-no-evaluation-design",
                         "state base {} is no evaluation of the design",
                         base.as_str()
                     ),
@@ -351,7 +397,8 @@ fn check_base(
                 Some(base) if base.content.is_none() => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "process.state-base-evaluation-no-content",
                         "state base {} is an evaluation with no content",
                         base.id.as_str()
                     ),
@@ -363,6 +410,7 @@ fn check_base(
             let position = PositionKey::of(position);
             let exists = super::as_process(findings, |findings| {
                 check_position(records.design, position, id, findings)
+                    && check_resulting_position(records.design, position, id, findings)
             });
             if !exists {
                 return;
@@ -373,7 +421,7 @@ fn check_base(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("process.state-base-names-stated-rollback-position", 
                         "state base names {position}; a stated rollback position is spelled through its member"
                     ),
                 );
@@ -389,7 +437,7 @@ fn check_base(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("process.state-base-names-position-no-current", 
                         "state base names {position}, which is the position of no current state of the setup's scope"
                     ),
                 );
@@ -398,9 +446,14 @@ fn check_base(
     }
 }
 
-/// Process bases form a forest, and no chain of bases, counted through the
-/// evaluations it rests on, is deeper than a reader admits (§2.5, §7.9).
-fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &mut Vec<Finding>) {
+/// Process bases form a forest (§7.9). A chain of bases, counted through the
+/// evaluations it rests on, longer than the caller's ceiling refuses the
+/// session (§2.5).
+fn check_chains(
+    records: &ProcessRecords<'_>,
+    max_chain_depth: u64,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     #[derive(Clone, Copy)]
     enum Mark {
         OnChain,
@@ -462,7 +515,8 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!(
+                            "process.depth-process-state-chain-state-bases",
                             "the depth of the process state's chain of state bases overflows"
                         ),
                     );
@@ -473,24 +527,21 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
             marks.insert(id, Mark::Depth(depth));
         }
     }
+    let mut deepest = 0;
     for (id, mark) in marks {
         if cyclic.contains(id) {
             super::error(
                 findings,
                 id,
-                format_args!("process state is its own ancestor through its state bases; bases form a forest"),
+                crate::rule!("process.process-state-own-ancestor-through-state", "process state is its own ancestor through its state bases; bases form a forest"),
             );
         } else if let Mark::Depth(depth) = mark {
-            if depth > max_chain_depth {
-                super::error(
-                    findings,
-                    id,
-                    format_args!(
-                        "process state's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"
-                    ),
-                );
-            }
+            deepest = deepest.max(depth);
         }
+    }
+    match crate::validate::state_chain_refusal(max_chain_depth, deepest) {
+        Some(refusal) => Err(refusal),
+        None => Ok(()),
     }
 }
 
@@ -517,7 +568,8 @@ fn check_material_removal(records: &ProcessRecords<'_>, findings: &mut Vec<Findi
             super::error(
                 findings,
                 feature,
-                format_args!(
+                crate::rule!(
+                    "process.material-removal-feature-named-removal-states",
                     "material-removal feature is named by removal states of {} operations: {}",
                     operations.len(),
                     operations.into_iter().collect::<Vec<_>>().join(", ")

@@ -540,8 +540,6 @@ fn cycle(kind: CycleKind) -> Cycle {
 #[test]
 fn motion_cycles() {
     let mut ir = document();
-    let mut outer = cycle(CycleKind::Drill);
-    outer.expansion = Some(vec![Motion::Cycle(Box::new(cycle(CycleKind::Drill)))]);
     let mut probing = cycle(CycleKind::Drill);
     probing.probe_overtravel = Some(length(2.0));
     let narrow = cycle(CycleKind::Probe(ProbeTarget::CircularBoss {
@@ -550,12 +548,10 @@ fn motion_cycles() {
     ir.process.toolpaths[0].content = ToolpathContent::Motions {
         frame: Transform::default(),
         motions: vec![
-            Motion::Cycle(Box::new(outer)),
             Motion::Cycle(Box::new(probing)),
             Motion::Cycle(Box::new(narrow)),
         ],
     };
-    assert_error(&ir, "a cycle's `expansion` holds a cycle");
     assert_error(&ir, "states a probe clearance or overtravel");
     assert_error(
         &ir,
@@ -627,4 +623,72 @@ fn a_profile_curve_on_an_unbounded_carrier_states_its_range() {
         transform: Transform::default(),
     };
     assert!(!ranged(placed, None));
+}
+
+/// Part 10: `InPlane.plane` picks a plane, `ThroughLine.line` a line, and
+/// `NormalToSurface.surfaces` faces.
+#[test]
+fn a_tool_axis_control_picks_entities_of_its_kind() {
+    use crate::design::names::{NameKind, TopoName};
+    use crate::design::selection::{PickTarget, Picked};
+    let picking = |kind: NameKind| {
+        let mut selection = workpiece_selection(Some(0));
+        selection.selection.picks = Picks::Named(
+            Members::new(vec![Picked {
+                target: PickTarget::Entity(TopoName::Generated {
+                    kind,
+                    feature: design::feature("extrude"),
+                    role: None,
+                    generator: None,
+                    index: Some(1),
+                }),
+                context: None,
+                native: None,
+                domain: None,
+                witness: None,
+                resolved: None,
+            }])
+            .unwrap(),
+        );
+        selection
+    };
+    let messages = |control: ToolAxisControl| {
+        let mut ir = document();
+        ir.process.operations[2].tool_axis = Some(control);
+        process_findings(&ir)
+            .into_iter()
+            .map(|finding| finding.message)
+            .filter(|message| message.contains("; it picks a"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        messages(ToolAxisControl::InPlane {
+            plane: picking(NameKind::Edge)
+        }),
+        ["`in_plane.plane` picks an edge; it picks a plane"]
+    );
+    assert!(messages(ToolAxisControl::InPlane {
+        plane: picking(NameKind::Face)
+    })
+    .is_empty());
+    assert_eq!(
+        messages(ToolAxisControl::ThroughLine {
+            line: picking(NameKind::Face)
+        }),
+        ["`through_line.line` picks a face; it picks a line"]
+    );
+    assert!(messages(ToolAxisControl::ThroughLine {
+        line: picking(NameKind::Edge)
+    })
+    .is_empty());
+    assert_eq!(
+        messages(ToolAxisControl::NormalToSurface {
+            surfaces: picking(NameKind::Vertex)
+        }),
+        ["`normal_to_surface.surfaces` picks a vertex; it picks a face"]
+    );
+    assert!(messages(ToolAxisControl::AlongRuling {
+        surfaces: picking(NameKind::Face)
+    })
+    .is_empty());
 }

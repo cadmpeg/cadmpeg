@@ -654,7 +654,9 @@ it is in the `Group` of a `PartDesign::Body` or in the `ElementList` of the obje
 `LinkCopyOnChangeGroup` names; such a prototype is a definition placed only by its links. An
 `App::LinkGroup` applies its placement to each object of its `ElementList`. The bodies of a
 definition come only from the `Shape` property of its object. Other shape payloads, such as
-`AddSubShape` and `InternalShape`, are not definition bodies. When `Shape` holds a non-null shape
+`AddSubShape` and `InternalShape`, are not definition bodies. A datum (`PartDesign::Plane`,
+`Line`, `Point`, or `CoordinateSystem`) is a feature: a container that lists it holds it as a
+member, and its `Shape` is its display shape, kept in its shape payload record. When `Shape` holds a non-null shape
 whose root location is a rigid transform, that transform is the restored `Placement` of the object
 and replaces the persisted `Placement` value. Otherwise the persisted `Placement` value applies. The
 bodies of a definition that an occurrence uses are in the frame of their object, and the occurrence
@@ -850,11 +852,19 @@ state rather than being collapsed into one enabled flag. Validation rejects dupl
 inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
 A body displays its active `Tip` result through its own `Shape`, with visibility set by the body's
 own GUI view provider. Shapes of members in `Group` or legacy `Model`, including the `Tip`, and
-all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology. They
-remain available for history selections and carry `visible: false`. Structural membership and
-auxiliary shape roles take precedence over GUI visibility; a member's visible view provider does
-not make its stored shape an independent output body. A free feature outside a body retains the
-GUI visibility of its own `Shape`.
+all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology, held
+outside the current geometry. The `Shape` of a member that stores `BaseFeature` holds the
+body's state after that member: each such state other than the `Tip`'s is an evaluation of the
+state after the member, based on the nearest earlier stored state of the body. The `Tip`'s
+`Shape` repeats the body's own `Shape`; where the body's own `Shape` holds no shape, the `Tip`'s
+holds the body's current state. The `AddSubShape` of `Pad`, `Pocket`, `Revolution`, `Groove`,
+`Hole`, and every `Additive` and `Subtractive` feature holds the feature's tool body, an
+evaluation of its own; a document that names the tool shape by the feature's effect stores it as
+`AddShape` or `SubShape`. Every other intermediate shape (a sketch's or a datum's shape, a binder's
+copy, a suppressed member's shape, a dress-up's or a pattern's `AddSubShape`) stays in its shape
+payload record. A persistent element name binds a record of the current geometry only. A
+selection of an intermediate shape's sub-element keeps its source property. A free feature
+outside a body retains the GUI visibility of its own `Shape`.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
@@ -2162,3 +2172,11 @@ A TechDraw annotation's `TextSize` has physical millimetre units with the
 `App::PropertyLength` carrier. A positive value gives `text_style.height`.
 Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
 height. GUI point and pixel sizes are distinct from physical em height.
+
+## 13. Codec digests
+
+The `SourceFidelity.codec_digests` of a `Full` FCStd decode (CADIR §3.1, Rule B) holds one SHA-256 digest. It covers the records outside the `entries`, `extensions`, `objects`, and `properties` native arenas, whose content the archive entries store directly.
+
+| Key | Records |
+| --- | --- |
+| `fcstd_uncarried_local_sha256` | Every neutral record, the source metadata, and every native record outside the `entries`, `extensions`, `objects`, and `properties` arenas, without `scope`. |

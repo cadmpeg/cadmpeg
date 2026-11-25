@@ -12,9 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::evaluations::check_path_steps;
 use super::parameters::{node_references, references};
 use super::records::DesignRecords;
+use super::records::MemberKey;
+use super::selections::check_path;
 use super::walk::{Collect, ExpressionPlace, Walk};
 use crate::design::configuration::ParameterOverride;
 use crate::design::dimension::{ParamRef, ParameterRef, RefTarget};
@@ -29,6 +30,7 @@ use crate::features::ParameterId;
 use crate::process::groups::ProcessDefinition;
 use crate::products::Storage;
 use crate::report::check::Finding;
+use crate::validate::cycles::cycles;
 
 /// Where one expression occurs.
 #[derive(Clone, Copy)]
@@ -42,6 +44,13 @@ pub(super) struct Site<'a> {
     pub(super) feature_owned: bool,
     /// The variables in scope.
     pub(super) variables: ExpressionSite,
+    /// The definition whose design holds the expression, from which a
+    /// `through` path resolves; `None` where the holder states none.
+    pub(super) scope: Option<&'a str>,
+    /// Whether the expression states a design parameter's value: its
+    /// definition, or a configuration's, an arrangement's, or an
+    /// occurrence's override of it.
+    pub(super) parameter_value: bool,
 }
 
 pub(super) fn check_expressions(
@@ -57,6 +66,8 @@ pub(super) fn check_expressions(
                 kind: Some(&parameter.kind),
                 feature_owned: matches!(parameter.owner, Some(ParameterOwner::Feature(_))),
                 variables: ExpressionSite::Parameter,
+                scope: Some(parameter.scope.as_str()),
+                parameter_value: true,
             };
             check_expression(index, site, expression, findings);
         }
@@ -93,6 +104,8 @@ pub(super) fn check_expressions(
             kind: None,
             feature_owned: false,
             variables: ExpressionSite::Parameter,
+            scope: Some(program.scope.as_str()),
+            parameter_value: false,
         };
         match &program.body {
             ProgramBody::Neutral(statements) => check_statements(index, site, statements, findings),
@@ -112,6 +125,8 @@ pub(super) fn check_expressions(
             kind: None,
             feature_owned: false,
             variables: ExpressionSite::BendAllowance,
+            scope: None,
+            parameter_value: false,
         };
         let mut walked = Collect::new(ctx);
         rule.walk(&mut walked)?;
@@ -123,6 +138,7 @@ pub(super) fn check_expressions(
         check_feature_expressions(ctx, index, feature, findings)?;
     }
     check_process_parameters(index, findings);
+    check_external_kinds(index, findings);
     check_cycles(index, findings);
     Ok(())
 }
@@ -144,6 +160,8 @@ fn check_overrides(
             kind: Some(&record.kind),
             feature_owned: matches!(record.owner, Some(ParameterOwner::Feature(_))),
             variables: ExpressionSite::Parameter,
+            scope: Some(record.scope.as_str()),
+            parameter_value: true,
         };
         check_expression(index, site, expression, findings);
     }
@@ -160,9 +178,28 @@ pub(super) fn check_expression(
     for reference in references(expression) {
         check_reference(index, site, reference, findings);
     }
+    if let Expression::Neutral(neutral) = expression {
+        check_external_place(site, &neutral.0, findings);
+    }
     match expression {
         Expression::Neutral(neutral) => check_tree(index, site, &neutral.0, findings),
         Expression::Source { tokens, .. } => check_tokens(site.entity, tokens, findings),
+    }
+}
+
+/// An `External` reference of a `Neutral` tree is the whole tree of an
+/// expression that states a design parameter's value (§5.13).
+fn check_external_place(site: Site<'_>, root: &Node<ParameterRef>, findings: &mut Vec<Finding>) {
+    let external =
+        |reference: &ParameterRef| matches!(reference.target, RefTarget::External { .. });
+    let whole = matches!(root, Node::Reference(reference) if external(reference));
+    let placed = node_references(root).into_iter().any(external);
+    if placed && !(whole && site.parameter_value) {
+        super::error(
+            findings,
+            site.entity,
+            crate::rule!("design.external-reference-not-whole-tree-expression", "an External reference is not the whole tree of an expression that states a design parameter's value"),
+        );
     }
 }
 
@@ -178,7 +215,10 @@ fn check_tokens<R>(entity: &str, tokens: &[ExpressionToken<R>], findings: &mut V
         super::error(
             findings,
             entity,
-            format_args!("source expression holds no text token"),
+            crate::rule!(
+                "design.source-expression-holds-no-text-token",
+                "source expression holds no text token"
+            ),
         );
     }
 }
@@ -230,7 +270,10 @@ fn check_typed_tree<R>(
         Err(reason) => super::error(
             findings,
             site.entity,
-            format_args!("expression does not type-check: {reason}"),
+            crate::rule!(
+                "design.expression-does-not-type-check",
+                "expression does not type-check: {reason}"
+            ),
         ),
         Ok(found) => {
             let root_kind = match (site.kind, site.variables) {
@@ -247,7 +290,10 @@ fn check_typed_tree<R>(
                 super::error(
                     findings,
                     site.entity,
-                    format_args!("expression's root does not have the parameter's kind: {reason}"),
+                    crate::rule!(
+                        "design.expression-root-does-not-parameter-kind",
+                        "expression's root does not have the parameter's kind: {reason}"
+                    ),
                 );
             }
         }
@@ -264,10 +310,14 @@ pub(super) fn measures<R>(root: &Node<R>) -> Vec<&Measure> {
     while let Some(node) = pending.pop() {
         match node {
             Node::Measure(measure) => found.push(&**measure),
-            Node::Unary { operand, .. } => pending.push(operand),
-            Node::Binary { left, right, .. } => pending.extend([&**left, &**right]),
-            Node::Call { args, .. } => pending.extend(args),
-            Node::If(branches) => pending.extend(branches.iter()),
+            Node::Unary { .. }
+            | Node::Binary { .. }
+            | Node::Sum { .. }
+            | Node::Product { .. }
+            | Node::All(_)
+            | Node::Any(_)
+            | Node::Call { .. }
+            | Node::If { .. } => pending.extend(node.operands()),
             Node::Number { .. }
             | Node::Constant(_)
             | Node::Boolean(_)
@@ -293,7 +343,8 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.measure-reads-whole-model-selects-two",
                         "a {:?} measure reads the whole model; it selects two picks",
                         measure.kind
                     ),
@@ -308,14 +359,18 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
         Anchor::Input => super::error(
             findings,
             entity,
-            format_args!(
+            crate::rule!(
+                "design.measure-anchored-input-outside-feature-owned",
                 "a measure is anchored `input` outside a feature-owned parameter's expression"
             ),
         ),
         Anchor::Native(_) => super::error(
             findings,
             entity,
-            format_args!("a measure's selection is anchored `native`"),
+            crate::rule!(
+                "design.measure-selection-anchored-native",
+                "a measure's selection is anchored `native`"
+            ),
         ),
     }
     let count = match &selection.picks {
@@ -326,7 +381,8 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
         super::error(
             findings,
             entity,
-            format_args!(
+            crate::rule!(
+                "design.measure-selects-picks-selects-two",
                 "a {:?} measure selects {count} picks; it selects two",
                 measure.kind
             ),
@@ -335,7 +391,11 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
         super::error(
             findings,
             entity,
-            format_args!("a {:?} measure selects no pick", measure.kind),
+            crate::rule!(
+                "design.measure-selects-no-pick",
+                "a {:?} measure selects no pick",
+                measure.kind
+            ),
         );
     }
 }
@@ -409,7 +469,8 @@ pub(super) fn check_reference(
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.expression-references-no-parameter-design",
                         "expression references {}, which is no parameter of the design",
                         target.as_str()
                     ),
@@ -423,13 +484,13 @@ pub(super) fn check_reference(
                 None => super::error(
                     findings,
                     entity,
-                    format_args!("expression references a parameter of {definition}, which is no product definition"),
+                    crate::rule!("design.expression-references-parameter-no-product-definition", "expression references a parameter of {definition}, which is no product definition"),
                 ),
                 Some(Storage::External(_)) => {}
                 Some(Storage::Embedded | Storage::File { .. }) => super::error(
                     findings,
                     entity,
-                    format_args!("expression references a parameter of {definition} by name, but {definition} is no external definition"),
+                    crate::rule!("design.expression-references-parameter-name-no-external", "expression references a parameter of {definition} by name, but {definition} is no external definition"),
                 ),
             }
             Some(definition)
@@ -438,13 +499,8 @@ pub(super) fn check_reference(
     let Some(path) = &reference.through else {
         return;
     };
-    check_path_steps(
-        index,
-        path,
-        entity,
-        "a parameter reference's `through`",
-        findings,
-    );
+    let moved = super::selections::moved_occurrences(index.ir);
+    check_path(index, site.scope, path, &moved, entity, findings);
     let last = match path.0.last().map(|step| &step.occurrence) {
         Some(StepRef::Occurrence(occurrence)) => index.prototype(occurrence.as_str()),
         Some(StepRef::Native(_)) | None => None,
@@ -454,7 +510,7 @@ pub(super) fn check_reference(
             super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!("design.parameter-reference-through-path-ends-not", 
                     "a parameter reference's `through` path ends at {last}, not at the target's scope {target_scope}"
                 ),
             );
@@ -479,6 +535,8 @@ fn check_feature_expressions(
             kind: None,
             feature_owned: false,
             variables: ExpressionSite::Parameter,
+            scope: index.scope_of(MemberKey::Feature(entity)),
+            parameter_value: false,
         };
         let site = match place {
             ExpressionPlace::Law => Site {
@@ -552,7 +610,8 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.process-parameter-value-does-not-follow",
                         "process parameter's value {value:?} does not follow its kind {:?}",
                         parameter.kind
                     ),
@@ -568,18 +627,33 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                     super::error(
                         findings,
                         entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.process-parameter-no-kind-expression-source",
                             "process parameter has no kind, so its expression is `source`"
                         ),
                     );
                 }
                 for reference in node_references(&neutral.0) {
+                    if let ParamRef::Design(ParameterRef {
+                        target: RefTarget::External { .. },
+                        ..
+                    }) = reference
+                    {
+                        super::error(
+                            findings,
+                            entity,
+                            crate::rule!(
+                                "design.process-expression-holds-external-reference",
+                                "a process expression holds an External reference"
+                            ),
+                        );
+                    }
                     if let ParamRef::Process(target) = reference {
                         if let Some(None) = kinds.get(target.as_str()) {
                             super::error(
                                 findings,
                                 entity,
-                                format_args!(
+                                crate::rule!("design.neutral-expression-references-process-parameter-no", 
                                     "neutral expression references {}, a process parameter with no kind",
                                     target.as_str()
                                 ),
@@ -592,6 +666,8 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                     kind: parameter.kind.as_ref(),
                     feature_owned: false,
                     variables: ExpressionSite::Parameter,
+                    scope: None,
+                    parameter_value: false,
                 };
                 check_typed_tree(site, &neutral.0, &type_of, findings);
                 node_references(&neutral.0)
@@ -612,7 +688,8 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                 ParamRef::Process(target) if !kinds.contains_key(target.as_str()) => super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.expression-references-no-process-parameter",
                         "expression references {}, which is no process parameter",
                         target.as_str()
                     ),
@@ -624,10 +701,55 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                         kind: None,
                         feature_owned: false,
                         variables: ExpressionSite::Parameter,
+                        scope: None,
+                        parameter_value: false,
                     };
                     check_reference(index, site, design, findings);
                 }
             }
+        }
+    }
+}
+
+/// The parameters of one scope whose expressions are the `External`
+/// reference to one definition, by one name, through one path, have one
+/// kind (§5.13). A `Native` kind states none to compare.
+fn check_external_kinds(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+    let mut first = BTreeMap::new();
+    for parameter in &index.ir.design.parameters {
+        let ParameterDefinition::Expression(Expression::Neutral(neutral)) = &parameter.definition
+        else {
+            continue;
+        };
+        let Node::Reference(ParameterRef {
+            target: RefTarget::External { definition, name },
+            through,
+        }) = &neutral.0
+        else {
+            continue;
+        };
+        if matches!(parameter.kind, ValueKind::Native(_)) {
+            continue;
+        }
+        let key = (
+            parameter.scope.as_str(),
+            definition.as_str(),
+            name.as_str(),
+            through.as_ref(),
+        );
+        let earlier = *first.entry(key).or_insert(parameter);
+        if earlier.kind != parameter.kind {
+            super::error(
+                findings,
+                parameter.id.as_str(),
+                crate::rule!(
+                    "design.external-reference-parameters-one-kind",
+                    "parameter is the External reference {} of {} as {} is, with another kind",
+                    name.as_str(),
+                    definition.as_str(),
+                    earlier.id.as_str()
+                ),
+            );
         }
     }
 }
@@ -652,64 +774,11 @@ fn check_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
         super::warning(
             findings,
             cycle[0],
-            format_args!(
+            crate::rule!(
+                "design.parameters-reference-other-cycle",
                 "parameters {} reference each other in a cycle",
                 cycle.join(", ")
             ),
         );
     }
-}
-
-/// The strongly connected components of `graph` that hold a cycle, each
-/// sorted, by Kosaraju's two passes, each walked without recursion.
-pub(in crate::validate) fn cycles<'a>(
-    graph: &BTreeMap<&'a str, BTreeSet<&'a str>>,
-) -> Vec<Vec<&'a str>> {
-    let mut order = Vec::with_capacity(graph.len());
-    let mut visited = BTreeSet::new();
-    for &start in graph.keys() {
-        if !visited.insert(start) {
-            continue;
-        }
-        let mut stack = vec![(start, graph[start].iter())];
-        while let Some((node, next)) = stack.last_mut() {
-            if let Some(&target) = next.next() {
-                if graph.contains_key(target) && visited.insert(target) {
-                    stack.push((target, graph[target].iter()));
-                }
-            } else {
-                order.push(*node);
-                stack.pop();
-            }
-        }
-    }
-    let mut reverse: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (&from, targets) in graph {
-        for &to in targets {
-            reverse.entry(to).or_default().push(from);
-        }
-    }
-    let mut assigned = BTreeSet::new();
-    let mut found = Vec::new();
-    for &root in order.iter().rev() {
-        if !assigned.insert(root) {
-            continue;
-        }
-        let mut component = vec![root];
-        let mut pending = vec![root];
-        while let Some(node) = pending.pop() {
-            for &from in reverse.get(node).into_iter().flatten() {
-                if assigned.insert(from) {
-                    component.push(from);
-                    pending.push(from);
-                }
-            }
-        }
-        let cyclic = component.len() > 1 || graph[root].contains(root);
-        if cyclic {
-            component.sort_unstable();
-            found.push(component);
-        }
-    }
-    found
 }

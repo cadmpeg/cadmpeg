@@ -8,6 +8,7 @@ use crate::ids::kind;
 use std::fmt::Write as _;
 use std::io::Cursor;
 
+use cadmpeg_ir::bounds::MAX_DOCUMENT_DEPTH;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{model_curve_point_by_id, model_surface_point_by_id};
 use cadmpeg_ir::geometry::{
@@ -17,6 +18,7 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_ir::CadIr;
 
 use crate::export::write_step;
@@ -780,14 +782,16 @@ fn long_forward_curve_replica_chain_resolves_with_a_worklist() {
 #8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
 ",
     );
-    // The head replica carries exactly MAX_GEOMETRY_NESTING placements over the
-    // line, the deepest chain the IR admits.
-    for id in 9..=263 {
+    // The head replica carries the deepest chain a document holds: its curve
+    // record nests to MAX_DOCUMENT_DEPTH levels.
+    let last = 8 + DEEPEST_DOCUMENT_REPLICA_CHAIN;
+    for id in 9..last {
         writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
     }
-    records.push_str("#264=CURVE_REPLICA('',#6,#8);");
+    writeln!(records, "#{last}=CURVE_REPLICA('',#6,#8);").expect("append curve replica");
 
     let decoded = decode_inline(&records);
+    assert_eq!(document_depth(decoded.ir()), MAX_DOCUMENT_DEPTH);
     assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
             && matches!(
@@ -963,8 +967,33 @@ fn mapped_representation_dag_is_memoized() {
     );
 }
 
+/// The most placements over a line or a plane that a geometry record holds
+/// within a document's [`MAX_DOCUMENT_DEPTH`] levels (§2.5). The root, the
+/// `geometry` home, its arena, the record, and its `geometry` object take five
+/// levels, each placement one, and the leaf's object and its point or vector
+/// two.
+const DEEPEST_DOCUMENT_REPLICA_CHAIN: usize = MAX_DOCUMENT_DEPTH - 7;
+
+/// The JSON depth of `ir` (§2.5): a scalar is no level, and an array or
+/// object is one more than its deepest member.
+fn document_depth(ir: &CadIr) -> usize {
+    let value = serde_json::to_value(ir).expect("document to JSON");
+    let mut deepest = 0;
+    let mut work = vec![(&value, 0)];
+    while let Some((value, above)) = work.pop() {
+        let members: Vec<&serde_json::Value> = match value {
+            serde_json::Value::Array(items) => items.iter().collect(),
+            serde_json::Value::Object(fields) => fields.values().collect(),
+            _ => continue,
+        };
+        deepest = deepest.max(above + 1);
+        work.extend(members.into_iter().map(|member| (member, above + 1)));
+    }
+    deepest
+}
+
 #[test]
-fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+fn a_curve_replica_chain_past_the_document_depth_is_given_up_at_decode() {
     let mut records = String::from(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #2=DIRECTION('',(1.,0.,0.));
@@ -976,25 +1005,34 @@ fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
 #8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
 ",
     );
-    // #9 carries one placement more than the IR admits; #10 carries exactly the
-    // admitted depth.
-    for id in 9..=264 {
+    // #9 carries one placement more than a document holds; #10 carries the
+    // deepest chain a document holds.
+    let last = 9 + DEEPEST_DOCUMENT_REPLICA_CHAIN;
+    for id in 9..last {
         writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
     }
-    records.push_str("#265=CURVE_REPLICA('',#6,#8);");
+    writeln!(records, "#{last}=CURVE_REPLICA('',#6,#8);").expect("append curve replica");
 
     let decoded = decode_inline(&records);
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("CURVE_REPLICA #9 nests past the admitted inline basis depth")
-    }));
-    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
-        curve.id.as_str() == "step:data:curve#9"
-            && matches!(
-                curve.geometry.solved(),
-                Some(SolvedCurveGeometry::Unknown { .. })
-            )
-    }));
+    let unreadable: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("step:data:curve#9"));
+    assert!(unreadable[0]
+        .message
+        .contains("dropped=[step:construction:curve_replica#9]"));
+    assert!(unreadable[0].message.contains("geometry.curves"));
+    assert!(!decoded
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#9"));
+    assert_eq!(document_depth(decoded.ir()), MAX_DOCUMENT_DEPTH);
     assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#10"
             && matches!(
@@ -1005,7 +1043,7 @@ fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
 }
 
 #[test]
-fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+fn a_surface_replica_chain_past_the_document_depth_is_given_up_at_decode() {
     let mut records = String::from(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #2=DIRECTION('',(1.,0.,0.));
@@ -1016,26 +1054,40 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
 #7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,1.,#4);
 ",
     );
-    // #8 carries one placement more than the IR admits; #9 carries exactly the
-    // admitted depth.
-    for id in 8..=263 {
+    // #8 carries one placement more than a document holds; #9 carries the
+    // deepest chain a document holds.
+    let last = 8 + DEEPEST_DOCUMENT_REPLICA_CHAIN;
+    for id in 8..last {
         writeln!(records, "#{id}=SURFACE_REPLICA('',#{},#7);", id + 1)
             .expect("append surface replica");
     }
-    records.push_str("#264=SURFACE_REPLICA('',#6,#7);\n#265=GEOMETRIC_SET('',(#8));");
+    write!(
+        records,
+        "#{last}=SURFACE_REPLICA('',#6,#7);\n#{}=GEOMETRIC_SET('',(#8));",
+        last + 1
+    )
+    .expect("append surface replica");
 
     let decoded = decode_inline(&records);
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("SURFACE_REPLICA #8 nests past the admitted inline basis depth")
-    }));
-    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
-        surface.id.as_str() == "step:data:surface#8"
-            && matches!(
-                surface.geometry.solved(),
-                Some(SolvedSurfaceGeometry::Unknown { .. })
-            )
-    }));
+    let unreadable: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("step:data:surface#8"));
+    assert!(unreadable[0]
+        .message
+        .contains("dropped=[step:construction:surface_replica#8]"));
+    assert!(unreadable[0].message.contains("geometry.surfaces"));
+    assert!(!decoded
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#8"));
+    assert_eq!(document_depth(decoded.ir()), MAX_DOCUMENT_DEPTH);
     assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#9"
             && matches!(

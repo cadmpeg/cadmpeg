@@ -14,7 +14,7 @@ fn child_map_reference_is_rejected_by_complete_cadir_admission() {
         .expect("geometry fixture decodes")
         .ir()
         .clone();
-    let namespace = ir.native.namespace_mut("fcstd");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
     let mut maps = namespace
         .arena_as::<serde_json::Value>("element_maps")
         .expect("element maps");
@@ -118,7 +118,7 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
 
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native
-            .namespace_mut("fcstd")
+            .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
             .set_arena(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 "element_maps",

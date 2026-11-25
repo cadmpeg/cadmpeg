@@ -57,7 +57,7 @@ pub(super) fn project(operation: &LegacyOperation, scope: &str) -> Option<Featur
     };
     Some(FeatureOperation::Split(Box::new(Split {
         mode: SplitMode::ByTools {
-            targets,
+            targets: Some(targets),
             tools: SplitTool::Silhouette(Box::new(Construction {
                 inputs: vec![ConstructionInput {
                     role: Some(InputRole {

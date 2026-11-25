@@ -7,6 +7,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::CadIr;
 
 use crate::history::hash::configuration_feature_state_hash;
@@ -21,7 +22,7 @@ use crate::SldprtCodec;
 /// A decoded part whose lane holds two nested sketch streams after the name of
 /// `Sketch1`, so its interval holds both, and a profile body held by
 /// `Sketch1`'s object that binds the second.
-fn decoded() -> (CadIr, cadmpeg_ir::Annotations, ExactProfiles) {
+fn decoded() -> (CadIr, cadmpeg_ir::SourceFidelity, ExactProfiles) {
     let mut file = sldprt_with_nested_sketch_profiles(&triangle_body(), 2);
     file.extend(make_block(
         0x42,
@@ -58,7 +59,7 @@ fn decoded() -> (CadIr, cadmpeg_ir::Annotations, ExactProfiles) {
             owner_end: start + 1,
         }],
     );
-    (ir, fidelity.annotations, exact)
+    (ir, fidelity, exact)
 }
 
 /// `ir` with its configuration sketch states projected with `exact`.
@@ -103,7 +104,8 @@ fn sketch1_binding(ir: &CadIr) -> Option<cadmpeg_ir::sketches::SketchId> {
 
 #[test]
 fn a_configuration_binds_the_profile_body_the_interval_rule_leaves_unbound() {
-    let (ir, annotations, exact) = decoded();
+    let (ir, fidelity, exact) = decoded();
+    let annotations = fidelity.annotations;
     assert_eq!(
         sketch1_binding(&projected(&ir, &annotations, &ExactProfiles::default())),
         None
@@ -114,25 +116,26 @@ fn a_configuration_binds_the_profile_body_the_interval_rule_leaves_unbound() {
 
 #[test]
 fn the_writer_projects_configuration_states_with_the_decoded_profile_bodies() {
-    let (ir, annotations, exact) = decoded();
-    let mut projected = projected(&ir, &annotations, &exact);
+    let (ir, fidelity, exact) = decoded();
+    let projected = projected(&ir, &fidelity.annotations, &exact);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let hash = configuration_feature_state_hash(&ctx, &projected.model.configurations).unwrap();
-    let attributes = &mut projected.source.as_mut().unwrap().attributes;
-    attributes.insert(
+    let mut digests = fidelity.codec_digests.clone();
+    digests.insert(
         cadmpeg_core::nonblank_literal!("sldprt_configuration_feature_states_local_sha256"),
-        hash,
+        Sha256Digest::try_from(hash).unwrap(),
     );
-    attributes.insert(
+    digests.insert(
         cadmpeg_core::nonblank_literal!("sldprt_configuration_parameter_values_local_sha256"),
-        "stale".into(),
+        Sha256Digest::digest(b"stale"),
     );
     let write = |ir: &CadIr, profiles: Option<ExactProfiles>| {
         prepare_configurations_for_write(
             ir,
+            &digests,
             &mut Some(sldprt_native(ir)),
-            &annotations,
+            &fidelity.annotations,
             &mut crate::history::write::edits::SourceEdits::without_source(ir),
             |_| Ok(profiles),
         )

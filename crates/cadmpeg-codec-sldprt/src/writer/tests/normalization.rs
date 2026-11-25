@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 #[test]
 fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("valid cube");
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let appearance = AppearanceId::mint("sldprt:test:appearance#shared").unwrap();
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
@@ -28,6 +29,7 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
             id: AppearanceBindingId::mint("sldprt:test:binding#a-face").unwrap(),
             target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
             appearance: appearance.clone(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: Some(true),
@@ -38,6 +40,7 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
             id: AppearanceBindingId::mint("sldprt:test:binding#b-body").unwrap(),
             target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
             appearance,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: Some(false),

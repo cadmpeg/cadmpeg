@@ -100,6 +100,9 @@ pub(crate) enum FreecadLossCode {
     AppearanceTopologyColorCountMismatch,
     /// A primitive style size could not enter the neutral appearance.
     AppearancePrimitiveSizeNotTransferred,
+    /// The appearance or mesh of a shape held outside the current geometry
+    /// remains in its GUI or shape payload record.
+    AppearanceStateNotTransferred,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,
     /// The GUI document used schema-1 vocabulary under another declaration.
@@ -171,6 +174,7 @@ impl FreecadLossCode {
         Self::SketchProfileMatchingBounded,
         Self::AppearanceTopologyColorCountMismatch,
         Self::AppearancePrimitiveSizeNotTransferred,
+        Self::AppearanceStateNotTransferred,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
@@ -233,6 +237,7 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
+            Self::AppearanceStateNotTransferred => "appearance.state-not-transferred",
             Self::AppearancePrimitiveSizeNotTransferred => {
                 "appearance.primitive-size-not-transferred"
             }
@@ -298,6 +303,7 @@ impl FreecadLossCode {
             | Self::PersistenceCountNoncanonical
             | Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
+            | Self::AppearanceStateNotTransferred
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
@@ -359,7 +365,8 @@ impl FreecadLossCode {
             | Self::TopologyNonBoundaryIncidenceRetained
             | Self::TopologyRecordRepeated => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
-            | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            | Self::AppearancePrimitiveSizeNotTransferred
+            | Self::AppearanceStateNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
@@ -442,6 +449,7 @@ mod tests {
                 "sketch.profile-matching-bounded",
                 "appearance.topology-color-count-mismatch",
                 "appearance.primitive-size-not-transferred",
+                "appearance.state-not-transferred",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",

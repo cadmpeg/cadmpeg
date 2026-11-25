@@ -1162,7 +1162,7 @@ pub(crate) fn bind_sweep_result_modes(
                 return;
             };
             let SweepShape::Unresolved { section, sections } =
-                std::mem::replace(shape, SweepShape::unresolved(None))
+                std::mem::replace(shape, SweepShape::unresolved())
             else {
                 return;
             };

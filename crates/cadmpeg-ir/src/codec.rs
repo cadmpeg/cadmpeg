@@ -20,12 +20,13 @@ use crate::report::{
     check::Finding,
     decode::{Coverage, DecodeReport, DecodeTransfer, TransferLedger},
     loss::{LossNote as DecodeLoss, StrictConsequence},
+    strictness::Strictness,
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
     ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
-    InspectOptions, LimitScope, View, WholeInput,
+    InspectOptions, LimitScope, ResourceLimits, View, WholeInput,
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
@@ -36,25 +37,35 @@ use serde::{Deserialize, Serialize};
 
 /// The stable registry format namespace of one codec, as a typed value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FormatId(&'static str);
+pub struct FormatId(cadmpeg_core::text::StaticCodecId);
 
 impl FormatId {
-    /// Builds the format id for a registry namespace word.
+    /// Builds the format id for a registry namespace word, which is a codec
+    /// id (§2.2). In a constant, text of another form fails compilation.
     #[must_use]
     pub const fn new(namespace: &'static str) -> Self {
-        Self(namespace)
+        match cadmpeg_core::text::StaticCodecId::new(namespace) {
+            Some(id) => Self(id),
+            None => panic!("a format id is a codec id"),
+        }
     }
 
     /// The registry namespace word.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
-        self.0
+        self.0.as_str()
+    }
+
+    /// The registry namespace word as a codec id.
+    #[must_use]
+    pub const fn codec(self) -> crate::design::names::CodecId {
+        crate::design::names::CodecId::from_static(self.0)
     }
 }
 
 impl fmt::Display for FormatId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(self.0)
+        f.pad(self.0.as_str())
     }
 }
 
@@ -115,8 +126,8 @@ pub struct DecodeResult {
 
 /// A strict-policy refusal bound to the loss in its completed decode report.
 ///
-/// The shared decode finalizer constructs this value. The refusing loss is
-/// therefore always an element of [`Self::report`].
+/// The shared decode finalizer and [`Self::refused_by`] construct this value.
+/// The refusing loss is therefore always an element of [`Self::report`].
 #[derive(Debug)]
 pub struct StrictDecodeRejection {
     report: Box<DecodeReport>,
@@ -132,6 +143,17 @@ impl StrictDecodeRejection {
             report: Box::new(report),
             loss_index: loss_index.0,
         }
+    }
+
+    /// The refusal of `strictness` for the completed decode `report`, naming
+    /// the first loss it refuses (§3.4, Refusals). `None` when it refuses
+    /// none. A report of a decode at `Container` depth exempts
+    /// [`Strictness::pinned`].
+    #[must_use]
+    pub fn refused_by(report: &DecodeReport, strictness: &Strictness) -> Option<Self> {
+        strictness
+            .first_refused(&report.losses, report.container_only())
+            .map(|index| Self::new(report.clone(), RejectingLossIndex(index)))
     }
 
     /// Returns the loss that caused the strict-policy refusal.
@@ -217,6 +239,30 @@ impl DecodeBody {
             transfer_ledger: TransferLedger::default(),
         }
     }
+
+    /// Charges `decode/depth.not-delivered` for `class` where the source
+    /// holds records of `class` that the delivered depth leaves out, as the
+    /// joints of a `Geometry`-depth decode (§2.1). A class the delivered
+    /// depth holds is not charged, and a class is charged once.
+    pub fn source_holds(&mut self, class: ArenaClass) {
+        let depth = self.transfer.depth();
+        if depth.scope().holds(class) {
+            return;
+        }
+        let note = held_beyond_depth(depth, class);
+        if !self.losses.contains(&note) {
+            self.losses.push(note);
+        }
+    }
+}
+
+/// The loss for records of `class` that the source holds and a decode at
+/// `depth` leaves out.
+fn held_beyond_depth(depth: DecodeDepth, class: ArenaClass) -> DecodeLoss {
+    DecodeLossCode::DepthNotDelivered { class }.note(format!(
+        "the source holds {class} records that a {depth}-depth decode does not deliver, so they \
+         and the references to them are absent"
+    ))
 }
 
 impl DecodeResult {
@@ -229,7 +275,9 @@ impl DecodeResult {
         format: FormatId,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
-        result.keep_first_of_repeated_ids();
+        result.give_up_repeated_ids();
+        result.record_content_digest(ctx.policy())?;
+        result.record_omitted_arenas_baseline(ctx.policy());
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -267,7 +315,8 @@ impl DecodeResult {
     /// `format`, the codec's registry format. The document records the scope
     /// of the depth the backend's transfer state reports, less each class
     /// `requested` excludes that the document leaves empty; each class
-    /// `requested` names that the document lacks adds an error loss.
+    /// `requested` names that the document lacks adds an error loss, unless
+    /// the body already charges it through [`DecodeBody::source_holds`].
     ///
     /// The normalizer runs under `policy`, the decode's own. Only a refusal
     /// that stops the session refuses the decode; where the normalizer gives
@@ -290,6 +339,12 @@ impl DecodeResult {
             CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
         })?;
         for class in scope.missing_from(requested.scope()) {
+            if body
+                .losses
+                .contains(&held_beyond_depth(body.transfer.depth(), class))
+            {
+                continue;
+            }
             body.losses
                 .push(DecodeLossCode::DepthNotDelivered { class }.note(format!(
                     "requested {requested} depth but the {format} decoder did not deliver \
@@ -302,10 +357,10 @@ impl DecodeResult {
                     FormatIdentity::classified(dialects.clone())
                 }
                 FormatIdentity::Unclassified { format } => {
-                    FormatIdentity::unclassified(format.to_owned())
+                    FormatIdentity::unclassified(format.clone())
                 }
             },
-            None => FormatIdentity::unclassified(format.as_str().to_owned()),
+            None => FormatIdentity::unclassified(format.codec()),
         };
         ir.finalize();
         match crate::design::normalize::normalize(&mut ir, policy) {
@@ -334,24 +389,151 @@ impl DecodeResult {
         })
     }
 
-    /// Keeps one copy of each id a decoder emitted more than once in one
-    /// arena. Copies that hold one value are one record, and the wrapper
-    /// states it (§2.8). Where the copies differ, §2.8 states none and gives
-    /// the id up with the records that need it; that give-up pass does not
-    /// exist yet, so meanwhile the first copy in the decoder's emission order
-    /// is kept, the others are dropped, and one `decode/id.repeated` loss per
-    /// id names it, the arena, and the copies.
-    fn keep_first_of_repeated_ids(&mut self) {
-        for repeated in self.ir.drop_repeated_ids() {
-            self.report.losses.push(DecodeLossCode::IdRepeated.note(format!(
-                "the decoder emitted {} {} times in arena {}, and the copies differ; the first \
-                 copy is kept and {} dropped, so a reference meant for a dropped copy names the first",
-                repeated.id,
-                repeated.dropped + 1,
-                repeated.arena,
-                repeated.dropped
-            )));
+    /// Records the digest of the arenas the CADIR wire omits as the
+    /// document returns, beside the content digest, which covers the wire
+    /// form alone. Where it cannot be taken, the content digest decides alone.
+    fn record_omitted_arenas_baseline(&mut self, policy: &DecodePolicy) {
+        let arena = DecodeArena::new();
+        let Ok((digest_ctx, _)) = DecodeContext::from_root_bytes(&[], &arena, policy) else {
+            return;
+        };
+        if let Ok(digest) = crate::hash::omitted_arenas_local_sha256(&digest_ctx, &self.ir) {
+            self.ir.model.record_omitted_arenas_baseline(digest);
         }
+    }
+
+    /// States one copy of each id a decoder emitted more than once in one
+    /// arena where the copies hold one value, and none where they differ
+    /// (§2.8), charging one `decode/id.repeated` loss per such id that names
+    /// it, the arena, and the number of copies.
+    fn give_up_repeated_ids(&mut self) {
+        for repeated in self.ir.drop_repeated_ids() {
+            self.report
+                .losses
+                .push(DecodeLossCode::IdRepeated.note(format!(
+                    "the decoder emitted {} {} times in arena {}, and the copies differ, so the \
+                 document states none of them; dropped=[{}]",
+                    repeated.id, repeated.copies, repeated.arena, repeated.id
+                )));
+        }
+    }
+
+    /// Records the SHA-256 of the canonical JSON of the document the decode
+    /// returns as the sidecar's `content_digest` (§3.1, Rule B). The digest
+    /// walks the document in a session of its own under `policy`, the
+    /// decode's, so a ceiling it meets refuses no part of the decode. A
+    /// document with no canonical JSON states no digest, so every writer reads
+    /// it as edited, and a `decode/content-digest.unavailable` Warning says why.
+    ///
+    /// The same walk finds each record the decoder stated past a bound of
+    /// §2.5, which §2.8 states none of. Each such record is given up, with a
+    /// `decode/record.unreadable` Error that names it, and the document is
+    /// digested again without it. A procedural construction whose carrier is
+    /// given up goes with it. Other records that reference a given-up record
+    /// keep the reference (interim: the shared give-up pass of §2.8 does not
+    /// exist yet). The walk admits at least
+    /// [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
+    /// recursion ceiling, so that it digests a document within the bound and
+    /// writes the first container past it before it is refused. A refused
+    /// walk stops in the record it was refused in, so the wrapper walks again
+    /// after each give-up.
+    fn record_content_digest(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
+        let policy = DecodePolicy {
+            limits: ResourceLimits {
+                max_recursion_depth: policy
+                    .limits
+                    .max_recursion_depth
+                    .max(crate::bounds::DIGEST_WALK_DEPTH),
+                ..policy.limits
+            },
+            ..*policy
+        };
+        let walk = |ir: &CadIr| {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            Ok::<_, CodecError>(crate::hash::measured_content_digest(&ctx, ir))
+        };
+        let (mut digest, mut measured) = walk(&self.ir)?;
+        while self.give_up_records_past_the_bounds(std::mem::take(&mut measured.records)) {
+            (digest, measured) = walk(&self.ir)?;
+        }
+        if let Some(bound) = measured.outside {
+            self.report.losses.push(
+                DecodeLoss::new(
+                    crate::unknown::part::record_unreadable_kind(),
+                    format!(
+                        "the document {} outside every record, which the decode wrapper keeps",
+                        bound.describe()
+                    ),
+                )
+                .with_severity(crate::report::Severity::Error),
+            );
+        }
+        match digest.map_err(CodecError::from) {
+            Ok(digest) => self.source_fidelity.content_digest = Some(digest),
+            Err(error) => {
+                self.source_fidelity.content_digest = None;
+                self.report
+                    .losses
+                    .push(DecodeLossCode::ContentDigestUnavailable.note(format!(
+                        "the decode wrapper took no content digest of the document ({error}), \
+                         so a writer reads the document as edited and replays no source file"
+                    )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Gives up each record of `records`, last first in each arena so the
+    /// places of the others hold, and returns whether it gave up any. The
+    /// document writes each arena in identity order, so the arenas are put in
+    /// that order first.
+    fn give_up_records_past_the_bounds(
+        &mut self,
+        records: std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    ) -> bool {
+        if records.is_empty() {
+            return false;
+        }
+        self.ir.finalize();
+        let mut gave_up = false;
+        for (place, bound) in records.into_iter().rev() {
+            let Some((id, dropped)) = self.ir.remove_record(&place) else {
+                continue;
+            };
+            gave_up = true;
+            // Dropped constructions move the places of their arena, so the
+            // next walk finds the records still past a bound.
+            let moved = !dropped.is_empty();
+            let arena = match &place {
+                crate::bounds::Place::Home { home, arena, .. } => format!("{home}.{arena}"),
+                crate::bounds::Place::Native { codec, arena, .. } => {
+                    format!("native.{codec}.{arena}")
+                }
+            };
+            self.report.losses.push(
+                DecodeLoss::new(
+                    crate::unknown::part::record_unreadable_kind(),
+                    format!(
+                        "record {id} of arena {arena} {}, so the decode wrapper gave it up{}",
+                        bound.describe(),
+                        if dropped.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                " with the constructions it owned; dropped=[{}]",
+                                dropped.join(", ")
+                            )
+                        }
+                    ),
+                )
+                .with_severity(crate::report::Severity::Error),
+            );
+            if moved {
+                break;
+            }
+        }
+        gave_up
     }
 
     /// Borrow the finalized IR.

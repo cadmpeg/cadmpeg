@@ -157,10 +157,13 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
-        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
-    assert!(report.losses.is_empty());
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode output");
@@ -263,7 +266,7 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         )
         .expect("decode link carrier");
     let mut edited = decoded.ir().clone();
-    let namespace = edited.native.namespace_mut("fcstd");
+    let namespace = edited.native.namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
     let mut properties = namespace
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
@@ -327,7 +330,9 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .expect("decode source");
 
     let mut declaration_edit = decoded.ir().clone();
-    let namespace = declaration_edit.native.namespace_mut("fcstd");
+    let namespace = declaration_edit
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
     let mut objects = namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
@@ -349,7 +354,9 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     assert!(error.to_string().contains("declaration edits"));
 
     let (mut stale_entry, _, _) = decoded.into_parts();
-    let namespace = stale_entry.native.namespace_mut("fcstd");
+    let namespace = stale_entry
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
     let mut entries = namespace
         .arena_as::<serde_json::Value>("entries")
         .expect("entries");
@@ -555,7 +562,7 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         )
         .expect("Box");
     let mut ir = decoded.ir().clone();
-    let namespace = ir.native.namespace_mut("fcstd");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
     let mut properties = namespace
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");

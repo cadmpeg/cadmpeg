@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Caches that in-IR arithmetic decides (part 10, Caches): a parameter's
-//! value against its expression, and a coupling's ratio against its radii.
+//! value against its expression, a coupling's ratio against its radii, the
+//! placements of `placements`, and the solved sketch geometry of `sketches`.
 //! Each disagreement is a Warning.
 //!
 //! No value that depends on a measure is checked: the source evaluates a
 //! measure with a kernel and stores it at its own precision (§5.13).
 
 use std::collections::BTreeSet;
+
+pub(super) mod constructions;
+mod placements;
+mod sketches;
 
 use super::parameters::references;
 use super::records::DesignRecords;
@@ -24,6 +29,8 @@ use crate::report::check::Finding;
 const RELATIVE: f64 = 1e-9;
 
 pub(super) fn check_caches(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+    placements::check_placements(index, findings);
+    sketches::check_sketches(index, findings);
     for parameter in &index.ir.design.parameters {
         check_parameter(index, parameter, findings);
     }
@@ -69,7 +76,8 @@ fn check_parameter(
                 super::warning(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.integer-parameter-expression-evaluates-not-whole",
                         "integer parameter's expression evaluates to {value}, not a whole number"
                     ),
                 );
@@ -89,7 +97,7 @@ fn check_parameter(
         super::warning(
             findings,
             id,
-            format_args!("parameter's cached value {cached:?} disagrees with its expression's value {evaluated:?}"),
+            crate::rule!("design.parameter-cached-value-disagrees-expression-value", "parameter's cached value {cached:?} disagrees with its expression's value {evaluated:?}"),
         );
     }
 }
@@ -229,7 +237,8 @@ fn check_coupling(feature: &str, coupling: &Coupling, findings: &mut Vec<Finding
         super::warning(
             findings,
             feature,
-            format_args!(
+            crate::rule!(
+                "design.coupling-ratio-disagrees-radii-ratio",
                 "coupling's ratio {ratio} disagrees with its radii, whose ratio is {expected}"
             ),
         );

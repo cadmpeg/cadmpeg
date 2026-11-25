@@ -18,7 +18,6 @@ use super::construction::FrameValue;
 use super::dimension::Dimension;
 use super::ids::{ContainerId, PublicationId};
 use super::names::{CodecName, NameKind, NativeName, TopoName};
-use super::read::{self, Ceiling};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use crate::document::Topology;
 use crate::features::geometry::FinitePoint3;
@@ -28,6 +27,7 @@ use crate::geometry::{InlineCurve, InlineSurface};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
+use crate::structural_order::StructuralOrd;
 use crate::units::UnitVector3;
 
 /// The order marker of a [`Members`] list.
@@ -247,11 +247,11 @@ pub enum Picks<O: MemberOrder> {
 }
 
 /// One pick of a selection. Its identity key is
-/// `(target, context, native, domain)`; neither the witness nor `resolved`
-/// is part of it.
+/// `(target, context, native, domain)`, and a `Native` pick that carries no
+/// native name adds its witness. `resolved` is never part of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields, try_from = "PickedWire")]
+#[serde(deny_unknown_fields, from = "PickedWire")]
 pub struct Picked {
     /// What the pick picks.
     pub target: PickTarget,
@@ -275,25 +275,58 @@ pub struct Picked {
 }
 
 /// The identity key of a [`Picked`], `(target, context, native, domain)`, in
-/// the order of §2.5. Neither the witness nor `resolved` is part of it.
+/// the order of §2.5. A `Native` pick that carries no native name adds its
+/// witness, which is then the one statement of what it picks; the witness of
+/// any other pick, and `resolved`, are not part of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PickKey<'a> {
     target: &'a PickTarget,
     context: Option<&'a PickContext>,
     native: Option<&'a NativeName>,
     domain: Option<PickDomainKey<'a>>,
+    witness: Option<WitnessKey<'a>>,
 }
 
 impl Keyed for Picked {
     type Key<'a> = PickKey<'a>;
 
     fn key(&self) -> PickKey<'_> {
+        let witness = match (&self.target, &self.native) {
+            (PickTarget::Native { .. }, None) => self.witness.as_ref().map(WitnessKey),
+            _ => None,
+        };
         PickKey {
             target: &self.target,
             context: self.context.as_ref(),
             native: self.native.as_ref(),
             domain: self.domain.as_ref().map(PickDomainKey),
+            witness,
         }
+    }
+}
+
+/// A witness in a pick's identity key, compared in the derived structural
+/// order of §2.5.
+#[derive(Debug, Clone, Copy)]
+pub struct WitnessKey<'a>(&'a Witness);
+
+impl PartialEq for WitnessKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for WitnessKey<'_> {}
+
+impl PartialOrd for WitnessKey<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for WitnessKey<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.structural_cmp(other.0)
     }
 }
 
@@ -325,11 +358,8 @@ struct PickedWire {
     resolved: Option<Vec<EntityRef>>,
 }
 
-impl TryFrom<PickedWire> for Picked {
-    type Error = String;
-
-    /// Admits a pick nested no deeper than the pick ceiling.
-    fn try_from(wire: PickedWire) -> Result<Self, Self::Error> {
+impl From<PickedWire> for Picked {
+    fn from(wire: PickedWire) -> Self {
         let PickedWire {
             target,
             context,
@@ -338,35 +368,14 @@ impl TryFrom<PickedWire> for Picked {
             witness,
             resolved,
         } = wire;
-        let pick = Self {
+        Self {
             target,
             context,
             native,
             domain,
             witness,
             resolved,
-        };
-        read::within(Ceiling::Pick, pick.depth())?;
-        Ok(pick)
-    }
-}
-
-impl Picked {
-    /// The levels of this pick and the picks nested in its domain.
-    fn depth(&self) -> u64 {
-        let below = match &self.domain {
-            Some(PickDomain::Limits { start, end }) => {
-                let depth = |pick: &Option<Box<Self>>| pick.as_ref().map_or(0, |pick| pick.depth());
-                depth(start).max(depth(end))
-            }
-            Some(
-                PickDomain::EdgeInterval { .. }
-                | PickDomain::Fragment(_)
-                | PickDomain::Containing(_),
-            )
-            | None => 0,
-        };
-        below + 1
+        }
     }
 }
 
@@ -617,7 +626,7 @@ pub enum DatumPart {
 
 /// A pick's evaluated geometry as the source cached it: a cache of the pick
 /// in its anchored state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Witness {
@@ -850,6 +859,13 @@ pub enum SelectionRule {
         /// The faces the seeds' faces meet.
         with: Members<Picked, Unordered>,
     },
+    /// Every component instance below the owner's definition that exists in
+    /// the anchored state and whose bodies differ when the operation of the
+    /// selection's feature is applied to that instance alone. It takes no
+    /// seeds and no propagation, and occurs only as a term of an assembly
+    /// feature's participants.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Affected,
     /// A source rule whose meaning is not established, written
     /// `codec:rule`.
     Native(CodecName),

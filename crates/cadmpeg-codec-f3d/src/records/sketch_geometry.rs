@@ -1122,10 +1122,8 @@ impl SketchPoint {
         }
         let coordinates = self.coordinates();
         let position = [coordinates.u, coordinates.v, self.depth()];
-        if flags[5] != 0 && (flags[3] == 0 || position.iter().any(|value| value.to_bits() != 0)) {
-            return Err(
-                "sketch point flag lane 5 requires lane 3 and positive-zero coordinates".into(),
-            );
+        if flags[5] != 0 && (flags[3] == 0 || position.iter().any(|value| *value != 0.0)) {
+            return Err("sketch point flag lane 5 requires lane 3 and zero coordinates".into());
         }
         if flags[7] == 0 {
             return Ok(());
@@ -2648,12 +2646,15 @@ mod tests {
         wire["flags"] = json!("0000000101010000");
         let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
         assert!(point.validate_for_write(&[]).is_ok());
-        for coordinates in [json!({"u": 1.0, "v": 0.0}), json!({"u": -0.0, "v": 0.0})] {
-            let mut invalid = wire.clone();
-            invalid["coordinates"] = coordinates;
-            let point: SketchPoint = serde_json::from_value(invalid).unwrap();
-            assert!(point.validate_for_write(&[]).is_err());
-        }
+        let mut negative_zero = wire.clone();
+        negative_zero["coordinates"] = json!({"u": -0.0, "v": -0.0});
+        negative_zero["depth"] = json!(-0.0);
+        let point: SketchPoint = serde_json::from_value(negative_zero).unwrap();
+        assert!(point.validate_for_write(&[]).is_ok());
+        let mut invalid = wire.clone();
+        invalid["coordinates"] = json!({"u": 1.0, "v": 0.0});
+        let point: SketchPoint = serde_json::from_value(invalid).unwrap();
+        assert!(point.validate_for_write(&[]).is_err());
         for flags in ["0000000001010000", "0000010101010000"] {
             let mut invalid = wire.clone();
             invalid["flags"] = json!(flags);

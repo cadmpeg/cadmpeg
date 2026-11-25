@@ -355,11 +355,11 @@ fn known_sphere_record_retains_source_offset_tag_and_derived_fields() {
     assert_eq!(provenance.tag.as_deref(), Some("sphere-surface"));
     let fields = fidelity.annotations.exactness()[surface_id.as_str()].fields();
     assert_eq!(
-        fields.get("geometry.axis"),
+        fields.get("geometry.value.axis"),
         Some(&cadmpeg_ir::Exactness::Derived)
     );
     assert_eq!(
-        fields.get("geometry.ref_direction"),
+        fields.get("geometry.value.ref_direction"),
         Some(&cadmpeg_ir::Exactness::Derived)
     );
 }
@@ -952,7 +952,13 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
     assert_eq!(geometry.faces.len(), 1);
     assert_eq!(geometry.shells.len(), 1);
     assert_eq!(geometry.shells[0].id.as_str(), "sat:brep:entity#3");
-    assert_eq!(geometry.regions[0].shells, [geometry.shells[0].id.clone()]);
+    assert_eq!(
+        geometry.regions[0]
+            .stated_shells()
+            .cloned()
+            .collect::<Vec<_>>(),
+        [geometry.shells[0].id.clone()]
+    );
     assert!(result
         .report()
         .losses

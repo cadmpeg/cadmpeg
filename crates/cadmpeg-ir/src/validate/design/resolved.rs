@@ -11,9 +11,9 @@ use std::rc::Rc;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::evaluations::check_path_steps;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
-use crate::design::evaluation::{Evaluation, StateBase, StateDelta};
+use super::selections::{check_path, moved_occurrences};
+use crate::design::evaluation::{Evaluation, EvaluationStatus, StateBase, StateDelta};
 use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameEntry, NameKind};
 use crate::design::refs::{EntityRef, RecordRef};
@@ -28,6 +28,7 @@ use crate::report::check::{Check, Finding};
 use crate::schema::EntitySchema;
 use crate::topology::ChildLists;
 use crate::transform::Transform;
+use state_topology::{StateKey, StateRules};
 
 macro_rules! topology_arenas {
     ($target:ident) => {
@@ -83,6 +84,15 @@ macro_rules! declare_arenas {
         }
 
         impl Located<'_> {
+            /// Appends a copy of the record to its arena of `into`.
+            fn copy_into(self, into: &mut Topology) {
+                match self.arena {
+                    $(Arena::$arena => into
+                        .$field
+                        .extend(self.topology.$field.get(self.index).cloned()),)*
+                }
+            }
+
             fn visit_references(
                 self,
                 ctx: &DecodeContext<'_>,
@@ -174,6 +184,16 @@ impl ResolvedState<'_> {
             .get(id)
             .is_some_and(|located| located.arena == arena)
     }
+
+    /// The state's records, as a `Topology` of their own.
+    fn topology(&self) -> Topology {
+        let mut topology = Topology::default();
+        for located in self.records.values() {
+            located.copy_into(&mut topology);
+        }
+        topology.finalize();
+        topology
+    }
 }
 
 /// A resolved state that the records resting on it share; `None` where the
@@ -209,7 +229,7 @@ impl<'a> Resolver<'a, '_, '_> {
                 .topology
                 .bodies
                 .get(located.index)
-                .map(|body| self.children.body_regions(&body.id))
+                .map(|body| self.children.stated_body_regions(&body.id))
                 .unwrap_or_default()
                 .iter()
                 .map(|region| region.id.as_str())
@@ -218,7 +238,7 @@ impl<'a> Resolver<'a, '_, '_> {
                 .topology
                 .shells
                 .get(located.index)
-                .map(|shell| self.children.shell_faces(&shell.id))
+                .map(|shell| self.children.stated_shell_faces(&shell.id))
                 .unwrap_or_default()
                 .iter()
                 .map(|face| face.id.as_str())
@@ -523,7 +543,7 @@ fn apply<'a>(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!("design.two-records-resolved-state-share-id", 
                     "two records of the resolved state share id {id}: a {} record and a {arena} record",
                     previous.arena
                 ),
@@ -601,7 +621,10 @@ pub(super) fn check_resolved_states(
                 super::error(
                     findings,
                     entity.id(),
-                    format_args!("an entity of an unproduced body must have no structured name"),
+                    crate::rule!(
+                        "design.entity-unproduced-body-must-no-structured",
+                        "an entity of an unproduced body must have no structured name"
+                    ),
                 );
             }
         }
@@ -621,6 +644,7 @@ pub(super) fn check_resolved_states(
     }
     let evaluations = &ir.design.evaluations;
     let mut chain = Chain::new(evaluations, evaluations.iter().filter_map(Stored::base));
+    let mut rules = StateRules::new(ctx, ids.native_view());
     for evaluation in evaluations {
         let Some(content) = &evaluation.content else {
             continue;
@@ -637,19 +661,33 @@ pub(super) fn check_resolved_states(
                 super::error(
                     findings,
                     id,
-                    format_args!("evaluation states unproduced body {}", body.as_str()),
+                    crate::rule!(
+                        "design.evaluation-states-unproduced-body",
+                        "evaluation states unproduced body {}",
+                        body.as_str()
+                    ),
                 );
             }
         }
-        check_entries(index, &state, id, findings);
+        check_entries(index, &state, Some(evaluation.scope.as_str()), id, findings);
         check_closure(ctx, &state, &topology, ids, id, findings)?;
-        state_topology::check_state_topology(
-            ctx,
-            ir.tolerances.linear,
-            &base,
-            &state,
-            &content.delta.records,
+        let base_key = match &content.base {
+            StateBase::Empty => StateKey::Empty,
+            StateBase::Current(position) => {
+                StateKey::Current(evaluation.scope.as_str(), PositionKey::of(position))
+            }
+            StateBase::Evaluation(base) => StateKey::Evaluation(base.as_str()),
+        };
+        rules.check(
+            (base_key, &*base),
+            (
+                chain
+                    .is_first(evaluation)
+                    .then_some(StateKey::Evaluation(id)),
+                &state,
+            ),
             id,
+            evaluation.status == EvaluationStatus::Current,
             findings,
         )?;
         check_stored_bodies(index, evaluation, &state, findings);
@@ -673,7 +711,8 @@ fn check_current_names(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.name-entry-names-no-record-current",
                     "name entry names {id}, which is no record of the current geometry's {arena}"
                 ),
             );
@@ -682,20 +721,24 @@ fn check_current_names(
 }
 
 /// The resolved state's name, owner, member, instance-body, and pose entries
-/// name what the state holds.
+/// name what the state holds; instance-body and pose paths resolve from
+/// `root`, the definition of the state's scope.
 fn check_entries(
     index: &DesignRecords<'_>,
     state: &ResolvedState<'_>,
+    root: Option<&str>,
     evaluation: &str,
     findings: &mut Vec<Finding>,
 ) {
+    let moved = moved_occurrences(index.ir);
     for entity in state.names.keys() {
         let (arena, id) = Arena::of_entity(entity);
         if !state.holds(arena, id) {
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.name-entry-names-no-record-resolved",
                     "name entry names {id}, which is no record of the resolved state's {arena}"
                 ),
             );
@@ -706,7 +749,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.owner-entry-names-no-body-resolved",
                     "owner entry names {}, which is no body of the resolved state",
                     body.as_str()
                 ),
@@ -716,7 +760,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.owner-entry-names-no-product-definition",
                     "owner entry names {}, which is no product definition",
                     owner.as_str()
                 ),
@@ -728,7 +773,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.member-entry-names-no-occurrence-model",
                     "member entry names {occurrence}, which is no occurrence of the model"
                 ),
             );
@@ -737,7 +783,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.member-entry-names-no-product-definition",
                     "member entry names {}, which is no product definition",
                     owner.as_str()
                 ),
@@ -745,13 +792,14 @@ fn check_entries(
         }
     }
     for (path, bodies) in &state.instance_bodies {
-        check_path_steps(index, path, evaluation, "instance-body", findings);
+        check_path(index, root, path, &moved, evaluation, findings);
         for body in *bodies {
             if !state.holds(Arena::Body, body.as_str()) {
                 super::error(
                     findings,
                     evaluation,
-                    format_args!(
+                    crate::rule!(
+                        "design.instance-body-entry-lists-no-body",
                         "instance-body entry lists {}, which is no body of the resolved state",
                         body.as_str()
                     ),
@@ -760,7 +808,7 @@ fn check_entries(
         }
     }
     for path in state.poses.keys() {
-        check_path_steps(index, path, evaluation, "pose", findings);
+        check_path(index, root, path, &moved, evaluation, findings);
     }
 }
 
@@ -791,7 +839,7 @@ fn check_closure(
             super::error(
                 findings,
                 evaluation,
-                format_args!("record {id} of the resolved state references {target}, which the state does not hold"),
+                crate::rule!("design.record-resolved-state-references-state-does", "record {id} of the resolved state references {target}, which the state does not hold"),
             );
         }
     }
@@ -830,7 +878,8 @@ fn check_stored_bodies(
             super::error(
                 findings,
                 evaluation.id.as_str(),
-                format_args!(
+                crate::rule!(
+                    "design.stored-feature-names-no-body-state",
                     "stored feature {} names {}, which is no body of the state after it",
                     feature.id.as_str(),
                     body.as_str()
@@ -882,6 +931,7 @@ pub(in crate::validate) fn check_process_states<'a>(
         states.iter().filter_map(design_base),
     );
     let mut chain = Chain::new(states, states.iter().filter_map(Stored::base));
+    let mut rules = StateRules::new(ctx, ids.native_view());
     let mut process_findings = Vec::new();
     for state in states {
         let Some(content) = &state.content else {
@@ -895,14 +945,36 @@ pub(in crate::validate) fn check_process_states<'a>(
         }
         let Some(base) = base else { continue };
         let id = state.id.as_str();
-        let mut resolved = Rc::unwrap_or_clone(base);
+        let mut resolved = (*base).clone();
         apply(
             &mut resolved,
             &content.delta,
             Some((id, &mut process_findings)),
         );
-        check_entries(index, &resolved, id, &mut process_findings);
+        check_entries(index, &resolved, scope(state), id, &mut process_findings);
         check_closure(ctx, &resolved, &topology, ids, id, &mut process_findings)?;
+        let base_key = match &content.base {
+            ProcessBase::State(base) => Some(StateKey::Process(base.as_str())),
+            ProcessBase::Design(StateBase::Empty) => Some(StateKey::Empty),
+            ProcessBase::Design(StateBase::Current(position)) => {
+                scope(state).map(|scope| StateKey::Current(scope, PositionKey::of(position)))
+            }
+            ProcessBase::Design(StateBase::Evaluation(base)) => {
+                Some(StateKey::Evaluation(base.as_str()))
+            }
+        };
+        if let Some(base_key) = base_key {
+            rules.check(
+                (base_key, &*base),
+                (
+                    chain.is_first(state).then_some(StateKey::Process(id)),
+                    &resolved,
+                ),
+                id,
+                state.status == EvaluationStatus::Current,
+                &mut process_findings,
+            )?;
+        }
         chain.keep(state, resolved);
     }
     findings.extend(process_findings.into_iter().map(|finding| Finding {

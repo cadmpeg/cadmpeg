@@ -1108,12 +1108,11 @@ impl Writer<'_, '_, '_, '_> {
                 .shells
                 .push(Shell::new(shell_id.clone(), region_id.clone()));
             self.derived(&shell_id);
-            self.sink.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body.clone(),
-                shells: vec![shell_id],
-                native_ref: None,
-            });
+            self.sink.geometry.regions.push(Region::new(
+                region_id.clone(),
+                body.clone(),
+                vec![shell_id],
+            ));
             self.derived(&region_id);
             regions[usize::from(!closed[shell])].push(region_id);
         }
@@ -1145,6 +1144,7 @@ impl Writer<'_, '_, '_, '_> {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
             self.derived(&id);
             bodies.push(id);

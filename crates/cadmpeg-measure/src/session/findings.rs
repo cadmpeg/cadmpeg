@@ -27,7 +27,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
-use cadmpeg_ir::report::check::{Check, Finding};
+use cadmpeg_ir::report::check::{Check, Finding, RuleName};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::LoopBoundary;
 
@@ -54,9 +54,15 @@ const fn reading_name(reading: NormalReading) -> &'static str {
     }
 }
 
-fn warning(check: Check, entity: &str, related: Vec<String>, message: String) -> Finding {
+fn warning(
+    (check, rule): (Check, RuleName),
+    entity: &str,
+    related: Vec<String>,
+    message: String,
+) -> Finding {
     Finding {
         check,
+        rule,
         severity: Severity::Warning,
         message,
         entity: Some(entity.to_owned()),
@@ -195,7 +201,7 @@ impl<'ir> CombinedPass<'_, 'ir> {
         let mut needed_edges: BTreeSet<&'ir str> = declared_edges.clone();
         for face in &self.measurer.input.ir.geometry.faces {
             let in_declared = declared_faces.contains(face.id.as_str());
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 if let Some(face_loop) = self.measurer.owners.loop_(loop_id.as_str()) {
                     for coedge in face_loop.coedges() {
                         if let Some(coedge) = self.measurer.owners.coedge(coedge.as_str()) {
@@ -286,15 +292,17 @@ impl<'ir> CombinedPass<'_, 'ir> {
             .bodies
             .iter()
             .filter(|body| {
-                let shells: Vec<_> = owners
-                    .body_regions(&body.id)
-                    .iter()
-                    .flat_map(|region| &region.shells)
+                let Some(regions) = owners.complete_body_shells(&body.id) else {
+                    return false;
+                };
+                let shells: Vec<_> = regions
+                    .into_iter()
+                    .flatten()
                     .filter_map(|shell| owners.shell(shell.as_str()))
                     .collect();
                 !shells.is_empty()
                     && shells.iter().all(|shell| {
-                        !owners.shell_faces(&shell.id).is_empty()
+                        !owners.stated_shell_faces(&shell.id).is_empty()
                             && closure(owners, &no_faces, edges, shell).closed()
                     })
             })
@@ -317,7 +325,7 @@ impl<'ir> CombinedPass<'_, 'ir> {
     ) -> bool {
         let owners = &self.measurer.owners;
         face.loops
-            .iter()
+            .stated()
             .filter_map(|loop_id| owners.loop_(loop_id.as_str()))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .filter_map(|coedge| owners.coedge(coedge.as_str()))
@@ -486,7 +494,10 @@ impl<'ir> CombinedPass<'_, 'ir> {
             }
             if let Some(conflict) = bodies.volume_conflict(body) {
                 findings.push(warning(
-                    Check::Orientation,
+                    (
+                        Check::Orientation,
+                        cadmpeg_ir::rule_name!("measure/findings.body-volume-readings-conflict"),
+                    ),
                     body.id.as_str(),
                     conflict.related,
                     format!(
@@ -499,6 +510,9 @@ impl<'ir> CombinedPass<'_, 'ir> {
         }
         if !unchecked.is_empty() || unchecked_bodies > 0 {
             findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!(
+                    "measure/findings.measurement-checks-skipped-findings-allowance-ran"
+                ),
                 check: Check::MeasurementIncomplete,
                 severity: Severity::Info,
                 message: format!(
@@ -542,7 +556,7 @@ impl<'ir> Measurer<'ir> {
 
         let mut needed_edges: BTreeSet<&'ir str> = BTreeSet::new();
         for face in &geometry.faces {
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 if let Some(face_loop) = self.owners.loop_(loop_id.as_str()) {
                     for coedge in face_loop.coedges() {
                         if let Some(coedge) = self.owners.coedge(coedge.as_str()) {
@@ -576,16 +590,17 @@ impl<'ir> Measurer<'ir> {
             .bodies
             .iter()
             .filter(|body| {
-                let shells: Vec<_> = self
-                    .owners
-                    .body_regions(&body.id)
-                    .iter()
-                    .flat_map(|region| &region.shells)
+                let Some(regions) = self.owners.complete_body_shells(&body.id) else {
+                    return false;
+                };
+                let shells: Vec<_> = regions
+                    .into_iter()
+                    .flatten()
                     .filter_map(|shell| self.owners.shell(shell.as_str()))
                     .collect();
                 !shells.is_empty()
                     && shells.iter().all(|shell| {
-                        !self.owners.shell_faces(&shell.id).is_empty()
+                        !self.owners.stated_shell_faces(&shell.id).is_empty()
                             && closure(&self.owners, &no_faces, &edges, shell).closed()
                     })
             })
@@ -706,7 +721,7 @@ impl<'ir> Measurer<'ir> {
                     for (face, result, slice_exhausted) in chunk_results {
                         let uses_starved = face
                             .loops
-                            .iter()
+                            .stated()
                             .filter_map(|loop_id| self.owners.loop_(loop_id.as_str()))
                             .flat_map(cadmpeg_ir::topology::Loop::coedges)
                             .filter_map(|coedge| self.owners.coedge(coedge.as_str()))
@@ -746,7 +761,7 @@ impl<'ir> Measurer<'ir> {
                 let result = input.measure(&eval, face)?;
                 let uses_starved = face
                     .loops
-                    .iter()
+                    .stated()
                     .filter_map(|loop_id| self.owners.loop_(loop_id.as_str()))
                     .flat_map(cadmpeg_ir::topology::Loop::coedges)
                     .filter_map(|coedge| self.owners.coedge(coedge.as_str()))
@@ -816,7 +831,10 @@ impl<'ir> Measurer<'ir> {
             }
             if let Some(conflict) = bodies.volume_conflict(body) {
                 findings.push(warning(
-                    Check::Orientation,
+                    (
+                        Check::Orientation,
+                        cadmpeg_ir::rule_name!("measure/findings.body-volume-readings-conflict"),
+                    ),
                     body.id.as_str(),
                     conflict.related,
                     format!(
@@ -829,6 +847,9 @@ impl<'ir> Measurer<'ir> {
         }
         if !unchecked.is_empty() || unchecked_bodies > 0 {
             findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!(
+                    "measure/findings.measurement-checks-skipped-findings-allowance-ran"
+                ),
                 check: Check::MeasurementIncomplete,
                 severity: Severity::Info,
                 message: format!(
@@ -852,7 +873,7 @@ impl<'ir> Measurer<'ir> {
         let mut unchecked = BTreeSet::new();
         for face in &self.input.ir.geometry.faces {
             let slice = pass.face_slice();
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
                     continue;
                 };
@@ -901,7 +922,10 @@ impl<'ir> Measurer<'ir> {
                     }
                 };
                 findings.push(warning(
-                    Check::RingOrder,
+                    (
+                        Check::RingOrder,
+                        cadmpeg_ir::rule_name!("measure/findings.loop-coedge-ring-order"),
+                    ),
                     face_loop.id.as_str(),
                     vec![face.id.as_str().to_owned()],
                     message.to_owned(),
@@ -928,7 +952,10 @@ fn pcurve_order_findings<'a>(result: &'a FaceResult<'_>) -> impl Iterator<Item =
         .filter_map(|caveat| caveat.entity.as_deref())
         .map(|coedge| {
             warning(
-                Check::PcurveOrder,
+                (
+                    Check::PcurveOrder,
+                    cadmpeg_ir::rule_name!("measure/findings.coedge-pcurve-use-order"),
+                ),
                 coedge,
                 vec![result.row.face.clone()],
                 "the coedge lists its pcurve uses from its end to its start".to_owned(),
@@ -946,7 +973,10 @@ fn face_finding(result: &FaceResult<'_>) -> Option<Finding> {
             .filter(|witness| witness.kind == WitnessKind::OwnedPole)
         {
             return Some(warning(
-                Check::Orientation,
+                (
+                    Check::Orientation,
+                    cadmpeg_ir::rule_name!("measure/findings.face-spherical-region-excludes-pole"),
+                ),
                 &result.row.face,
                 vec![witness.entity.clone()],
                 "the face's declared spherical region excludes a source-owned pole".to_owned(),
@@ -971,7 +1001,10 @@ fn face_finding(result: &FaceResult<'_>) -> Option<Finding> {
         ),
     };
     Some(warning(
-        Check::Orientation,
+        (
+            Check::Orientation,
+            cadmpeg_ir::rule_name!("measure/findings.face-readings-conflict"),
+        ),
         &result.row.face,
         Vec::new(),
         message,
@@ -1214,7 +1247,7 @@ mod tests {
     #[test]
     fn check_findings_matches_separate_orientation_and_declared_passes() {
         use cadmpeg_ir::declared_measures::{
-            DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+            DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
         };
         use cadmpeg_ir::ids::DeclaredMeasureId;
         use cadmpeg_ir::scalar::FiniteReal;
@@ -1229,9 +1262,9 @@ mod tests {
             quantity: DeclaredQuantity::Volume {
                 value: FiniteReal::new(999.0).expect("volume"),
             },
-            provenance: DeclaredMeasureProvenance::ValidationProperty,
-            source_error: None,
             label: None,
+            basis: Some(MeasureBasis::Validation),
+            precision: None,
             native_ref: None,
         });
         let options = MeasureOptions::default();

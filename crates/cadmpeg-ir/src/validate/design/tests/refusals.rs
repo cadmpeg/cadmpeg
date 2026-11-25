@@ -318,19 +318,90 @@ fn a_parameter_ratio_does_not_pick_a_sketch_point() {
 
 #[test]
 fn a_parameter_ratio_picks_a_sketch_curve_or_an_edge() {
-    assert_clean(&ratio_on_sketch_entity(&json!({"kind": "line", "value": {
-        "start": {"u": 0.0, "v": 0.0},
-        "end": {"u": 1.0, "v": 0.0}
-    }})));
-    assert_clean(&ratio_on_sketch_entity(&json!({"kind": "arc", "value": {
-        "center": {"u": 0.0, "v": 0.0},
-        "radius": 1.0,
-        "start": 0.0,
-        "end": 1.0
-    }})));
+    assert_clean(&ratio_on_sketch_entity(
+        &json!({"kind": "ellipse", "value": {
+            "center": {"u": 0.0, "v": 0.0},
+            "major": [1.0, 0.0],
+            "radii": [2.0, 1.0]
+        }}),
+    ));
     assert_clean(&ratio_on(
         json!({"target": {"kind": "entity", "value": generated("edge", "a")}}),
     ));
+}
+
+const RATIO_SPELLED: &str =
+    "a ParameterRatio value picks a curve the document states as a line, a circle, or an arc";
+
+#[test]
+fn a_parameter_ratio_of_a_line_circle_or_arc_is_a_ratio() {
+    for curve in [
+        json!({"kind": "line", "value": {"start": {"u": 0.0, "v": 0.0}, "end": {"u": 1.0, "v": 0.0}}}),
+        json!({"kind": "circle", "value": {"center": {"u": 0.0, "v": 0.0}, "radius": 1.0}}),
+        json!({"kind": "arc", "value": {
+            "center": {"u": 0.0, "v": 0.0},
+            "radius": 1.0,
+            "start": 0.0,
+            "end": 1.0
+        }}),
+    ] {
+        assert_finding(
+            &ratio_on_sketch_entity(&curve),
+            Check::Design,
+            Severity::Error,
+            RATIO_SPELLED,
+        );
+    }
+}
+
+#[test]
+fn a_parameter_ratio_is_no_literal_end() {
+    let edge = json!({"target": {"kind": "entity", "value": generated("edge", "a")}});
+    for end in [0.0, 1.0] {
+        let ir = plane_b_with(input(
+            "at_parameter",
+            Some(named(input_anchor(), vec![edge.clone()])),
+            Some(json!({"kind": "parameter_ratio", "value": literal(end)})),
+        ));
+        assert_finding(
+            &ir,
+            Check::Design,
+            Severity::Error,
+            "a ParameterRatio value is a literal",
+        );
+    }
+}
+
+#[test]
+fn an_endless_line_takes_no_ratio() {
+    const ENDLESS: &str = "which has no ends";
+    assert_finding(
+        &ratio_on(datum_pick("a")),
+        Check::Design,
+        Severity::Error,
+        ENDLESS,
+    );
+    assert_finding(
+        &ratio_on(principal("y_axis")),
+        Check::Design,
+        Severity::Error,
+        ENDLESS,
+    );
+    assert_finding(
+        &ratio_on_sketch_entity(&json!({"kind": "infinite_line", "value": {
+            "through": {"u": 0.0, "v": 0.0},
+            "direction": [1.0, 0.0]
+        }})),
+        Check::Design,
+        Severity::Error,
+        ENDLESS,
+    );
+    let ratio = plane_b_with(input(
+        "midway",
+        Some(named(input_anchor(), vec![principal("z_axis")])),
+        Some(json!({"kind": "ratio", "value": literal(0.5)})),
+    ));
+    assert_finding(&ratio, Check::Design, Severity::Error, ENDLESS);
 }
 
 /// The named unit cube with a linear pattern `p` of `run` after `b`, the
@@ -442,6 +513,41 @@ fn a_linear_instance_index_lies_in_its_run() {
     );
 }
 
+/// §6.5 `Composite`: each stage applies to every instance the earlier stages
+/// produced, so a `Mirror` or `Scale` stage's coordinate 0 is the instance it
+/// starts from, and a `Scale` stage after the first has its slice, 0 to
+/// count − 1, as its coordinate.
+#[test]
+fn a_composite_mirror_or_scale_stage_counts_its_coordinate_from_zero() {
+    let linear = json!({"kind": "linear", "value": {"first": {
+        "direction": {"inputs": [], "after": [], "resolved_in": {}, "resolved": {"x": 1.0, "y": 0.0, "z": 0.0}},
+        "run": {
+            "spacing": {"kind": "pitch", "value": {"count": {"kind": "literal", "value": 2}, "pitch": literal(1.0)}},
+            "increments": []
+        }
+    }}});
+    let scale = json!({"kind": "scale", "value": {
+        "factor": literal(2.0),
+        "count": {"kind": "literal", "value": 2},
+        "center": {"kind": "centroid"}
+    }});
+    let mirror = json!({"kind": "mirror", "value": {
+        "plane": {"inputs": [], "after": [], "resolved_in": {}}
+    }});
+    let refused = "names no implicit copy";
+    for stage in [scale, mirror] {
+        let composite = json!({"kind": "composite", "value": [linear.clone(), stage]});
+        assert_no_finding(&patterned_in(&composite, &[1, 0]), refused);
+        assert_no_finding(&patterned_in(&composite, &[0, 1]), refused);
+        assert_finding(
+            &patterned_in(&composite, &[1, 2]),
+            Check::Design,
+            Severity::Error,
+            refused,
+        );
+    }
+}
+
 /// Interim, gap 20261119-ERR1-C-H6-2: an unread side of a `Path` run may be
 /// `Against`, which reaches the seed's step count, so its upper bound is the
 /// greater of `last` and a literal seed, and there is none for a parameter
@@ -478,5 +584,34 @@ fn a_path_run_with_unread_sides_reaches_its_seed() {
         Check::Design,
         Severity::Error,
         refused,
+    );
+}
+
+/// Part 10: `Picked.resolved` occurs only where the anchored state is
+/// stored. `b`'s input is anchored `Input`, the state after `a`, which no
+/// current state and no evaluation stores.
+#[test]
+fn a_pick_states_resolved_only_where_its_anchored_state_is_stored() {
+    const UNSTORED: &str =
+        "a pick states `resolved`, but the document stores no state at its anchor";
+    let resolved = |resolved: Option<Value>| {
+        let mut pick = datum_pick("a");
+        if let Some(resolved) = resolved {
+            pick["resolved"] = resolved;
+        }
+        plane_b_with(input(
+            "offset",
+            Some(named(input_anchor(), vec![pick])),
+            Some(length(1.0)),
+        ))
+    };
+    assert_no_finding(&resolved(None), UNSTORED);
+    assert_finding(
+        &resolved(Some(
+            json!([{"kind": "face", "value": "test:model:face#gone"}]),
+        )),
+        Check::Design,
+        Severity::Error,
+        UNSTORED,
     );
 }

@@ -562,10 +562,10 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     assert_eq!(sheets.len(), 2);
     let mut areas = Vec::new();
     for body in sheets {
-        let [region] = geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
+        let [region] = geometry.stated_body_regions(&body.id).collect::<Vec<_>>()[..] else {
             panic!("one region per sheet")
         };
-        let [shell_id] = region.shells.as_slice() else {
+        let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
             panic!("one shell per sheet")
         };
         let shell = geometry
@@ -573,7 +573,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             .iter()
             .find(|shell| &shell.id == shell_id)
             .expect("sheet shell");
-        let [face] = geometry.shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
+        let [face] = geometry.stated_shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
             panic!("one face per sheet")
         };
         let surface = geometry

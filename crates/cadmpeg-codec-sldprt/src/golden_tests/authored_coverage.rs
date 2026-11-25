@@ -131,11 +131,11 @@ fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
             "authored_display_list" => {
                 assert_eq!(ir.model.tessellations.len(), 1);
                 assert_eq!(
-                    ir.model.tessellations[0].body.as_ref(),
+                    ir.model.tessellations[0].of.body(),
                     Some(&ir.geometry.bodies[0].id)
                 );
                 assert_eq!(
-                    ir.model.tessellations[0].faces,
+                    ir.model.tessellations[0].of.faces(),
                     [ir.geometry.faces[0].id.clone()]
                 );
             }

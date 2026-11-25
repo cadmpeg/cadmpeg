@@ -36,9 +36,10 @@ pub(crate) type ObjectBodies = HashMap<Uuid, Vec<BodyId>>;
 /// record with its antecedents as selections, and the current state each
 /// record's descendants hold.
 ///
-/// A document with no history record has no design records. An object that
-/// no record lists among its descendants is in no current state, and the
-/// scoped root lists no body (interim, errata A1).
+/// A document with no history record has no design records. Each body stays
+/// listed by the definition that owns it (§8.1); a body of a definition the
+/// scope spans that no record produces, because no record or several list
+/// its object among their descendants, is unproduced (§5.5).
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     records: &[HistoryRecord],
@@ -53,14 +54,6 @@ pub(crate) fn project(
         Some(root) => root,
         None => root_definition(ctx, ir)?,
     };
-    if let Some(root) = ir
-        .model
-        .product_definitions
-        .iter_mut()
-        .find(|candidate| candidate.id == definition)
-    {
-        root.bodies.clear();
-    }
     let keys = record_keys(records);
     let ids = keys
         .iter()
@@ -103,6 +96,7 @@ pub(crate) fn project(
                     native_options,
                     source_settings: NativeOptions::default(),
                 },
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
@@ -120,6 +114,7 @@ pub(crate) fn project(
     });
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
+    let unproduced = unproduced(ir, &definition, &current);
     ir.design.scopes.push(DesignScope {
         definition,
         roots: vec![group],
@@ -127,9 +122,44 @@ pub(crate) fn project(
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current,
-        unproduced: BTreeSet::default(),
+        unproduced,
     });
     Ok(())
+}
+
+/// The bodies of the definitions the scope of `definition` spans that no
+/// current state holds (§5.5).
+fn unproduced(
+    ir: &CadIr,
+    definition: &ProductDefinitionId,
+    current: &[CurrentState],
+) -> BTreeSet<BodyId> {
+    let spanned = ir.spanned_definitions(definition);
+    let produced = current
+        .iter()
+        .flat_map(|state| &state.bodies)
+        .collect::<HashSet<_>>();
+    let geometry = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<HashSet<_>>();
+    ir.model
+        .product_definitions
+        .iter()
+        .filter(|candidate| spanned.contains(candidate.id.as_str()))
+        .flat_map(|candidate| {
+            candidate.bodies.iter().chain(
+                candidate
+                    .instance_bodies
+                    .iter()
+                    .flat_map(|instance| &instance.bodies),
+            )
+        })
+        .filter(|body| geometry.contains(body) && !produced.contains(body))
+        .cloned()
+        .collect()
 }
 
 /// The document's root definition, where the document states none.

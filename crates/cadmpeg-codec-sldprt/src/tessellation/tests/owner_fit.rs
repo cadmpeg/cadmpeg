@@ -244,9 +244,13 @@ fn owner_rows_count_tables_that_already_have_an_owner() {
         .push(super::persistent_mesh("synthetic:test:tessellation#open"));
     let open_only = tessellation_owner_rows(&ir);
     let mut owned = super::persistent_mesh("synthetic:test:tessellation#owned");
-    owned.faces.push(
-        cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#face-owned").expect("identity grammar"),
-    );
+    owned.of = cadmpeg_ir::tessellation::Meshed::Body {
+        body: cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#owned").expect("identity grammar"),
+        faces: vec![
+            cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#face-owned")
+                .expect("identity grammar"),
+        ],
+    };
     ir.model.tessellations.push(owned);
     assert_eq!(open_only, Some(4));
     assert_eq!(tessellation_owner_rows(&ir), Some(8));

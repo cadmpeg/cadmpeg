@@ -95,6 +95,7 @@ fn definition(
     }
     let mut result = FeatureDefinition {
         operation,
+        assembly: None,
         refine: None,
         fuzzy_tolerance: None,
     };

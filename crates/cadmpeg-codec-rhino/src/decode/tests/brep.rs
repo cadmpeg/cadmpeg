@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::decode_pcurves;
+use super::ObjectDisplay;
 use super::{
     append_record_links, brep_free_vertex_indices, face_components, line_nurbs,
     region_shell_groups_without_records, source_shaped_plane_brep, stage_brep, with_expand_bytes,
@@ -75,6 +76,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
@@ -94,10 +96,6 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
         format: cadmpeg_ir::codec_id!("rhino"),
         geometry_role: None,
         object_id: cadmpeg_core::nonblank_literal!("failed-brep"),
-        name: Some("source name".into()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     };
     let unknown = "rhino:object:record#failed".try_into().expect("identity");
@@ -110,6 +108,7 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
             brep: &brep,
             key: "failed",
             association: &association,
+            display: &ObjectDisplay::default(),
             unknown: &unknown,
             scale: crate::test_support::millimeter_scale(1.0),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
@@ -134,8 +133,6 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
         Some(cadmpeg_ir::SourceGeometryRole::Support)
     );
     assert_eq!(source.object_id.as_str(), "failed-brep");
-    assert_eq!(source.name.as_deref(), Some("source name"));
-    assert_eq!(source.visible, Some(true));
 }
 
 #[test]
@@ -188,6 +185,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
             .collect::<Vec<_>>(),
         vec![curve_id.to_string()]
     );
+    cadmpeg_ir::examples::add_document_root(&mut candidate);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
@@ -232,10 +230,6 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
-        name: Some("plane".to_string()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#plane"
@@ -250,6 +244,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
             brep: &brep,
             key: "plane",
             association: &association,
+            display: &ObjectDisplay::default(),
             unknown: &unknown,
             scale: crate::test_support::millimeter_scale(25.4),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
@@ -322,6 +317,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .unwrap()
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
+    cadmpeg_ir::examples::add_document_root(&mut candidate);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
@@ -345,10 +341,6 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("free-vertex-brep".to_string())
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#free-vertex"
@@ -363,6 +355,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
             brep: &brep,
             key: "free-vertex",
             association: &association,
+            display: &ObjectDisplay::default(),
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
@@ -400,6 +393,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         )
         .unwrap()
         .expect("commit Brep with an isolated vertex");
+    cadmpeg_ir::examples::add_document_root(&mut candidate);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
@@ -416,10 +410,6 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#plane"
@@ -434,6 +424,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
             brep: &brep,
             key: "plane",
             association: &association,
+            display: &ObjectDisplay::default(),
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
@@ -594,10 +585,6 @@ fn brep_mesh_cache_stages_one_tessellation() {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
-        name: Some("plane".to_string()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#plane"
@@ -612,6 +599,7 @@ fn brep_mesh_cache_stages_one_tessellation() {
             brep: &brep,
             key: "plane",
             association: &association,
+            display: &ObjectDisplay::default(),
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),

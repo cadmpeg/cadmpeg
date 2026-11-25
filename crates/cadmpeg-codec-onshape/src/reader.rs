@@ -4,9 +4,11 @@
 use crate::archive;
 pub(super) mod expression;
 mod features;
+mod planes;
 pub(super) mod query;
 mod regions;
 mod sketch;
+mod sweep;
 mod thin;
 pub(super) mod topology;
 
@@ -95,6 +97,31 @@ fn definition(kind: &str, value: Value) -> Value {
         ("kind".into(), Value::String("operation".into())),
         ("value".into(), Value::Object(operation)),
     ]))
+}
+
+fn mapping_loss_code(
+    feature: &Value,
+    region_budget_exhausted: bool,
+    valid_suppression: bool,
+    reason: &str,
+) -> OnshapeLossCode {
+    if !region_budget_exhausted
+        && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
+        && features::value(feature, "bodyType") == Some("THIN")
+    {
+        OnshapeLossCode::ThinNotSupported
+    } else if !region_budget_exhausted
+        && valid_suppression
+        && feature.get("featureType").and_then(Value::as_str) == Some("sweep")
+        && sweep::validate_record(feature).is_ok()
+        && !reason.starts_with(sweep::PATH_BUDGET_EXHAUSTED)
+    {
+        OnshapeLossCode::SweepNotSupported
+    } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
+        planes::loss_code(feature, reason)
+    } else {
+        OnshapeLossCode::HistoryNotSupported
+    }
 }
 
 fn loss(report: &mut Report, subject: &str, reason: &str, has_step: bool, code: OnshapeLossCode) {
@@ -499,7 +526,7 @@ pub(super) fn read(
         .filter(|(_, feature)| {
             matches!(
                 feature.get("featureType").and_then(Value::as_str),
-                Some("extrude" | "revolve")
+                Some("extrude" | "revolve" | "sweep")
             ) && features::value(feature, "operationType") == Some("NEW")
                 && suppression(feature) == Ok(false)
         })
@@ -679,6 +706,9 @@ pub(super) fn read(
                 definition
             }
             Err(reason) => {
+                let mut tail = report.notes.split_off(note_start);
+                tail.retain(|note| !OnshapeLossCode::SketchPlaneAssumed.matches(note));
+                report.notes.extend(tail);
                 model.ir.model.sketches.truncate(sizes.0);
                 model.ir.model.sketch_entities.truncate(sizes.1);
                 model.ir.model.sketch_constraints.truncate(sizes.2);
@@ -690,14 +720,12 @@ pub(super) fn read(
                         .regions
                         .try_borrow()
                         .is_ok_and(|recovery| recovery.exhausted());
-                    let code = if !region_budget_exhausted
-                        && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
-                        && features::value(feature, "bodyType") == Some("THIN")
-                    {
-                        OnshapeLossCode::ThinNotSupported
-                    } else {
-                        OnshapeLossCode::HistoryNotSupported
-                    };
+                    let code = mapping_loss_code(
+                        feature,
+                        region_budget_exhausted,
+                        suppressed.is_ok(),
+                        &reason,
+                    );
                     loss(report, name, &reason, model.source_step.is_some(), code);
                 }
                 definition(
@@ -765,6 +793,12 @@ pub(super) fn read(
                     .any(|design| design.id.as_str() == feature_id)
                     && features::value(feature, "operationType") == Some("NEW"))
                     || definition
+                        .pointer("/value/value/shape/op")
+                        .and_then(Value::as_str)
+                        == Some("new_body")
+                        && definition.pointer("/value/kind").and_then(Value::as_str)
+                            == Some("sweep")
+                    || definition
                         .pointer("/value/value/op")
                         .and_then(Value::as_str)
                         == Some("new_body")
@@ -783,7 +817,8 @@ pub(super) fn read(
             model.ir.design.features.truncate(design_length);
             let mut tail = report.notes.split_off(note_start);
             tail.retain(|note| {
-                !OnshapeLossCode::ThinModelNotSupported.matches(note)
+                !OnshapeLossCode::SketchPlaneAssumed.matches(note)
+                    && !OnshapeLossCode::ThinModelNotSupported.matches(note)
                     && !OnshapeLossCode::ThinNotSupported.matches(note)
             });
             report.notes.extend(tail);
