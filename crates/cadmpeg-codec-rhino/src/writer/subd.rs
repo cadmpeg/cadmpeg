@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::subd::{SubdCage, SubdEdgeTag, SubdScheme, SubdVertexTag};
 use cadmpeg_ir::transform::Transform;
 
@@ -26,24 +27,44 @@ pub(super) const SUBD_OBJECT_TYPE: i64 = 0x40000;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 
+const CLASS_USERDATA: u32 = 0x0002_7ffd;
+const CLASS_USERDATA_HEADER: u32 = 0x0002_fff9;
+
+/// Class-userdata wrapper version 2.2, as `major << 4 | minor`.
+const CLASS_USERDATA_VERSION: u8 = 0x22;
+
 /// The most vertices, and the most faces, a written 3DM mesh holds.
 const MESH_COUNT_LIMIT: usize = 1 << 24;
 
 /// The empty bounding box `ON_BoundingBox::EmptyBoundingBox`.
 const EMPTY_BOX: [f64; 6] = [1.0, 0.0, 0.0, -1.0, 0.0, 0.0];
 
-/// Why `version` holds `cage` only as a mesh of its control net, or `None`
-/// where it holds the cage as an `ON_SubD`.
-pub(super) fn control_mesh_reason(
+/// How a 3DM archive holds a cage.
+pub(super) enum CageForm {
+    /// An `ON_SubD` object.
+    Subd,
+    /// An `ON_Mesh` of the control net that carries the cage as
+    /// `ON_SubDMeshProxyUserData` (§7.2.6).
+    MeshProxy,
+    /// An `ON_Mesh` of the control net only, for the stated reason.
+    ControlMesh(&'static str),
+}
+
+/// How `version` holds `cage`.
+pub(super) fn cage_form(
     cage: &cadmpeg_ir::subd::SubdSurface,
     version: RhinoArchiveVersion,
-) -> Option<&'static str> {
-    if version == RhinoArchiveVersion::V5 {
-        Some("archive version 50 holds no SubD object")
-    } else if cage.scheme == SubdScheme::TSpline {
-        Some("a 3DM SubD is a Catmull-Clark cage, and these cages are T-spline cages")
+) -> CageForm {
+    if cage.scheme == SubdScheme::TSpline {
+        CageForm::ControlMesh(
+            "a 3DM SubD is a Catmull-Clark cage, and these cages are T-spline cages",
+        )
+    } else if version != RhinoArchiveVersion::V5 {
+        CageForm::Subd
+    } else if cage.cage.vertices().len() > 2 {
+        CageForm::MeshProxy
     } else {
-        None
+        CageForm::ControlMesh("a SubD mesh proxy needs a control net of more than two vertices")
     }
 }
 
@@ -216,6 +237,71 @@ impl Unheld {
             }
         }
     }
+}
+
+/// The `ON_SubDMeshProxyUserData` item that carries the `ON_SubD` payload
+/// `subd` on the mesh written from `mesh` (§7.2.6).
+pub(super) fn mesh_proxy(subd: &[u8], mesh: &ControlMesh) -> Result<Vec<u8>, CodecError> {
+    let unwritable = || CodecError::Malformed("mesh vertex exceeds f32 range".into());
+    let vertices = mesh
+        .vertices
+        .iter()
+        .map(|point| {
+            [point.x, point.y, point.z].map(|value| {
+                cadmpeg_core::convert::f32_from_f64(value).and_then(FiniteBinary32::new)
+            })
+        })
+        .map(|point| match point {
+            [Some(x), Some(y), Some(z)] => Ok([x, y, z]),
+            _ => Err(unwritable()),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let fingerprint = crate::mesh::native_proxy_fingerprint(&mesh.faces, &vertices);
+    let count = |value: usize| {
+        i32::try_from(value).map_err(|_| {
+            CodecError::Malformed("the control net counts exceed a 3DM mesh's range".into())
+        })
+    };
+
+    let mut proxy = 1_i32.to_le_bytes().to_vec();
+    proxy.extend(1_i32.to_le_bytes());
+    proxy.push(1);
+    proxy.extend(subd);
+    proxy.extend(count(fingerprint.face_count)?.to_le_bytes());
+    proxy.extend(count(fingerprint.vertex_count)?.to_le_bytes());
+    for digest in [fingerprint.face_sha1, fingerprint.vertex_sha1] {
+        let mut record = 1_i32.to_le_bytes().to_vec();
+        record.extend(0_i32.to_le_bytes());
+        record.extend(digest);
+        proxy.extend(super::crc_chunk(ANONYMOUS, &record)?);
+    }
+    let payload = super::crc_chunk(ANONYMOUS, &super::crc_chunk(ANONYMOUS, &proxy)?)?;
+
+    let class = crate::subd::SUBD_MESH_PROXY_USERDATA.to_wire();
+    let mut header = class.to_vec();
+    header.extend(class);
+    header.extend(1_i32.to_le_bytes());
+    for index in 0..16 {
+        let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
+        header.extend(value.to_le_bytes());
+    }
+    header.extend(crate::presentation::OPENNURBS6_APPLICATION.to_wire());
+    header.push(0);
+    header.extend(
+        i32::try_from(RhinoArchiveVersion::V5.value())
+            .map_err(|_| CodecError::Malformed("the archive version exceeds i32".into()))?
+            .to_le_bytes(),
+    );
+    header.extend(
+        u32::try_from(super::OPENNURBS_WRITER_VERSION)
+            .map_err(|_| CodecError::Malformed("the writer version exceeds u32".into()))?
+            .to_le_bytes(),
+    );
+
+    let mut body = vec![CLASS_USERDATA_VERSION];
+    body.extend(super::crc_chunk(CLASS_USERDATA_HEADER, &header)?);
+    body.extend(payload);
+    super::crc_chunk_with_direct(CLASS_USERDATA, &body, &[CLASS_USERDATA_VERSION])
 }
 
 /// A cage's `ON_SubD` class data, the bytes its class-data checksum covers,

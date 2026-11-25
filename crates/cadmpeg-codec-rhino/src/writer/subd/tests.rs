@@ -7,7 +7,7 @@ use cadmpeg_ir::subd::{SubdCage, SubdEdge};
 use super::{control_mesh, payload, placed, Unheld, SUBD_CLASS};
 use crate::chunks::ArchiveVersion;
 use crate::settings::MillimeterScale;
-use crate::test_support::two_quad_cage;
+use crate::test_support::{start_sharpness_cage, two_quad_cage};
 use crate::RhinoArchiveVersion;
 
 fn read_back(cage: &SubdCage, version: RhinoArchiveVersion) -> (SubdCage, Vec<Unheld>) {
@@ -44,25 +44,7 @@ fn an_archive_80_payload_reads_back_as_its_cage() {
 #[test]
 fn an_earlier_payload_holds_the_start_sharpness_at_both_ends() {
     let cage = two_quad_cage();
-    let mut expected = cage.clone();
-    expected
-        .edit_edges(|edges| {
-            for edge in edges.iter_mut() {
-                let [start, _] = edge
-                    .sharpness()
-                    .map(cadmpeg_ir::scalar::NonNegativeReal::get);
-                *edge = SubdEdge::new(
-                    edge.vertices(),
-                    [start, start],
-                    edge.tag,
-                    None,
-                    edge.sector_coefficients()
-                        .map(cadmpeg_ir::scalar::FiniteReal::get),
-                )?;
-            }
-            Ok(())
-        })
-        .expect("the edges stay valid");
+    let expected = start_sharpness_cage(&cage);
     for version in [RhinoArchiveVersion::V6, RhinoArchiveVersion::V7] {
         assert_eq!(
             read_back(&cage, version),

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A cage body is written as an `ON_SubD` object, or as a mesh of the cage's
-//! control net where the archive holds no `ON_SubD` of the cage (§5.6).
+//! A cage body is written as an `ON_SubD` object; as a mesh of the cage's
+//! control net that carries the cage as `ON_SubDMeshProxyUserData` where the
+//! archive holds no `ON_SubD` object (§7.2.6); or as a mesh of the control net
+//! only where the archive holds no `ON_SubD` of the cage (§5.6).
 
 use std::io::Cursor;
 
@@ -14,7 +16,7 @@ use cadmpeg_ir::CadIr;
 use cadmpeg_test_support::cages::{push_cage, push_cage_body, CageBody};
 
 use super::planar_tetrahedron;
-use crate::test_support::two_quad_cage;
+use crate::test_support::{start_sharpness_cage, two_quad_cage};
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 fn write(ir: &CadIr, version: RhinoArchiveVersion) -> (ExportReport, CadIr) {
@@ -111,22 +113,37 @@ fn assert_control_mesh(report: &ExportReport, decoded: &CadIr, cage: &CageBody) 
 }
 
 #[test]
-fn an_archive_50_cage_body_is_written_as_its_control_net() {
+fn an_archive_50_cage_body_is_written_as_a_subd_mesh_proxy() {
     let mut ir = planar_tetrahedron();
     let cage = push_cage(&mut ir, "rhino", two_quad_cage());
 
     let (report, decoded) = write(&ir, RhinoArchiveVersion::V5);
-    assert_control_mesh(&report, &decoded, &cage);
+    let cage_losses = report
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains(cage.subd.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(cage_losses.len(), 1, "{:#?}", report.losses);
+    assert!(cage_losses[0].message.contains("start sharpness"));
+    assert!(decoded.model.tessellations.is_empty());
+    assert_eq!(decoded.geometry.bodies.len(), 2);
+    assert_eq!(decoded.geometry.subds.len(), 1);
+    assert_eq!(
+        decoded.geometry.subds[0].cage,
+        start_sharpness_cage(&two_quad_cage())
+    );
 }
 
 #[test]
 fn a_t_spline_cage_body_is_written_as_its_control_net() {
-    let mut ir = planar_tetrahedron();
-    let cage = push_cage(&mut ir, "rhino", two_quad_cage());
-    ir.geometry.subds[0].scheme = cadmpeg_ir::SubdScheme::TSpline;
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V7] {
+        let mut ir = planar_tetrahedron();
+        let cage = push_cage(&mut ir, "rhino", two_quad_cage());
+        ir.geometry.subds[0].scheme = cadmpeg_ir::SubdScheme::TSpline;
 
-    let (report, decoded) = write(&ir, RhinoArchiveVersion::V7);
-    assert_control_mesh(&report, &decoded, &cage);
+        let (report, decoded) = write(&ir, version);
+        assert_control_mesh(&report, &decoded, &cage);
+    }
 }
 
 #[test]

@@ -67,6 +67,33 @@ pub(crate) fn two_quad_cage() -> cadmpeg_ir::subd::SubdCage {
     SubdCage::new(vertices, edges, faces, Vec::new()).unwrap()
 }
 
+/// `cage` as an archive before version 80 holds it: each edge with its start
+/// sharpness at both ends.
+pub(crate) fn start_sharpness_cage(
+    cage: &cadmpeg_ir::subd::SubdCage,
+) -> cadmpeg_ir::subd::SubdCage {
+    let mut expected = cage.clone();
+    expected
+        .edit_edges(|edges| {
+            for edge in edges.iter_mut() {
+                let [start, _] = edge
+                    .sharpness()
+                    .map(cadmpeg_ir::scalar::NonNegativeReal::get);
+                *edge = cadmpeg_ir::subd::SubdEdge::new(
+                    edge.vertices(),
+                    [start, start],
+                    edge.tag,
+                    None,
+                    edge.sector_coefficients()
+                        .map(cadmpeg_ir::scalar::FiniteReal::get),
+                )?;
+            }
+            Ok(())
+        })
+        .expect("the edges stay valid");
+    expected
+}
+
 /// A positive fixture angle.
 pub(crate) fn positive_angle(value: f64) -> cadmpeg_ir::scalar::PositiveAngle {
     cadmpeg_ir::scalar::PositiveAngle::new(value).expect("positive fixture angle")

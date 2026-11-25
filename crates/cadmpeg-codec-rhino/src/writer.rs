@@ -1443,7 +1443,7 @@ fn prepare_write(
             _ => surface.id.as_str(),
         };
         let name = body.and_then(|body| written_name(body.name.as_deref()));
-        let mesh_reason = subd::control_mesh_reason(surface, archive_version);
+        let form = subd::cage_form(surface, archive_version);
         let built =
             subd::placed(&surface.cage, body.and_then(|body| body.transform)).and_then(|cage| {
                 let attributes = object_attributes_payload(
@@ -1452,35 +1452,45 @@ fn prepare_write(
                     body.and_then(|body| body.color),
                     body.and_then(|body| body.visible),
                 )?;
-                if mesh_reason.is_some() {
-                    let mesh = subd::control_mesh(&cage)?;
-                    let rows = MeshRows {
-                        vertices: mesh.vertices,
-                        faces: mesh.faces,
-                        normals: Vec::new(),
-                        channels: [&[]; 4],
-                    };
-                    let quantized =
-                        !archive_version.stores_mesh_vertices_as_f64() && quantizes(&rows.vertices);
-                    let payload = mesh_payload(&rows, archive_version)?;
+                if let subd::CageForm::Subd = form {
+                    let payload = subd::payload(&cage, archive_version)?;
                     let record = framed_object_record(
-                        0x20,
-                        MESH_CLASS,
+                        subd::SUBD_OBJECT_TYPE,
+                        subd::SUBD_CLASS,
                         &payload.body,
                         Some(&payload.direct),
+                        &[],
                         Some(attributes),
                     )?;
-                    return Ok((record, Vec::new(), mesh.fanned, quantized));
+                    return Ok((record, payload.unheld, false, false));
                 }
-                let payload = subd::payload(&cage, archive_version)?;
+                let mesh = subd::control_mesh(&cage)?;
+                let proxied = matches!(form, subd::CageForm::MeshProxy);
+                let (userdata, unheld) = if proxied {
+                    let payload = subd::payload(&cage, archive_version)?;
+                    (subd::mesh_proxy(&payload.body, &mesh)?, payload.unheld)
+                } else {
+                    (Vec::new(), Vec::new())
+                };
+                let rows = MeshRows {
+                    vertices: mesh.vertices,
+                    faces: mesh.faces,
+                    normals: Vec::new(),
+                    channels: [&[]; 4],
+                };
+                let payload = mesh_payload(&rows, archive_version)?;
                 let record = framed_object_record(
-                    subd::SUBD_OBJECT_TYPE,
-                    subd::SUBD_CLASS,
+                    0x20,
+                    MESH_CLASS,
                     &payload.body,
                     Some(&payload.direct),
+                    &userdata,
                     Some(attributes),
                 )?;
-                Ok((record, payload.unheld, false, false))
+                let quantized = !proxied
+                    && !archive_version.stores_mesh_vertices_as_f64()
+                    && quantizes(&rows.vertices);
+                Ok((record, unheld, !proxied && mesh.fanned, quantized))
             });
         let named = match owner {
             Some(owner) => format!("cage {} of body {}", surface.id, owner.body.id),
@@ -1490,7 +1500,7 @@ fn prepare_write(
             continue;
         };
         records.file.write_all(&record)?;
-        if let Some(reason) = mesh_reason {
+        if let subd::CageForm::ControlMesh(reason) = form {
             meshed_cages
                 .entry(reason)
                 .or_default()
@@ -3760,6 +3770,7 @@ fn attributed_object_record(
         class_uuid,
         payload,
         None,
+        &[],
         Some(object_attributes_payload(identity, name, color, visible)?),
     )
 }
@@ -3770,6 +3781,7 @@ fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, 
         MESH_CLASS,
         &payload.body,
         Some(&payload.direct),
+        &[],
         Some(object_attributes_payload(identity, None, None, None)?),
     )
 }
@@ -3786,6 +3798,7 @@ fn brep_object_record(
         BREP_CLASS,
         &payload.body,
         Some(&payload.direct),
+        &[],
         Some(object_attributes_payload(identity, name, color, visible)?),
     )
 }
@@ -3795,6 +3808,7 @@ fn framed_object_record(
     class_uuid: [u8; 16],
     payload: &[u8],
     direct_class_data: Option<&[u8]>,
+    userdata: &[u8],
     attributes: Option<Vec<u8>>,
 ) -> Result<Vec<u8>, CodecError> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
@@ -3807,7 +3821,10 @@ fn framed_object_record(
         crc_chunk(TCODE_CLASS_DATA, payload)?
     };
     let class_end = short_chunk(TCODE_CLASS_END, 0);
-    let class = long_chunk(TCODE_CLASS_WRAPPER, &[uuid, class_data, class_end].concat())?;
+    let class = long_chunk(
+        TCODE_CLASS_WRAPPER,
+        &[uuid, class_data, userdata.to_vec(), class_end].concat(),
+    )?;
     let object_end = short_chunk(TCODE_OBJECT_RECORD_END, 0);
     let mut body = [object_type, class].concat();
     if let Some(attributes) = attributes {
