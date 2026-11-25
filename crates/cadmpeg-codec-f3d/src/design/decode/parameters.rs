@@ -1402,10 +1402,10 @@ pub(crate) fn decode_parameter_owners(
     // Read standalone scalar owners through their registered scope type.
     let mut emitted = HashMap::new();
     for (stream, (entry, records, _)) in &streams {
-        for owner in standalone_scalar_owners(scan, &entry.name, records)? {
+        for (owner, flagged) in standalone_scalar_owners(scan, &entry.name, records)? {
             let key = (stream.clone(), owner.record_index());
             if let std::collections::hash_map::Entry::Vacant(slot) = emitted.entry(key) {
-                slot.insert(out.len());
+                slot.insert((out.len(), flagged));
                 out.push(owner);
             }
         }
@@ -1424,9 +1424,14 @@ pub(crate) fn decode_parameter_owners(
         };
         let scope = native_stream(&parameter.id)
             .ok_or_else(|| malformed("has no Design stream identity"))?;
-        if let Some(ordinal) = emitted.get(&(scope.to_owned(), owner_index)).copied() {
+        if let Some((ordinal, flagged)) = emitted.get(&(scope.to_owned(), owner_index)).copied() {
             if out[ordinal].parameter_record_index() != parameter.record_index {
                 return Err(malformed("does not link back to its referencing parameter"));
+            }
+            if flagged {
+                if let Some((entry, _, _)) = streams.get(scope) {
+                    *trailer_flag_counts.entry(entry.name.clone()).or_default() += 1;
+                }
             }
             continue;
         }
@@ -1536,7 +1541,8 @@ fn has_standalone_scalar_scope(scan: &ContainerScan) -> Result<bool, CodecError>
     Ok(false)
 }
 
-/// Scalar owners of uniquely registered Pipe and Thread scopes in one Design stream.
+/// Scalar owners of uniquely registered Pipe and Thread scopes in one Design stream,
+/// each with its compact-trailer flag.
 ///
 /// An owner frame is admitted when its entity has one type registration, it
 /// parses as a 103- or 104-byte parameter owner, it is the only indexed frame
@@ -1546,7 +1552,7 @@ fn standalone_scalar_owners(
     scan: &ContainerScan,
     entry_name: &str,
     records: &IndexedRecordOffsets,
-) -> Result<Vec<DesignParameterOwner>, CodecError> {
+) -> Result<Vec<(DesignParameterOwner, bool)>, CodecError> {
     use crate::records::feature::path_features::pipe;
     let Some(meta) = super::meta::metadata_for_bulk_stream(scan, entry_name)? else {
         return Ok(Vec::new());
@@ -1593,8 +1599,9 @@ fn standalone_scalar_owners(
         {
             continue;
         }
+        let flagged = parsed.trailer_flag;
         if let Some(owner) = parsed.into_record(entry_name, u64_from_index(frame.start)) {
-            out.push(owner);
+            out.push((owner, flagged));
         }
     }
     Ok(out)

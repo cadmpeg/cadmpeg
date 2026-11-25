@@ -386,6 +386,7 @@ fn nominal_size_value(text: &str) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
 }
 
+/// The decimal of a numbered inch size `D(#N)`.
 fn numbered_size_decimal(text: &str) -> Option<&str> {
     let (decimal, number) = text.strip_suffix(')')?.split_once("(#")?;
     if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -413,10 +414,13 @@ impl DesignThreadNominalSize {
         nominal_size_value(&self.0)
     }
 
+    /// The nominal diameter in inches of a numbered size `D(#N)`.
     pub(crate) fn numbered_inches(&self) -> Option<f64> {
         numbered_size_decimal(&self.0)?.parse().ok()
     }
 
+    /// Whether the size is a plain decimal: a fraction names a size in the
+    /// units of its profile, and a numbered size names inches.
     pub(crate) fn is_decimal(&self) -> bool {
         !self.0.contains('/') && self.numbered_inches().is_none()
     }
