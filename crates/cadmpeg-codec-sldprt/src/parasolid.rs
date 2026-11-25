@@ -71,9 +71,7 @@ pub(crate) fn extract_streams_in_section(
     if section == Some("ThirdPty/WELDMENT_STORAGE") && !has_wrapped_prefix(payload) {
         let direct = weldment::extract(payload, ctx)?;
         if !direct.streams.is_empty()
-            || !payload
-                .windows(WRAPPED_MAGIC_PREFIX.len())
-                .any(|window| window == WRAPPED_MAGIC_PREFIX)
+            || memchr::memmem::find(payload, &WRAPPED_MAGIC_PREFIX).is_none()
         {
             return Ok(direct);
         }
@@ -106,19 +104,8 @@ pub(crate) fn extract_streams_with_offsets(
     if !out.is_empty() {
         return Ok(ExtractedStreams::complete(out));
     }
-    let Some(scan_len) = payload.len().checked_sub(WRAPPED_MAGIC_PREFIX.len() - 1) else {
-        return Ok(ExtractedStreams::complete(out));
-    };
     let mut has_magic = false;
-    for (magic_at, byte) in payload[..scan_len].iter().enumerate() {
-        if *byte != WRAPPED_MAGIC_PREFIX[0] {
-            continue;
-        }
-        if payload.get(magic_at..magic_at + WRAPPED_MAGIC_PREFIX.len())
-            != Some(&WRAPPED_MAGIC_PREFIX)
-        {
-            continue;
-        }
+    for magic_at in memchr::memmem::find_iter(payload, &WRAPPED_MAGIC_PREFIX) {
         has_magic = true;
         let stream = if magic_at == 0 {
             single_wrapped_stream(payload, magic_at, ctx)?
@@ -161,9 +148,14 @@ pub(crate) fn extract_streams_with_offsets(
     };
     let work = WorkBudget::new(probe_limit);
     let mut probe_capped = false;
-    let mut i = 0usize;
-    while i + 2 <= payload.len() {
-        if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
+    let Some(probe_end) = payload.len().checked_sub(1) else {
+        return Ok(ExtractedStreams {
+            streams: out,
+            probe_capped: false,
+        });
+    };
+    for i in memchr::memchr_iter(0x78, &payload[..probe_end]) {
+        if matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
             if !work.charge_by(payload.len() - i) {
                 probe_capped = true;
                 break;
@@ -198,7 +190,6 @@ pub(crate) fn extract_streams_with_offsets(
                 }
             }
         }
-        i += 1;
     }
     Ok(ExtractedStreams {
         streams: out,
@@ -426,10 +417,7 @@ fn inflate_zlib_frame(
 
 fn direct_stream_headers(payload: &[u8]) -> Result<Vec<(usize, StreamHeader)>, CodecError> {
     let mut headers = Vec::new();
-    for (start, bytes) in payload.windows(4).enumerate() {
-        if bytes != b"PS\0\0" {
-            continue;
-        }
+    for start in memchr::memmem::find_iter(payload, b"PS\0\0") {
         if let Some(header) = stream_header(&payload[start..])? {
             headers.push((start, header));
         }

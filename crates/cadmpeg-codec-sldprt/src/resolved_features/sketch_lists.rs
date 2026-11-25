@@ -312,12 +312,11 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
 /// The offsets of every record head: `ff ff`, the schema version `1f 00` or
 /// `07 00`, and f32 `-1` at +13 and at +31.
 fn record_heads(payload: &[u8]) -> Vec<usize> {
-    payload
-        .windows(2)
-        .enumerate()
-        .filter(|(_, pair)| pair == &[0xff, 0xff])
-        .map(|(offset, _)| offset)
-        .filter(|&offset| record_head(payload, offset))
+    let Some(end) = payload.len().checked_sub(1) else {
+        return Vec::new();
+    };
+    memchr::memchr_iter(0xff, &payload[..end])
+        .filter(|&offset| payload[offset + 1] == 0xff && record_head(payload, offset))
         .collect()
 }
 

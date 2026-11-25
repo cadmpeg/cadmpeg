@@ -1421,10 +1421,7 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
     let kept = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap();
     assert_eq!(patched, payload);
     assert_eq!(kept.len(), 1, "{kept:?}");
-    assert_eq!(
-        kept[0].code,
-        crate::loss::SldprtLossCode::WriterParameterEditUnwritten.kind()
-    );
+    assert!(crate::test_support::is_edit_dropped(&kept[0].code));
     assert!(
         kept[0].message.contains("beyond exact float range"),
         "{}",

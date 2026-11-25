@@ -28,6 +28,7 @@ mod joins;
 mod linkage;
 mod matching;
 mod materials;
+mod membership;
 mod names;
 pub(super) mod ops;
 mod overrides;
@@ -153,6 +154,7 @@ pub(super) fn check_design(
     dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    membership::check(&index, &states, findings);
     joins::check(&index, &states, findings);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;

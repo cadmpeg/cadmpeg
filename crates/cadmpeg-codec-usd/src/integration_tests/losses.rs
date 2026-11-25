@@ -355,3 +355,102 @@ fn an_unread_property_of_a_group_prim_is_reported() {
         UsdLossCode::PropertyNotTransferred,
     );
 }
+
+/// A mesh point past the binary32 range has no `point3f` value. The mesh
+/// prim is left out, the layer reads back, and the loss names the prim.
+#[test]
+fn a_mesh_point_past_the_float_range_leaves_its_prim_out() {
+    let (mut ir, _, _) = decode(&mesh(TRIANGLE)).into_parts();
+    let (written, _) = encode(&ir);
+    let name = written
+        .split("def Mesh \"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("a mesh prim")
+        .to_owned();
+    let mut first = true;
+    ir.model.tessellations[0]
+        .edit_vertices(|point| {
+            if std::mem::take(&mut first) {
+                point.x = 1e300;
+            }
+            Ok(())
+        })
+        .expect("a finite point");
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("def Mesh"), "{text}");
+    assert!(!text.contains('\0'), "{text:?}");
+    let notes: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/value.unwritable")
+        .collect();
+    assert_eq!(notes.len(), 1, "{:#?}", report.losses);
+    assert!(
+        !emitted(&report.losses, UsdLossCode::ExportVertexPrecision),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        notes[0].message.contains(&format!("/{name}")),
+        "{}",
+        notes[0].message
+    );
+    assert!(decode(&text).ir().model.tessellations.is_empty());
+}
+
+/// A shared prototype that is one mesh, and a point of that mesh past the
+/// binary32 range: the prototype prim is left out, and so is each
+/// occurrence prim whose reference reaches it. The losses name them, and
+/// the layer reads back.
+#[test]
+fn an_occurrence_of_a_prototype_left_out_is_left_out() {
+    let instance = |name: &str| {
+        format!("    def \"{name}\" (\n        instanceable = true\n        references = </Plate>\n    )\n    {{\n    }}\n")
+    };
+    let source = decode(&format!(
+        "#usda 1.0\nclass Mesh \"Plate\"\n{{\n{TRIANGLE}\n}}\ndef Xform \"Asm\"\n{{\n{}{}}}\n",
+        instance("A"),
+        instance("B"),
+    ));
+    let mut ir = source.ir().clone();
+    let (written, _) = encode(&ir);
+    let prototype = written
+        .split("prepend references = <")
+        .nth(1)
+        .and_then(|rest| rest.split('>').next())
+        .expect("an occurrence references its prototype")
+        .to_owned();
+    let name = prototype.rsplit('/').next().unwrap_or_default();
+    assert!(
+        written.contains(&format!("def Mesh \"{name}\"")),
+        "the prototype prim is the mesh: {written}"
+    );
+    let mut first = true;
+    ir.model.tessellations[0]
+        .edit_vertices(|point| {
+            if std::mem::take(&mut first) {
+                point.x = 1e300;
+            }
+            Ok(())
+        })
+        .expect("a finite point");
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("prepend references"), "{text}");
+    for path in [prototype.as_str(), "/Asm/A", "/Asm/B"] {
+        assert!(
+            report.losses.iter().any(|loss| {
+                loss.code.to_string() == "export/value.unwritable" && loss.message.contains(path)
+            }),
+            "{path}: {:#?}",
+            report.losses
+        );
+    }
+    let decoded = decode(&text);
+    assert!(decoded.ir().model.tessellations.is_empty(), "{text}");
+    assert_eq!(
+        decoded.ir().model.occurrences.len(),
+        source.ir().model.occurrences.len() - 2,
+        "{text}"
+    );
+}

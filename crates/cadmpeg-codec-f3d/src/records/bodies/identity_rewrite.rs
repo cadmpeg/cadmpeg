@@ -8,12 +8,10 @@ rewrite_native_record!(BodyVisibility, []; {id, body, stream, byte_offset, asm_b
 rewrite_native_record!(DesignBodyBinding, []; {id, stream, pair_count, pair_ordinal, asm_body_key, asm_body_key_offset, entity_suffix, blob_name, blob_name_offset, body});
 
 impl RewriteIdentities for DesignBulkStreamPath {
-    fn rewrite_native_value<
-        RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
-    >(
+    fn rewrite_native_value(
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _value: &mut serde_json::Value,
-        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
@@ -26,10 +24,10 @@ impl RewriteIdentities for DesignBulkStreamPath {
         Ok(())
     }
 
-    fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let text = self.0.rewrite_identities(ctx, map)?;
         Self::try_from(text.into_string()).map_err(cadmpeg_core::CodecError::malformed)

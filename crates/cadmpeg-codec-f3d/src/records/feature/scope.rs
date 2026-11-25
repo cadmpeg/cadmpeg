@@ -879,10 +879,10 @@ macro_rules! design_feature_kinds {
                     Self::Native(name) => name.visit_identity_references(ctx, visitor),
                 }
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+            fn rewrite_identities(
                 self,
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
             ) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite native scope payload")?;
                 match self {

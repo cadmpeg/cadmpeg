@@ -6,6 +6,7 @@ use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
     EncodeInput, ExportBody, WritePath,
 };
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::export::write_step_outcome;
 use crate::loss::StepLossCode;
@@ -31,9 +32,7 @@ pub(crate) fn plan(
     let Some(index) = resolved.index() else {
         return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
-    let schema = StepSchema::from_target_index(index).ok_or_else(|| {
-        resolved.unavailable("the resolved target index is outside the STEP schema catalog")
-    })?;
+    let (schema, displaced) = schema_at(index);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(
@@ -56,6 +55,10 @@ pub(crate) fn plan(
             recovered.sampled_fits.len(), recovered.residual_limit
         )));
     }
+    losses.extend(displaced);
+    if let Some(message) = resolved.request_displacement_message() {
+        losses.push(StepLossCode::TargetRequestDisplaced.note(message));
+    }
     if let Some(message) = resolved.displacement_message() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }
@@ -70,6 +73,23 @@ pub(crate) fn plan(
         losses,
         notes: outcome.notes,
     })
+}
+
+/// The schema at row `index` of the catalog [`StepSchema::TARGETS`] projects
+/// from [`StepSchema::ALL`]. A row past the catalog is written as the default
+/// row, with `target.request-displaced` naming both.
+pub(super) fn schema_at(index: usize) -> (StepSchema, Option<LossNote>) {
+    if let Some(schema) = StepSchema::from_target_index(index) {
+        return (schema, None);
+    }
+    let schema = StepSchema::DEFAULT;
+    let note = StepLossCode::TargetRequestDisplaced.note(format!(
+        "requested target row {index} is outside the STEP schema catalog of {} rows; the file \
+         is written as {}",
+        StepSchema::ALL.len(),
+        schema.id()
+    ));
+    (schema, Some(note))
 }
 
 /// What the STEP writer does with each model arena.

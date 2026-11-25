@@ -538,3 +538,52 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         );
     }
 }
+
+/// A catalog row past the catalog is written as the default row, and
+/// `target.request-displaced` names the requested row and the written one.
+#[test]
+fn a_target_row_past_the_catalog_is_written_as_the_default_row() {
+    let requested = StepSchema::ALL.len();
+    let (schema, note) = crate::writer::target::schema_at(requested);
+    assert_eq!(schema, StepSchema::DEFAULT);
+    let note = note.expect("the displaced request is charged");
+    assert_eq!(
+        note.code,
+        crate::loss::StepLossCode::TargetRequestDisplaced.kind()
+    );
+    assert_eq!(note.severity, cadmpeg_ir::report::Severity::Warning);
+    assert!(
+        note.message.contains(&format!("row {requested}")),
+        "{}",
+        note.message
+    );
+    assert!(
+        note.message.contains(StepSchema::DEFAULT.id().as_str()),
+        "{}",
+        note.message
+    );
+    let (first, none) = crate::writer::target::schema_at(0);
+    assert_eq!(first, StepSchema::ALL[0]);
+    assert!(none.is_none());
+
+    let mut bytes = Vec::new();
+    crate::export::write_step(
+        &unit_cube().expect("unit cube fixture is admitted"),
+        &mut bytes,
+        schema,
+        &StepWriteOptions::default(),
+    )
+    .expect("write at the default row");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the written file");
+    assert_eq!(
+        decoded
+            .ir()
+            .source
+            .as_ref()
+            .and_then(SourceMeta::dialect)
+            .map(cadmpeg_core::dialect::DialectMatch::dialect),
+        Some(&StepSchema::DEFAULT.id())
+    );
+}
