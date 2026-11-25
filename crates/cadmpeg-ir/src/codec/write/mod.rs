@@ -37,11 +37,11 @@ pub mod edge_recovery;
 mod loss;
 pub use loss::{
     carried_source_losses, definition_placed, dependency_cycle_broken, edit_dropped,
-    edit_unverified, evaluation_missing, evaluation_stale, face_partial, feature_lowered,
-    fit_dropped, fit_restated, general_tolerance_dropped, general_tolerance_restated,
-    link_unwritten, native_records_omitted, output_empty, parameter_flattened, parameter_renamed,
-    partial_topology_omitted, record_invalid, record_residual_unavailable, rule_invalid,
-    solid_partial, value_quantized, value_unwritable,
+    edit_dropped_note, edit_unverified, evaluation_missing, evaluation_stale, face_partial,
+    feature_lowered, fit_dropped, fit_restated, general_tolerance_dropped,
+    general_tolerance_restated, link_unwritten, native_records_omitted, output_empty,
+    parameter_flattened, parameter_renamed, partial_topology_omitted, record_invalid,
+    record_residual_unavailable, rule_invalid, solid_partial, value_quantized, value_unwritable,
 };
 mod partial;
 pub mod saved;

@@ -1786,7 +1786,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_configuration_edits() {
+fn semantic_writer_patch_declines_conflicting_configuration_edits() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
@@ -1799,15 +1799,9 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
         native.feature_histories[0].configurations[0].name = "Native".to_string();
     });
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT configuration edits"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("conflicting neutral and native SLDPRT configuration edits"));
 }
 
 #[test]
@@ -1955,6 +1949,30 @@ fn active_metadata_edit_does_not_patch_only_one_field_of_a_structured_manifest()
         br#"<swSolidWorks><swModel id="m" swConfigurationName="Old" swConfigurationId="0"/><swConfiguration swName="Old" swID="0" swModelRef="m" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#.as_slice(),
         br#"<swSolidWorks><swModel swConfigurationName="First"/><swModel swConfigurationName="Second"/></swSolidWorks>"#.as_slice(),
     ] {
-        assert!(matches!(super::super::patch_active_configuration_xml(payload, "New"), Err(cadmpeg_core::CodecError::NotImplemented(_))));
+        assert!(super::super::patch_active_configuration_xml(payload, "New").is_err());
     }
+}
+
+/// The stale mark sets `swConfigurationNeedsUpdate="YES"` on each named
+/// configuration row (§3.4, States) and keeps the other rows and the stored
+/// encoding.
+#[test]
+fn the_stale_mark_sets_needs_update_on_the_named_configuration_rows() {
+    let source = r#"<swSolidWorks><swModel swConfigurationName="A"/><swConfiguration swName="A" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="B" swID="1"/><swConfiguration swName="C" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
+    let expected = r#"<swSolidWorks><swModel swConfigurationName="A"/><swConfiguration swName="A" swConfigurationNeedsUpdate="YES"/><swConfiguration swName="B" swConfigurationNeedsUpdate="YES" swID="1"/><swConfiguration swName="C" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
+    let names = std::collections::BTreeSet::from(["A".to_owned(), "B".to_owned()]);
+    let utf16 = |text: &str| {
+        let mut bytes = vec![0x85, 0xff, 0xfe];
+        bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+        bytes
+    };
+    for (payload, written) in [
+        (source.as_bytes().to_vec(), expected.as_bytes().to_vec()),
+        (utf16(source), utf16(expected)),
+    ] {
+        let (marked, rows) = crate::writer::stale::mark(&payload, &names).unwrap();
+        assert_eq!(rows, ["A", "B"]);
+        assert_eq!(marked, written);
+    }
+    assert!(crate::writer::stale::mark(b"<swSolidWorks/>", &names).is_none());
 }

@@ -97,7 +97,7 @@ fn f3z_archive_merges_identity_occurrences() {
         decoded.ir().geometry.points.len(),
         component_alone.ir().geometry.points.len()
     );
-    let prefix = format!("f3d:xref/role-{XREF_ROLE}/reference-0/");
+    let prefix = format!("f3d:role-{XREF_ROLE}/reference-0/occurrence-0@");
     let body = &decoded.ir().geometry.bodies[0];
     assert!(
         body.id.as_str().starts_with(&prefix),
@@ -239,13 +239,12 @@ fn duplicate_role_references_keep_archive_occurrences_disjoint() {
     assert_eq!(decoded.ir().geometry.bodies.len(), 2);
     let first = decoded.ir().geometry.bodies[0].id.as_str();
     let second = decoded.ir().geometry.bodies[1].id.as_str();
-    assert!(first.contains(&format!("role-{XREF_ROLE}/reference-0/occurrence-0/")));
-    assert!(second.contains(&format!("role-{XREF_ROLE}/reference-1/occurrence-0/")));
+    assert!(first.contains(&format!("role-{XREF_ROLE}/reference-0/occurrence-0@")));
+    assert!(second.contains(&format!("role-{XREF_ROLE}/reference-1/occurrence-0@")));
     assert_ne!(first, second);
     for (ordinal, expected) in [(0, first), (1, second)] {
-        let source_image = format!(
-            "f3d:xref/role-{XREF_ROLE}/reference-{ordinal}/occurrence-0/file:source-image#0"
-        );
+        let source_image =
+            format!("f3d:role-{XREF_ROLE}/reference-{ordinal}/occurrence-0@file:source-image#0");
         assert_eq!(
             decoded
                 .source_fidelity()
@@ -334,7 +333,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     )
     .unwrap();
 
-    let prefix = format!("f3d:xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
+    let prefix = format!("f3d:role-{XREF_ROLE}/reference-0/occurrence-0@");
     let merged_unknowns = decoded.ir().native_unknowns("f3d").unwrap();
     assert_eq!(merged_unknowns.len(), component_unknowns.len());
     assert!(merged_unknowns
@@ -453,7 +452,7 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         .any(|note| note.contains("merged 2 external occurrence")));
     let body_id = &decoded.ir().geometry.bodies[0].id.as_str();
     assert!(body_id.contains(&format!(
-        "xref/role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0/"
+        "role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0@"
     )));
 }
 

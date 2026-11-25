@@ -87,7 +87,7 @@ impl std::fmt::Display for ConfigurationIdentity<'_> {
 
         write!(formatter, "f3d:{}:entry#", self.0.identity_scope.as_str())?;
         for character in self.0.entry_name.chars() {
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            if cadmpeg_ir::ids::IdentityKeyTail::escapes(character) {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
                     write!(formatter, "%{byte:02X}")?;
