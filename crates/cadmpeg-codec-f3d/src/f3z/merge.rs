@@ -511,12 +511,8 @@ impl MergeSession<'_, '_> {
                     )?;
                 }
                 for loss in &mut component_report.losses {
-                    for (from, to) in &given_up {
-                        if cadmpeg_ir::unknown::part::restate_loss(loss, from, to) {
-                            break;
-                        }
-                    }
-                    loss.message = format!("xref {label}: {}", loss.message);
+                    loss.message =
+                        format!("xref {label}: {}", rescope_text(&loss.message, &occurrence));
                 }
                 parent_report.losses.append(&mut component_report.losses);
                 self.members
@@ -653,6 +649,75 @@ fn omit_unbound_member_joints(
     });
     omit_unbound_motion_links(&mut model.assembly_joints, &mut omitted, losses);
     restore_native_joint_features(&mut model.features, &omitted);
+}
+
+/// Charges a loss for each joint of an archive member that names an operand
+/// of the member's root through an occurrence that places the member, where
+/// other occurrences place the member too: a joint operand can name the root
+/// of the document only, so those placements do not state the joint.
+pub(super) fn charge_placement_bound_joints(
+    model: &Model,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::products::OperandContainer;
+    let prototypes = model
+        .occurrences
+        .iter()
+        .map(|occurrence| (occurrence.id.as_str(), occurrence.prototype.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut placements = std::collections::BTreeMap::<&str, Vec<&str>>::new();
+    for occurrence in &model.occurrences {
+        placements
+            .entry(occurrence.prototype.as_str())
+            .or_default()
+            .push(occurrence.id.as_str());
+    }
+    let members = model
+        .product_definitions
+        .iter()
+        .filter_map(|definition| {
+            let read_at = crate::ids::member_definition_key(definition.id.as_str())?;
+            Some((read_at, definition.id.as_str()))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut losses = Vec::new();
+    for joint in &model.assembly_joints {
+        let Some(&definition) =
+            crate::ids::member_key(joint.id.as_str()).and_then(|scope| members.get(scope))
+        else {
+            continue;
+        };
+        let bound = joint
+            .connectors()
+            .filter_map(|connector| match &connector.operand.container {
+                OperandContainer::Occurrence { occurrence, .. }
+                    if prototypes.get(occurrence.as_str()) == Some(&definition) =>
+                {
+                    Some(occurrence.as_str())
+                }
+                _ => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        if bound.is_empty() {
+            continue;
+        }
+        let missed = placements
+            .get(definition)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|placement| !bound.contains(placement))
+            .collect::<Vec<_>>();
+        if missed.is_empty() {
+            continue;
+        }
+        losses.push(F3dLossCode::AssemblyMemberJointPlacementBound.note(format!(
+            "joint {} names an operand of the root of member {definition} through placement {}; placement(s) {} of that member do not state it",
+            joint.id,
+            bound.into_iter().collect::<Vec<_>>().join(", "),
+            missed.join(", ")
+        )));
+    }
+    losses
 }
 
 fn restore_native_joint_features(
@@ -2092,12 +2157,13 @@ fn define_member(
         .map(|sketch| sketch.id.clone())
         .collect();
     identity.path = cadmpeg_core::text::NonBlankString::new(document);
-    let storage = match ir.source.clone() {
-        Some(source) => Storage::File {
-            document: identity,
-            source: Some(source),
-        },
-        None => Storage::Embedded,
+    let source = ir
+        .source
+        .clone()
+        .ok_or_else(|| CodecError::malformed("F3Z member decoded without its source"))?;
+    let storage = Storage::File {
+        document: identity,
+        source: Some(source),
     };
     let id = crate::ids::archive_product_definition_id();
     if let Some(definition) = ir
@@ -2310,6 +2376,40 @@ fn rescope(text: &str, occurrence: &str) -> Option<String> {
             .map(|id| id.as_str().to_owned());
     }
     crate::ids::qualify(text, occurrence)
+}
+
+/// `text`, a message of the member merged at `occurrence`, with each id it
+/// names rescoped as [`rescope`] rescopes the id.
+fn rescope_text(text: &str, occurrence: &str) -> String {
+    use crate::ids::{ARCHIVE_PRODUCT_DEFINITION_ID, SCHEME_PREFIX};
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for (at, _) in text.match_indices(SCHEME_PREFIX) {
+        if at < last {
+            continue;
+        }
+        out.push_str(&text[last..at]);
+        if text[at..].starts_with(ARCHIVE_PRODUCT_DEFINITION_ID) {
+            if let Some(definition) = rescope(ARCHIVE_PRODUCT_DEFINITION_ID, occurrence) {
+                out.push_str(&definition);
+                last = at + ARCHIVE_PRODUCT_DEFINITION_ID.len();
+                continue;
+            }
+        }
+        let start = at + SCHEME_PREFIX.len();
+        let rest = &text[start..];
+        let head = rest
+            .find(|c: char| c == '@' || c == ':' || c.is_whitespace())
+            .unwrap_or(rest.len());
+        out.push_str(SCHEME_PREFIX);
+        if !rest[head..].starts_with('@') {
+            out.push_str(occurrence);
+            out.push('@');
+        }
+        last = start;
+    }
+    out.push_str(&text[last..]);
+    out
 }
 
 fn native_record_targets(
@@ -2658,6 +2758,18 @@ mod tests {
 
     use super::define_member;
 
+    /// The source of an archive member file.
+    fn member_source() -> cadmpeg_ir::SourceMeta {
+        cadmpeg_ir::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(
+                    cadmpeg_core::dialect::DialectId::parse("f3d:manifest-3-2-0-0").unwrap(),
+                ),
+            ),
+            std::collections::BTreeMap::new(),
+        )
+    }
+
     #[test]
     fn member_definition_keeps_a_finite_body_transform_without_preplacement() {
         let transform = cadmpeg_ir::transform::Transform::affine([
@@ -2667,6 +2779,7 @@ mod tests {
         ])
         .unwrap();
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        ir.source = Some(member_source());
         ir.model.product_definitions.clear();
         ir.geometry.bodies[0].transform = Some(transform);
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
@@ -2681,6 +2794,7 @@ mod tests {
     #[test]
     fn member_without_occurrences_moves_stored_frame_bodies_into_its_definition() {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        ir.source = Some(member_source());
         let body = ir.geometry.bodies[0].id.clone();
         ir.model.product_definitions.clear();
         ir.model
@@ -2719,6 +2833,7 @@ mod tests {
     fn member_definition_owns_the_mesh_bodies_of_the_member_root() {
         use cadmpeg_ir::tessellation::Meshed;
         let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.source = Some(member_source());
         crate::tree::file_root(&mut ir.model);
         ir.model.tessellations.push(
             cadmpeg_ir::tessellation::Tessellation::new(
@@ -2754,6 +2869,7 @@ mod tests {
         policy.limits.max_entities = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.source = Some(member_source());
         let error = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
         assert!(ir.model.product_definitions.is_empty());

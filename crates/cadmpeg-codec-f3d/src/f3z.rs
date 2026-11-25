@@ -222,6 +222,8 @@ fn finalize_result(
     let members = member_keys::MemberKeys::new(&ir.model, instance_scopes);
     body.losses
         .extend(crate::tree::own_once(ctx, &mut ir, instance_scopes)?);
+    body.losses
+        .extend(merge::charge_placement_bound_joints(&ir.model));
     crate::design::owners::release_unbound(&mut ir.model);
     body.losses
         .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
