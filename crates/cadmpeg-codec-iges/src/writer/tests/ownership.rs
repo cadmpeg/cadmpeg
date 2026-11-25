@@ -153,28 +153,36 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
     assert!(result.ir().geometry.vertices.is_empty());
 }
 
-#[test]
-fn support_only_surface_export_refuses_an_empty_transfer() {
-    let mut ir = rectangle();
-    ir.geometry.surfaces[0].source_object = Some(support_association());
-    assert!(matches!(
-        super::super::synthesize(&ir, IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+fn assert_writes_an_empty_file(ir: &CadIr) {
+    let generated = super::super::synthesize(ir, IgesVersion::V5_3)
+        .expect("a model with nothing to transfer writes an empty file");
+    assert!(
+        generated
+            .losses
+            .iter()
+            .any(|loss| cadmpeg_ir::report::strictness::code_name(&loss.code)
+                == "export:output.empty"),
+        "{:?}",
+        generated.losses
+    );
 }
 
 #[test]
-fn support_only_point_export_refuses_an_empty_transfer() {
+fn support_only_surface_export_writes_an_empty_file() {
+    let mut ir = rectangle();
+    ir.geometry.surfaces[0].source_object = Some(support_association());
+    assert_writes_an_empty_file(&ir);
+}
+
+#[test]
+fn support_only_point_export_writes_an_empty_file() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
         cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    assert!(matches!(
-        super::super::synthesize(&ir, IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    assert_writes_an_empty_file(&ir);
 }
 
 #[test]
@@ -250,10 +258,7 @@ fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
         .unwrap();
     assert_eq!(decoded.ir().geometry.curves.len(), 1);
     assert!(decoded.ir().geometry.edges.is_empty());
-    assert!(matches!(
-        super::super::synthesize(decoded.ir(), IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    assert_writes_an_empty_file(decoded.ir());
 }
 
 #[test]
