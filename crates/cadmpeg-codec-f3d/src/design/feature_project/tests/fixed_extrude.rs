@@ -625,7 +625,7 @@ fn signed_distance_lanes_on_opposite_sides_project_two_sides() {
 }
 
 #[test]
-fn zero_first_side_uses_the_reversed_second_side_magnitude() {
+fn zero_first_side_takes_its_direction_from_the_second_side_sign() {
     use cadmpeg_ir::features::extents::ExtrudeDirection;
     let scope = fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
