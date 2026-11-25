@@ -547,7 +547,10 @@ fn a_target_row_past_the_catalog_is_written_as_the_default_row() {
     let (schema, note) = crate::writer::target::schema_at(requested);
     assert_eq!(schema, StepSchema::DEFAULT);
     let note = note.expect("the displaced request is charged");
-    assert_eq!(note.code.to_string(), "step/target.request-displaced");
+    assert_eq!(
+        note.code,
+        crate::loss::StepLossCode::TargetRequestDisplaced.kind()
+    );
     assert_eq!(note.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(
         note.message.contains(&format!("row {requested}")),

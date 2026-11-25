@@ -1290,8 +1290,8 @@ circular section as `CYLINDRICAL_SURFACE` and an elliptical section as a
 `SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE` on the cone's placement, swept by
 a unit `VECTOR` along the axis. Both keep the cone's `(u, v)` chart. The
 section radius `radius + v tan(half_angle)` repeats with period `pi` in the
-half-angle, so the writer reduces a half-angle `θ` to `θ - k pi` in
-`[-pi/2, pi/2]` with the same chart. A half-angle in `(pi/2, pi)` is written as
+half-angle, so a half-angle `θ` states the same surface as `θ - k pi` in
+`[-pi/2, pi/2]`, in the same chart. A half-angle in `(pi/2, pi)` is written as
 the `CONICAL_SURFACE` with semi-angle `pi - θ` over the reversed axis, at
 `(-u, -v)`; the faces keep their edges, and their pcurves are written in that
 chart. A reduced half-angle of `0` is the zero half-angle cone above. A zero
