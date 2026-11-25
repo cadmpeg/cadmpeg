@@ -423,14 +423,17 @@ pub enum SubdSymmetryKind {
     Radial(SubdRadialSymmetry),
 }
 
-/// Admitted radial controls and selector-preserving maps.
+/// Radial controls and the native radial maps that the source stores.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdRadialSymmetryWire")]
 pub struct SubdRadialSymmetry {
-    segments: std::num::NonZeroU32,
-    sweep: crate::scalar::FiniteReal,
-    radial_maps: Vec<SubdRadialSymmetryMap>,
+    /// Number of radial segments.
+    pub segments: std::num::NonZeroU32,
+    /// Native radial sweep.
+    pub sweep: crate::scalar::FiniteReal,
+    /// Native maps in source order.
+    pub radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
 #[derive(Deserialize)]
@@ -441,7 +444,7 @@ struct SubdRadialSymmetryWire {
     segments: std::num::NonZeroU32,
     /// Finite native radial sweep.
     sweep: f64,
-    /// Native maps with distinct selectors and distinct sources within each map.
+    /// Native maps in source order.
     radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
@@ -464,30 +467,6 @@ impl SubdRadialSymmetry {
                 "kind.radial.sweep must be finite".to_owned(),
             ));
         };
-        Self::from_parts(segments, sweep, radial_maps)
-    }
-
-    fn from_parts(
-        segments: std::num::NonZeroU32,
-        sweep: FiniteReal,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        let mut selectors = std::collections::BTreeSet::new();
-        for map in &radial_maps {
-            if !selectors.insert(map.selector) {
-                return Err(SubdError::Admission(
-                    "radial_maps repeats a selector".to_owned(),
-                ));
-            }
-            let mut sources = std::collections::BTreeSet::new();
-            for [source, _] in &map.pairs {
-                if !sources.insert(*source) {
-                    return Err(SubdError::Admission(
-                        "radial_maps.pairs repeats a source".to_owned(),
-                    ));
-                }
-            }
-        }
         Ok(Self {
             segments,
             sweep,
@@ -497,22 +476,13 @@ impl SubdRadialSymmetry {
 }
 
 impl SubdSymmetryKind {
-    /// Admit radial controls with finite sweep and distinct map selectors and sources.
+    /// Radial controls with a finite sweep.
     pub fn radial(
         segments: std::num::NonZeroU32,
         sweep: f64,
         radial_maps: Vec<SubdRadialSymmetryMap>,
     ) -> Result<Self, SubdError> {
         SubdRadialSymmetry::new(segments, sweep, radial_maps).map(Self::Radial)
-    }
-
-    /// Admit radial maps with a sweep that the reader already checked.
-    pub fn radial_from_parts(
-        segments: std::num::NonZeroU32,
-        sweep: FiniteReal,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        SubdRadialSymmetry::from_parts(segments, sweep, radial_maps).map(Self::Radial)
     }
 }
 
@@ -778,16 +748,11 @@ impl TryFrom<SubdVertexGripLayoutWire> for SubdVertexGripLayout {
 }
 
 impl SubdVertexGripLayout {
-    /// Admit a nonempty cyclic fan with sector arity equal to adjacent spoke products.
+    /// Admit a cyclic fan with sector arity equal to adjacent spoke products.
     pub fn new(
         direction: SubdGripDirection,
         wedges: Vec<SubdGripWedge>,
     ) -> Result<Self, SubdError> {
-        if wedges.is_empty() {
-            return Err(SubdError::Admission(
-                "secondary_grips.wedges is empty".to_owned(),
-            ));
-        }
         let spoke_count = |wedge: &SubdGripWedge| match wedge {
             SubdGripWedge::Phantom {} => 0,
             SubdGripWedge::Slot { spokes, .. } => spokes.len(),

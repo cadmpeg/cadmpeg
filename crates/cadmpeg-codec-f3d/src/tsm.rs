@@ -11,8 +11,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
-    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
-    SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdScheme,
+    SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex,
+    SubdVertexGripLayout, SubdVertexTag,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -1517,8 +1518,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 let projected = project_radial_maps(&maps, &face_ir, &edge_ir, &vertex_ir);
                 unresolved_radial_pairs += projected.unresolved;
                 (
-                    SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
-                        .map_err(|error| malformed(name, error))?,
+                    SubdSymmetryKind::Radial(SubdRadialSymmetry {
+                        segments,
+                        sweep,
+                        radial_maps: maps,
+                    }),
                     projected.face,
                     projected.edge,
                     projected.vertex,

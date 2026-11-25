@@ -179,8 +179,10 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
     );
 }
 
+/// A radial map is the source's native map, kept for its writer, so a
+/// repeated selector or source reads and is kept.
 #[test]
-fn radial_maps_require_distinct_selectors_and_sources() {
+fn radial_maps_keep_repeated_selectors_and_sources() {
     let map = |pairs| SubdRadialSymmetryMap {
         selector: SubdRadialMapSelector::Ef,
         pairs,
@@ -189,13 +191,14 @@ fn radial_maps_require_distinct_selectors_and_sources() {
         vec![map(vec![]), map(vec![])],
         vec![map(vec![[0, 0], [0, 1]])],
     ] {
-        assert!(
-            SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), 0.0, maps.clone(),)
-                .is_err()
-        );
+        let kind =
+            SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), 0.0, maps.clone())
+                .unwrap();
+        assert!(matches!(&kind, SubdSymmetryKind::Radial(radial) if radial.radial_maps == maps));
         let mut wire = serde_json::to_value(radial(0.0).unwrap()).unwrap();
-        wire["kind"]["radial_maps"] = serde_json::to_value(maps).unwrap();
-        assert!(serde_json::from_value::<SubdSymmetry>(wire).is_err());
+        wire["kind"]["radial_maps"] = serde_json::to_value(&maps).unwrap();
+        let read = serde_json::from_value::<SubdSymmetry>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(read).unwrap(), wire);
     }
     let symmetry = SubdSymmetry::new(
         SubdSymmetryKind::radial(
@@ -229,9 +232,9 @@ fn radial_kind_deserialization_admits_controls_without_a_symmetry_owner() {
     assert!(serde_json::from_value::<SubdSymmetryKind>(zero_segments).is_err());
     let mut duplicate_sources = wire.clone();
     duplicate_sources["radial_maps"][0]["pairs"] = serde_json::json!([[0, 1], [0, 2]]);
-    assert!(serde_json::from_value::<SubdSymmetryKind>(duplicate_sources).is_err());
+    assert!(serde_json::from_value::<SubdSymmetryKind>(duplicate_sources).is_ok());
     let mut duplicate_selectors = wire.clone();
     duplicate_selectors["radial_maps"] =
         serde_json::json!([wire["radial_maps"][0], wire["radial_maps"][0]]);
-    assert!(serde_json::from_value::<SubdSymmetryKind>(duplicate_selectors).is_err());
+    assert!(serde_json::from_value::<SubdSymmetryKind>(duplicate_selectors).is_ok());
 }

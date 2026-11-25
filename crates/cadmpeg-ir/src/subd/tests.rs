@@ -302,17 +302,23 @@ fn cage_admission_requires_valid_edge_indices_and_closed_directed_rings() {
 }
 
 #[test]
-fn cage_admission_requires_non_empty_grip_layouts_and_valid_sector_arity() {
-    for wedges in [
-        serde_json::json!([]),
-        serde_json::json!([{
-            "kind": "slot", "edge": 0, "spokes": [null], "sectors": []
-        }]),
+fn cage_admission_keeps_an_empty_grip_layout_and_requires_valid_sector_arity() {
+    for (wedges, admitted) in [
+        (serde_json::json!([]), true),
+        (
+            serde_json::json!([{
+                "kind": "slot", "edge": 0, "spokes": [null], "sectors": []
+            }]),
+            false,
+        ),
     ] {
         let mut wire = serde_json::to_value(triangle_cage()).unwrap();
         wire["vertices"][0]["secondary_grips"] =
             serde_json::json!({ "direction": "north", "wedges": wedges });
-        assert!(serde_json::from_value::<super::SubdCage>(wire).is_err());
+        assert_eq!(
+            serde_json::from_value::<super::SubdCage>(wire).is_ok(),
+            admitted
+        );
     }
 }
 
@@ -365,7 +371,12 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
             vertices[0].tag = SubdVertexTag::Corner;
             vertices[1].secondary_grips = Some(super::SubdVertexGripLayout::new(
                 super::SubdGripDirection::North,
-                Vec::new(),
+                vec![SubdGripWedge::Slot {
+                    edge: Some(3),
+                    sector_face: None,
+                    spokes: Vec::new(),
+                    sectors: Vec::new(),
+                }],
             )?);
             Ok(())
         },)
@@ -526,7 +537,6 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         sectors,
     };
     for wedges in [
-        Vec::new(),
         vec![slot(vec![None], Vec::new())],
         vec![slot(vec![None], vec![None]), SubdGripWedge::Phantom {}],
         vec![
@@ -539,6 +549,7 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         assert!(serde_json::from_value::<SubdVertexGripLayout>(wire).is_err());
     }
     for wedges in [
+        Vec::new(),
         vec![SubdGripWedge::Phantom {}],
         vec![slot(vec![None], vec![None])],
         vec![
