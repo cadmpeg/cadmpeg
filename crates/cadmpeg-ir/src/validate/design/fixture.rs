@@ -237,7 +237,11 @@ pub(in crate::validate) fn family_findings(
 }
 
 pub(in crate::validate) fn design_findings(ir: &CadIr) -> Vec<Finding> {
-    family_findings(ir, Check::Design, super::check_design)
+    family_findings(
+        ir,
+        Check::Design,
+        crate::validate::process::check_design_and_process,
+    )
 }
 
 #[track_caller]

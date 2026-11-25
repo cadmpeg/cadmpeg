@@ -13,12 +13,16 @@ use crate::design::dimension::{ParamRef, ParameterRef};
 use crate::design::selection::{Anchor, OccurrencePath, PickContext};
 use crate::report::check::Finding;
 use crate::validate::design::evaluations::{check_position, check_resulting_position};
+use crate::validate::design::index::DesignIndex;
+use crate::validate::design::matching::Matchers;
 use crate::validate::design::records::{MemberKey, PositionKey};
 use crate::validate::design::selections::{self, ProcessPick};
 
-pub(super) fn check_scope(
-    records: &ProcessRecords<'_>,
-    walked: &[Walked<'_>],
+pub(super) fn check_scope<'a>(
+    records: &'a ProcessRecords<'_>,
+    walked: &'a [Walked<'_>],
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
     findings: &mut Vec<Finding>,
 ) {
     for setup in &records.ir.process.setups {
@@ -40,7 +44,7 @@ pub(super) fn check_scope(
         check_record(records, record, &moved, &mut picks, findings);
     }
     super::as_process(findings, |findings| {
-        selections::check_process_picks(records.ir, &picks, findings);
+        selections::check_process_picks(index, matchers, &picks, findings);
     });
 }
 

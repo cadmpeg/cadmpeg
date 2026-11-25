@@ -69,7 +69,7 @@ pub(super) fn check<'a>(
     ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
-    held: &'a [Held<'a>],
+    held: &[Held<'a>],
     document: NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
@@ -465,17 +465,12 @@ pub(in crate::validate) struct ProcessPick<'a> {
 /// Each process pick resolves in its anchored state by the matching rule
 /// of §5.7, as a design pick does: a `Current` pick in the current geometry
 /// of its setup's scope (§5.8).
-pub(in crate::validate) fn check_process_picks(
-    ir: &CadIr,
-    picks: &[ProcessPick<'_>],
+pub(in crate::validate) fn check_process_picks<'a>(
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
+    picks: &[ProcessPick<'a>],
     findings: &mut Vec<Finding>,
 ) {
-    if picks.is_empty() {
-        return;
-    }
-    let index = DesignIndex::new(ir);
-    let states = States::new(ir);
-    let matchers = Matchers::new(&states);
     for pick in picks {
         let site = Site {
             holder: Holder::Record {
@@ -485,7 +480,7 @@ pub(in crate::validate) fn check_process_picks(
             anchor: pick.anchor,
             owner: Some(pick.scope),
         };
-        check_anchored(&index, &matchers, site, pick.pick, findings);
+        check_anchored(index, matchers, site, pick.pick, findings);
     }
 }
 
