@@ -131,6 +131,10 @@ fn code_names_follow_the_section_3_2_spellings() {
         "geometry.vertex-tolerance-widened"
     );
     assert_eq!(
+        named("nx", "topology.face-boundary-unstated"),
+        "topology.face-boundary-unstated"
+    );
+    assert_eq!(
         named("iges", "global.metadata-field-unusable"),
         "iges/global.metadata-field-unusable"
     );
