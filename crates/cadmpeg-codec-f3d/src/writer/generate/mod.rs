@@ -190,10 +190,12 @@ fn attempt<W: Write + Seek>(
         }
         Err(error) => return Err(Failure::brep(error)),
     };
-    let smbh = if stamped {
-        design::history::with_insertion_history(&smbh).map_err(Failure::neutral_design)?
-    } else {
-        smbh
+    let smbh = match neutral.as_ref().filter(|_| stamped) {
+        Some(neutral) => {
+            design::history::with_insertion_history(&smbh, &neutral.history_states(target))
+                .map_err(Failure::neutral_design)?
+        }
+        None => smbh,
     };
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;

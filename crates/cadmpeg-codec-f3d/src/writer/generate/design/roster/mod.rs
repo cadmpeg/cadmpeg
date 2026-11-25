@@ -35,7 +35,7 @@ use planes::PlaneRecords;
 use revolve::RevolveRecords;
 use segment::TypeTable;
 use sketches::SketchRoster;
-use swept::{Place, RolledBody};
+use swept::{ItemState, Place, RolledBody, Standing};
 use values::Values;
 
 /// The `AssetSettings` record.
@@ -118,7 +118,7 @@ pub(super) struct BodyIndices {
     pub(super) node: u32,
 }
 
-/// A geometry item the design writes: the item in place of its `Base
+/// A geometry item the design writes: an item in place of its `Base
 /// Feature`, or an item after the timeline marker. Its plan, its records
 /// and its place in the timeline.
 pub(in crate::writer::generate::design) struct ItemRecords<'a> {
@@ -139,16 +139,18 @@ enum ItemKind<'a> {
 
 impl<'a> ItemRecords<'a> {
     /// The records of `item` from record `next` in creation order, with
-    /// their type rows pushed to `rows`, and its first persistent identity
-    /// and family ordinal from `place`. An item after the timeline marker
-    /// adds the records of its rolled-back body, of the types `body_rows`.
-    /// Returns the records and the next free index.
+    /// their type rows pushed to `rows`, its first persistent identity
+    /// `identity` and its family ordinal `ordinal`. An item before the
+    /// timeline marker commits `state`; an item after it adds the records of
+    /// its rolled-back body, of the types `body_rows`. Returns the records
+    /// and the next free index.
     fn allocate(
         item: &'a super::item::Item<'a>,
         next: u32,
         rows: &mut Vec<(u32, TypeRow)>,
-        place: Place,
-        body_rows: Option<&[TypeRow; 5]>,
+        (identity, ordinal): (u64, u32),
+        state: Option<ItemState>,
+        body_rows: &[TypeRow; 5],
     ) -> Result<(Self, u32), CodecError> {
         let (kind, mut next) = match item {
             super::item::Item::Extrude(plan) => {
@@ -160,21 +162,26 @@ impl<'a> ItemRecords<'a> {
                 (ItemKind::Revolve { plan, records }, next)
             }
         };
-        let rolled = match body_rows {
-            Some(&[reference, scene_node, scene_box, auxiliary, node]) => {
+        let standing = match state {
+            Some(state) => Standing::Built(state),
+            None => {
+                let &[reference, scene_node, scene_box, auxiliary, node] = body_rows;
                 let mut take = swept::allocator(&mut next, rows);
-                Some(RolledBody {
+                Standing::RolledBack(RolledBody {
                     reference: take(reference)?,
                     scene: [take(scene_node)?, take(scene_box)?, take(auxiliary)?],
                     node: take(node)?,
                 })
             }
-            None => None,
         };
         Ok((
             Self {
                 kind,
-                place: Place { rolled, ..place },
+                place: Place {
+                    identity,
+                    ordinal,
+                    standing,
+                },
             },
             next,
         ))
@@ -290,10 +297,10 @@ impl<'a> ItemRecords<'a> {
     fn losses(&self, ctx: &Context<'_>) -> Vec<LossNote> {
         match &self.kind {
             ItemKind::Extrude { plan, records } => {
-                extrude::losses(ctx, plan, records, self.place.rolled.is_none())
+                extrude::losses(ctx, plan, records, self.place.rolled().is_none())
             }
             ItemKind::Revolve { plan, records } => {
-                revolve::losses(ctx, plan, records, self.place.rolled.is_none())
+                revolve::losses(ctx, plan, records, self.place.rolled().is_none())
             }
         }
     }
@@ -307,8 +314,9 @@ pub(super) struct Roster<'a> {
     pub(super) sketches: SketchRoster,
     /// The records of the `WorkPlane` items, in timeline order.
     pub(super) planes: Vec<PlaneRecords>,
-    /// The geometry item, between the `Sketch` items before and after it.
-    pub(super) item: Option<ItemRecords<'a>>,
+    /// The geometry items before the timeline marker, each with its state,
+    /// in timeline order.
+    pub(super) items: Vec<ItemRecords<'a>>,
     /// The geometry items after the timeline marker, in timeline order.
     pub(super) rolled: Vec<ItemRecords<'a>>,
     /// The value of the persistent-identity counter after every item.
@@ -334,18 +342,17 @@ struct Allocation<'a, 'r> {
     next: u32,
     identity: u64,
     entries: &'r mut Vec<(u32, TypeRow)>,
-    item: Option<ItemRecords<'a>>,
+    items: Vec<ItemRecords<'a>>,
     rolled: Vec<ItemRecords<'a>>,
 }
 
+/// A geometry item in timeline order: before the timeline marker with its
+/// state, or after it.
+type Geometry<'a> = (&'a super::item::Item<'a>, Option<ItemState>);
+
 impl<'a> Allocation<'a, '_> {
-    /// The geometry items of `geometry` after `position` `Sketch` items, each
-    /// with whether it follows the timeline marker.
-    fn items(
-        &mut self,
-        geometry: &[(&'a super::item::Item<'a>, bool)],
-        position: usize,
-    ) -> Result<(), CodecError> {
+    /// The geometry items of `geometry` after `position` `Sketch` items.
+    fn items(&mut self, geometry: &[Geometry<'a>], position: usize) -> Result<(), CodecError> {
         let body_rows = [
             row_of(187)?,
             row_of(188)?,
@@ -353,7 +360,7 @@ impl<'a> Allocation<'a, '_> {
             row_of(190)?,
             row_of(224)?,
         ];
-        for (at, &(item, rolled)) in geometry.iter().enumerate() {
+        for (at, &(item, state)) in geometry.iter().enumerate() {
             if item.after() != position {
                 continue;
             }
@@ -371,19 +378,16 @@ impl<'a> Allocation<'a, '_> {
                 item,
                 self.next,
                 self.entries,
-                Place {
-                    identity: self.identity,
-                    ordinal,
-                    rolled: None,
-                },
-                rolled.then_some(&body_rows),
+                (self.identity, ordinal),
+                state,
+                &body_rows,
             )?;
             self.next = after;
             self.identity = self.identity.checked_add(2).ok_or_else(identity_overflow)?;
-            if rolled {
-                self.rolled.push(records);
+            if state.is_some() {
+                self.items.push(records);
             } else {
-                self.item = Some(records);
+                self.rolled.push(records);
             }
         }
         Ok(())
@@ -401,25 +405,28 @@ fn identity_overflow() -> CodecError {
 }
 
 impl<'a> Roster<'a> {
-    /// The one-body roster, with the ten records of each further body, one
-    /// record of each user parameter, and then the records of each `Sketch`
-    /// item, of the `WorkPlane` item before its first sketch, of the
-    /// geometry `item` and of the `rolled` items after the timeline marker,
-    /// in timeline order, at the indices from 225. The item replaces the
-    /// `Base Feature` item. A design with no body writes neither the
-    /// `Base Feature` item nor the records of a result body (f3d.md §3.1,
-    /// "Records of a design whose timeline holds no body").
+    /// The one-body roster, with the ten records of each further body of
+    /// `result_bodies`, one record of each user parameter, and then the
+    /// records of each `Sketch` item, of the `WorkPlane` item before its
+    /// first sketch, of the geometry `items` and of the `rolled` items after
+    /// the timeline marker, in timeline order, at the indices from 225. The
+    /// items replace the `Base Feature` item; the `k`-th commits history
+    /// state `3 + k` after state `2 + k` (f3d.md §3.1, "History states"). A
+    /// design with no body writes neither the `Base Feature` item nor the
+    /// records of a result body (f3d.md §3.1, "Records of a design whose
+    /// timeline holds no body").
     pub(super) fn new(
-        bodies: usize,
+        result_bodies: &[RosterBody<'_>],
         parameters: usize,
         sketch_plan: &super::sketch::SketchPlan<'_>,
-        item: Option<&'a super::item::Item<'a>>,
+        items: &'a [super::item::Item<'a>],
         rolled: &'a [super::item::Item<'a>],
     ) -> Result<Self, CodecError> {
         let sketches = &sketch_plan.items;
+        let bodies = result_bodies.len();
         let overflow = || CodecError::NotImplemented("Base Feature record index overflow".into());
         let mut entries = rows::ONE_BODY.to_vec();
-        let base_feature = item.is_none() && bodies > 0;
+        let base_feature = items.is_empty() && bodies > 0;
         if !base_feature {
             entries.retain(|(index, _)| !BASE_FEATURE_ITEM.contains(index));
         }
@@ -485,18 +492,37 @@ impl<'a> Roster<'a> {
             parameter_indices.push(next);
             next = next.checked_add(1).ok_or_else(overflow)?;
         }
-        let geometry = item
-            .into_iter()
-            .map(|item| (item, false))
-            .chain(rolled.iter().map(|item| (item, true)))
-            .collect::<Vec<_>>();
+        let mut geometry = Vec::<Geometry<'a>>::with_capacity(items.len() + rolled.len());
+        for (preceding, item) in (super::history::ROOT_STATE..).zip(items) {
+            let body = result_bodies
+                .iter()
+                .position(|body| Some(body.id) == item.body())
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "the result body of {} is not written",
+                        item.feature()
+                    ))
+                })?;
+            let current = preceding
+                .checked_add(1)
+                .ok_or_else(|| CodecError::NotImplemented("history state overflow".into()))?;
+            geometry.push((
+                item,
+                Some(ItemState {
+                    body,
+                    current,
+                    preceding,
+                }),
+            ));
+        }
+        geometry.extend(rolled.iter().map(|item| (item, None)));
         let mut roster = SketchRoster::default();
         let mut planes = Vec::<PlaneRecords>::new();
         let mut allocation = Allocation {
             next,
             identity: super::base_feature::FIRST_IDENTITY,
             entries: &mut entries,
-            item: None,
+            items: Vec::new(),
             rolled: Vec::new(),
         };
         for (position, planned) in sketches.iter().enumerate() {
@@ -530,7 +556,7 @@ impl<'a> Roster<'a> {
         allocation.items(&geometry, sketches.len())?;
         let Allocation {
             identity,
-            item: item_records,
+            items: item_records,
             rolled: rolled_records,
             ..
         } = allocation;
@@ -552,7 +578,7 @@ impl<'a> Roster<'a> {
             parameters: parameter_indices,
             sketches: roster,
             planes,
-            item: item_records,
+            items: item_records,
             rolled: rolled_records,
             next_identity,
             base_feature,
@@ -560,10 +586,10 @@ impl<'a> Roster<'a> {
         })
     }
 
-    /// The geometry items in timeline order: the item in place of the
+    /// The geometry items in timeline order: the items in place of the
     /// `Base Feature`, then the items after the timeline marker.
     pub(super) fn geometry(&self) -> impl Iterator<Item = &ItemRecords<'a>> {
-        self.item.iter().chain(&self.rolled)
+        self.items.iter().chain(&self.rolled)
     }
 
     pub(super) fn rows(&self) -> &[(u32, TypeRow)] {
@@ -624,14 +650,14 @@ pub(super) enum ContextValue {
 
 impl ContextValue {
     /// The value of a design whose parameters are named `names` and whose
-    /// timeline holds `planes`, `sketches` and the geometry `item`, or a
-    /// `Base Feature` without `item`, and the `rolled` items after the
+    /// timeline holds `planes`, `sketches` and the geometry `items`, or a
+    /// `Base Feature` without them, and the `rolled` items after the
     /// timeline marker.
     pub(super) fn of<'n>(
         names: impl IntoIterator<Item = &'n str>,
         sketches: &[super::sketch::PlannedSketch<'_>],
         planes: &[super::sketch::PlannedPlane<'_>],
-        item: Option<&super::item::Item<'_>>,
+        items: &[super::item::Item<'_>],
         rolled: &[super::item::Item<'_>],
     ) -> Self {
         let largest = || {
@@ -643,8 +669,8 @@ impl ContextValue {
                 .iter()
                 .filter_map(|plane| plane.parameters.as_ref())
                 .flat_map(|parameters| parameters.iter().map(|parameter| parameter.ordinal));
-            let owned = item
-                .into_iter()
+            let owned = items
+                .iter()
                 .chain(rolled)
                 .flat_map(|item| item.owned().into_iter().map(|owned| owned.ordinal));
             dimensions
@@ -665,13 +691,19 @@ impl ContextValue {
                 outside: "the timeline holds items after the timeline marker".to_owned(),
             };
         }
-        if let Some(super::item::Item::Revolve(_)) = item {
+        if items.len() > 1 {
+            return Self::Chosen {
+                value: largest(),
+                outside: "the timeline holds more than one geometry item".to_owned(),
+            };
+        }
+        if let [super::item::Item::Revolve(_)] = items {
             return Self::Chosen {
                 value: largest(),
                 outside: "the timeline holds a Revolve item".to_owned(),
             };
         }
-        if item.is_none() {
+        if items.is_empty() {
             if sketches.is_empty() {
                 return Self::Stated(0);
             }
@@ -759,10 +791,17 @@ impl Context<'_> {
         parameters
     }
 
-    /// The timeline item whose scope the browser node of a result body
-    /// names: the geometry item's scope, else the `Base Feature` scope.
-    pub(super) fn item_scope(&self) -> u32 {
-        self.roster.item.as_ref().map_or(SCOPE, ItemRecords::scope)
+    /// The timeline item whose scope the browser node of the result body
+    /// at `body` in [`Self::bodies`] names: the scope of the geometry item
+    /// whose state makes it, else the `Base Feature` scope.
+    pub(super) fn item_scope(&self, body: usize) -> u32 {
+        self.roster
+            .items
+            .iter()
+            .find(
+                |item| matches!(item.place.standing, Standing::Built(state) if state.body == body),
+            )
+            .map_or(SCOPE, ItemRecords::scope)
     }
 
     /// The number of result bodies as a u32.
@@ -889,17 +928,14 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     if ctx.roster.base_feature {
         notes.extend(super::base_feature::item_tail_loss(SCOPE));
     }
-    if let Some(item) = &ctx.roster.item {
-        notes.extend(item.losses(ctx));
-    }
-    for item in &ctx.roster.rolled {
+    for item in ctx.roster.geometry() {
         notes.extend(item.losses(ctx));
     }
     notes.extend(record_residual_unavailable(
         "F3D",
         "writes these items after the timeline marker with no history state in the tail that f3d.md §3.1 gives such a feature (\"In every form, the state bytes\"), and the rolled-back body of each as a body-reference record that the bodies root lists last, whose Scene records store the box of the parameter-side Scene records, and a hidden browser node; f3d-open-items.md DR-1032 leaves open the result-body records of a rolled-back feature that makes a body and holds no state",
         ctx.roster.rolled.iter().map(|item| {
-            let body = item.place.rolled.map_or_else(String::new, |body| {
+            let body = item.place.rolled().map_or_else(String::new, |body| {
                 format!(
                     "; body-reference record {}, Scene records {} to {}, browser node {}",
                     body.reference, body.scene[0], body.scene[2], body.node
@@ -1005,8 +1041,8 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     ));
     let item = ctx
         .roster
-        .item
-        .as_ref()
+        .items
+        .first()
         .map_or("Base Feature", ItemRecords::family);
     if !ctx.roster.sketches.is_empty() {
         notes.extend(record_residual_unavailable(

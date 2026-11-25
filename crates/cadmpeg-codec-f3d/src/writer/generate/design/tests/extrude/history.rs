@@ -6,16 +6,26 @@
 
 use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ops::shared::{Limit, Span};
+use cadmpeg_ir::design::ops::sketch::PlanarCurve;
+use cadmpeg_ir::design::options::{Boolean, BooleanOp};
+use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::selection::{Members, PickTarget, Picked, Picks, PrincipalEntity};
+use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 
 use crate::loss::F3dLossCode;
 
-use super::super::sketch::{feature, feature_id};
-use super::super::write_bytes_as;
-use super::{blind, extrude, kinds, loss, sketch_and_extrude, EVALUATION_MISSING, EXTRUDE};
+use super::super::sketch::{
+    feature, feature_id, frame, picked, point2, principal, sketch_id, unread, Source,
+};
+use super::super::{neutral, number, parameter, parameter_id, tails, write_bytes_as};
+use super::arcs::{prism, Side};
+use super::{blind, extrude, kinds, loss, sketch_and_extrude, EVALUATION_MISSING, EXTRUDE, SIDE};
 
 /// The decoded rollback of the one decoded timeline, and its members.
 fn decoded_rollback(decoded: &CadIr) -> (Option<Rollback>, Vec<Member>) {
@@ -171,6 +181,43 @@ fn a_run_whose_feature_has_no_state_stands_after_the_marker_with_no_body() {
     );
 }
 
+#[test]
+fn a_design_whose_timeline_holds_no_body_decodes_with_no_body_loss() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut ir = sketch_and_extrude(blind(), false);
+    with_fillet(&mut ir);
+    let (report, _, bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(
+        !loss(
+            &report,
+            &F3dLossCode::WriterGeometryOmitted.kind().to_string()
+        )
+        .is_empty(),
+        "{:#?}",
+        report.losses
+    );
+    let decoded = crate::F3dCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written file decodes");
+    let codes = decoded
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.clone())
+        .collect::<Vec<_>>();
+    for absent in [
+        F3dLossCode::GeometryNotTransferred,
+        F3dLossCode::TopologyNotTransferred,
+        F3dLossCode::MissingGeometryStream,
+    ] {
+        assert!(!codes.contains(&absent.kind()), "{codes:#?}");
+    }
+    assert!(
+        codes.contains(&F3dLossCode::BodylessDesignCarrier.kind()),
+        "{codes:#?}"
+    );
+}
+
 /// The unit cube as `Sketch` and `Extrude`, then a second `Extrude` of the
 /// same profile, rolled back before the second extrude. Returns the design
 /// and the second extrude.
@@ -230,6 +277,87 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
     );
     let residual = loss(&report, "export/record.residual-unavailable").join("\n");
     assert!(residual.contains("DR-1032"), "{residual}");
+}
+
+#[test]
+fn every_kind_with_a_definition_writer_follows_the_marker_with_the_no_state_tail() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let mut top = Source::new(
+        "top",
+        unread(),
+        frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    );
+    top.entity(
+        "line",
+        PlanarCurve::Line {
+            start: point2(1.0, 1.0),
+            end: point2(3.0, 2.0),
+        },
+        &[],
+    );
+    let top = top.add_to(&mut ir);
+    let second = feature(
+        "second",
+        FeatureOperation::Extrude(Box::new(extrude(blind()))),
+    );
+    let second_id = second.id.clone();
+    ir.design.features.push(second);
+    {
+        let Some(Container::Ordered {
+            members, rollback, ..
+        }) = ir.design.containers.first_mut()
+        else {
+            panic!("the cube's timeline");
+        };
+        members.insert(2, Member::Feature(top.clone()));
+        members.insert(3, Member::Feature(second_id.clone()));
+        *rollback = Some(Rollback::Before(Member::Feature(top.clone())));
+    }
+    let fillet = with_fillet(&mut ir);
+    ir.design.scopes[0].current[0].at = Position::After(Member::Feature(
+        FeatureId::mint(EXTRUDE).expect("identity grammar"),
+    ));
+
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude", "sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let tails = tails(&decoded);
+    let families = tails.iter().map(|tail| tail.0.as_str()).collect::<Vec<_>>();
+    assert_eq!(
+        families,
+        ["Sketch", "Extrude", "WorkPlane", "Sketch", "Extrude"],
+        "{tails:#?}"
+    );
+    let rolled = tails.iter().map(|tail| tail.3).collect::<Vec<_>>();
+    assert_eq!(rolled, [false, false, true, true, true], "{tails:#?}");
+    assert_eq!(
+        tails[1],
+        (
+            "Extrude".to_owned(),
+            [0, 0, 0],
+            false,
+            false,
+            Some(3),
+            Some(2)
+        )
+    );
+    assert_eq!(
+        tails[4],
+        ("Extrude".to_owned(), [0, 0, 0], true, true, None, None)
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(rollback, Some(Rollback::Before(members[2].clone())));
+
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(missing.contains(second_id.as_str()), "{missing}");
+    assert!(
+        missing.contains(&format!("{fillet} (it follows the timeline marker")),
+        "{missing}"
+    );
 }
 
 /// `ir` with an `f3d` namespace whose one native Design record is a Fusion
@@ -296,6 +424,258 @@ fn a_native_design_rolled_back_writes_the_chosen_form() {
     assert!(missing.contains(second.as_str()), "{missing}");
     assert!(
         !missing.contains("rolled back with their definitions"),
+        "{missing}"
+    );
+}
+
+/// The cube of [`sketch_and_extrude`], then a `Sketch` of the square from
+/// (20, 0) to (30, 10) on `XY` and an `Extrude` of it by its own parameter
+/// to 10 mm with `boolean`, before the datum. The current state holds the
+/// cube and the prism of the second square. Returns the design and the
+/// second extrude.
+fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let corners = [[20.0, 0.0], [30.0, 0.0], [30.0, SIDE], [20.0, SIDE]];
+    let mut square = Source::new(
+        "second",
+        picked(principal(PrincipalEntity::XyPlane)),
+        frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    );
+    for (index, [x, y]) in corners.into_iter().enumerate() {
+        let [u, v] = corners[(index + 1) % corners.len()];
+        square.entity(
+            &format!("l{}", index + 1),
+            PlanarCurve::Line {
+                start: point2(x, y),
+                end: point2(u, v),
+            },
+            &[],
+        );
+    }
+    let sketch = square.add_to(&mut ir);
+    let mut operation = extrude(Span::Between {
+        start: Box::new(Limit::AtOrigin),
+        end: Box::new(Limit::Amount(Dimension::Parameter(parameter_id("d2")))),
+    });
+    operation.profile.picks = Picks::Named(
+        Members::new(vec![Picked {
+            target: PickTarget::Sketch(sketch_id("second")),
+            context: None,
+            native: None,
+            domain: None,
+            witness: None,
+            resolved: None,
+        }])
+        .expect("one pick"),
+    );
+    operation.output.boolean = Some(boolean);
+    let second = feature(
+        "second-extrude",
+        FeatureOperation::Extrude(Box::new(operation)),
+    );
+    let second_id = second.id.clone();
+    ir.design.features.push(second);
+    let mut depth = parameter(
+        "d2",
+        "d2",
+        neutral(number(SIDE, Some(UnitSymbol::Mm))),
+        Some(SIDE),
+    );
+    depth.owner = Some(ParameterOwner::Feature(second_id.clone()));
+    ir.design.parameters.push(depth);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    let at = members.len() - 1;
+    members.insert(at, Member::Feature(sketch));
+    members.insert(at + 1, Member::Feature(second_id.clone()));
+    let solid = prism(
+        &[corners.map(|corner| (corner, Side::Line)).to_vec()],
+        [0.0, SIDE],
+    );
+    let renamed = serde_json::to_string(&solid.geometry)
+        .expect("the prism serializes")
+        .replace('#', "#second-");
+    let serde_json::Value::Object(arenas) =
+        serde_json::from_str::<serde_json::Value>(&renamed).expect("the prism reads")
+    else {
+        panic!("the prism's arenas");
+    };
+    let mut merged = serde_json::to_value(&ir.geometry).expect("the cube serializes");
+    let mut body = None;
+    for (arena, records) in arenas {
+        let serde_json::Value::Array(records) = records else {
+            continue;
+        };
+        if arena == "bodies" {
+            body = records.first().map(|record| record["id"].clone());
+        }
+        let slot = merged
+            .as_object_mut()
+            .expect("the cube's arenas")
+            .entry(arena)
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        slot.as_array_mut().expect("an arena").extend(records);
+    }
+    ir.geometry = serde_json::from_value(merged).expect("the merged arenas");
+    let body = serde_json::from_value(body.expect("the prism's body")).expect("a body id");
+    ir.design.scopes[0].current[0].bodies.push(body);
+    ir.finalize();
+    (ir, second_id)
+}
+
+/// A `delta_state` record: identity, previous, next and node references, and
+/// per board its owner, its number and whether every change inserts.
+type State = (i64, i64, i64, i64, Vec<(i64, i64, bool)>);
+
+/// The `delta_state` records of the history stream in `archive`, in stream
+/// order.
+fn history_chain(archive: &[u8]) -> Vec<State> {
+    use cadmpeg_asm::history::{
+        delta_state_offsets, read_delta_state_header, walk_bulletin_boards, BulletinBoardItem,
+        DeltaStateHeaderRead, EntityChange,
+    };
+    use cadmpeg_asm::kernel_header::RefWidth;
+    use std::io::Read;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive)).expect("a ZIP archive");
+    let index = (0..zip.len())
+        .find(|&index| {
+            zip.by_index(index)
+                .is_ok_and(|member| member.name().is_ok_and(|name| name.ends_with(".smbh")))
+        })
+        .expect("a history stream");
+    let mut stream = Vec::new();
+    zip.by_index(index)
+        .expect("the history stream")
+        .read_to_end(&mut stream)
+        .expect("the history stream reads");
+    delta_state_offsets(&stream)
+        .into_iter()
+        .map(|offset| {
+            let DeltaStateHeaderRead::Framed(header) =
+                read_delta_state_header(&stream, offset, RefWidth::Eight)
+            else {
+                panic!("a framed delta_state at {offset}");
+            };
+            let mut boards = Vec::<(i64, i64, bool)>::new();
+            walk_bulletin_boards(
+                &stream,
+                header.body_start,
+                RefWidth::Eight,
+                |item| match item {
+                    BulletinBoardItem::Board {
+                        owner_ref, number, ..
+                    } => boards.push((owner_ref, number, true)),
+                    BulletinBoardItem::Change { kind, .. } => {
+                        let board = boards.last_mut().expect("a board");
+                        board.2 &= matches!(kind, EntityChange::Insert { .. });
+                    }
+                },
+            )
+            .expect("the bulletin boards walk");
+            (
+                header.state_id,
+                header.previous,
+                header.next,
+                header.node_index,
+                boards,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn each_extrude_that_makes_a_new_body_commits_its_own_state() {
+    let (ir, second) = with_a_second_extrude(Boolean::NewBody);
+    for form in [
+        MissingStateForm::GeometryTrue,
+        MissingStateForm::HistoryTrue,
+    ] {
+        let (report, decoded, bytes) = write_bytes_as(&ir, form);
+        assert_eq!(
+            kinds(&decoded),
+            ["sketch", "extrude", "sketch", "extrude"],
+            "{:#?}",
+            report.losses
+        );
+        assert_eq!(decoded.geometry.bodies.len(), 2);
+        let extrudes = tails(&decoded)
+            .into_iter()
+            .filter(|tail| tail.0 == "Extrude")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            extrudes,
+            [
+                (
+                    "Extrude".to_owned(),
+                    [0, 0, 0],
+                    false,
+                    false,
+                    Some(3),
+                    Some(2)
+                ),
+                (
+                    "Extrude".to_owned(),
+                    [0, 0, 0],
+                    false,
+                    false,
+                    Some(4),
+                    Some(3)
+                ),
+            ]
+        );
+        let mut features = decoded.model.features.iter().collect::<Vec<_>>();
+        features.sort_by_key(|feature| feature.ordinal);
+        let outputs = features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                    )
+                )
+            })
+            .map(|feature| feature.evaluation.outputs().clone())
+            .collect::<Vec<_>>();
+        let bodies = decoded
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| vec![body.id.clone()])
+            .collect::<Vec<_>>();
+        assert_eq!(outputs, bodies);
+        assert_eq!(
+            history_chain(&bytes),
+            [
+                (4, -1, 2, 0, vec![(0, 2, true)]),
+                (2, 2, -1, 1, Vec::new()),
+                (3, 0, 1, 2, vec![(2, 2, true)]),
+            ]
+        );
+        let missing = loss(&report, EVALUATION_MISSING).join("\n");
+        assert!(!missing.contains(second.as_str()), "{missing}");
+    }
+}
+
+#[test]
+fn an_extrude_that_changes_an_earlier_body_stays_in_the_base_feature() {
+    let (ir, second) = with_a_second_extrude(Boolean::Apply {
+        op: BooleanOp::Join,
+        targets: None,
+    });
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::GeometryTrue);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "sketch", "base"],
+        "{:#?}",
+        report.losses
+    );
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(
+        missing.contains(&format!(
+            "the writer cannot write {second} with its state: it changes a body of the state before it"
+        )) && missing.contains("DR-1054"),
         "{missing}"
     );
 }

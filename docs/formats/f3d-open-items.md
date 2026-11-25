@@ -987,6 +987,14 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once with every side face of the join outside the box and once with some of its side faces inside the box: the GUID of the join's body entry compared with the GUIDs of the browser nodes and of the body entry of the creating `Extrude`, and the tokens compared with the keys of the side entries of the join's table.
 
+### DR-1054. Bulletin board of a state that changes an earlier body
+
+**Question.** Which entity slots does the bulletin board of a history state keep as updates, and which does it delete and insert, when the item of the state changes a body of the state before it?
+
+**Known.** `f3d.md` §3.1 "**History chain.**" gives the `delta_state` chain of the `.smbh` history: one bulletin board for each state after the root state, with owner reference equal to the node index of the state and number `2`. The board of a state whose item makes a new body holds only insertions. The board of a state whose item changes a body of the state before it, such as a join or cut `Extrude`, a fillet, a chamfer or a pattern, holds insertions, deletions and updates (`asm.md` §3.2). The rule that selects, for each record of the changed body, an update of its slot or a deletion of its slot with an insertion of a new slot is open.
+
+**Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once; the same design with a cut `Extrude` in place of the join, saved once. For each save, the board of the last state compared slot by slot with the records of the box in the state before it: which faces, loops, coedges, edges, vertices, points and carriers keep their slots, and which the board deletes.
+
 ### DR-884. Sketch placement without a tracked identity
 
 **Question.** What does a sketch placement path name when it references no tracked entity identity?
