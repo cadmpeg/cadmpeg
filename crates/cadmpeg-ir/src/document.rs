@@ -845,14 +845,6 @@ macro_rules! declare_topology {
             )*
         }
 
-        impl TopologyReadWire {
-            fn deserialize_erased(
-                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
-            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
-                Self::deserialize(deserializer)
-            }
-        }
-
         impl Topology {
             fn deserialize_direct<'de, D>(deserializer: D) -> Result<Self, D::Error>
             where
@@ -977,10 +969,7 @@ macro_rules! declare_topology {
             where
                 D: Deserializer<'de>,
             {
-                let wire = cadmpeg_core::serde_erase::deserialize_with(
-                    deserializer,
-                    TopologyReadWire::deserialize_erased,
-                )?;
+                let wire = TopologyReadWire::deserialize(deserializer)?;
                 Topology::from_read_wire(wire, &mut |_, _, error| Err(error))
                     .map_err(serde::de::Error::custom)
             }
@@ -1691,6 +1680,43 @@ macro_rules! declare_arena_name {
                 arenas
             }
 
+            /// The ids of the records of the arenas of `class`. A design
+            /// scope's identity is its definition's, a model id.
+            pub(crate) fn identities_of(self, class: ArenaClass) -> std::collections::HashSet<&'a str> {
+                let mut ids = std::collections::HashSet::new();
+                $(if arena_class!($class) == class
+                    && <$ty as crate::schema::ArenaRecord>::KIND != crate::schema::EntityKind::DesignScope
+                {
+                    ids.extend(self.$home.$field.iter().map(crate::schema::ArenaRecord::record_identity));
+                })*
+                ids
+            }
+
+            /// Every registered arena of a class `scope` holds that holds a
+            /// record naming an id of `targets` other than its own.
+            pub(crate) fn naming(
+                self,
+                scope: ContentScope,
+                targets: &std::collections::HashSet<&str>,
+            ) -> std::collections::BTreeSet<ArenaName> {
+                let mut arenas = std::collections::BTreeSet::new();
+                $(if scope.holds(arena_class!($class)) {
+                    let arena = crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) };
+                    if self.$home.$field.iter().any(|record| {
+                        crate::give_up::Holder::of(
+                            &arena,
+                            crate::schema::ArenaRecord::record_identity(record),
+                            record,
+                            |text| targets.get(text).copied(),
+                        )
+                        .is_some()
+                    }) {
+                        arenas.insert(arena_name!($field, $class, $home));
+                    }
+                })*
+                arenas
+            }
+
             /// Whether an arena of `class` in `home` holds a record.
             pub(crate) fn holds(self, class: ArenaClass, home: ArenaHome) -> bool {
                 $(if arena_class!($class) == class && arena_home!($home) == home && !self.$home.$field.is_empty() {
@@ -1785,12 +1811,6 @@ macro_rules! declare_model_wire {
         }
 
         impl ModelReadWire {
-            fn deserialize_erased(
-                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
-            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
-                Self::deserialize(deserializer)
-            }
-
             fn into_model(mut self) -> Model {
                 Model {
                     $($field: model_read_value!(self, $field),)*
@@ -1849,10 +1869,7 @@ macro_rules! declare_model_wire {
             where
                 D: Deserializer<'de>,
             {
-                let wire = cadmpeg_core::serde_erase::deserialize_with(
-                    deserializer,
-                    ModelReadWire::deserialize_erased,
-                )?;
+                let wire = ModelReadWire::deserialize(deserializer)?;
                 Ok(wire.into_model())
             }
         }
@@ -2894,14 +2911,6 @@ struct CadIrReadWire {
     native: Native,
 }
 
-impl CadIrReadWire {
-    fn deserialize_erased(
-        deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
-    ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
-        Self::deserialize(deserializer)
-    }
-}
-
 impl CadIr {
     pub(crate) fn serialize_erased(
         &self,
@@ -2997,10 +3006,7 @@ impl Serialize for CadIr {
 
 impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = cadmpeg_core::serde_erase::deserialize_with(
-            deserializer,
-            CadIrReadWire::deserialize_erased,
-        )?;
+        let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.check_arena_order().map_err(serde::de::Error::custom)?;
         wire.admit()
@@ -3016,8 +3022,7 @@ impl CadIr {
     ///
     /// Where `value` is not a document of this IR version.
     pub fn from_projection(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        let wire =
-            cadmpeg_core::serde_erase::deserialize_with(value, CadIrReadWire::deserialize_erased)?;
+        let wire: CadIrReadWire = cadmpeg_core::serde_erase::json::from_value(value)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.admit()
     }
@@ -3309,13 +3314,21 @@ impl CadIr {
         self.scope = scope;
     }
 
-    /// Every breach of the scope rules of §2.1: the held class whose
-    /// required class the scope excludes, each arena of an excluded class
-    /// that holds a record, and, where the scope excludes the design class,
-    /// each model arena that holds a reference into it.
+    /// Every breach of the scope rules of §2.1, in this order: the held
+    /// class whose required class the scope excludes; for each excluded
+    /// class, each of its arenas that holds a record; and for each excluded
+    /// class, each arena of a held class that holds a reference into it. A
+    /// record references a class where it names the id of a record of that
+    /// class; a model record also references the design class where it reads
+    /// it (§2.1). Arenas follow registry order.
     #[must_use]
     pub fn scope_violations(&self) -> Vec<ScopeViolation> {
         let scope = self.scope;
+        let arenas = self.arenas();
+        let excluded: Vec<ArenaClass> = ArenaClass::ALL
+            .into_iter()
+            .filter(|class| !scope.holds(*class))
+            .collect();
         let mut violations: Vec<ScopeViolation> = scope
             .unmet_requirement()
             .map(|unmet| ScopeViolation::Unmet {
@@ -3324,25 +3337,34 @@ impl CadIr {
             })
             .into_iter()
             .collect();
-        for class in ArenaClass::ALL {
-            if !scope.holds(class) {
-                violations.extend(
-                    self.arenas()
-                        .populated_arenas(class)
+        for &class in &excluded {
+            violations.extend(
+                arenas
+                    .populated_arenas(class)
+                    .into_iter()
+                    .map(|arena| ScopeViolation::Populated { arena }),
+            );
+        }
+        for &class in &excluded {
+            let targets = arenas.identities_of(class);
+            let mut referencing = if targets.is_empty() {
+                std::collections::BTreeSet::new()
+            } else {
+                arenas.naming(scope, &targets)
+            };
+            if class == ArenaClass::Design {
+                referencing.extend(
+                    design_references::holders(&self.model)
                         .into_iter()
-                        .map(|arena| ScopeViolation::Populated { arena }),
+                        .filter(|(arena, ids)| scope.holds(arena.class()) && !ids.is_empty())
+                        .map(|(arena, _)| arena),
                 );
             }
-        }
-        if !scope.holds(ArenaClass::Design) {
             violations.extend(
-                design_references::holders(&self.model)
-                    .into_iter()
-                    .filter(|(_, ids)| !ids.is_empty())
-                    .map(|(arena, _)| ScopeViolation::Referenced {
-                        class: ArenaClass::Design,
-                        arena,
-                    }),
+                ArenaName::ALL
+                    .iter()
+                    .filter(|arena| referencing.contains(*arena))
+                    .map(|&arena| ScopeViolation::Referenced { class, arena }),
             );
         }
         violations
@@ -3435,12 +3457,15 @@ impl CadIr {
 
         let probe = crate::bounds::read_json::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        one_zero::from_str::<Self>(s).map_err(|error| {
+        let wire = one_zero::from_str::<CadIrReadWire>(s).map_err(|error| {
             match legacy::omitted_arena_refusal(&error.to_string()) {
                 Some(refusal) => serde::de::Error::custom(refusal),
                 None => error,
             }
-        })
+        })?;
+        check_ir_version(wire.ir_version.as_ref())?;
+        wire.check_arena_order().map_err(serde::de::Error::custom)?;
+        wire.admit()
     }
 
     /// Sorts every arena of the document's homes and native namespaces by

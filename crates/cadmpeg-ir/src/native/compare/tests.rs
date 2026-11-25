@@ -69,7 +69,7 @@ fn borrowed_comparison_preserves_every_json_shape_and_rejects_drift() {
     assert!(stored
         .matches_typed_for_decode(&super::super::test_ctx(), &expected)
         .unwrap());
-    let json = serde_json::to_value(&stored).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&stored).unwrap();
     for changed in [
         {
             let mut value = json.clone();
@@ -92,7 +92,7 @@ fn borrowed_comparison_preserves_every_json_shape_and_rejects_drift() {
             value
         },
     ] {
-        let changed: NativeRecord = serde_json::from_value(changed).unwrap();
+        let changed: NativeRecord = cadmpeg_core::serde_erase::json::from_value(changed).unwrap();
         assert!(!changed
             .matches_typed_for_decode(&super::super::test_ctx(), &expected)
             .unwrap());
@@ -150,7 +150,8 @@ fn borrowed_comparison_refuses_at_the_depth_limit_and_rejects_a_nonfinite_expect
     }
 
     let expected = serde_json::json!({ "id": "test:native:record#limits", "data": [1,2,3] });
-    let stored: NativeRecord = serde_json::from_value(expected.clone()).unwrap();
+    let stored: NativeRecord =
+        cadmpeg_core::serde_erase::json::from_value(expected.clone()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;

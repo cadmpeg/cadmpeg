@@ -15,23 +15,36 @@ use crate::schema::ArenaRecord;
 
 /// Part 10's scope rules (§2.1): one Error per [`ScopeViolation`].
 pub(super) fn check_scope(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let mut error = |message: crate::report::check::Ruled<'_>| {
-        crate::validate::record_finding(findings, Check::Design, Severity::Error, None, message);
-    };
+    use crate::validate::record_finding;
     for violation in ir.scope_violations() {
         match violation {
-            ScopeViolation::Unmet { .. } => error(crate::rule!(
-                "design.scope-holds-class-without-required-class",
-                "{violation}"
-            )),
-            ScopeViolation::Populated { .. } => error(crate::rule!(
-                "design.scope-excluded-arena-holds-records",
-                "{violation}"
-            )),
-            ScopeViolation::Referenced { .. } => error(crate::rule!(
-                "design.scope-excluded-class-referenced-another-arena",
-                "{violation}"
-            )),
+            ScopeViolation::Unmet { .. } => record_finding(
+                findings,
+                Check::Design,
+                Severity::Error,
+                None,
+                crate::rule!(
+                    "design.scope-holds-class-without-required-class",
+                    "{violation}"
+                ),
+            ),
+            ScopeViolation::Populated { .. } => record_finding(
+                findings,
+                Check::Design,
+                Severity::Error,
+                None,
+                crate::rule!("design.scope-excluded-arena-holds-records", "{violation}"),
+            ),
+            ScopeViolation::Referenced { .. } => record_finding(
+                findings,
+                Check::Design,
+                Severity::Error,
+                None,
+                crate::rule!(
+                    "design.scope-excluded-class-referenced-another-arena",
+                    "{violation}"
+                ),
+            ),
         }
     }
 }

@@ -201,7 +201,10 @@ mod tests {
     fn fset_lane_wire_roundtrips_and_obeys_retained_serialization_limits() {
         for json in [COUNTED, EMPTY] {
             let record: FeatureFsetIndexLane = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
+                json
+            );
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &record,
                 serde_json::from_str::<serde_json::Value>(json).unwrap(),
@@ -221,10 +224,12 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(COUNTED).unwrap();
             *wire.pointer_mut(path).unwrap() = value;
-            assert!(serde_json::from_value::<FeatureFsetIndexLane>(wire).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<FeatureFsetIndexLane>(wire).is_err()
+            );
         }
         let mut wire: serde_json::Value = serde_json::from_str(EMPTY).unwrap();
         wire["layout"]["declared_count"] = serde_json::json!(1);
-        assert!(serde_json::from_value::<FeatureFsetIndexLane>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureFsetIndexLane>(wire).is_err());
     }
 }

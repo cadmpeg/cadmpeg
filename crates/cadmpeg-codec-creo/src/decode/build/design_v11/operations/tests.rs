@@ -19,7 +19,7 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    serde_json::from_value(Value::Object(fields)).expect("synthetic operation")
+    cadmpeg_core::serde_erase::json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn feature(key: u32) -> FeatureId {
@@ -91,8 +91,9 @@ fn with_stated<T>(run: impl FnOnce(&Stated<'_>) -> T) -> T {
 
 fn project(operation: &LegacyOperation) -> Option<FeatureOperation> {
     let projected = with_stated(|stated| typed(operation, &feature(50), stated))?;
-    let wire = serde_json::to_value(&projected).expect("v11 wire");
-    let read: FeatureOperation = serde_json::from_value(wire).expect("v11 read");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&projected).expect("v11 wire");
+    let read: FeatureOperation =
+        cadmpeg_core::serde_erase::json::from_value(wire).expect("v11 read");
     assert_eq!(projected, read);
     Some(projected)
 }
@@ -364,7 +365,7 @@ fn a_round_picks_the_edges_a_preceding_feature_generates_by_name() {
     let operation = legacy(
         "fillet",
         json!({"groups": [{
-            "edges": serde_json::to_value(&edges).expect("edges"),
+            "edges": cadmpeg_core::serde_erase::json::to_value(&edges).expect("edges"),
             "radius": {"kind": "constant", "radius": 2.0},
         }]}),
     );

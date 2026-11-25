@@ -172,7 +172,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         [Some(3.0), None]
     );
     let definition = ProceduralSurfaceDefinition::VariableBlend(admitted_variable);
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
     assert_positive_revision_lane(&wire, "/construction/revision");
     let first_side = &wire["construction"]["sides"][0];
     assert_eq!(
@@ -196,7 +196,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         serde_json::json!([5.0])
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
     assert!(variable_wire(admitted).is_ok());
@@ -210,7 +210,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
     assert!(blend_wire(admitted).is_ok());
     let blend = ProceduralSurfaceDefinition::Blend(blend_new(admitted).unwrap());
     assert_positive_revision_lane(
-        &serde_json::to_value(&blend).unwrap(),
+        &cadmpeg_core::serde_erase::json::to_value(&blend).unwrap(),
         "/cache/form/revision",
     );
 
@@ -243,8 +243,10 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         [None, Some(2.0)]
     );
     assert_eq!(
-        serde_json::from_value::<BlendSurfacePayload>(serde_json::to_value(&ordered).unwrap())
-            .unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<BlendSurfacePayload>(
+            cadmpeg_core::serde_erase::json::to_value(&ordered).unwrap()
+        )
+        .unwrap(),
         ordered
     );
     assert!(blend_with_native_ranges([Some(2.0), Some(1.0)], [None, None]).is_err());

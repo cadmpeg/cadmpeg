@@ -70,27 +70,28 @@ fn scope_binding_reads_the_blob_of_its_edge_recipe_faces() {
             offset: 0,
         }),
     };
-    let operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
-        "id": format!("{stream}:design-edge-operand#0"),
-        "scope_record_index": 100,
-        "scope_reference_ordinal": 0,
-        "record_index": 101,
-        "byte_offset": 0,
-        "class_tag": "297",
-        "paired_byte_offset": 16,
-        "paired_class_tag": "259",
-        "recipe_record_index": 104,
-        "recipe_record_byte_offset": 32,
-        "recipe_id": recipe.id,
-        "recipe_prefix_offset": 43,
-        "recipe_prefix_bytes": "",
-        "recipe_references": [],
-        "recipe_program_offset": 0,
-        "recipe_program": [],
-        "next_record_index": 105,
-        "next_byte_offset": 160,
-    }))
-    .unwrap();
+    let operand: DesignEdgeOperand =
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            "id": format!("{stream}:design-edge-operand#0"),
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 101,
+            "byte_offset": 0,
+            "class_tag": "297",
+            "paired_byte_offset": 16,
+            "paired_class_tag": "259",
+            "recipe_record_index": 104,
+            "recipe_record_byte_offset": 32,
+            "recipe_id": recipe.id,
+            "recipe_prefix_offset": 43,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "next_record_index": 105,
+            "next_byte_offset": 160,
+        }))
+        .unwrap();
     let tag = |ordinal: u32, face: &str| PersistentSubentityTag {
         id: format!("{stream}:persistent-subentity-tag#{ordinal}"),
         target: AttributeTarget::Face(FaceId::mint(face).unwrap()),

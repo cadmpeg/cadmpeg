@@ -8,8 +8,11 @@ use serde::Serialize;
 use serde_json::json;
 
 fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
-    let value: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&value).unwrap(), *wire);
+    let value: T = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
+        *wire
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

@@ -41,7 +41,7 @@ fn geometry() -> CadIr {
     ir.geometry.faces = ["6", "7", "8"]
         .into_iter()
         .map(|key| {
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": format!("{FACE}{key}"),
                 "shell": "creo:visibgeom:shell#1",
                 "surface": format!("{SURFACE}{key}"),
@@ -51,11 +51,13 @@ fn geometry() -> CadIr {
             .expect("face")
         })
         .collect();
-    ir.geometry.edges = vec![serde_json::from_value(serde_json::json!({
-        "id": format!("{EDGE}9"),
-        "carrier": {},
-    }))
-    .expect("edge")];
+    ir.geometry.edges = vec![
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            "id": format!("{EDGE}9"),
+            "carrier": {},
+        }))
+        .expect("edge"),
+    ];
     ir
 }
 

@@ -225,9 +225,9 @@ fn short_constant_set_requires_its_following_group_and_radius_owner() {
     assert_eq!(set.tangency_weight_owner_record_index, None);
     assert_eq!(set.tangent_chain, None);
     assert_eq!(set.curvature_continuity, None);
-    let stored = serde_json::to_value(&list).unwrap();
+    let stored = cadmpeg_core::serde_erase::json::to_value(&list).unwrap();
     let restored: crate::records::feature::fillet_set::DesignFilletSetList =
-        serde_json::from_value(stored).unwrap();
+        cadmpeg_core::serde_erase::json::from_value(stored).unwrap();
     assert_eq!(restored, list);
     assert!(decode(&fixture, "ChordLen").is_none());
 
@@ -468,7 +468,7 @@ fn empty_or_unpaired_prefix_lists_reject_the_set_list() {
 }
 
 fn group() -> crate::records::topology::construction::DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("{STREAM}:group#{GROUP}"),
         "scope_record_index": SCOPE,
         "scope_reference_ordinal": 0,

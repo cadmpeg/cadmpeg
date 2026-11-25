@@ -142,7 +142,10 @@ fn an_unstated_link_field_is_omitted_and_refuses_null() {
         state: None,
         native_ref: None,
     };
-    assert_eq!(serde_json::to_string(&empty).unwrap(), "{}");
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&empty).unwrap(),
+        "{}"
+    );
     refuses::<Link>(r#"{"state": null}"#);
     refuses::<Link>(r#"{"health": "current"}"#);
 }

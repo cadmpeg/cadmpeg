@@ -832,7 +832,8 @@ fn sketch_constraint_native_ref_must_resolve() {
                 && finding.entity.as_deref() == Some(id.as_str())
                 && finding.message.contains("native:missing-operand#0")
         }));
-    let serialized = serde_json::to_string(&ir.model.sketch_constraints).unwrap();
+    let serialized =
+        cadmpeg_core::serde_erase::json::to_string(&ir.model.sketch_constraints).unwrap();
     let round_trip: Vec<crate::sketches::SketchConstraint> =
         serde_json::from_str(&serialized).unwrap();
     assert!(matches!(
@@ -855,9 +856,11 @@ fn sketch_constraint_native_ref_must_resolve() {
         .unwrap()
         .remove("native_properties");
     let error =
-        serde_json::from_value::<Vec<crate::sketches::SketchConstraint>>(without_properties)
-            .unwrap_err()
-            .to_string();
+        cadmpeg_core::serde_erase::json::from_value::<Vec<crate::sketches::SketchConstraint>>(
+            without_properties,
+        )
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("native_properties"), "{error}");
 }
 

@@ -592,8 +592,8 @@ mod tests {
         for operation in [record(1), record(2)] {
             let owned = DesignSurfaceTrimOperationWire::from(operation.clone());
             assert_eq!(
-                serde_json::to_vec(&operation).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&operation).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
             );
         }
     }

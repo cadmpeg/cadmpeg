@@ -22,11 +22,11 @@ fn mass_properties_round_trip_through_json() {
         material: None,
         native_ref: None,
     };
-    let json = serde_json::to_value(&mass).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&mass).unwrap();
     assert_eq!(json["target"]["entity"]["kind"], "occurrence");
     assert!(json.get("density").is_none());
     assert_eq!(
-        serde_json::from_value::<MassProperties>(json).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<MassProperties>(json).unwrap(),
         mass
     );
 }
@@ -46,12 +46,15 @@ fn a_native_collider_shape_keeps_its_name() {
         material: None,
         native_ref: None,
     };
-    let json = serde_json::to_value(&collider).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&collider).unwrap();
     assert_eq!(
         json["shape"],
         serde_json::json!({"kind": "native", "name": "sdf"})
     );
-    assert_eq!(serde_json::from_value::<Collider>(json).unwrap(), collider);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<Collider>(json).unwrap(),
+        collider
+    );
 }
 
 #[test]
@@ -61,7 +64,7 @@ fn an_explicit_null_mass_is_refused() {
         "target": {"kind": "occurrence", "occurrence": "test:model:occurrence#0"},
         "mass": null,
     });
-    let error = serde_json::from_value::<MassProperties>(json).unwrap_err();
+    let error = cadmpeg_core::serde_erase::json::from_value::<MassProperties>(json).unwrap_err();
     assert!(error.to_string().contains("mass"), "{error}");
 }
 
@@ -84,8 +87,11 @@ fn a_rigid_body_keeps_its_initial_velocities_and_rest_state() {
         starts_asleep: true,
         native_ref: None,
     };
-    let json = serde_json::to_value(&body).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&body).unwrap();
     assert!(json.get("angular_velocity").is_none());
     assert_eq!(json["starts_asleep"], true);
-    assert_eq!(serde_json::from_value::<RigidBody>(json).unwrap(), body);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<RigidBody>(json).unwrap(),
+        body
+    );
 }

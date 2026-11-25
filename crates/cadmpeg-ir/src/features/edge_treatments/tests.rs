@@ -44,8 +44,14 @@ fn variable_radius_law_admits_ordered_nonnegative_samples() {
         {"parameter":0.8,"radius":0.0}
     ]});
     let radius = RadiusSpec::Variable { points: admitted };
-    assert_eq!(serde_json::to_value(&radius).unwrap(), wire);
-    assert_eq!(serde_json::from_value::<RadiusSpec>(wire).unwrap(), radius);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&radius).unwrap(),
+        wire
+    );
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<RadiusSpec>(wire).unwrap(),
+        radius
+    );
 }
 
 #[test]
@@ -60,7 +66,7 @@ fn edge_treatment_wire_rejects_invalid_dimensions_and_laws() {
         json!({"kind":"variable","points":[{"parameter":0.0,"radius":0.0},{"parameter":1.0,"radius":0.0}]}),
         json!({"kind":"variable","points":[{"parameter":0.0,"radius":-1.0},{"parameter":1.0,"radius":2.0}]}),
     ] {
-        assert!(serde_json::from_value::<RadiusSpec>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<RadiusSpec>(wire).is_err());
     }
     for wire in [
         json!({"kind":"distance","distance":0.0}),
@@ -69,7 +75,7 @@ fn edge_treatment_wire_rejects_invalid_dimensions_and_laws() {
         json!({"kind":"distance_angle","distance":1.0,"angle":std::f64::consts::PI}),
         json!({"kind":"distance_angle","distance":-1.0,"angle":1.0}),
     ] {
-        assert!(serde_json::from_value::<ChamferSpec>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<ChamferSpec>(wire).is_err());
     }
 }
 
@@ -85,8 +91,11 @@ fn edge_treatment_wire_preserves_resolved_and_unresolved_forms() {
         json!({"kind":"chordal","chord_length":1.0}),
         json!({"kind":"asymmetric","offset_one":1.0,"offset_two":2.0}),
     ] {
-        let radius: RadiusSpec = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(radius).unwrap(), wire);
+        let radius: RadiusSpec = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(radius).unwrap(),
+            wire
+        );
     }
     for wire in [
         json!({"kind":"unresolved"}),
@@ -97,8 +106,11 @@ fn edge_treatment_wire_preserves_resolved_and_unresolved_forms() {
         json!({"kind":"two_distances","first":1.0,"second":2.0}),
         json!({"kind":"distance_angle","distance":1.0,"angle":1.0}),
     ] {
-        let spec: ChamferSpec = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(spec).unwrap(), wire);
+        let spec: ChamferSpec = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(spec).unwrap(),
+            wire
+        );
     }
 }
 

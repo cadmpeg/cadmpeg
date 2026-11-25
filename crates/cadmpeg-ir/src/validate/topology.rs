@@ -4865,7 +4865,13 @@ fn check_feature_references(
                         },
                     );
                 }
-                BodySelection::Generated { bodies, .. } => {
+                BodySelection::Generated { .. } | BodySelection::GeneratedSet { .. } => {
+                    let bodies: Vec<&crate::features::selections::GeneratedBodyRef> =
+                        match selection {
+                            BodySelection::Generated { bodies, .. } => bodies.iter().collect(),
+                            BodySelection::GeneratedSet { members } => members.bodies().collect(),
+                            _ => Vec::new(),
+                        };
                     if bodies.iter().any(|body| {
                         !feature
                             .dependencies
