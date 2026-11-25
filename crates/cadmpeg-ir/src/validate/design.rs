@@ -41,6 +41,7 @@ pub(super) mod records;
 pub(super) mod resolved;
 pub(super) mod selections;
 mod states;
+mod target_states;
 mod tolerances;
 mod walk;
 
@@ -137,6 +138,7 @@ pub(super) fn check_design(
     configurations::check_configurations(records, findings);
     ops::check_operations(records, findings);
     overrides::check(records, findings);
+    target_states::check(ir, findings);
     parameter_records::check_parameter_records(records, findings);
     programs::check_programs(records, findings);
     expressions::check_expressions(ctx, records, findings)?;
