@@ -276,7 +276,7 @@
       "type": "string"
     },
     "DialectLayers": {
-      "description": "A report's primary format layer and any nested or carried format layers.\n\nExtra layers are unique by `(format, instance)`. An extra layer for the\nprimary format has an instance that identifies it inside the containing\ndocument. The wire names the primary explicitly, so the collection carries\nits complete identity without an enclosing report's format.\n\nA read rejects a wire whose `extra` repeats a `(format, instance)` key, and\none whose `extra` carries the primary key. The key set on the wire is the\nkey set of the value, so no layer is silently discarded or overwritten.",
+      "description": "A report's primary format layer and any nested or carried format layers.\n\nLayers are unique by `(format, instance)`. The wire names the primary\nexplicitly, so the collection carries its complete identity without an\nenclosing report's format.\n\nA read rejects a wire whose `extra` repeats a `(format, instance)` key, and\none whose `extra` carries the primary key. The key set on the wire is the\nkey set of the value, so no layer is silently discarded or overwritten.",
       "type": "object",
       "properties": {
         "primary": {

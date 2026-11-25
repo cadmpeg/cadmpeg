@@ -336,15 +336,18 @@ fn representation_features_need_the_design_class() {
     shown.features.push(fixture::feature("plane"));
     part.representations.push(shown);
     ir.model.product_definitions.push(part);
-    let violation = ir.set_scope(ContentScope::geometry()).unwrap_err();
+    ir.set_scope(ContentScope::geometry());
     assert_eq!(
-        violation.arena.map(crate::document::ArenaName::as_str),
-        Some("product_definitions")
+        ir.scope_violations(),
+        [crate::document::ScopeViolation::Referenced {
+            class: cadmpeg_core::decode::ArenaClass::Design,
+            arena: crate::document::ArenaName::parse("product_definitions").unwrap(),
+        }]
     );
     ir.model.product_definitions[0].representations[0]
         .features
         .clear();
-    assert!(ir.set_scope(ContentScope::geometry()).is_ok());
+    assert!(ir.scope_violations().is_empty());
 }
 
 #[test]
