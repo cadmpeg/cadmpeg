@@ -462,11 +462,11 @@ impl EncoderBackend for CadirEncoder {
             crate::hash::measured_canonical_json(input.ir).map_err(malformed)?;
         let mut losses = Vec::new();
         let written;
-        let ir = if measured.records.is_empty() {
+        let ir = if measured.records.is_empty() && measured.outside.is_empty() {
             input.ir
         } else {
-            let (ir, dropped) = drop_records_past_the_bounds(input.ir, &measured.records)?;
-            losses = dropped;
+            let (ir, unwritable) = within_the_bounds(input.ir, &measured)?;
+            losses = unwritable;
             bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
                 .map_err(malformed)?
                 .into_bytes();
@@ -486,15 +486,137 @@ impl EncoderBackend for CadirEncoder {
     }
 }
 
-/// A copy of `ir` without each record of `records`, which it holds past a
-/// bound of §2.5, and without each record that needs one, as §3.3 drops a
-/// record (§3.4). Each such record charges one `export:value.unwritable`
-/// that names it, the bound, and the records dropped and marked with it.
-fn drop_records_past_the_bounds(
+/// A copy of `ir` within the bounds of §2.5 (§3.4). Each value outside every
+/// record past a bound is written as an unstated value, and each record past
+/// a bound is dropped with each record that needs it, as §3.3 drops a record.
+/// A copy that holds no record, of a document that held one, is the empty
+/// document, with `export:output.empty`.
+fn within_the_bounds(
     ir: &CadIr,
-    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    measured: &crate::bounds::Measured,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+    let holds_records = |ir: &CadIr| {
+        ir.entity_count() > 0
+            || ir.native.0.values().any(|namespace| {
+                namespace
+                    .arenas()
+                    .values()
+                    .any(|records| !records.is_empty())
+            })
+    };
     let mut ir = ir.clone();
+    let held = holds_records(&ir);
+    let mut losses = unstate_outside(&mut ir, &measured.outside)?;
+    losses.extend(drop_records_past_the_bounds(&mut ir, &measured.records)?);
+    if held && !holds_records(&ir) {
+        losses.push(output_empty(
+            "the written CADIR document holds no record: each record lies past a bound of \
+             §2.5 or needs one that does",
+        ));
+        ir = CadIr::empty();
+    }
+    Ok((ir, losses))
+}
+
+/// Writes each value of `outside`, which belongs to no record and passes a
+/// bound, as the value it takes when unstated (§2.4). An entry of the name
+/// table states its native name alone, or is not written where it has
+/// none (§5.7); any other field takes its value in the empty document. Each
+/// charges one `export:value.unwritable` that names the field.
+fn unstate_outside(
+    ir: &mut CadIr,
+    outside: &std::collections::BTreeMap<crate::bounds::Outside, crate::bounds::Bound>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    for (place, bound) in outside.iter().rev() {
+        let reason = match (place.field.as_str(), place.entry) {
+            ("design.names", Some(entry)) => {
+                let mut entries = ir.design.names.entries().clone();
+                let Some((entity, mut stated)) = entries
+                    .iter()
+                    .nth(entry)
+                    .map(|(entity, stated)| (entity.clone(), stated.clone()))
+                else {
+                    continue;
+                };
+                let reason = if stated.native.is_some() {
+                    stated.name = None;
+                    entries.insert(entity.clone(), stated);
+                    format!(
+                        "writes the name of {} with its native name alone, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                } else {
+                    entries.remove(&entity);
+                    format!(
+                        "writes no name of {}, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                };
+                ir.design.names = entries.into();
+                reason
+            }
+            (field, _) => {
+                unstate(ir, field)?;
+                format!(
+                    "writes the unstated value of a field that {}",
+                    bound.describe()
+                )
+            }
+        };
+        losses.extend(value_unwritable(
+            CadirEncoder::FORMAT.as_str(),
+            &reason,
+            [place.field.clone()],
+        ));
+    }
+    Ok(losses)
+}
+
+/// Replaces `field` of `ir`, a root member or `home.field`, by its value in
+/// the empty document, or removes it where the empty document omits it.
+fn unstate(ir: &mut CadIr, field: &str) -> Result<(), CodecError> {
+    let malformed = |error: String| CodecError::Malformed(error);
+    let mut document = crate::hash::finite_json::to_json_value(&*ir)
+        .map_err(|error| malformed(error.to_string()))?;
+    let empty = crate::hash::finite_json::to_json_value(&CadIr::empty())
+        .map_err(|error| malformed(error.to_string()))?;
+    let pointer = format!("/{}", field.replace('.', "/"));
+    let unstated = empty.pointer(&pointer).cloned();
+    let Some((parent, key)) = pointer.rsplit_once('/') else {
+        return Ok(());
+    };
+    let Some(parent) = document
+        .pointer_mut(parent)
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    match unstated {
+        Some(value) => {
+            parent.insert(key.to_owned(), value);
+        }
+        None => {
+            parent.remove(key);
+        }
+    }
+    *ir = serde_json::from_value(document).map_err(|error| malformed(error.to_string()))?;
+    Ok(())
+}
+
+/// Drops from `ir` each record of `records`, which it holds past a bound of
+/// §2.5, and each record that needs one, as §3.3 drops a record (§3.4). Each
+/// such record charges one `export:value.unwritable` that names it, the
+/// bound, and the records dropped and marked with it.
+fn drop_records_past_the_bounds(
+    ir: &mut CadIr,
+    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+) -> Result<Vec<LossNote>, CodecError> {
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
     ir.finalize();
     let bounds: std::collections::BTreeMap<crate::give_up::Seed, crate::bounds::Bound> = records
         .iter()
@@ -503,8 +625,8 @@ fn drop_records_past_the_bounds(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let removed = crate::give_up::drop_records(&ctx, &mut ir, bounds.keys().cloned().collect())?;
-    let losses = removed
+    let removed = crate::give_up::drop_records(&ctx, ir, bounds.keys().cloned().collect())?;
+    Ok(removed
         .into_iter()
         .filter_map(|(seed, released)| {
             let reason = format!(
@@ -528,8 +650,7 @@ fn drop_records_past_the_bounds(
                 std::iter::once(seed.id).chain(released.dropped),
             )
         })
-        .collect();
-    Ok((ir, losses))
+        .collect())
 }
 
 #[cfg(test)]

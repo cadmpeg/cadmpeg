@@ -383,3 +383,230 @@ fn a_record_that_projects_a_given_up_native_record_keeps_its_values() {
     assert_eq!(kept.loops, face.loops);
     assert_closed(&ir, native, &outcome);
 }
+
+fn unresolved(name: &str) -> Feature {
+    feature(
+        name,
+        json!({"kind": "unresolved", "value": {"family": "extrude"}}),
+    )
+}
+
+fn native_name(text: &str) -> serde_json::Value {
+    json!({"codec": "test", "value": {"kind": "text", "value": text}})
+}
+
+fn datum_pick(of: &Feature) -> serde_json::Value {
+    json!({"target": {"kind": "datum", "value": {"feature": of.id.as_str()}}})
+}
+
+/// A datum plane coincident with the picks `picks`, an `Ordered` list.
+fn datum_plane(name: &str, picks: &[serde_json::Value]) -> Feature {
+    feature(
+        name,
+        json!({
+            "kind": "datum",
+            "value": {
+                "element": {"kind": "plane", "value": {
+                    "after": [],
+                    "resolved_in": {},
+                    "inputs": [{
+                        "role": {"subject": "whole", "relation": {"kind": "coincident"}},
+                        "reference": {"kind": "picks", "value": {
+                            "at": {"kind": "current"},
+                            "picks": {"kind": "named", "value": picks}
+                        }}
+                    }]
+                }},
+                "native_options": {},
+                "source_settings": {}
+            }
+        }),
+    )
+}
+
+/// The picks of the first input of `feature`, a datum plane.
+fn plane_picks(feature: &Feature) -> serde_json::Value {
+    let operation = crate::hash::finite_json::to_json_value(&feature.definition.operation).unwrap();
+    operation
+        .pointer("/value/element/value/inputs/0/reference/value/picks/value")
+        .cloned()
+        .expect("the plane's picks")
+}
+
+#[test]
+fn a_pick_of_a_lost_record_with_a_native_name_states_its_target_native() {
+    let mut ir = CadIr::empty();
+    let base = unresolved("base");
+    let mut pick = datum_pick(&base);
+    pick["native"] = native_name("Plane1");
+    let plane = datum_plane("plane", &[pick]);
+    ir.design.features = vec![base.clone(), plane.clone()];
+    let (outcome, _) = run(&mut ir, seed("design", "features", base.id.as_str()));
+    assert!(outcome.dropped.is_empty());
+    assert_eq!(
+        outcome.marked,
+        BTreeSet::from([plane.id.as_str().to_owned()])
+    );
+    let native =
+        serde_json::to_value(crate::design::selection::PickTarget::Native { within: None })
+            .unwrap();
+    assert_eq!(
+        plane_picks(&ir.design.features[0]),
+        json!([{"target": native, "native": native_name("Plane1")}])
+    );
+    assert_closed(&ir, base.id.as_str(), &outcome);
+}
+
+#[test]
+fn an_unordered_selection_loses_only_the_pick_of_a_lost_record() {
+    let mut ir = CadIr::empty();
+    let base = unresolved("base");
+    let other = unresolved("other");
+    let picks: Vec<crate::design::selection::Picked> =
+        serde_json::from_value(json!([datum_pick(&base), datum_pick(&other)])).unwrap();
+    let picks =
+        crate::design::selection::Members::<_, crate::design::selection::Unordered>::new(picks)
+            .unwrap();
+    let cut = feature(
+        "cut",
+        json!({"kind": "delete_bodies", "value": {
+            "bodies": {"at": {"kind": "current"}, "picks": {"kind": "named", "value": picks}},
+            "retain": "delete_selected",
+            "native_options": {},
+            "source_settings": {}
+        }}),
+    );
+    ir.design.features = vec![base.clone(), cut.clone(), other.clone()];
+    let (outcome, _) = run(&mut ir, seed("design", "features", base.id.as_str()));
+    assert!(outcome.dropped.is_empty());
+    assert_eq!(outcome.marked, BTreeSet::from([cut.id.as_str().to_owned()]));
+    let kept = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id == cut.id)
+        .expect("the cut stays");
+    let operation = crate::hash::finite_json::to_json_value(&kept.definition.operation).unwrap();
+    assert_eq!(
+        operation.pointer("/value/bodies/picks/value"),
+        Some(&json!([datum_pick(&other)]))
+    );
+    assert_closed(&ir, base.id.as_str(), &outcome);
+}
+
+#[test]
+fn an_expression_that_names_a_lost_parameter_states_it_source() {
+    use crate::design::expr::{Expression, ExpressionDialect};
+    use crate::design::parameter::{DesignParameter, ParameterDefinition};
+    let parameter = |name: &str, definition: serde_json::Value| -> DesignParameter {
+        serde_json::from_value(json!({
+            "id": format!("test:design:parameter#{name}"),
+            "scope": "test:model:definition#part",
+            "kind": {"kind": "integer"},
+            "definition": definition,
+            "native_options": {},
+            "source_settings": {}
+        }))
+        .unwrap()
+    };
+    let mut ir = CadIr::empty();
+    let a = parameter("a", json!({"kind": "driven"}));
+    let b = parameter(
+        "b",
+        json!({"kind": "expression", "value": {"kind": "neutral", "value": {
+            "text": "$0",
+            "refs": [{"target": {"kind": "parameter", "value": a.id.as_str()}}],
+            "measures": []
+        }}}),
+    );
+    ir.design.parameters = vec![a.clone(), b.clone()];
+    let (outcome, _) = run(&mut ir, seed("design", "parameters", a.id.as_str()));
+    assert!(outcome.dropped.is_empty());
+    assert_eq!(outcome.marked, BTreeSet::from([b.id.as_str().to_owned()]));
+    assert_eq!(
+        ir.design.parameters[0].definition,
+        ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::Native(
+                cadmpeg_core::text::NonBlankString::new(CODEC).unwrap()
+            ),
+            tokens: Vec::new(),
+        })
+    );
+    assert_closed(&ir, a.id.as_str(), &outcome);
+}
+
+#[test]
+fn a_procedural_curve_on_a_lost_surface_states_its_definition_unknown() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let surface = ir.geometry.surfaces[0].id.as_str().to_owned();
+    let spine: crate::geometry::ProceduralCurve = serde_json::from_value(json!({
+        "id": "test:geometry:procedural-curve#spine",
+        "definition": {"kind": "blend_spine", "blend_surface": surface}
+    }))
+    .unwrap();
+    let owner = ir.geometry.curves.last_mut().unwrap();
+    let crate::geometry::CurveGeometry::Solved(solved) = owner.geometry.clone() else {
+        panic!("the unit cube's curves are solved");
+    };
+    owner.geometry = crate::geometry::CurveGeometry::Procedural {
+        construction: spine.id.clone(),
+        cache: Some(solved),
+    };
+    ir.geometry.procedural_curves.push(spine.clone());
+    let (outcome, _) = run(&mut ir, seed("geometry", "surfaces", &surface));
+    assert!(outcome.marked.contains(spine.id.as_str()));
+    assert!(!outcome.dropped.contains(spine.id.as_str()));
+    let kept = ir
+        .geometry
+        .procedural_curves
+        .iter()
+        .find(|kept| kept.id == spine.id)
+        .expect("the spine stays");
+    assert_eq!(
+        crate::hash::finite_json::to_json_value(kept.definition()).unwrap(),
+        json!({"kind": "unknown"})
+    );
+    assert_closed(&ir, &surface, &outcome);
+}
+
+#[test]
+fn a_name_of_a_lost_feature_keeps_its_native_name_or_is_released() {
+    let mut ir = CadIr::empty();
+    let base = unresolved("base");
+    ir.design.features = vec![base.clone()];
+    let generated =
+        json!({"kind": "generated", "value": {"kind": "face", "feature": base.id.as_str()}});
+    ir.design.names = serde_json::from_value(json!([
+        [{"kind": "face", "value": "test:geometry:face#1"},
+         {"name": generated, "native": native_name("Face1")}],
+        [{"kind": "face", "value": "test:geometry:face#2"}, {"name": generated}]
+    ]))
+    .unwrap();
+    let (outcome, _) = run(&mut ir, seed("design", "features", base.id.as_str()));
+    assert!(outcome.dropped.is_empty());
+    assert_eq!(
+        crate::hash::finite_json::to_json_value(&ir.design.names).unwrap(),
+        json!([[{"kind": "face", "value": "test:geometry:face#1"}, {"native": native_name("Face1")}]])
+    );
+    assert_closed(&ir, base.id.as_str(), &outcome);
+}
+
+#[test]
+fn a_native_record_that_names_a_lost_record_is_dropped() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    let native = "test:native:mark#1";
+    let record = crate::NativeRecord::new(
+        Identity::new(native).unwrap(),
+        [("at".to_owned(), json!(point))].into_iter().collect(),
+    )
+    .unwrap();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records("marks", vec![record])
+        .unwrap();
+    let (outcome, _) = run(&mut ir, seed("geometry", "points", &point));
+    assert!(outcome.dropped.contains(native));
+    assert!(!holds(&ir, native));
+    assert_closed(&ir, &point, &outcome);
+}

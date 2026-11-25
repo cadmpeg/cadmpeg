@@ -173,13 +173,23 @@ pub(crate) enum Place {
     },
 }
 
+/// Where a value outside every record sits: `field` is the root member, or
+/// `home.field` for a member of a home or of `native`, and `entry` is the
+/// position in that member's array.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Outside {
+    pub(crate) field: String,
+    pub(crate) entry: Option<usize>,
+}
+
 /// What [`Measure`] found past a bound.
 #[derive(Debug, Default)]
 pub(crate) struct Measured {
     /// Each record past a bound, with the first bound it passes.
     pub(crate) records: BTreeMap<Place, Bound>,
-    /// The first bound passed outside every record.
-    pub(crate) outside: Option<Bound>,
+    /// Each value outside every record past a bound, with the first bound it
+    /// passes.
+    pub(crate) outside: BTreeMap<Outside, Bound>,
 }
 
 const HOMES: [&str; 4] = ["geometry", "model", "design", "process"];
@@ -230,7 +240,13 @@ impl<W: Write> Measure<W> {
     /// What the measure found.
     pub(crate) fn finish(mut self) -> Measured {
         if take_expression_past() {
-            self.found.outside.get_or_insert(Bound::Expression);
+            self.found
+                .outside
+                .entry(Outside {
+                    field: String::new(),
+                    entry: None,
+                })
+                .or_insert(Bound::Expression);
         }
         self.found
     }
@@ -254,9 +270,11 @@ impl<W: Write> Measure<W> {
         let array = self.levels.get(level - 1).filter(|array| array.array)?;
         let text = |at: usize| String::from_utf8_lossy(&self.levels[at].key).into_owned();
         Some(if level == 3 {
+            let (home, arena) = (text(0), text(1));
+            crate::give_up::Arena::home(&home, &arena)?;
             Place::Home {
-                home: text(0),
-                arena: text(1),
+                home,
+                arena,
                 index: array.index,
             }
         } else {
@@ -274,8 +292,48 @@ impl<W: Write> Measure<W> {
                 self.found.records.entry(place).or_insert(bound);
             }
             None => {
-                self.found.outside.get_or_insert(bound);
+                let outside = self.outside();
+                self.found.outside.entry(outside).or_insert(bound);
             }
+        }
+    }
+
+    /// Where the value being written sits, outside every record.
+    fn outside(&self) -> Outside {
+        let key = |at: usize| {
+            self.levels
+                .get(at)
+                .filter(|level| !level.array)
+                .map(|level| String::from_utf8_lossy(&level.key).into_owned())
+        };
+        let root = key(0).unwrap_or_default();
+        let member = (HOMES.contains(&root.as_str()) || root == "native")
+            .then(|| key(1))
+            .flatten();
+        match member {
+            Some(member) => Outside {
+                field: format!("{root}.{member}"),
+                entry: self
+                    .levels
+                    .get(2)
+                    .filter(|level| level.array)
+                    .map(|level| level.index),
+            },
+            None => Outside {
+                field: root,
+                entry: None,
+            },
+        }
+    }
+
+    /// Charges a noted expression to the value outside every record that
+    /// ends here, when a member of the root or of a home ends at `depth`.
+    fn member_ends(&mut self, depth: usize) {
+        if (1..=2).contains(&depth)
+            && self.levels.get(depth - 1).is_some_and(|level| !level.array)
+            && take_expression_past()
+        {
+            self.mark(Bound::Expression);
         }
     }
 
@@ -337,12 +395,15 @@ impl<W: Write> Measure<W> {
                 if self.levels.len() == closed {
                     if byte == b']' {
                         self.element_ends(closed);
+                    } else {
+                        self.member_ends(closed);
                     }
                     self.levels.pop();
                 }
             }
             b',' if followed => {
                 self.element_ends(self.scan.depth);
+                self.member_ends(self.scan.depth);
                 if let Some(level) = self.levels.last_mut() {
                     if level.array {
                         level.index += 1;

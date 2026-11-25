@@ -450,13 +450,20 @@ impl DecodeResult {
         while self.give_up_records_past_the_bounds(&policy, format, &measured.records)? {
             (digest, measured) = walk(&self.ir)?;
         }
-        if let Some(bound) = measured.outside {
+        if let Some(bound) = measured.outside.values().next() {
+            let fields: std::collections::BTreeSet<&str> = measured
+                .outside
+                .keys()
+                .map(|outside| outside.field.as_str())
+                .collect();
             self.report.losses.push(
                 DecodeLoss::new(
                     crate::unknown::part::record_unreadable_kind(),
                     format!(
-                        "the document {} outside every record, which the decode wrapper keeps",
-                        bound.describe()
+                        "the document {} outside every record ({}), which the decode wrapper \
+                         keeps",
+                        bound.describe(),
+                        fields.into_iter().collect::<Vec<_>>().join(", ")
                     ),
                 )
                 .with_severity(crate::report::Severity::Error),

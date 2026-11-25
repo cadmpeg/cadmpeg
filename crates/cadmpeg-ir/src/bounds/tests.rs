@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::{
-    read_json, text_depth, Bound, Measure, Measured, Place, DIGEST_WALK_DEPTH, MAX_DOCUMENT_DEPTH,
+    read_json, text_depth, Bound, Measure, Measured, Outside, Place, DIGEST_WALK_DEPTH,
+    MAX_DOCUMENT_DEPTH,
 };
 use crate::design::dimension::ParameterRef;
 use crate::design::expr::{Neutral, Node, UnaryOp};
@@ -86,14 +89,23 @@ fn the_measure_places_each_record_past_the_document_bound() {
             (native, Bound::Document),
         ]
     );
-    assert_eq!(found.outside, None);
+    assert!(found.outside.is_empty());
 }
 
 #[test]
 fn the_measure_reports_depth_outside_every_record() {
     let found = measure(&json!({"source": nest(MAX_DOCUMENT_DEPTH)}));
     assert!(found.records.is_empty());
-    assert_eq!(found.outside, Some(Bound::Document));
+    assert_eq!(
+        found.outside,
+        BTreeMap::from([(
+            Outside {
+                field: "source".to_owned(),
+                entry: None
+            },
+            Bound::Document
+        )])
+    );
 }
 
 #[derive(Serialize)]
@@ -153,5 +165,5 @@ fn the_measure_places_each_record_holding_an_expression_past_its_bound() {
             (home("design", "parameters", 2), Bound::Expression),
         ]
     );
-    assert_eq!(found.outside, None);
+    assert!(found.outside.is_empty());
 }

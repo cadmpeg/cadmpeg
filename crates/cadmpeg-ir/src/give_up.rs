@@ -13,6 +13,7 @@
 //! position states no value of the design (§3.3). The CADIR writer drops a
 //! record past a bound by the same removal, without the part (§3.4).
 
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{ArenaClass, DecodeContext};
@@ -24,6 +25,11 @@ use crate::report::loss::LossNote;
 use crate::schema::ArenaRecord;
 use crate::source_fidelity::SourceFidelity;
 use crate::unknown::part::GivenUpPart;
+
+mod restate;
+
+pub(crate) use restate::names;
+use restate::{Restate, Schema};
 
 /// The arena that holds a record.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -140,11 +146,11 @@ pub(crate) struct Holder {
 }
 
 impl Holder {
-    /// The holder `entity` is, where it names an id that `lookup` finds,
-    /// other than its own. A record that has no JSON value names nothing.
+    /// The holder `entity`, a record of `arena`, is, where it names an id
+    /// that `lookup` finds, other than its own. A record that has no JSON
+    /// value names nothing.
     pub(crate) fn of<'k, T: Serialize>(
-        home: &'static str,
-        field: &'static str,
+        arena: &Arena,
         id: &str,
         entity: &T,
         lookup: impl Fn(&str) -> Option<&'k str>,
@@ -162,7 +168,7 @@ impl Holder {
             },
         );
         (!names.is_empty()).then(|| Self {
-            arena: Arena::Home { home, field },
+            arena: arena.clone(),
             id: id.to_owned(),
             names,
         })
@@ -193,17 +199,11 @@ impl References {
         *self.held.entry(id.to_owned()).or_default() += 1;
     }
 
-    /// Adds the names `entity` holds of the ids counted so far. The caller
-    /// counts every record first.
-    pub(crate) fn add<T: Serialize>(
-        &mut self,
-        home: &'static str,
-        field: &'static str,
-        id: &str,
-        entity: &T,
-    ) {
+    /// Adds the names `entity`, a record of `arena`, holds of the ids
+    /// counted so far. The caller counts every record first.
+    pub(crate) fn add<T: Serialize>(&mut self, arena: &Arena, id: &str, entity: &T) {
         let held = &self.held;
-        let Some(holder) = Holder::of(home, field, id, entity, |text| {
+        let Some(holder) = Holder::of(arena, id, entity, |text| {
             held.get_key_value(text).map(|(key, _)| key.as_str())
         }) else {
             return;
@@ -272,12 +272,13 @@ pub(crate) fn give_up(
 ) -> Result<Vec<LossNote>, CodecError> {
     ir.finalize();
     let mut references = ir.references();
+    let schema = OnceCell::new();
     let mut losses = Vec::new();
     for seed in seeds {
         let Some(text) = text(ir, &seed.arena, &seed.id) else {
             continue;
         };
-        let Some(released) = remove(ctx, ir, &mut references, &seed)? else {
+        let Some(released) = remove(ctx, ir, &mut references, &schema, &seed)? else {
             continue;
         };
         ctx.retain_bytes(
@@ -320,9 +321,10 @@ pub(crate) fn drop_records(
 ) -> Result<Vec<(Seed, Released)>, CodecError> {
     ir.finalize();
     let mut references = ir.references();
+    let schema = OnceCell::new();
     let mut removed = Vec::new();
     for seed in seeds {
-        if let Some(released) = remove(ctx, ir, &mut references, &seed)? {
+        if let Some(released) = remove(ctx, ir, &mut references, &schema, &seed)? {
             removed.push((seed, released));
         }
     }
@@ -335,6 +337,7 @@ fn remove(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     references: &mut References,
+    schema: &OnceCell<Option<Schema>>,
     seed: &Seed,
 ) -> Result<Option<Released>, CodecError> {
     let parents = parents(ir, &seed.arena, &seed.id);
@@ -353,6 +356,7 @@ fn remove(
         ctx,
         ir,
         references,
+        schema,
         gone.then(|| seed.id.clone()),
         &mut released,
     )?;
@@ -438,11 +442,13 @@ fn mark_parents(ir: &mut CadIr, parents: &[String], marked: &mut BTreeSet<String
 /// `ir` holds, and marks each record that holds it in a form that keeps
 /// the rest, recording both in `released`. Then removes every id it
 /// dropped from the collections keyed by id and from the stubs' links,
-/// which no record needs.
+/// which no record needs. `schema` holds the CADIR schema once a record
+/// needs it.
 fn release(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     references: &mut References,
+    schema: &OnceCell<Option<Schema>>,
     gone: Option<String>,
     released: &mut Released,
 ) -> Result<(), CodecError> {
@@ -454,7 +460,11 @@ fn release(
             let Some(mut holder) = ir.holder(arena, id, &gone) else {
                 continue;
             };
-            if clear_native_refs(ir, &mut holder) || keep_partial(ir, &holder) {
+            if clear_native_refs(ir, &mut holder)
+                || keep_topology(ir, &holder)
+                || restate(ir, &holder, &gone, schema)
+                || keep_unresolved(ir, &holder)
+            {
                 released.marked.insert(holder.id);
             } else {
                 drops.entry(holder.arena).or_default().insert(holder.id);
@@ -491,27 +501,36 @@ fn clear_native_refs(ir: &mut CadIr, holder: &mut Holder) -> bool {
     if !holder.names.iter().any(|(path, _)| path == "native_ref") {
         return false;
     }
-    if !ir.clear_native_ref(&holder.arena, &holder.id) {
+    let cleared = ir.rewrite_records(&holder.arena, &holder.id, |record| {
+        if let Some(record) = record.as_object_mut() {
+            record.remove("native_ref");
+        }
+        true
+    });
+    if !cleared {
         return false;
     }
     holder.names.retain(|(path, _)| path != "native_ref");
     holder.names.is_empty()
 }
 
-/// States `holder` in the form that holds what is left where it names the
-/// ids it lost only where its type has one, and returns whether it did:
-/// a region that loses a shell, a shell that loses a wire edge or a free
-/// vertex, and a face that loses a loop are marked (§5.6, Unstated
-/// children), and a design feature whose operation names a lost id states
-/// its operation `Unresolved` with its family (§6).
-fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
-    let Arena::Home { home, field } = &holder.arena else {
+/// States `holder` in its topology's partial form where it names the ids it
+/// lost only where that form leaves them unstated, and returns whether it
+/// did: a region that loses a shell, a shell that loses a wire edge or a
+/// free vertex, and a face that loses a loop are marked (§5.6, Unstated
+/// children).
+fn keep_topology(ir: &mut CadIr, holder: &Holder) -> bool {
+    let Arena::Home {
+        home: "geometry",
+        field,
+    } = &holder.arena
+    else {
         return false;
     };
     let id = holder.id.as_str();
     let lost = || holder.names.iter().map(|(_, target)| target.as_str());
-    match (*home, *field) {
-        ("geometry", "regions") if holder.names_only_under(&["shells", "unstated"]) => {
+    match *field {
+        "regions" if holder.names_only_under(&["shells", "unstated"]) => {
             for region in records_mut(&mut ir.geometry.regions, id) {
                 for shell in lost() {
                     region.lose_shell(shell);
@@ -519,7 +538,7 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
             }
             true
         }
-        ("geometry", "shells") if holder.names_only_under(&["members"]) => {
+        "shells" if holder.names_only_under(&["members"]) => {
             for shell in records_mut(&mut ir.geometry.shells, id) {
                 for member in lost() {
                     shell.lose_member(member);
@@ -527,7 +546,7 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
             }
             true
         }
-        ("geometry", "faces") if holder.names_only_under(&["loops"]) => {
+        "faces" if holder.names_only_under(&["loops"]) => {
             for face in records_mut(&mut ir.geometry.faces, id) {
                 for lost_loop in lost() {
                     face.loops.lose(lost_loop);
@@ -535,23 +554,59 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
             }
             true
         }
-        ("design", "features") if holder.names_only_under(&["definition.operation"]) => {
-            let features = records_mut(&mut ir.design.features, id);
-            let families: Vec<_> = features
-                .iter()
-                .map(|feature| feature.definition.operation.family())
-                .collect();
-            let Some(families) = families.into_iter().collect::<Option<Vec<_>>>() else {
-                return false;
-            };
-            for (feature, family) in features.iter_mut().zip(families) {
-                feature.definition.operation =
-                    crate::design::feature::FeatureOperation::Unresolved { family };
-            }
-            true
-        }
         _ => false,
     }
+}
+
+/// Restates `holder`, a record that names an id of `gone`, through its JSON
+/// in the partial forms of its values (§3.3), and returns whether it names
+/// none of them after. `schema` is read when first needed.
+fn restate(
+    ir: &mut CadIr,
+    holder: &Holder,
+    gone: &BTreeSet<String>,
+    schema: &OnceCell<Option<Schema>>,
+) -> bool {
+    let Arena::Home { home, field } = &holder.arena else {
+        return false;
+    };
+    let Some(schema) = schema.get_or_init(Schema::read) else {
+        return false;
+    };
+    let Some(restate) = Restate::new(schema, gone, &holder.id, *home == "process") else {
+        return false;
+    };
+    ir.rewrite_records(&holder.arena, &holder.id, |record| {
+        restate.record(home, field, record)
+    })
+}
+
+/// States the operation of `holder`, a design feature that names a lost id
+/// only in its operation, `Unresolved` with its family (§6), and returns
+/// whether it did.
+fn keep_unresolved(ir: &mut CadIr, holder: &Holder) -> bool {
+    if holder.arena
+        != (Arena::Home {
+            home: "design",
+            field: "features",
+        })
+        || !holder.names_only_under(&["definition.operation"])
+    {
+        return false;
+    }
+    let features = records_mut(&mut ir.design.features, &holder.id);
+    let families: Vec<_> = features
+        .iter()
+        .map(|feature| feature.definition.operation.family())
+        .collect();
+    let Some(families) = families.into_iter().collect::<Option<Vec<_>>>() else {
+        return false;
+    };
+    for (feature, family) in features.iter_mut().zip(families) {
+        feature.definition.operation =
+            crate::design::feature::FeatureOperation::Unresolved { family };
+    }
+    true
 }
 
 /// Removes each id of `gone` from the links of every `unknowns` stub: a
