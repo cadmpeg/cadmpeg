@@ -247,6 +247,14 @@ pub(super) fn check_fallback_faces<'a>(
         return;
     };
     let fallback = std::mem::take(&mut operand.resolved_face_slots);
+    // A withdrawn face is no candidate of the operand: a binder that reads the
+    // candidate lanes must not bind it.
+    for lane in [
+        &mut operand.preceding_candidate_faces,
+        &mut operand.changed_candidate_faces,
+    ] {
+        lane.retain(|face| stable_ref(face.as_str()).is_none_or(|slot| !fallback.contains(&slot)));
+    }
     withdrawals.losses.push(F3dLossCode::FeatureFaceOperandFallbackContradicted.note(format!(
         "Extrude face operand {} withdraws the faces {fallback:?} that its history fallback selects: they share no boundary vertex with the faces {:?} that its recipe operand {lane} names, taken as faces around the selected face's boundary.",
         operand.id,

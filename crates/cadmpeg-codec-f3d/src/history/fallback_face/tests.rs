@@ -153,6 +153,37 @@ fn a_failing_face_or_face_set_is_withdrawn() {
 }
 
 #[test]
+fn a_withdrawn_face_leaves_the_candidate_lanes() {
+    let topology = box_topology();
+    let mut queries = TopologyQueryCache::default();
+    let mut operand = operand(&[&[40]]);
+    operand.resolved_face_slots = vec![60];
+    operand.preceding_candidate_faces = vec![crate::ids::brep_face_id(60)];
+    operand.changed_candidate_faces = vec![crate::ids::brep_face_id(60)];
+    let mut withdrawals = Withdrawals::default();
+    check_fallback_faces(&mut operand, &topology, &mut queries, &mut withdrawals);
+    assert!(withdrawals.withdrew(&operand));
+    assert!(operand.preceding_candidate_faces.is_empty());
+    assert!(operand.changed_candidate_faces.is_empty());
+    assert_eq!(withdrawals.losses.len(), 1);
+
+    // A candidate that the check did not withdraw stays.
+    let mut operand = self::operand(&[&[40]]);
+    operand.resolved_face_slots = vec![60];
+    operand.preceding_candidate_faces = [60, 20].map(crate::ids::brep_face_id).to_vec();
+    check_fallback_faces(
+        &mut operand,
+        &topology,
+        &mut queries,
+        &mut Withdrawals::default(),
+    );
+    assert_eq!(
+        operand.preceding_candidate_faces,
+        [crate::ids::brep_face_id(20)]
+    );
+}
+
+#[test]
 fn a_withdrawal_keeps_its_faces_by_operand() {
     let topology = box_topology();
     let mut queries = TopologyQueryCache::default();
