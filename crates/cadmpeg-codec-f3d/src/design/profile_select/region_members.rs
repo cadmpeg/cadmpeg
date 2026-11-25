@@ -6,7 +6,8 @@ use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::profiles::PlanarProfileRef;
-use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse};
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse, SketchGeometryDefinition};
 
 pub(super) fn resolve(
     stream: &str,
@@ -303,6 +304,18 @@ fn assign_region(
     false
 }
 
+/// Close a counted member ring that lists every curve of a region except one
+/// arc, by adding that arc to the ring.
+///
+/// The arc is added only when the listed members close no region at all: a
+/// ring that closes a region once assumptions are allowed was refused by an
+/// assumption gate, not by a missing curve. The arc is the one unlisted
+/// non-construction curve whose two ends meet two different listed endpoints;
+/// a second such arc, or a line that fits, leaves the selection native. A
+/// unique line is not added: a stored selection omits a line as readily as it
+/// omits a curve of an unselected neighbour region, so the line does not
+/// identify the missing curve the way an arc closing a corner does. Curves
+/// that a counted ring never names (tail marker `1`) are not candidates.
 pub(super) fn resolve_arc_bridges(
     stream: &str,
     profile: &DesignSketchProfileOperand,
@@ -320,6 +333,24 @@ pub(super) fn resolve_arc_bridges(
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
         return Ok(None);
     };
+    let flags = resolution.profile_work.assumed_flags();
+    let inferred = resolution.profile_work.inferred_counts();
+    let closes_without_bridge = resolve_with_bridge(
+        stream,
+        profile,
+        sketch,
+        curves,
+        entities,
+        resolution,
+        (true, None),
+    )?
+    .is_some();
+    resolution.profile_work.set_assumed_flags(flags);
+    resolution.profile_work.set_inferred_counts(inferred);
+    if closes_without_bridge {
+        return Ok(None);
+    }
+    let mut excluded = unnamed_curves(curves, sketch, entities);
     let named = regions
         .iter()
         .flat_map(|region| &region.members)
@@ -327,6 +358,7 @@ pub(super) fn resolve_arc_bridges(
             sketch_profile_member_entity(stream, owner, member, sketch, curves, entities).cloned()
         })
         .collect::<std::collections::HashSet<_>>();
+    excluded.extend(named.iter().cloned());
     let mut endpoints = Vec::new();
     for entity in entities.iter().filter(|entity| named.contains(entity.id())) {
         if let Some(ends) =
@@ -335,29 +367,31 @@ pub(super) fn resolve_arc_bridges(
             endpoints.extend(ends);
         }
     }
-    let mut bridges = Vec::new();
+    let meets = |end: &Point2| {
+        endpoints
+            .iter()
+            .any(|point| (end.u - point.u).hypot(end.v - point.v) <= resolution.linear_tolerance)
+    };
+    let mut candidates = Vec::new();
     for entity in entities.iter().filter(|entity| {
-        entity.sketch == sketch.id && !entity.construction && !named.contains(entity.id())
+        entity.sketch == sketch.id && !entity.construction && !excluded.contains(entity.id())
     }) {
-        if !matches!(
-            entity.geometry.definition(),
-            cadmpeg_ir::sketches::SketchGeometryDefinition::Arc { .. }
-        ) {
-            continue;
-        }
-        let Some(ends) = crate::design::geometry::sketch_entity_endpoints(entity, resolution.ctx)?
+        let is_arc = match entity.geometry.definition() {
+            SketchGeometryDefinition::Arc { .. } => true,
+            SketchGeometryDefinition::Line { .. } => false,
+            _ => continue,
+        };
+        let Some([start, end]) =
+            crate::design::geometry::sketch_entity_endpoints(entity, resolution.ctx)?
         else {
             continue;
         };
-        if ends.iter().all(|end| {
-            endpoints.iter().any(|point| {
-                (end.u - point.u).hypot(end.v - point.v) <= resolution.linear_tolerance
-            })
-        }) {
-            bridges.push(entity.id().clone());
+        let apart = (start.u - end.u).hypot(start.v - end.v) > resolution.linear_tolerance;
+        if apart && meets(&start) && meets(&end) {
+            candidates.push((entity.id().clone(), is_arc));
         }
     }
-    let [bridge] = bridges.as_slice() else {
+    let [(bridge, true)] = candidates.as_slice() else {
         return Ok(None);
     };
     for reversed in [false, true] {

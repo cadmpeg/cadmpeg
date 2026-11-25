@@ -6776,6 +6776,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                                     scoped,
                                 )?;
                                 if bridged.is_some() {
+                                    // Count the bridged selection's own assumption
+                                    // notes (`profile_work.note_*`) as one selection.
+                                    scoped.profile_work.finish_selection();
                                     losses.push(crate::loss::F3dLossCode::FeatureProfileArcBridgeAssumed.note(
                                         "A unique unlisted arc joins selected profile endpoints.".to_owned()
                                     ));
