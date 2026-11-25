@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use serde_json::json;
 
-use super::{give_up, Arena, Seed};
+use super::{give_up, Arena, References, Seed};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::document::CadIr;
 use crate::ids::Identity;
@@ -88,7 +88,9 @@ fn gone(ir: &CadIr, seed: &str, outcome: &Outcome) -> BTreeSet<String> {
 }
 
 fn holds(ir: &CadIr, id: &str) -> bool {
-    ir.references().held.contains_key(id)
+    ir.references_from(References::default())
+        .held
+        .contains_key(id)
 }
 
 /// No referential-integrity finding of `ir` names an id the give-up

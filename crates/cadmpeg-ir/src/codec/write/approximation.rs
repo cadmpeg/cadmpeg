@@ -68,7 +68,7 @@ struct FitEvaluation<'c> {
 
 impl<'c> FitEvaluation<'c> {
     fn admission(&self) -> EvaluationAdmission<'c, 'c> {
-        EvaluationAdmission::Decode(self.context)
+        EvaluationAdmission::Write(self.context)
     }
 }
 

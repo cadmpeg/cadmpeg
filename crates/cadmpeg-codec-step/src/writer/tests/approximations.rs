@@ -297,9 +297,9 @@ fn surface_with_a_trim_off_its_edge_keeps_the_omission_report() {
 }
 
 #[test]
-fn a_tight_caller_depth_limit_refuses_the_sampling_evaluation() {
+fn the_sampling_evaluation_nests_apart_from_the_session_recursion_limit() {
     use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension, ResourceLimits,
+        DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimits,
     };
 
     let ir = ruled(1.0);
@@ -313,13 +313,8 @@ fn a_tight_caller_depth_limit_refuses_the_sampling_evaluation() {
     };
     let context = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut approximator = Approximator::new(&ir, &context);
-    assert!(approximator.surface(surface_id.as_str()).is_none());
-    let limit = approximator
-        .resource_limit()
-        .expect("the ruled surface nests deeper than the caller allows");
-    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-    assert_eq!(limit.limit, 1);
-    assert_eq!(limit.operation, "model evaluation recursion");
+    assert!(approximator.surface(surface_id.as_str()).is_some());
+    assert_eq!(approximator.resource_limit(), None);
 }
 
 #[test]

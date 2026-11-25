@@ -157,9 +157,16 @@ pub fn semantic_roundtrip<C>(
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
     let (ir, _decode_report, mut source_fidelity) = decoded.into_parts();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     assert!(
         !source_fidelity
-            .edited(&ir, cadmpeg_core::decode::ResourceLimits::desktop())
+            .edited(&ctx, &ir)
             .unwrap_or_else(|error| panic!("{label}: content digest: {error}")),
         "{label}: the decode's content digest does not match its document, so replacing it cannot \
          force the semantic path; this helper would report whatever the encoder happened to do"

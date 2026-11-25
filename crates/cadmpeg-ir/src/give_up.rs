@@ -355,7 +355,7 @@ pub(crate) fn give_up(
     seeds: Vec<Seed>,
     mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
-    let mut cascade = Cascade::new(ctx, ir)?;
+    let mut cascade = Cascade::new(ctx, ir, &BTreeSet::new())?;
     let mut losses = Vec::new();
     for seed in seeds {
         let Some(text) = text(ir, &seed.arena, &seed.id) else {
@@ -403,7 +403,7 @@ pub(crate) fn drop_records(
     ir: &mut CadIr,
     seeds: Vec<Seed>,
 ) -> Result<Vec<(Seed, Released)>, CodecError> {
-    let mut cascade = Cascade::new(ctx, ir)?;
+    let mut cascade = Cascade::new(ctx, ir, &BTreeSet::new())?;
     let mut removed = Vec::new();
     for seed in seeds {
         if let Some(released) = remove(ctx, ir, &mut cascade, &seed)? {
@@ -411,6 +411,38 @@ pub(crate) fn drop_records(
         }
     }
     Ok(removed)
+}
+
+/// Removes from `ir` each record that needs an id of `gone`, which `ir` no
+/// longer holds, and each record that needs one of those, transitively, as
+/// [`drop_records`] removes the records that need a seed; then removes each
+/// seed as [`drop_records`] does.
+///
+/// # Errors
+///
+/// A resource refusal for a rewritten `unknowns` arena or for the walk of
+/// the carriers.
+pub(crate) fn drop_records_needing(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    gone: BTreeSet<String>,
+    seeds: Vec<Seed>,
+) -> Result<(), CodecError> {
+    let mut cascade = Cascade::new(ctx, ir, &gone)?;
+    let mut released = Released::new(String::new());
+    release(
+        ctx,
+        ir,
+        &mut cascade.references,
+        &cascade.lazy,
+        gone,
+        Vec::new(),
+        &mut released,
+    )?;
+    for seed in seeds {
+        remove(ctx, ir, &mut cascade, &seed)?;
+    }
+    Ok(())
 }
 
 /// States `Source` each expression of the records of each seed whose tree
@@ -460,11 +492,20 @@ struct Lazy {
 
 impl Cascade {
     /// The state of a batch of removals from `ir`, which it puts in
-    /// identity order.
-    fn new(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Self, CodecError> {
+    /// identity order, where `gone` holds the ids that records of `ir` name
+    /// and `ir` no longer holds.
+    fn new(
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        gone: &BTreeSet<String>,
+    ) -> Result<Self, CodecError> {
         ir.finalize();
+        let mut named = References::default();
+        for id in gone {
+            named.name(id);
+        }
         Ok(Self {
-            references: ir.references(),
+            references: ir.references_from(named),
             lazy: Lazy::default(),
             unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
         })

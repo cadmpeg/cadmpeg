@@ -25,7 +25,10 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::{Companions, DecodeDepth, ResourceLimit, ResourceLimits};
+use cadmpeg_core::decode::{
+    Companions, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimit,
+    ResourceLimits,
+};
 use cadmpeg_core::target::{TargetCatalog, TargetRefusal};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -94,9 +97,12 @@ pub trait EncoderBackend {
     /// output flavors.
     const TARGET: Self::Target;
 
-    /// Plans a write from the request resolved by [`Encoder::plan`].
+    /// Plans a write from the request resolved by [`Encoder::plan`], in the
+    /// encode's session `ctx`: every ceiling of the caller's limits is
+    /// charged to it, so that the cumulative ceilings hold per encode.
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: <Self::Target as TargetDomain>::Resolved<'_>,
     ) -> Result<ExportBody, CodecError>;
@@ -112,6 +118,7 @@ pub trait EncoderBackend {
     /// The refusal of the write.
     fn restore(
         &self,
+        _ctx: &DecodeContext<'_>,
         _input: EncodeInput<'_>,
         _target: &<Self::Target as TargetDomain>::Resolved<'_>,
         _notes: &mut Vec<String>,
@@ -190,11 +197,16 @@ impl<E: EncoderBackend> Encoder for E {
             validation: None,
             ..input
         };
-        let (report, coverage, payloads) = if let [_] = outputs.as_slice() {
-            let (report, coverage, bytes) = plan_output(self, unchecked)?;
-            (report, coverage, vec![bytes])
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            limits: input.limits,
+        };
+        let session = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let (report, coverage, outputs, payloads) = if let [_] = outputs.as_slice() {
+            let (report, coverage, bytes) = plan_output(self, &session, unchecked)?;
+            (report, coverage, outputs, vec![bytes])
         } else {
-            plan_encode_set(self, unchecked, &outputs)?
+            plan_encode_set(self, &session, unchecked, outputs)?
         };
         let mut plan = ExportPlan {
             report,
@@ -216,10 +228,12 @@ impl<E: EncoderBackend> Encoder for E {
     }
 }
 
-/// Plans the output of one file from `input`'s document: its report,
-/// coverage, and payload. The caller charges validation and strictness.
+/// Plans the output of one file from `input`'s document, in the encode's
+/// session `ctx`: its report, coverage, and payload. The caller charges
+/// validation and strictness.
 fn plan_output<E: EncoderBackend>(
     encoder: &E,
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
 ) -> Result<(ExportReport, ArenaCoverage, Vec<u8>), EncodeError> {
     let target = E::TARGET
@@ -229,14 +243,14 @@ fn plan_output<E: EncoderBackend>(
     let synthesized_identity = target.synthesized_target().cloned();
     let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
     let restored = encoder
-        .restore(input, &target, &mut restore_notes, &mut restore_losses)
+        .restore(ctx, input, &target, &mut restore_notes, &mut restore_losses)
         .map_err(EncodeError::from_backend)?;
     let input = match &restored {
         Some(ir) => EncodeInput { ir, ..input },
         None => input,
     };
     let body = encoder
-        .plan_resolved(input, target)
+        .plan_resolved(ctx, input, target)
         .map_err(EncodeError::from_backend)?;
     let ExportBody {
         bytes,
@@ -306,50 +320,116 @@ fn plan_output<E: EncoderBackend>(
 }
 
 /// Plans each of `outputs` from the part of `input`'s document that it holds
-/// ([`encode_set::output_document`]) and merges their reports into the root
-/// output's: the coverage is the root output's, and the losses and notes are
-/// every output's. Only the root output reads the decode's sidecar.
+/// ([`encode_set::output_document`]), in the encode's session `ctx`, and
+/// merges their reports into the first written output's, the root's where
+/// it is written: the coverage is that output's, and the losses and notes
+/// are every output's. Only the root output reads the decode's sidecar.
+///
+/// An output whose plan fails is not written, and the report charges
+/// `export:output.unwritten` naming its definition, while another output is
+/// written. The encode refuses where no output can be written, with the
+/// first output's refusal, and where the session runs out (§3.4, Refusals).
+/// Returns the outputs written with their payloads.
 fn plan_encode_set<E: EncoderBackend>(
     encoder: &E,
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
-    outputs: &[PlannedOutput],
-) -> Result<(ExportReport, ArenaCoverage, Vec<Vec<u8>>), EncodeError> {
+    outputs: Vec<PlannedOutput>,
+) -> Result<PlannedSet, EncodeError> {
     let names: OutputNames = outputs
         .iter()
         .filter_map(|output| Some((output.definition.clone()?, output.name.clone()?)))
         .collect();
-    let root = outputs
-        .first()
-        .and_then(|output| output.definition.as_ref());
+    let root = outputs.first().and_then(|output| output.definition.clone());
     let mut planned: Option<(ExportReport, ArenaCoverage)> = None;
+    let mut written = Vec::with_capacity(outputs.len());
     let mut payloads = Vec::with_capacity(outputs.len());
+    let mut unwritten = Vec::new();
     for output in outputs {
         let definition = output.definition.as_ref();
-        let document = encode_set::output_document(input.ir, definition, root, &names)
-            .map_err(EncodeError::from_backend)?;
-        let fidelity = if definition == root {
-            input.fidelity
-        } else {
-            None
+        let planned_output =
+            encode_set::output_document(ctx, input.ir, definition, root.as_ref(), &names)
+                .map_err(EncodeError::from_backend)
+                .and_then(|document| {
+                    let fidelity = if definition == root.as_ref() {
+                        input.fidelity
+                    } else {
+                        None
+                    };
+                    plan_output(
+                        encoder,
+                        ctx,
+                        EncodeInput {
+                            ir: &document,
+                            fidelity,
+                            ..input
+                        },
+                    )
+                });
+        let (report, coverage, bytes) = match planned_output {
+            Ok(planned_output) => planned_output,
+            Err(EncodeError::ResourceLimit(limit)) => {
+                return Err(EncodeError::ResourceLimit(limit))
+            }
+            Err(error) => {
+                unwritten.push((output, error));
+                continue;
+            }
         };
-        let (report, coverage, bytes) = plan_output(
-            encoder,
-            EncodeInput {
-                ir: &document,
-                fidelity,
-                ..input
-            },
-        )?;
-        payloads.push(bytes);
         match &mut planned {
-            None => planned = Some((report, coverage)),
-            Some((merged, _)) => merge_output(merged, output, report)?,
+            None => {
+                let mut report = report;
+                if output.definition != root {
+                    report.notes.insert(0, output_note(&output, &report));
+                }
+                planned = Some((report, coverage));
+            }
+            Some((merged, _)) => merge_output(merged, &output, report)?,
         }
+        written.push(output);
+        payloads.push(bytes);
     }
-    let (report, coverage) = planned.ok_or_else(|| {
-        EncodeError::Backend(CodecError::malformed("an encode set holds no output"))
-    })?;
-    Ok((report, coverage, payloads))
+    let Some((mut report, coverage)) = planned else {
+        return Err(unwritten.into_iter().next().map_or_else(
+            || EncodeError::Backend(CodecError::malformed("an encode set holds no output")),
+            |(_, error)| error,
+        ));
+    };
+    for (output, error) in unwritten {
+        let definition = output
+            .definition
+            .as_ref()
+            .map_or("", ProductDefinitionId::as_str);
+        report.losses.push(loss::output_unwritten(
+            E::FORMAT.as_str(),
+            definition,
+            &error.to_string(),
+        ));
+    }
+    Ok((report, coverage, written, payloads))
+}
+
+/// The merged report and coverage of an encode set, with the outputs
+/// written and their payloads.
+type PlannedSet = (
+    ExportReport,
+    ArenaCoverage,
+    Vec<PlannedOutput>,
+    Vec<Vec<u8>>,
+);
+
+/// The note that names the definition `output` holds and the write path of
+/// its `report`.
+fn output_note(output: &PlannedOutput, report: &ExportReport) -> String {
+    let name = output.name.as_ref().map_or("", NonBlankString::as_str);
+    let definition = output
+        .definition
+        .as_ref()
+        .map_or("", ProductDefinitionId::as_str);
+    format!(
+        "the output {name} holds definition {definition}; its write path is {}",
+        report.write_path()
+    )
 }
 
 /// Adds the report of `output`, an output other than the root's, to
@@ -361,14 +441,7 @@ fn merge_output(
     report: ExportReport,
 ) -> Result<(), EncodeError> {
     let name = output.name.as_ref().map_or("", NonBlankString::as_str);
-    let definition = output
-        .definition
-        .as_ref()
-        .map_or("", ProductDefinitionId::as_str);
-    merged.notes.push(format!(
-        "the output {name} holds definition {definition}; its write path is {}",
-        report.write_path()
-    ));
+    merged.notes.push(output_note(output, &report));
     if let Some(cause) = report.synthesis_cause() {
         merged
             .notes
@@ -396,7 +469,8 @@ fn merge_output(
 
 /// `export:definition.placed` for a payload that carries bodies and no
 /// product definition: it writes the bodies of each definition that no
-/// occurrence places at the top of the output (§3.4, Encode sets).
+/// occurrence places at the top of the output, and names each such
+/// definition that holds a body (§3.4, Encode sets).
 fn placed_definition_loss(ir: &CadIr, coverage: &ArenaCoverage, format: &str) -> Option<LossNote> {
     use crate::schema::EntityKind;
     if coverage.carries(EntityKind::ProductDefinition) || !coverage.carries(EntityKind::Body) {
@@ -407,6 +481,13 @@ fn placed_definition_loss(ir: &CadIr, coverage: &ArenaCoverage, format: &str) ->
         "holds no product definition and writes the bodies of each definition that no \
          occurrence places at the top of the output",
         crate::products::unplaced_definitions(&ir.model)
+            .filter(|definition| {
+                !definition.bodies.is_empty()
+                    || definition
+                        .instance_bodies
+                        .iter()
+                        .any(|instance| !instance.bodies.is_empty())
+            })
             .map(|definition| definition.id.as_str().to_owned()),
     )
 }
@@ -420,7 +501,9 @@ pub enum EncodeError {
     #[error("{0}")]
     UnsupportedTarget(Box<TargetRefusal>),
     /// An output the writer produces has no name in
-    /// [`EncodeInput::outputs`]. Nothing is planned or written.
+    /// [`EncodeInput::outputs`], or the name of an earlier output, or a plan
+    /// with more than one output is given one destination
+    /// ([`ExportPlan::write_to`]). Nothing is planned or written.
     #[error("the encode names no output for definition {definition}")]
     OutputUnnamed {
         /// The definition whose output has no name.
@@ -511,13 +594,15 @@ fn output_definitions(ir: &CadIr, per_file: bool) -> Vec<Option<&ProductDefiniti
 }
 
 /// The outputs the writer produces, each with the caller's name. Refuses
-/// the first output that `names` leaves unnamed: under [`Outputs::Root`],
-/// every output but the root definition's.
+/// the first output that `names` leaves unnamed, under [`Outputs::Root`]
+/// every output but the root definition's, and the first whose name an
+/// earlier output takes.
 fn planned_outputs(
     ir: &CadIr,
     names: Outputs<'_>,
     per_file: bool,
 ) -> Result<Vec<PlannedOutput>, EncodeError> {
+    let mut taken = std::collections::BTreeSet::new();
     output_definitions(ir, per_file)
         .into_iter()
         .enumerate()
@@ -532,11 +617,14 @@ fn planned_outputs(
                     })
                 }
                 (Outputs::Named(names), Some(definition)) => {
-                    Some(names.get(definition).cloned().ok_or_else(|| {
-                        EncodeError::OutputUnnamed {
-                            definition: definition.clone(),
-                        }
-                    })?)
+                    let unnamed = || EncodeError::OutputUnnamed {
+                        definition: definition.clone(),
+                    };
+                    let name = names.get(definition).ok_or_else(unnamed)?;
+                    if !taken.insert(name) {
+                        return Err(unnamed());
+                    }
+                    Some(name.clone())
                 }
             };
             Ok(PlannedOutput { definition, name })
@@ -935,17 +1023,20 @@ impl ExportPlan {
 
     /// Writes the payload of a plan with one output and returns the
     /// unchanged plan-time report. A plan with more outputs writes nothing
-    /// and refuses with [`EncodeError::Io`]; write it with
-    /// [`Self::write_each`].
+    /// and refuses with [`EncodeError::OutputUnnamed`] for the definition of
+    /// its second output, which the one destination cannot name; write it
+    /// with [`Self::write_each`].
     pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, EncodeError> {
         let [bytes] = self.payloads.as_slice() else {
-            return Err(EncodeError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "the plan has {} outputs and one destination",
-                    self.payloads.len()
-                ),
-            )));
+            return Err(self
+                .outputs
+                .iter()
+                .skip(1)
+                .find_map(|output| output.definition.clone())
+                .map_or_else(
+                    || EncodeError::Backend(CodecError::malformed("the plan holds no output")),
+                    |definition| EncodeError::OutputUnnamed { definition },
+                ));
         };
         writer.write_all(bytes)?;
         Ok(self.report)
@@ -1025,7 +1116,12 @@ impl EncoderBackend for CadirEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
             CodecError::Malformed(error.to_string())
         };
@@ -1036,7 +1132,7 @@ impl EncoderBackend for CadirEncoder {
         let ir = if measured.records.is_empty() && measured.outside.is_empty() {
             input.ir
         } else {
-            let (ir, unwritable) = within_the_bounds(input.ir, &measured)?;
+            let (ir, unwritable) = within_the_bounds(ctx, input.ir, &measured)?;
             losses = unwritable;
             bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
                 .map_err(malformed)?
@@ -1064,6 +1160,7 @@ impl EncoderBackend for CadirEncoder {
 /// A copy that holds no record, of a document that held one, is the empty
 /// document, with `export:output.empty`.
 fn within_the_bounds(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     measured: &crate::bounds::Measured,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
@@ -1088,7 +1185,7 @@ fn within_the_bounds(
     }
     let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
     losses.extend(restated);
-    losses.extend(drop_records_past_the_bounds(&mut ir, &records)?);
+    losses.extend(drop_records_past_the_bounds(ctx, &mut ir, &records)?);
     if held && !holds_records(&ir) {
         losses.push(output_empty(
             "the written CADIR document holds no record: each record lies past a bound of \
@@ -1148,6 +1245,7 @@ fn restate_expressions_past_the_bound(
 /// such record charges one `export:value.unwritable` that names it, the
 /// bound, and the records dropped and marked with it.
 fn drop_records_past_the_bounds(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
 ) -> Result<Vec<LossNote>, CodecError> {
@@ -1159,10 +1257,7 @@ fn drop_records_past_the_bounds(
         .iter()
         .filter_map(|(place, bound)| ir.record_at(place).map(|seed| (seed, *bound)))
         .collect();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let removed = crate::give_up::drop_records(&ctx, ir, bounds.keys().cloned().collect())?;
+    let removed = crate::give_up::drop_records(ctx, ir, bounds.keys().cloned().collect())?;
     Ok(removed
         .into_iter()
         .filter_map(|(seed, released)| {

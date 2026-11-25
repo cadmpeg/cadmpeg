@@ -90,6 +90,9 @@ pub(crate) enum ExportLossCode {
     FeatureLowered,
     /// One edge of a dependency cycle is dropped (§3.4, Dependency cycles).
     DependencyCycleBroken,
+    /// The output of a definition of an encode set is not written, while
+    /// another output is (§3.4, Encode sets).
+    OutputUnwritten,
 }
 
 impl ExportLossCode {
@@ -122,6 +125,7 @@ impl ExportLossCode {
             Self::GeneralToleranceDropped => "general_tolerance.dropped",
             Self::FeatureLowered => "feature.lowered",
             Self::DependencyCycleBroken => "dependency.cycle-broken",
+            Self::OutputUnwritten => "output.unwritten",
         }
     }
 
@@ -153,7 +157,8 @@ impl ExportLossCode {
             Self::EditDropped(_)
             | Self::RecordInvalid(_)
             | Self::RuleInvalid
-            | Self::LinkUnwritten => Severity::Error,
+            | Self::LinkUnwritten
+            | Self::OutputUnwritten => Severity::Error,
         }
     }
 
@@ -165,7 +170,9 @@ impl ExportLossCode {
             Self::SourceCarried | Self::SourceUnchecked | Self::SourceDropped => {
                 return LossTaxonomy::RecordNotTyped;
             }
-            Self::LinkUnwritten => return LossTaxonomy::AssemblyComponentsExternal,
+            Self::LinkUnwritten | Self::OutputUnwritten => {
+                return LossTaxonomy::AssemblyComponentsExternal;
+            }
             Self::DefinitionPlaced => return LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
             Self::FacePartial | Self::SolidPartial => {
@@ -420,6 +427,15 @@ where
     S: Into<String>,
 {
     listed(ExportLossCode::LinkUnwritten, format, reason, ids)
+}
+
+/// `export:output.unwritten`: the output of `definition` is not written, for
+/// `cause`, while another output of the encode set is (§3.4, Encode sets).
+#[must_use]
+pub(super) fn output_unwritten(format: &str, definition: &str, cause: &str) -> LossNote {
+    ExportLossCode::OutputUnwritten.note(format!(
+        "the {format} write holds no output of definition {definition}: {cause}"
+    ))
 }
 
 /// `export:definition.placed`: the target cannot hold a definition that no

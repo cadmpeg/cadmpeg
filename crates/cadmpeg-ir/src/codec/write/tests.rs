@@ -19,7 +19,7 @@ use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -136,7 +136,12 @@ impl EncoderBackend for NeutralEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         // The body carries no identity: whatever the backend does, the
         // wrapper stamps FORMAT.
         Ok(ExportBody::synthesized(
@@ -196,6 +201,7 @@ impl EncoderBackend for CatalogEncoder {
 
     fn plan_resolved(
         &self,
+        _: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
@@ -400,7 +406,12 @@ impl EncoderBackend for CoverageEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
     }
 }
@@ -763,7 +774,12 @@ impl EncoderBackend for F3dCoverageEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
     }
 }
@@ -980,7 +996,12 @@ impl EncoderBackend for LossyEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
         body.losses.clone_from(&self.0);
         Ok(body)
@@ -1193,8 +1214,13 @@ impl EncoderBackend for LimitsEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        self.0.set(Some(input.limits));
+    fn plan_resolved(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        self.0.set(Some(ctx.policy().limits));
         Ok(ExportBody::synthesized(
             Vec::new(),
             input.ir,
@@ -1228,7 +1254,12 @@ impl EncoderBackend for ReusingEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
         if self.patch {
             body.write_path = WritePath::Patched {
@@ -1330,7 +1361,12 @@ impl EncoderBackend for ScratchFailureEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, _: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        _: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         Err(CodecError::Io(std::io::Error::other("scratch file")))
     }
 }
@@ -1375,7 +1411,12 @@ impl EncoderBackend for PerFileEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         let definitions = &input.ir.model.product_definitions;
         let root = definitions
             .iter()
@@ -1547,9 +1588,190 @@ fn a_plan_with_several_outputs_refuses_one_destination() {
         .plan(EncodeInput::new(&ir, None).with_outputs(super::Outputs::Named(&names)))
         .unwrap();
     let mut bytes = Vec::new();
-    assert!(matches!(
-        plan.write_to(&mut bytes),
-        Err(EncodeError::Io(error)) if error.kind() == std::io::ErrorKind::InvalidInput
-    ));
+    let error = plan.write_to(&mut bytes).unwrap_err();
+    let EncodeError::OutputUnnamed { definition } = error else {
+        panic!("the destination names no output of the part, got {error}")
+    };
+    assert_eq!(definition, definition_id("part"));
     assert!(bytes.is_empty());
+}
+
+#[test]
+fn two_outputs_with_one_name_are_refused_before_planning() {
+    let ir = two_file_document();
+    let names = super::OutputNames::from([
+        (definition_id("root"), output_name("one.out")),
+        (definition_id("part"), output_name("one.out")),
+    ]);
+    let error = PerFileEncoder
+        .plan(EncodeInput::new(&ir, None).with_outputs(super::Outputs::Named(&names)))
+        .unwrap_err();
+    let EncodeError::OutputUnnamed { definition } = error else {
+        panic!("the part's output takes the root's name, got {error}")
+    };
+    assert_eq!(definition, definition_id("part"));
+}
+
+/// A writer of a format that stores one definition per file. Its payload
+/// names the features and the tessellations of the document it receives,
+/// and it refuses the definitions of `refused`.
+struct HeldRecordsEncoder {
+    refused: &'static [&'static str],
+}
+
+impl EncoderBackend for HeldRecordsEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
+    const DEFINITION_PER_FILE: bool = true;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        let model = &input.ir.model;
+        let root = model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.is_root())
+            .map_or("", |definition| definition.id.as_str());
+        if self.refused.contains(&root) {
+            return Err(CodecError::malformed(
+                "the test writer refuses this definition",
+            ));
+        }
+        let features = model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str())
+            .collect::<Vec<_>>();
+        let tessellations = model
+            .tessellations
+            .iter()
+            .map(|tessellation| tessellation.id.as_str())
+            .collect::<Vec<_>>();
+        let payload = format!("{}|{}", features.join(","), tessellations.join(","));
+        Ok(ExportBody::synthesized(
+            payload.into_bytes(),
+            input.ir,
+            ArenaCoverage::Complete,
+        ))
+    }
+}
+
+/// [`two_file_document`] with one feature of each file definition and one
+/// tessellation of each of their bodies.
+fn two_file_document_with_records() -> CadIr {
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::{Feature, FeatureDefinition, FeatureOperation};
+    use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
+    let mut ir = two_file_document();
+    let bodies = [
+        ("root", ir.geometry.bodies[0].id.clone()),
+        ("part", bare_body("part").id),
+    ];
+    for (ordinal, (key, body)) in (0..).zip(bodies) {
+        ir.model.features.push(Feature {
+            product_definition: Some(definition_id(key)),
+            id: format!("test:model:feature#{key}").try_into().unwrap(),
+            ordinal,
+            name: None,
+            suppressed: None,
+            dependencies: crate::features::selections::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::StoredGeometry {},
+            )),
+            native_ref: None,
+        });
+        ir.model.tessellations.push(
+            Tessellation::new(
+                format!("test:model:tessellation#{key}").try_into().unwrap(),
+                TessellationMesh::List {
+                    vertices: vec![
+                        crate::math::Point3::new(0.0, 0.0, 0.0),
+                        crate::math::Point3::new(1.0, 0.0, 0.0),
+                        crate::math::Point3::new(0.0, 1.0, 0.0),
+                    ],
+                    triangles: vec![[0, 1, 2]],
+                },
+                Vec::new(),
+            )
+            .unwrap()
+            .with_of(Meshed::Body {
+                body,
+                faces: Vec::new(),
+            }),
+        );
+    }
+    ir
+}
+
+#[test]
+fn each_output_of_an_encode_set_holds_only_its_definitions_records() {
+    let ir = two_file_document_with_records();
+    let names = super::OutputNames::from([
+        (definition_id("root"), output_name("assembly.out")),
+        (definition_id("part"), output_name("part.out")),
+    ]);
+    let plan = HeldRecordsEncoder { refused: &[] }
+        .plan(EncodeInput::new(&ir, None).with_outputs(super::Outputs::Named(&names)))
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_each(|_, bytes| {
+        written.push(String::from_utf8_lossy(bytes).into_owned());
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        written,
+        [
+            "test:model:feature#root|test:model:tessellation#root",
+            "test:model:feature#part|test:model:tessellation#part",
+        ]
+    );
+}
+
+#[test]
+fn an_output_that_cannot_be_written_leaves_the_others_written() {
+    let ir = two_file_document_with_records();
+    let names = super::OutputNames::from([
+        (definition_id("root"), output_name("assembly.out")),
+        (definition_id("part"), output_name("part.out")),
+    ]);
+    let input = EncodeInput::new(&ir, None).with_outputs(super::Outputs::Named(&names));
+    let plan = HeldRecordsEncoder {
+        refused: &["test:model:definition#part"],
+    }
+    .plan(input)
+    .unwrap();
+    assert_eq!(
+        plan.outputs(),
+        [super::PlannedOutput {
+            definition: Some(definition_id("root")),
+            name: Some(output_name("assembly.out")),
+        }]
+    );
+    let unwritten = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| code_name(&loss.code) == "export:output.unwritten")
+        .collect::<Vec<_>>();
+    assert_eq!(unwritten.len(), 1, "{:?}", plan.report().losses);
+    assert!(unwritten[0].message.contains("test:model:definition#part"));
+
+    let error = HeldRecordsEncoder {
+        refused: &["test:model:definition#root", "test:model:definition#part"],
+    }
+    .plan(input)
+    .unwrap_err();
+    assert!(matches!(error, EncodeError::Backend(_)), "got {error:?}");
 }

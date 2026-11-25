@@ -1305,12 +1305,6 @@ macro_rules! declare_document_arenas {
                 0
             }
 
-            /// The references of the document, from one walk of its records
-            /// (§3.3).
-            pub(crate) fn references(&self) -> crate::give_up::References {
-                self.references_from(crate::give_up::References::default())
-            }
-
             /// The references of the document added to `references`, which
             /// counts the ids it names that the document does not hold.
             pub(crate) fn references_from(

@@ -576,19 +576,12 @@ impl SourceFidelity {
     ///
     /// # Errors
     ///
-    /// The digest's session could not be opened under `limits`.
-    pub fn edited(
-        &self,
-        ir: &CadIr,
-        limits: cadmpeg_core::decode::ResourceLimits,
-    ) -> Result<bool, CodecError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy { limits };
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    /// A session ceiling of `ctx` ran out.
+    pub fn edited(&self, ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<bool, CodecError> {
         let same = self.content_digest.as_ref().is_some_and(|stored| {
-            crate::hash::content_digest(&ctx, ir).is_ok_and(|digest| digest == *stored)
+            crate::hash::content_digest(ctx, ir).is_ok_and(|digest| digest == *stored)
         });
-        Ok(!same || crate::hash::omitted_arenas_edited(&ctx, ir).unwrap_or(true))
+        Ok(!same || crate::hash::omitted_arenas_edited(ctx, ir).unwrap_or(true))
     }
 
     /// Append source metadata after checking every table for collisions.

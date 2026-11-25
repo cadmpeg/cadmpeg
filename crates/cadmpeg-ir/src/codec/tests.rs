@@ -945,19 +945,14 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
         result.source_fidelity().content_digest,
         Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
     );
-    assert!(!result
-        .source_fidelity()
-        .edited(result.ir(), cadmpeg_core::decode::ResourceLimits::desktop())
-        .unwrap());
+    assert!(!result.source_fidelity().edited(&ctx, result.ir()).unwrap());
 
     let (mut ir, _, fidelity) = result.into_parts();
     let mut scope = ContentScope::full();
     scope.process = false;
     ir.set_scope(scope).unwrap();
     assert!(
-        fidelity
-            .edited(&ir, cadmpeg_core::decode::ResourceLimits::desktop())
-            .unwrap(),
+        fidelity.edited(&ctx, &ir).unwrap(),
         "a change of scope alone is an edit"
     );
 }

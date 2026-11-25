@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::document::{CadIr, Topology};
@@ -118,10 +118,10 @@ pub fn vertex_positions(geometry: &Topology) -> HashMap<&str, (Point3, Option<f6
 /// # Errors
 ///
 /// Returns a resource-limit error where curve evaluation exhausts a ceiling
-/// of `limits`.
+/// of the session `ctx`.
 pub fn open_edge_ranges(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    limits: ResourceLimits,
     fit: impl Fn(&CurveId) -> Option<f64>,
     names_edge_uses: impl Fn(&Edge) -> bool,
 ) -> Result<Option<EdgeRangePlan>, CodecError> {
@@ -144,8 +144,6 @@ pub fn open_edge_ranges(
     if open.is_empty() {
         return Ok(None);
     }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
     let index = crate::index::ModelIndex::new_model_only(ir);
     let mut vertices = vertex_positions(geometry);
     let curves = geometry
@@ -185,7 +183,7 @@ pub fn open_edge_ranges(
             let domain = crate::eval::bounded_curve_domain(carrier);
             let invert = |point: Point3, seed: f64, tolerance: f64| {
                 crate::eval::model_curve_parameter_near_point_in_index_with_tolerance(
-                    &ctx, &index, curve, point, seed, tolerance,
+                    ctx, &index, curve, point, seed, tolerance,
                 )
                 .map(|parameter| parameter.map(crate::scalar::FiniteReal::get))
             };
@@ -201,7 +199,7 @@ pub fn open_edge_ranges(
             };
             let point_at = |parameter| -> Result<Option<Point3>, CodecError> {
                 match crate::eval::model_curve_point_by_id(
-                    EvaluationAdmission::Decode(&ctx),
+                    EvaluationAdmission::Write(ctx),
                     &index,
                     curve,
                     parameter,

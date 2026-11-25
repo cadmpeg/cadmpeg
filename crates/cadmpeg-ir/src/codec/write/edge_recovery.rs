@@ -51,7 +51,7 @@ impl RecoveryEvaluation<'_> {
             return None;
         }
         match finite_or_refusal(
-            EvaluationAdmission::Decode(self.context).within_work_slice(&self.work, run),
+            EvaluationAdmission::Write(self.context).within_work_slice(&self.work, run),
         ) {
             Ok(value) => value,
             Err(limit) => {
