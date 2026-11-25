@@ -8,6 +8,7 @@ use anyhow::{anyhow, Result as AnyResult};
 use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_ir::codec::write::{
     target::TargetRequest, EncodeError, EncodeInput, Encoder, ExportPlan, MissingStateForm,
+    OutputNames, Outputs,
 };
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{
@@ -492,6 +493,7 @@ impl PreparedConversion {
     /// the encoder charges `export:record.invalid` for each check Error in
     /// what the output writes and refuses where the strictness refuses.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
+        let names = self.output_names()?;
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
@@ -504,6 +506,9 @@ impl PreparedConversion {
             .with_strictness(&self.write_strictness);
         if let Some(report) = self.validation.report() {
             input = input.with_validation(report);
+        }
+        if let Some(names) = &names {
+            input = input.with_outputs(Outputs::Named(names));
         }
         let plan = match self.encoder.plan(input) {
             Ok(plan) => plan,
@@ -523,6 +528,45 @@ impl PreparedConversion {
             prepared: self,
             carried_errors: carried,
         })
+    }
+
+    /// The names of an encode that writes more than one file: the
+    /// destination's file name for the root definition's output, and
+    /// `<stem>-<n>.<extension>` beside it for the n-th other output. `None`
+    /// where the encode writes one file, which the destination names.
+    fn output_names(&self) -> Result<Option<OutputNames>, ApplicationError> {
+        let definitions = self.encoder.output_definitions(&self.document.ir);
+        if definitions.len() < 2 {
+            return Ok(None);
+        }
+        let ResolvedDestination::File(path) = &self.destination else {
+            return Err(ApplicationError::from(anyhow!(
+                "the {} encode writes {} files, and standard output takes one; name an output file",
+                self.selection.format.name(),
+                definitions.len()
+            ))
+            .at_stage(RefusalStage::Plan));
+        };
+        let text =
+            |part: Option<&std::ffi::OsStr>| part.map(|part| part.to_string_lossy().into_owned());
+        let file_name = text(path.file_name()).unwrap_or_default();
+        let stem = text(path.file_stem()).unwrap_or_default();
+        let extension = text(path.extension());
+        let mut names = OutputNames::new();
+        for (position, definition) in definitions.into_iter().enumerate() {
+            let Some(definition) = definition else {
+                continue;
+            };
+            let name = match (position, &extension) {
+                (0, _) => file_name.clone(),
+                (_, Some(extension)) => format!("{stem}-{position}.{extension}"),
+                (_, None) => format!("{stem}-{position}"),
+            };
+            if let Some(name) = cadmpeg_core::text::NonBlankString::new(name) {
+                names.insert(definition, name);
+            }
+        }
+        Ok(Some(names))
     }
 
     /// Returns the selected output format.
@@ -574,6 +618,8 @@ pub(crate) enum EmittedArtifact {
     File {
         path: PathBuf,
         sidecar: SidecarPersistOutcome,
+        /// The other files of an encode that writes one per definition.
+        others: Vec<PathBuf>,
     },
     /// Standard output with no sidecar requirement.
     Stdout,
@@ -625,7 +671,7 @@ pub(crate) fn emit_export_plan(
             LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. }
         );
     if let ResolvedDestination::File(path) = destination {
-        let (report, cadir_sha256) = artifact_store::write_plan_atomic(path, plan)?;
+        let (report, cadir_sha256, others) = artifact_store::write_plan_atomic(path, plan)?;
         let sidecar = if format == Format::Cadir {
             artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin, ir)?
         } else {
@@ -636,6 +682,7 @@ pub(crate) fn emit_export_plan(
             artifact: EmittedArtifact::File {
                 path: path.to_owned(),
                 sidecar,
+                others,
             },
         })
     } else {

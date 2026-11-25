@@ -265,21 +265,31 @@ fn synthesize(
 
 /// The edits of the document that shape the solid of the retained source
 /// image. A document with no such image, or whose native records do not
-/// load, has none.
+/// load for any reason but a resource ceiling, has none.
 fn shaping_edits(
     input: EncodeInput<'_>,
     digests: &CodecDigests,
 ) -> Result<Vec<ShapingEdit>, CodecError> {
-    let image = input
+    let Some(image) = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
-        .and_then(|record| record.data());
-    let native = input
+        .and_then(|record| record.data())
+    else {
+        return Ok(Vec::new());
+    };
+    let native = match input
         .ir
         .native
         .namespace("sldprt")
-        .map(crate::native::SldprtNative::load);
-    let (Some(image), Some(Ok(native))) = (image, native) else {
+        .map(|namespace| crate::native::SldprtNative::load_under(namespace, input.limits))
+        .transpose()
+        .map_err(CodecError::from)
+    {
+        Ok(native) => native,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => None,
+    };
+    let Some(native) = native else {
         return Ok(Vec::new());
     };
     Ok(agreement(
@@ -289,6 +299,7 @@ fn shaping_edits(
         Some(Source::Image(image)),
         &UnwrittenEdits::default(),
         &HashSet::new(),
+        input.limits,
     )?
     .shaped)
 }

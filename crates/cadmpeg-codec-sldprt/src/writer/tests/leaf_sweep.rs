@@ -190,8 +190,11 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
         .filter(|loss| loss.code == SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .filter(|loss| loss.message.contains(&format!("\"{}\"", job.feature)))
         .count();
-    let written = crate::decode::decode_for_read_back(&output)
-        .map_err(|error| format!("{label}: output does not decode: {error}"))?;
+    let written = crate::decode::decode_for_read_back(
+        &output,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .map_err(|error| format!("{label}: output does not decode: {error}"))?;
     let read = named(&written.ir().model.features, &job.feature);
     let [read] = read.as_slice() else {
         return Err(format!("{label}: the feature does not read back once"));

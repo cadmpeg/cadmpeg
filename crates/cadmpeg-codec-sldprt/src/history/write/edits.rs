@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edit_dropped_note;
@@ -75,6 +76,8 @@ pub(crate) struct SourceEdits<'source> {
     unwritten_features: HashMap<FeatureId, FeatureLoss>,
     written: UnwrittenEdits,
     claims: ReadBackClaims,
+    /// The caller's resource limits, under which the write reads.
+    limits: ResourceLimits,
 }
 
 /// An unwritten-edit loss as it is collected.
@@ -590,9 +593,10 @@ impl<'source> SourceEdits<'source> {
         input_native: Option<&SldprtNative>,
         source: Option<&'source CadIr>,
         withheld: &[(FeatureId, String)],
+        limits: ResourceLimits,
     ) -> Result<Self, CodecError> {
         let Some(source) = source else {
-            return Ok(Self::without_source(input));
+            return Ok(Self::without_source(input, limits));
         };
         let source_parameters = source
             .model
@@ -610,7 +614,7 @@ impl<'source> SourceEdits<'source> {
         let source_native = source
             .native
             .namespace("sldprt")
-            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .map(|namespace| SldprtNative::load_under(namespace, limits).map_err(CodecError::from))
             .transpose()?;
         let mut edits = Self {
             source: Some(source),
@@ -630,6 +634,7 @@ impl<'source> SourceEdits<'source> {
             unwritten_features: HashMap::new(),
             written: UnwrittenEdits::default(),
             claims: ReadBackClaims::default(),
+            limits,
         };
         let affected_parameters = affected_parameters(input, &edits.edited_parameters);
         edits.claims.affected_parameters = affected_parameters;
@@ -641,7 +646,7 @@ impl<'source> SourceEdits<'source> {
 
     /// No decoded source: every parameter counts as edited, and the native
     /// records count as edited by the caller.
-    pub(crate) fn without_source(input: &CadIr) -> Self {
+    pub(crate) fn without_source(input: &CadIr, limits: ResourceLimits) -> Self {
         Self {
             source: None,
             features: None,
@@ -658,7 +663,12 @@ impl<'source> SourceEdits<'source> {
             unwritten_features: HashMap::new(),
             written: UnwrittenEdits::default(),
             claims: ReadBackClaims::default(),
+            limits,
         }
+    }
+
+    pub(crate) fn limits(&self) -> ResourceLimits {
+        self.limits
     }
 
     pub(crate) fn has_source(&self) -> bool {

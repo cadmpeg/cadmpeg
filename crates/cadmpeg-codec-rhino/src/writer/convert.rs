@@ -610,6 +610,7 @@ enum PcurveRule {
 /// The pcurve of `coedge` on `face`, `None` where the trim is the projection
 /// of the edge onto the face's plane.
 fn coedge_pcurve(
+    ctx: &DecodeContext<'_>,
     coedge: &Coedge,
     surface: &str,
     edge_range: Option<[f64; 2]>,
@@ -641,7 +642,7 @@ fn coedge_pcurve(
     for (use_, pcurve) in &uses {
         let interval = use_interval(use_, pcurve, edge_range)
             .map_err(|reason| format!("pcurve {}: {reason}", pcurve.id.as_str()))?;
-        let spline = exact::pcurve_spline(&pcurve.geometry, interval)
+        let spline = exact::pcurve_spline(ctx, &pcurve.geometry, interval)
             .map_err(|reason| format!("pcurve {}: {reason}", pcurve.id.as_str()))?;
         joined = Some(match joined {
             None => spline,
@@ -864,7 +865,7 @@ pub(super) fn convert_scope(
                 } else {
                     rule
                 };
-                let pcurve = coedge_pcurve(coedge, origin, edge_range, &pcurves, rule)?;
+                let pcurve = coedge_pcurve(ctx, coedge, origin, edge_range, &pcurves, rule)?;
                 if singular && pcurve.is_none() {
                     return Err(format!(
                         "coedge {} runs along singular edge {} and has no pcurve",

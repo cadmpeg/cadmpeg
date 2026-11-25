@@ -1352,6 +1352,7 @@ impl EncoderBackend for FcstdCodec {
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
+    const DEFINITION_PER_FILE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 

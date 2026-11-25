@@ -497,6 +497,7 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
 
 #[test]
 fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
+    test_ctx!(ctx);
     for (file, path) in [
         (
             crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file(),
@@ -522,7 +523,7 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
             .clone();
         duplicate.id = "test:model:edge#duplicate".try_into().unwrap();
         ir.geometry.edges.push(duplicate);
-        let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
+        let ignored = super::super::ignored_carrier_geometry(&ctx, &ir).unwrap();
         assert!(ignored.edges.contains("test:model:edge#duplicate"));
 
         let generated = super::super::synthesize(
@@ -552,6 +553,7 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
 
 #[test]
 fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
+    test_ctx!(ctx);
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(crate::test_support::test_surface_fixtures::trimmed_plane_file()),
@@ -601,7 +603,7 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     duplicate.carrier =
         cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(range)).unwrap();
     ir.geometry.edges.push(duplicate);
-    let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
+    let ignored = super::super::ignored_carrier_geometry(&ctx, &ir).unwrap();
     assert!(ignored.curves.contains("test:model:curve#duplicate"));
 
     let generated = super::super::synthesize(

@@ -262,7 +262,7 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
             &ir,
             crate::StepSchema::Ap214,
             HashSet::new(),
-            cadmpeg_core::decode::ResourceLimits::desktop(),
+            crate::test_support::write_context(),
         )
         .unwrap();
         if split {
@@ -447,7 +447,7 @@ fn a_use_interval_is_directed_by_the_vertex_its_surface_image_reaches() {
             &ir,
             crate::StepSchema::Ap214,
             HashSet::new(),
-            cadmpeg_core::decode::ResourceLimits::desktop(),
+            crate::test_support::write_context(),
         )
         .unwrap();
         let directed = builder
@@ -506,7 +506,7 @@ fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
             &ir,
             crate::StepSchema::Ap214,
             HashSet::new(),
-            cadmpeg_core::decode::ResourceLimits::desktop(),
+            crate::test_support::write_context(),
         )
         .unwrap();
         assert!(builder
@@ -533,7 +533,7 @@ fn a_closed_edge_directs_only_an_increasing_use_interval() {
         &ir,
         crate::StepSchema::Ap214,
         HashSet::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        crate::test_support::write_context(),
     )
     .unwrap();
     for (stored, expected) in [([0.0, 1.0], Some([0.0, 1.0])), ([1.0, 0.0], None)] {
@@ -592,7 +592,7 @@ fn reflected_conic_emission_uses_a_rational_spline() {
         &ir,
         crate::StepSchema::Ap214,
         HashSet::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        crate::test_support::write_context(),
     )
     .unwrap();
     for coedge in ir.geometry.coedges.iter().filter(|c| c.edge == edge_id) {

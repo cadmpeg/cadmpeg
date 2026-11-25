@@ -1214,3 +1214,194 @@ fn a_failed_write_to_the_destination_is_io() {
         Err(EncodeError::Io(_))
     ));
 }
+
+/// A writer of a format that stores one definition per file. Its payload
+/// names the root definition, the bodies, and the link paths it receives.
+struct PerFileEncoder;
+
+impl EncoderBackend for PerFileEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
+    const DEFINITION_PER_FILE: bool = true;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        let definitions = &input.ir.model.product_definitions;
+        let root = definitions
+            .iter()
+            .find(|definition| definition.is_root())
+            .map_or("", |definition| definition.id.as_str());
+        let bodies = input
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.as_str())
+            .collect::<Vec<_>>();
+        let links = definitions
+            .iter()
+            .filter_map(|definition| match &definition.storage {
+                crate::products::Storage::External(document) => document
+                    .path
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let payload = format!("{root}|{}|{}", bodies.join(","), links.join(","));
+        Ok(ExportBody::synthesized(
+            payload.into_bytes(),
+            input.ir,
+            ArenaCoverage::Declared(ArenaDispositions {
+                product_definitions: ArenaDisposition::Omitted,
+                ..uniform_dispositions(ArenaDisposition::Written)
+            }),
+        ))
+    }
+}
+
+fn definition_id(key: &str) -> crate::ids::ProductDefinitionId {
+    crate::ids::ProductDefinitionId::try_from(format!("test:model:definition#{key}")).unwrap()
+}
+
+fn bare_body(key: &str) -> crate::topology::Body {
+    crate::topology::Body {
+        id: crate::ids::BodyId::try_from(format!("test:model:body#{key}")).unwrap(),
+        kind: crate::topology::BodyKind::Solid,
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+        unstated: None,
+        native_ref: None,
+    }
+}
+
+/// A root definition holding the unit cube and placing a part stored in a
+/// file of its own, which holds one body, and an embedded definition that no
+/// occurrence places, which holds another.
+fn two_file_document() -> CadIr {
+    use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+    let mut ir = unit_cube().unwrap();
+    let cube = ir.geometry.bodies[0].id.clone();
+    let part_body = bare_body("part");
+    let loose_body = bare_body("loose");
+    let mut root = ProductDefinition::root(definition_id("root"), ExternalDocument::default());
+    root.bodies.push(cube);
+    let occurrence =
+        crate::ids::OccurrenceId::try_from("test:model:occurrence#part".to_owned()).unwrap();
+    root.occurrences.push(occurrence.clone());
+    let mut part = ProductDefinition::new(
+        definition_id("part"),
+        Storage::File {
+            document: ExternalDocument::path("part.source"),
+            source: serde_json::from_value(serde_json::json!({
+                "identity": {"kind": "unclassified", "format": "step"},
+                "attributes": {},
+            }))
+            .unwrap(),
+        },
+    );
+    part.bodies.push(part_body.id.clone());
+    let mut loose = ProductDefinition::new(definition_id("loose"), Storage::Embedded);
+    loose.bodies.push(loose_body.id.clone());
+    ir.model.product_definitions = vec![root, part, loose];
+    ir.model
+        .occurrences
+        .push(Occurrence::new(occurrence, definition_id("part"), None));
+    ir.geometry.bodies.extend([part_body, loose_body]);
+    ir
+}
+
+#[test]
+fn a_per_file_encode_writes_one_output_per_file_definition() {
+    let ir = two_file_document();
+    let names = super::OutputNames::from([
+        (definition_id("root"), output_name("assembly.out")),
+        (definition_id("part"), output_name("part.out")),
+    ]);
+    assert_eq!(
+        PerFileEncoder.output_definitions(&ir),
+        [Some(definition_id("root")), Some(definition_id("part"))]
+    );
+    let plan = PerFileEncoder
+        .plan(EncodeInput::new(&ir, None).with_outputs(super::Outputs::Named(&names)))
+        .unwrap();
+    assert_eq!(
+        plan.outputs(),
+        [
+            super::PlannedOutput {
+                definition: Some(definition_id("root")),
+                name: Some(output_name("assembly.out")),
+            },
+            super::PlannedOutput {
+                definition: Some(definition_id("part")),
+                name: Some(output_name("part.out")),
+            },
+        ]
+    );
+    let cube = ir.geometry.bodies[0].id.as_str().to_owned();
+    let mut written = Vec::new();
+    let report = plan
+        .write_each(|output, bytes| {
+            written.push((
+                output.name.clone(),
+                String::from_utf8_lossy(bytes).into_owned(),
+            ));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        written,
+        [
+            (
+                Some(output_name("assembly.out")),
+                format!("test:model:definition#root|{cube},test:model:body#loose|part.out"),
+            ),
+            (
+                Some(output_name("part.out")),
+                "test:model:definition#part|test:model:body#part|".to_owned(),
+            ),
+        ]
+    );
+    let placed = report
+        .losses
+        .iter()
+        .filter(|loss| code_name(&loss.code) == "export:definition.placed")
+        .collect::<Vec<_>>();
+    assert_eq!(placed.len(), 1, "{:?}", report.losses);
+    assert!(placed[0].message.contains("test:model:definition#loose"));
+    assert!(!placed[0].message.contains("test:model:definition#part"));
+}
+
+#[test]
+fn a_per_file_encode_that_names_only_the_root_is_refused_before_planning() {
+    let ir = two_file_document();
+    let error = PerFileEncoder
+        .plan(EncodeInput::new(&ir, None))
+        .unwrap_err();
+    let EncodeError::OutputUnnamed { definition } = error else {
+        panic!("the part's output has no name, got {error}")
+    };
+    assert_eq!(definition, definition_id("part"));
+}
+
+#[test]
+fn a_plan_with_several_outputs_refuses_one_destination() {
+    let ir = two_file_document();
+    let names = super::OutputNames::from([
+        (definition_id("root"), output_name("assembly.out")),
+        (definition_id("part"), output_name("part.out")),
+    ]);
+    let plan = PerFileEncoder
+        .plan(EncodeInput::new(&ir, None).with_outputs(super::Outputs::Named(&names)))
+        .unwrap();
+    let mut bytes = Vec::new();
+    assert!(matches!(
+        plan.write_to(&mut bytes),
+        Err(EncodeError::Io(error)) if error.kind() == std::io::ErrorKind::InvalidInput
+    ));
+    assert!(bytes.is_empty());
+}

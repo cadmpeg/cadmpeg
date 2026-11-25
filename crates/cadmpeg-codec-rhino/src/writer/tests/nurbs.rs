@@ -888,6 +888,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         domain,
     };
     let finding = validate_nurbs_trim(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         0.001,
         &edge,
@@ -967,6 +968,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
         domain,
     };
     let finding = validate_nurbs_trim(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         0.001,
         &edge,

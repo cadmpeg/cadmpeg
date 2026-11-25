@@ -3,6 +3,7 @@
 //! a trimmed surface (Type 144 over Type 128) can bound.
 
 use crate::entities::curve_conversion::{elliptical_arc_nurbs, ANGULAR_TOLERANCE};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::pcurve_uv;
@@ -22,7 +23,10 @@ use std::f64::consts::TAU;
 /// restated as the rational B-spline surface that equals it over the domain
 /// its faces' parameter curves bound, and those curves restated on it. A
 /// support whose parameter curves are not all isoparametric stays analytic.
-pub(super) fn rational_analytic_supports(ir: &CadIr) -> Result<Cow<'_, CadIr>, CodecError> {
+pub(super) fn rational_analytic_supports<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Cow<'ir, CadIr>, CodecError> {
     let forms = ir
         .geometry
         .surfaces
@@ -37,7 +41,7 @@ pub(super) fn rational_analytic_supports(ir: &CadIr) -> Result<Cow<'_, CadIr>, C
     if forms.is_empty() {
         return Ok(Cow::Borrowed(ir));
     }
-    let ends = pcurve_ends(ir)?;
+    let ends = pcurve_ends(ctx, ir)?;
     let mut surfaces = Vec::new();
     let mut pcurves = BTreeMap::new();
     for (surface, form) in forms {
@@ -77,7 +81,10 @@ pub(super) fn rational_analytic_supports(ir: &CadIr) -> Result<Cow<'_, CadIr>, C
 }
 
 /// The finite start and end points of each bounded parameter curve.
-fn pcurve_ends(ir: &CadIr) -> Result<BTreeMap<&str, [Point2; 2]>, CodecError> {
+fn pcurve_ends<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<BTreeMap<&'ir str, [Point2; 2]>, CodecError> {
     let mut ends = BTreeMap::new();
     for pcurve in &ir.geometry.pcurves {
         let Some(range) = pcurve.parameter_range() else {
@@ -86,7 +93,7 @@ fn pcurve_ends(ir: &CadIr) -> Result<BTreeMap<&str, [Point2; 2]>, CodecError> {
         let [start, end] = range.get();
         let at = |parameter| {
             finite_or_refusal(pcurve_uv(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Decode(ctx),
                 &pcurve.geometry,
                 parameter,
             ))

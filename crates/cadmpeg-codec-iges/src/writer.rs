@@ -476,24 +476,24 @@ fn synthesize(
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
+    let ctx = &ctx;
     let mut range_losses = Vec::new();
     let ranged = state_open_edge_ranges(lowered.as_ref(), limits, &mut range_losses)?;
     let brep = has_brep_topology(ranged.as_ref());
     let planar = if brep {
         Cow::Borrowed(ranged.as_ref())
     } else {
-        exact::state_plane_pcurves(ranged.as_ref())
+        exact::state_plane_pcurves(ctx, ranged.as_ref())?
     };
     let restated = if brep {
         Cow::Borrowed(planar.as_ref())
     } else {
-        rational_support::rational_analytic_supports(planar.as_ref())?
+        rational_support::rational_analytic_supports(ctx, planar.as_ref())?
     };
     let ir = restated.as_ref();
     let index = TopologyIndex::new(ir);
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
-    let ctx = &ctx;
     reject_unsupported_model(ir)?;
     reject_owned_wire_topology(ir)?;
     let unbounded_analytic = validate_analytic_surface_context(ir)?;
@@ -524,7 +524,7 @@ fn synthesize(
         }
     }
     if has_brep_topology(ir) || has_trimmed_sheet_topology(ir) {
-        let ignored = ignored_carrier_geometry(ir)?;
+        let ignored = ignored_carrier_geometry(ctx, ir)?;
         let used_edges = ir
             .geometry
             .coedges
@@ -633,6 +633,7 @@ fn synthesize(
                 edge.id.as_str(),
                 |entities, losses| {
                     append_free_edge(
+                        ctx,
                         FreeEdge {
                             ir,
                             index: &index,
@@ -650,6 +651,7 @@ fn synthesize(
         }
 
         append_unowned_curves(
+            ctx,
             UnownedCurves {
                 ir,
                 version,
@@ -682,7 +684,7 @@ fn synthesize(
         ));
     }
 
-    let minimum_resolution = minimum_resolution_for_output(&index)?;
+    let minimum_resolution = minimum_resolution_for_output(ctx, &index)?;
     if let Some(loss) = minimum_resolution_loss(ir, minimum_resolution) {
         losses.push(loss);
     }
@@ -792,6 +794,7 @@ struct FreeEdge<'a, 'ir> {
 
 /// Writes one standalone edge of the free-geometry path as its curve entity.
 fn append_free_edge(
+    ctx: &DecodeContext<'_>,
     request: FreeEdge<'_, '_>,
     edge: &Edge,
     entities: &mut Vec<Entity>,
@@ -832,8 +835,9 @@ fn append_free_edge(
         return Ok(());
     }
     let geometry = flatten_curve(solved_curve(curve)?)?;
-    let span = edge_span(index, edge, &geometry)?;
+    let span = edge_span(ctx, index, edge, &geometry)?;
     append_curve_entity(
+        ctx,
         entities,
         ir,
         CurveEntityRequest {
@@ -1771,7 +1775,7 @@ fn validate_brep_topology<'a>(
                                     )?;
                                 let span = named(edge.id.as_str(), || {
                                     let geometry = flatten_curve(solved_curve(curve)?)?;
-                                    Ok(edge_span(index, edge, &geometry)?)
+                                    Ok(edge_span(ctx, index, edge, &geometry)?)
                                 })?;
                                 for vertex_id in edge.vertices() {
                                     let vertex = index
@@ -1787,18 +1791,19 @@ fn validate_brep_topology<'a>(
                                     used_vertices.insert(vertex.id.as_str().to_owned());
                                     point_position(index, &vertex.point)?;
                                 }
-                                let orientation = pcurve_orientation_context(
+                                let orientation = PcurveOrientationContext {
+                                    ctx,
                                     index,
-                                    &surface.geometry,
-                                    span.start,
-                                    span.end,
-                                    UseDirection {
+                                    surface: &surface.geometry,
+                                    natural_start: span.start,
+                                    natural_end: span.end,
+                                    direction: UseDirection {
                                         traversal: coedge.sense,
                                         written: edge_use_sense(coedge.sense, face.sense),
                                     },
-                                    topology_edge_explicit_tolerance(index, edge),
-                                    coedge.id.as_str(),
-                                );
+                                    tolerance: topology_edge_explicit_tolerance(index, edge),
+                                    owner: coedge.id.as_str(),
+                                };
                                 validate_brep_pcurve_uses(&orientation, &coedge.pcurves)?;
                             }
                             for (vertex_id, after, pcurves) in loop_.vertex_occurrences() {
@@ -1822,15 +1827,16 @@ fn validate_brep_topology<'a>(
                                     )?;
                                 used_vertices.insert(vertex.id.as_str().to_owned());
                                 let position = point_position(index, &vertex.point)?.get();
-                                let orientation = pcurve_orientation_context(
+                                let orientation = PcurveOrientationContext {
+                                    ctx,
                                     index,
-                                    &surface.geometry,
-                                    position,
-                                    position,
-                                    UseDirection::traversed(Sense::Forward),
-                                    cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-                                    loop_.id.as_str(),
-                                );
+                                    surface: &surface.geometry,
+                                    natural_start: position,
+                                    natural_end: position,
+                                    direction: UseDirection::traversed(Sense::Forward),
+                                    tolerance: cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
+                                    owner: loop_.id.as_str(),
+                                };
                                 validate_brep_pcurve_uses(&orientation, pcurves)?;
                             }
                         }
@@ -1842,7 +1848,7 @@ fn validate_brep_topology<'a>(
         })?;
     }
 
-    let ignored_carriers = ignored_carrier_geometry(ir)?;
+    let ignored_carriers = ignored_carrier_geometry(ctx, ir)?;
     let mut admitted_edges = used_edges.clone();
     admitted_edges.extend(ignored_carriers.edges.iter().cloned());
     let mut admitted_vertices = used_vertices.clone();
@@ -2039,7 +2045,7 @@ fn brep_entities(
     let ir = index.ir;
     let ownership = ownership::SourceOwnership::build(ir);
     let version = topology.version;
-    let ignored_carriers = ignored_carrier_geometry(ir)?;
+    let ignored_carriers = ignored_carrier_geometry(ctx, ir)?;
     let mut topology_point_ids = std::collections::BTreeSet::new();
     for coedge in &ir.geometry.coedges {
         let Some(edge) = index.edges.get(coedge.edge.as_str()).copied() else {
@@ -2121,8 +2127,9 @@ fn brep_entities(
                     ))
                 })?;
             let geometry = flatten_curve(solved_curve(curve)?)?;
-            let span = edge_span(index, edge, &geometry)?;
+            let span = edge_span(ctx, index, edge, &geometry)?;
             let index = append_curve_entity(
+                ctx,
                 &mut entities,
                 ir,
                 CurveEntityRequest {
@@ -2150,6 +2157,7 @@ fn brep_entities(
         &mut consumed_curve_ids,
     )?;
     let ignored_curves = append_unowned_curves(
+        ctx,
         UnownedCurves {
             ir,
             version,
@@ -2186,20 +2194,21 @@ fn brep_entities(
                     ))
                 })?;
             for coedge_id in loop_.coedges() {
-                let carrier = boundary_coedge(index, loop_, coedge_id)?;
+                let carrier = boundary_coedge(ctx, index, loop_, coedge_id)?;
                 let coedge: &Coedge = carrier.coedge;
-                let uses = pcurve_orientation_context(
+                let uses = PcurveOrientationContext {
+                    ctx,
                     index,
-                    &surface.geometry,
-                    carrier.span.start,
-                    carrier.span.end,
-                    UseDirection {
+                    surface: &surface.geometry,
+                    natural_start: carrier.span.start,
+                    natural_end: carrier.span.end,
+                    direction: UseDirection {
                         traversal: coedge.sense,
                         written: edge_use_sense(coedge.sense, face.sense),
                     },
-                    topology_edge_explicit_tolerance(index, carrier.edge),
-                    coedge.id.as_str(),
-                )
+                    tolerance: topology_edge_explicit_tolerance(index, carrier.edge),
+                    owner: coedge.id.as_str(),
+                }
                 .written_uses(&coedge.pcurves)?;
                 written_pcurves.insert(coedge.id.as_str(), uses);
             }
@@ -2227,7 +2236,7 @@ fn brep_entities(
             continue;
         }
         let entity_index = entities.len();
-        entities.push(pcurve_entity(index, pcurve).map_err(naming(pcurve_id))?);
+        entities.push(pcurve_entity(ctx, index, pcurve).map_err(naming(pcurve_id))?);
         pcurve_indices.insert(pcurve_id.to_owned(), entity_index);
     }
 
@@ -2445,7 +2454,7 @@ fn brep_entities(
                         ))
                     })?;
                     let pcurve_entities =
-                        pcurve_use_entities(index, written, &pcurve_indices, &mut entities)?;
+                        pcurve_use_entities(ctx, index, written, &pcurve_indices, &mut entities)?;
                     write!(
                         parameters,
                         ",0,{},{},{},{}",
@@ -2753,7 +2762,10 @@ impl IgnoredCarrierGeometry {
     }
 }
 
-fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecError> {
+fn ignored_carrier_geometry(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<IgnoredCarrierGeometry, CodecError> {
     let topology_edge_ids = ir
         .geometry
         .coedges
@@ -2866,7 +2878,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                 continue;
             }
             let evaluated_start = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 &curve.geometry,
                 range[0],
             ))?;
@@ -2884,7 +2896,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                 continue;
             }
             let evaluated_end = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 &curve.geometry,
                 range[1],
             ))?;
@@ -2971,7 +2983,7 @@ fn topology_entities(
     let ir = index.ir;
     let ownership = ownership::SourceOwnership::build(ir);
     let version = topology.version;
-    let ignored_carriers = ignored_carrier_geometry(ir)?;
+    let ignored_carriers = ignored_carrier_geometry(ctx, ir)?;
     let topology_edge_ids = ir
         .geometry
         .coedges
@@ -3021,7 +3033,7 @@ fn topology_entities(
             for loop_ in loops {
                 boundaries.push((
                     surface_index,
-                    written_boundary(index, loop_, &surface.geometry, !bounded)?,
+                    written_boundary(ctx, index, loop_, &surface.geometry, !bounded)?,
                 ));
             }
             Ok(())
@@ -3078,7 +3090,7 @@ fn topology_entities(
             let Some(form) = stored_edges.get(edge.id.as_str()) else {
                 return Ok(());
             };
-            let span = edge_span(index, edge, &geometry)?;
+            let span = edge_span(ctx, index, edge, &geometry)?;
             let request = CurveEntityRequest {
                 version,
                 curve_id,
@@ -3090,10 +3102,10 @@ fn topology_entities(
             };
             let stored = match form {
                 StoredEdgeForm::Whole => {
-                    StoredEdgeCurve::Whole(append_curve_entity(&mut entities, ir, request)?)
+                    StoredEdgeCurve::Whole(append_curve_entity(ctx, &mut entities, ir, request)?)
                 }
                 StoredEdgeForm::Constituents => StoredEdgeCurve::Constituents(
-                    append_curve_constituents(&mut entities, ir, request)?,
+                    append_curve_constituents(ctx, &mut entities, ir, request)?,
                 ),
             };
             edge_indices.insert(edge.id.as_str().to_owned(), stored);
@@ -3110,6 +3122,7 @@ fn topology_entities(
         &mut consumed_curves,
     )?;
     let ignored_curves = append_unowned_curves(
+        ctx,
         UnownedCurves {
             ir,
             version,
@@ -3128,7 +3141,7 @@ fn topology_entities(
             continue;
         }
         let entity_index = entities.len();
-        entities.push(pcurve_entity(index, pcurve).map_err(naming(pcurve_id))?);
+        entities.push(pcurve_entity(ctx, index, pcurve).map_err(naming(pcurve_id))?);
         pcurve_indices.insert(pcurve_id.to_owned(), entity_index);
     }
 
@@ -3138,6 +3151,7 @@ fn topology_entities(
         let entity = named(boundary.loop_.id.as_str(), || {
             Ok(if boundary.trimmed {
                 curve_on_surface_entity(
+                    ctx,
                     index,
                     &mut entities,
                     CurveOnSurfaceEntityRequest {
@@ -3150,6 +3164,7 @@ fn topology_entities(
                 )?
             } else {
                 boundary_entity(
+                    ctx,
                     index,
                     boundary,
                     *surface_index,
@@ -3422,7 +3437,7 @@ fn validate_trimmed_sheet_topology<'a>(
     let mut used_edges = std::collections::BTreeSet::new();
     let mut used_vertices = std::collections::BTreeSet::new();
     let mut used_pcurves = std::collections::BTreeSet::new();
-    let ignored_carriers = ignored_carrier_geometry(ir)?;
+    let ignored_carriers = ignored_carrier_geometry(ctx, ir)?;
     for face in &ir.geometry.faces {
         named(face.id.as_str(), || {
             if face.sense != Sense::Forward {
@@ -3576,6 +3591,7 @@ fn validate_trimmed_sheet_topology<'a>(
                         })?;
                     let span = named(edge.id.as_str(), || {
                         Ok(edge_span(
+                            ctx,
                             index,
                             edge,
                             &flatten_curve(solved_curve(curve)?)?,
@@ -3652,18 +3668,19 @@ fn validate_trimmed_sheet_topology<'a>(
                             ))
                             .into());
                         }
-                        pcurve_entity(index, pcurve)?;
+                        pcurve_entity(ctx, index, pcurve)?;
                         used_pcurves.insert(pcurve.id.as_str().to_owned());
                     }
-                    let orientation = pcurve_orientation_context(
+                    let orientation = PcurveOrientationContext {
+                        ctx,
                         index,
-                        &surface.geometry,
-                        span.start,
-                        span.end,
-                        UseDirection::traversed(coedge.sense),
-                        topology_edge_explicit_tolerance(index, edge),
-                        coedge.id.as_str(),
-                    );
+                        surface: &surface.geometry,
+                        natural_start: span.start,
+                        natural_end: span.end,
+                        direction: UseDirection::traversed(coedge.sense),
+                        tolerance: topology_edge_explicit_tolerance(index, edge),
+                        owner: coedge.id.as_str(),
+                    };
                     orientation.validate(&coedge.pcurves)?;
                 }
             }
@@ -3807,6 +3824,7 @@ impl BoundaryCoedge<'_> {
 }
 
 fn boundary_coedge<'ir>(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'ir>,
     loop_: &Loop,
     coedge_id: &CoedgeId,
@@ -3848,7 +3866,7 @@ fn boundary_coedge<'ir>(
             ))
         })?;
     let geometry = flatten_curve(solved_curve(curve)?)?;
-    let span = edge_span(index, edge, &geometry)?;
+    let span = edge_span(ctx, index, edge, &geometry)?;
     Ok(BoundaryCoedge {
         coedge,
         edge,
@@ -3922,6 +3940,7 @@ enum StoredEdgeCurve {
 /// The boundary of `loop_` on `surface` with the curve entities that each
 /// coedge use references.
 fn written_boundary<'ir>(
+    ctx: &DecodeContext<'_>,
     index: &'ir TopologyIndex<'ir>,
     loop_: &'ir Loop,
     surface: &'ir SurfaceGeometry,
@@ -3930,21 +3949,20 @@ fn written_boundary<'ir>(
     let carriers = loop_
         .coedges()
         .iter()
-        .map(|coedge_id| boundary_coedge(index, loop_, coedge_id))
+        .map(|coedge_id| boundary_coedge(ctx, index, loop_, coedge_id))
         .collect::<Result<Vec<_>, _>>()?;
-    let orientation = |carrier: &BoundaryCoedge<'ir>, written: Sense| {
-        pcurve_orientation_context(
-            index,
-            surface,
-            carrier.span.start,
-            carrier.span.end,
-            UseDirection {
-                traversal: carrier.coedge.sense,
-                written,
-            },
-            topology_edge_explicit_tolerance(index, carrier.edge),
-            carrier.coedge.id.as_str(),
-        )
+    let orientation = |carrier: &BoundaryCoedge<'ir>, written: Sense| PcurveOrientationContext {
+        ctx,
+        index,
+        surface,
+        natural_start: carrier.span.start,
+        natural_end: carrier.span.end,
+        direction: UseDirection {
+            traversal: carrier.coedge.sense,
+            written,
+        },
+        tolerance: topology_edge_explicit_tolerance(index, carrier.edge),
+        owner: carrier.coedge.id.as_str(),
     };
     let coedges = if trimmed {
         let mut chained = carriers
@@ -4014,6 +4032,7 @@ fn written_boundary<'ir>(
 }
 
 fn boundary_entity(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     boundary: &WrittenBoundary<'_>,
     surface_index: usize,
@@ -4048,7 +4067,7 @@ fn boundary_entity(
         parameters.push_str(&reference_marker(*edge_index));
         write!(parameters, ",{sense},{}", written.pcurves.len()).map_err(CodecError::malformed)?;
         for (_, pcurve_index) in
-            pcurve_use_entities(index, &written.pcurves, pcurve_indices, entities)?
+            pcurve_use_entities(ctx, index, &written.pcurves, pcurve_indices, entities)?
         {
             parameters.push(',');
             parameters.push_str(&reference_marker(pcurve_index));
@@ -4075,6 +4094,7 @@ struct CurveOnSurfaceEntityRequest<'a, 'ir> {
 }
 
 fn curve_on_surface_entity(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     entities: &mut Vec<Entity>,
     request: CurveOnSurfaceEntityRequest<'_, '_>,
@@ -4115,14 +4135,15 @@ fn curve_on_surface_entity(
                     reference_offset: 0,
                 };
                 if composes {
-                    model_children.extend(append_curve_constituents(entities, index.ir, request)?);
+                    model_children
+                        .extend(append_curve_constituents(ctx, entities, index.ir, request)?);
                 } else {
-                    model_children.push(append_curve_entity(entities, index.ir, request)?);
+                    model_children.push(append_curve_entity(ctx, entities, index.ir, request)?);
                 }
             }
         }
         pcurve_children.extend(
-            pcurve_use_entities(index, &written.pcurves, pcurve_indices, entities)?
+            pcurve_use_entities(ctx, index, &written.pcurves, pcurve_indices, entities)?
                 .into_iter()
                 .map(|(_, index)| index),
         );
@@ -4298,6 +4319,7 @@ fn composite_entity_references(entity: &Entity) -> Result<Vec<usize>, CodecError
 }
 
 fn oriented_curve_entity(
+    ctx: &DecodeContext<'_>,
     geometry: &CurveGeometry,
     span: &CurveSpan,
     sense: Sense,
@@ -4305,6 +4327,7 @@ fn oriented_curve_entity(
 ) -> Result<Entity, CodecError> {
     if sense == Sense::Forward {
         let mut entity = curve_entity(
+            ctx,
             geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("IGES carrier has no solved geometry".into())
             })?,
@@ -4321,6 +4344,7 @@ fn oriented_curve_entity(
     };
     let mut entity = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => curve_entity(
+            ctx,
             geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("IGES carrier has no solved geometry".into())
             })?,
@@ -4334,6 +4358,7 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
+                ctx,
                 &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
@@ -4363,6 +4388,7 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
+                ctx,
                 &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
@@ -4394,6 +4420,7 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
+                ctx,
                 &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
@@ -4423,6 +4450,7 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
+                ctx,
                 &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
@@ -4444,6 +4472,7 @@ fn oriented_curve_entity(
                 ..reversed_span
             };
             curve_entity(
+                ctx,
                 &SolvedCurveGeometry::Nurbs(reversed),
                 Some(&reversed_span),
                 version,
@@ -4471,6 +4500,7 @@ fn oriented_curve_entity(
                 end: span.start,
             };
             curve_entity(
+                ctx,
                 reversed_geometry.solved().ok_or_else(|| {
                     CodecError::NotImplemented("IGES carrier has no solved geometry".into())
                 })?,
@@ -4489,6 +4519,7 @@ fn oriented_curve_entity(
 }
 
 fn procedural_pcurve_source_map(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     surface_id: &SurfaceId,
 ) -> Result<Option<(f64, f64, f64, f64)>, CodecError> {
@@ -4535,8 +4566,14 @@ fn procedural_pcurve_source_map(
             ))
         })?;
     let geometry = flatten_curve(solved_curve(source_curve)?)?;
-    let carrier_interval =
-        construction_carrier_interval(ir, directrix, &geometry, procedural, fallback_interval)?;
+    let carrier_interval = construction_carrier_interval(
+        ctx,
+        ir,
+        directrix,
+        &geometry,
+        procedural,
+        fallback_interval,
+    )?;
     let mut u_map;
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
@@ -4598,11 +4635,15 @@ fn procedural_pcurve_source_map(
     Ok(Some((u_map.0, u_map.1, v_map.0, v_map.1)))
 }
 
-fn source_pcurve(index: &TopologyIndex<'_>, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
+fn source_pcurve(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
+    pcurve: &Pcurve,
+) -> Result<Pcurve, CodecError> {
     let mut parameter_map = None;
     for surface_id in index.pcurve_support_surfaces(pcurve.id.as_str()) {
         let candidate =
-            procedural_pcurve_source_map(index, surface_id)?.unwrap_or((1.0, 0.0, 1.0, 0.0));
+            procedural_pcurve_source_map(ctx, index, surface_id)?.unwrap_or((1.0, 0.0, 1.0, 0.0));
         if parameter_map.is_some_and(|existing| existing != candidate) {
             return Err(CodecError::NotImplemented(format!(
                 "IGES pcurve {} is shared by incompatible procedural surface parameterizations",
@@ -4639,10 +4680,11 @@ fn source_pcurve(index: &TopologyIndex<'_>, pcurve: &Pcurve) -> Result<Pcurve, C
 }
 
 fn oriented_pcurve_entity(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     pcurve: &Pcurve,
 ) -> Result<Entity, CodecError> {
-    let pcurve = source_pcurve(index, pcurve)?;
+    let pcurve = source_pcurve(ctx, index, pcurve)?;
     let range = pcurve.parameter_range().ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
@@ -4651,7 +4693,7 @@ fn oriented_pcurve_entity(
     })?;
     let nurbs = lifted_pcurve(&pcurve, range)?;
     let (reversed, range) = reverse_nurbs(&nurbs, range)?;
-    encode_nurbs(&reversed, range, "PCURVE")
+    encode_nurbs(ctx, &reversed, range, "PCURVE")
 }
 
 fn reverse_nurbs(
@@ -4684,15 +4726,19 @@ fn reverse_nurbs(
     Ok((reversed, reversed_range))
 }
 
-fn pcurve_entity(index: &TopologyIndex<'_>, pcurve: &Pcurve) -> Result<Entity, CodecError> {
-    let pcurve = source_pcurve(index, pcurve)?;
+fn pcurve_entity(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
+    pcurve: &Pcurve,
+) -> Result<Entity, CodecError> {
+    let pcurve = source_pcurve(ctx, index, pcurve)?;
     let range = pcurve.parameter_range().ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
             pcurve.id
         ))
     })?;
-    encode_nurbs(&lifted_pcurve(&pcurve, range)?, range, "PCURVE")
+    encode_nurbs(ctx, &lifted_pcurve(&pcurve, range)?, range, "PCURVE")
 }
 
 /// The pcurve as a NURBS curve in the plane z = 0 that keeps its
@@ -4832,7 +4878,7 @@ fn holds_one_parameter_constant(geometry: &PcurveGeometry) -> bool {
 }
 
 fn validate_brep_pcurve_uses(
-    orientation: &PcurveOrientationContext<'_>,
+    orientation: &PcurveOrientationContext<'_, '_>,
     uses: &[PcurveUse],
 ) -> Result<(), CodecError> {
     for pcurve_use in uses {
@@ -4868,7 +4914,7 @@ fn validate_brep_pcurve_uses(
                 orientation.owner, pcurve.id
             )));
         }
-        pcurve_entity(orientation.index, pcurve)?;
+        pcurve_entity(orientation.ctx, orientation.index, pcurve)?;
     }
     orientation.validate(uses)
 }
@@ -4892,7 +4938,8 @@ impl UseDirection {
     }
 }
 
-struct PcurveOrientationContext<'a> {
+struct PcurveOrientationContext<'a, 'c> {
+    ctx: &'c DecodeContext<'c>,
     index: &'a TopologyIndex<'a>,
     surface: &'a SurfaceGeometry,
     natural_start: Point3,
@@ -4902,7 +4949,7 @@ struct PcurveOrientationContext<'a> {
     owner: &'a str,
 }
 
-impl<'a> PcurveOrientationContext<'a> {
+impl<'a> PcurveOrientationContext<'a, '_> {
     fn validate(&self, uses: &[PcurveUse]) -> Result<(), CodecError> {
         self.orientation(uses).map(|_| ())
     }
@@ -4965,7 +5012,7 @@ impl<'a> PcurveOrientationContext<'a> {
             // A non-finite pcurve point is evaluated on the support as a finite
             // one is.
             let pcurve_point = |parameter, position| match cadmpeg_ir::eval::decode::pcurve_uv(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.ctx),
                 &pcurve.geometry,
                 parameter,
             ) {
@@ -4980,14 +5027,14 @@ impl<'a> PcurveOrientationContext<'a> {
             let start_uv = pcurve_point(range[0], "start")?;
             let end_uv = pcurve_point(range[1], "end")?;
             let start = model_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.ctx),
                 self.index.ir,
                 self.surface,
                 start_uv.u,
                 start_uv.v,
             );
             let end = model_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.ctx),
                 self.index.ir,
                 self.surface,
                 end_uv.u,
@@ -5101,6 +5148,7 @@ fn stored_pcurve_ids<'ir>(
 /// The entity of each written pcurve use. A reversed copy is appended to
 /// `entities`.
 fn pcurve_use_entities<'ir>(
+    ctx: &DecodeContext<'_>,
     records: &TopologyIndex<'_>,
     uses: &[WrittenPcurveUse<'ir>],
     pcurve_indices: &BTreeMap<String, usize>,
@@ -5119,7 +5167,7 @@ fn pcurve_use_entities<'ir>(
                     })?,
                 CarrierEntity::ReversedCopy => {
                     let index = entities.len();
-                    entities.push(oriented_pcurve_entity(records, written.pcurve)?);
+                    entities.push(oriented_pcurve_entity(ctx, records, written.pcurve)?);
                     index
                 }
             };
@@ -5149,26 +5197,6 @@ fn use_runs_backward(pcurve_use: &PcurveUse) -> bool {
         let [start, end] = range.endpoints();
         end < start
     })
-}
-
-fn pcurve_orientation_context<'a>(
-    index: &'a TopologyIndex<'a>,
-    surface: &'a SurfaceGeometry,
-    natural_start: Point3,
-    natural_end: Point3,
-    direction: UseDirection,
-    tolerance: f64,
-    owner: &'a str,
-) -> PcurveOrientationContext<'a> {
-    PcurveOrientationContext {
-        index,
-        surface,
-        natural_start,
-        natural_end,
-        direction,
-        tolerance,
-        owner,
-    }
 }
 
 fn pcurve_chain_matches(
@@ -5215,7 +5243,10 @@ fn topology_edge_explicit_tolerance(records: &impl ModelRecords, edge: &Edge) ->
     tolerance
 }
 
-fn generated_minimum_resolution(index: &TopologyIndex<'_>) -> Result<f64, CodecError> {
+fn generated_minimum_resolution(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
+) -> Result<f64, CodecError> {
     let ir = index.ir;
     let topology_tolerance = ir
         .geometry
@@ -5231,12 +5262,15 @@ fn generated_minimum_resolution(index: &TopologyIndex<'_>) -> Result<f64, CodecE
         .map(cadmpeg_ir::scalar::PositiveLength::get)
         .map(effective_topology_tolerance)
         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
-    let endpoint_scale = generated_endpoint_coordinate_scale(index)?;
+    let endpoint_scale = generated_endpoint_coordinate_scale(ctx, index)?;
     Ok(topology_tolerance.max(endpoint_scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE))
 }
 
-fn minimum_resolution_for_output(index: &TopologyIndex<'_>) -> Result<f64, CodecError> {
-    let generated = generated_minimum_resolution(index)?;
+fn minimum_resolution_for_output(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
+) -> Result<f64, CodecError> {
+    let generated = generated_minimum_resolution(ctx, index)?;
     Ok(generated.max(index.ir.tolerances.linear.get()))
 }
 
@@ -5259,7 +5293,10 @@ fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {
     }
 }
 
-fn generated_endpoint_coordinate_scale(index: &TopologyIndex<'_>) -> Result<f64, CodecError> {
+fn generated_endpoint_coordinate_scale(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
+) -> Result<f64, CodecError> {
     let mut scale = 1.0_f64;
     for edge in &index.ir.geometry.edges {
         for vertex_id in edge.vertices() {
@@ -5278,7 +5315,7 @@ fn generated_endpoint_coordinate_scale(index: &TopologyIndex<'_>) -> Result<f64,
         };
         for parameter in range {
             if let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 &curve.geometry,
                 parameter,
             ))? {
@@ -5754,6 +5791,7 @@ struct CurveSpan {
 }
 
 fn construction_carrier_interval(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     directrix: &CurveId,
     geometry: &CurveGeometry,
@@ -5783,7 +5821,7 @@ fn construction_carrier_interval(
                 .iter()
                 .any(|edge| edge.curve() == Some(directrix))
             {
-                curve_reference_span(ir, directrix, geometry).map(|span| span.range.get())
+                curve_reference_span(ctx, ir, directrix, geometry).map(|span| span.range.get())
             } else {
                 Ok(fallback)
             }
@@ -5975,10 +6013,10 @@ fn surface_entities_for_ir(
                 })?;
             match procedural.definition() {
                 ProceduralSurfaceDefinition::Revolution(_) => {
-                    revolution_surface_entities(ir, construction, base_index, version)
+                    revolution_surface_entities(ctx, ir, construction, base_index, version)
                 }
                 ProceduralSurfaceDefinition::Extrusion(_) => {
-                    extrusion_surface_entities(ir, construction, base_index, version)
+                    extrusion_surface_entities(ctx, ir, construction, base_index, version)
                 }
                 _ => Err(CodecError::NotImplemented(
                     "IGES semantic writer only encodes procedural Revolution and Extrusion surfaces as native entities".into(),
@@ -5990,6 +6028,7 @@ fn surface_entities_for_ir(
 }
 
 fn extrusion_surface_entities(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
     base_index: usize,
@@ -6048,6 +6087,7 @@ fn extrusion_surface_entities(
         })?;
     let geometry = flatten_curve(solved_curve(source_curve)?)?;
     let carrier_interval = construction_carrier_interval(
+        ctx,
         ir,
         directrix,
         &geometry,
@@ -6058,7 +6098,7 @@ fn extrusion_surface_entities(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
     ) {
-        let span = curve_reference_span(ir, directrix, &geometry)?;
+        let span = curve_reference_span(ctx, ir, directrix, &geometry)?;
         if !same_range(span.range.get(), [start_parameter, terminate_parameter]) {
             return Err(CodecError::NotImplemented(
                 "IGES Type 122 composite directrix range is not its canonical Type 102 range"
@@ -6081,7 +6121,7 @@ fn extrusion_surface_entities(
         // A directrix end outside the finite range is refused as the composite
         // directrix's non-finite end is.
         let directrix_end = |parameter, label: &str| match cadmpeg_ir::eval::decode::curve_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             &geometry,
             parameter,
         ) {
@@ -6115,6 +6155,7 @@ fn extrusion_surface_entities(
     };
     let mut entities = Vec::new();
     let directrix_local_index = append_curve_entity(
+        ctx,
         &mut entities,
         ir,
         CurveEntityRequest {
@@ -6195,6 +6236,7 @@ impl RevolutionSweep {
 }
 
 fn revolution_surface_entities(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
     base_index: usize,
@@ -6249,6 +6291,7 @@ fn revolution_surface_entities(
         })?;
     let geometry = flatten_curve(solved_curve(source_curve)?)?;
     let carrier_interval = construction_carrier_interval(
+        ctx,
         ir,
         directrix,
         &geometry,
@@ -6264,7 +6307,7 @@ fn revolution_surface_entities(
         [start_parameter, terminate_parameter]
     };
     let start = cadmpeg_ir::eval::decode::curve_point(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
         &geometry,
         evaluation_interval[0],
     )
@@ -6277,7 +6320,7 @@ fn revolution_surface_entities(
         }
     })?;
     let end = cadmpeg_ir::eval::decode::curve_point(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
         &geometry,
         evaluation_interval[1],
     )
@@ -6301,7 +6344,7 @@ fn revolution_surface_entities(
         ) {
             Some(axis) => {
                 let geometry = flatten_curve(solved_curve(axis)?)?;
-                let span = curve_reference_span(ir, &axis.id, &geometry)?;
+                let span = curve_reference_span(ctx, ir, &axis.id, &geometry)?;
                 (geometry, span)
             }
             None => (
@@ -6327,6 +6370,7 @@ fn revolution_surface_entities(
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     Ok(vec![
         curve_entity(
+            ctx,
             axis_geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("IGES carrier has no solved geometry".into())
             })?,
@@ -6334,6 +6378,7 @@ fn revolution_surface_entities(
             version,
         )?,
         curve_entity(
+            ctx,
             geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("IGES carrier has no solved geometry".into())
             })?,
@@ -6603,12 +6648,14 @@ fn encode_nurbs_surface(
     };
     let closed_u = nurbs.u_periodic()
         || nurbs_surface_closed_u(
+            ctx,
             nurbs,
             u_range.map(FiniteReal::get),
             v_range.map(FiniteReal::get),
         )?;
     let closed_v = nurbs.v_periodic()
         || nurbs_surface_closed_v(
+            ctx,
             nurbs,
             u_range.map(FiniteReal::get),
             v_range.map(FiniteReal::get),
@@ -6659,13 +6706,14 @@ fn encode_nurbs_surface(
 }
 
 fn nurbs_surface_closed_u(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     u_range: [f64; 2],
     v_range: [f64; 2],
 ) -> Result<bool, CodecError> {
     for v in [v_range[0], v_range[0].midpoint(v_range[1]), v_range[1]] {
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             nurbs,
             u_range[0],
             v,
@@ -6674,7 +6722,7 @@ fn nurbs_surface_closed_u(
             return Ok(false);
         };
         let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             nurbs,
             u_range[1],
             v,
@@ -6690,13 +6738,14 @@ fn nurbs_surface_closed_u(
 }
 
 fn nurbs_surface_closed_v(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     u_range: [f64; 2],
     v_range: [f64; 2],
 ) -> Result<bool, CodecError> {
     for u in [u_range[0], u_range[0].midpoint(u_range[1]), u_range[1]] {
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             nurbs,
             u,
             v_range[0],
@@ -6705,7 +6754,7 @@ fn nurbs_surface_closed_v(
             return Ok(false);
         };
         let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             nurbs,
             u,
             v_range[1],
@@ -6765,11 +6814,13 @@ struct CurveEntityRequest<'a> {
 }
 
 fn append_curve_entity(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<Entity>,
     ir: &CadIr,
     request: CurveEntityRequest<'_>,
 ) -> Result<usize, CodecError> {
     let mut emitter = CurveEntityEmitter {
+        ctx,
         entities,
         ir,
         active: BTreeSet::new(),
@@ -6788,15 +6839,17 @@ fn append_curve_entity(
 /// The entities of the constituents of a Type 102 composite curve, without
 /// an entity for the composite, or the one entity of any other curve.
 fn append_curve_constituents(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<Entity>,
     ir: &CadIr,
     request: CurveEntityRequest<'_>,
 ) -> Result<Vec<usize>, CodecError> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) = request.geometry
     else {
-        return append_curve_entity(entities, ir, request).map(|index| vec![index]);
+        return append_curve_entity(ctx, entities, ir, request).map(|index| vec![index]);
     };
     let mut emitter = CurveEntityEmitter {
+        ctx,
         entities,
         ir,
         active: BTreeSet::from([request.curve_id.clone()]),
@@ -6807,6 +6860,7 @@ fn append_curve_constituents(
 }
 
 struct CurveEntityEmitter<'a> {
+    ctx: &'a DecodeContext<'a>,
     entities: &'a mut Vec<Entity>,
     ir: &'a CadIr,
     active: BTreeSet<CurveId>,
@@ -6842,6 +6896,7 @@ impl CurveEntityEmitter<'_> {
             _ => {
                 let mut entity = match sense {
                     Sense::Forward => curve_entity(
+                        self.ctx,
                         geometry.solved().ok_or_else(|| {
                             CodecError::NotImplemented("IGES carrier has no solved geometry".into())
                         })?,
@@ -6854,7 +6909,13 @@ impl CurveEntityEmitter<'_> {
                                 "IGES reversed curve {curve_id} requires a parameter range"
                             ))
                         })?;
-                        oriented_curve_entity(geometry, span, Sense::Reversed, self.version)?
+                        oriented_curve_entity(
+                            self.ctx,
+                            geometry,
+                            span,
+                            Sense::Reversed,
+                            self.version,
+                        )?
                     }
                 };
                 entity.status = status;
@@ -6911,6 +6972,7 @@ impl CurveEntityEmitter<'_> {
                 children.extend(nested_children?);
             } else {
                 let child_span = curve_reference_span_inner(
+                    self.ctx,
                     self.ir,
                     &segment.curve,
                     &child_geometry,
@@ -6935,14 +6997,16 @@ impl CurveEntityEmitter<'_> {
 }
 
 fn curve_reference_span(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     curve_id: &CurveId,
     geometry: &CurveGeometry,
 ) -> Result<CurveSpan, CodecError> {
-    curve_reference_span_inner(ir, curve_id, geometry, &mut BTreeSet::new())
+    curve_reference_span_inner(ctx, ir, curve_id, geometry, &mut BTreeSet::new())
 }
 
 fn curve_reference_span_inner(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     curve_id: &CurveId,
     geometry: &CurveGeometry,
@@ -6971,7 +7035,7 @@ fn curve_reference_span_inner(
                     })?;
                 let child_geometry = flatten_curve(solved_curve(child)?)?;
                 let child_span =
-                    curve_reference_span_inner(ir, &segment.curve, &child_geometry, active)?;
+                    curve_reference_span_inner(ctx, ir, &segment.curve, &child_geometry, active)?;
                 let width = child_span.range[1] - child_span.range[0];
                 if !width.is_finite() || width <= 0.0 {
                     return Err(CodecError::malformed(format_args!(
@@ -7079,7 +7143,7 @@ fn curve_reference_span_inner(
                         })?)?,
                     };
                     let start = cadmpeg_ir::eval::decode::curve_point(
-                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                         geometry,
                         range[0],
                     )
@@ -7092,7 +7156,7 @@ fn curve_reference_span_inner(
                         )),
                     })?;
                     let end = cadmpeg_ir::eval::decode::curve_point(
-                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                         geometry,
                         range[1],
                     )
@@ -7119,10 +7183,10 @@ fn curve_reference_span_inner(
                             "IGES composite child curve {curve_id} requires a parameter range"
                         )));
                     }
-                    let first = edge_span(ir, first_edge, geometry)?;
+                    let first = edge_span(ctx, ir, first_edge, geometry)?;
                     let rest_spans = rest_edges
                         .iter()
-                        .map(|edge| edge_span(ir, edge, geometry))
+                        .map(|edge| edge_span(ctx, ir, edge, geometry))
                         .collect::<Result<Vec<_>, _>>()?;
                     let tolerance = matching_edges
                         .iter()
@@ -7287,6 +7351,7 @@ struct UnownedCurves<'a, 'ir> {
 /// entity is valid only under a written parent, so a physically dependent
 /// curve that no written curve consumes is withheld with a loss.
 fn append_unowned_curves(
+    ctx: &DecodeContext<'_>,
     request: UnownedCurves<'_, '_>,
     entities: &mut Vec<Entity>,
     consumed: &mut BTreeSet<String>,
@@ -7324,9 +7389,10 @@ fn append_unowned_curves(
                 let geometry = flatten_curve(solved_curve(curve)?)?;
                 let span = curve
                     .parameter_range
-                    .map(|_| curve_reference_span(ir, &curve.id, &geometry))
+                    .map(|_| curve_reference_span(ctx, ir, &curve.id, &geometry))
                     .transpose()?;
                 append_curve_entity(
+                    ctx,
                     entities,
                     ir,
                     CurveEntityRequest {
@@ -7394,6 +7460,7 @@ fn mark_curve_descendants(
 }
 
 fn edge_span(
+    ctx: &DecodeContext<'_>,
     records: &impl ModelRecords,
     edge: &Edge,
     geometry: &CurveGeometry,
@@ -7408,7 +7475,7 @@ fn edge_span(
                 edge.id
             ))
         })?;
-        return curve_reference_span(records.ir(), curve_id, geometry);
+        return curve_reference_span(ctx, records.ir(), curve_id, geometry);
     }
     let missing_range = || {
         CodecError::NotImplemented(format!(
@@ -7444,7 +7511,7 @@ fn edge_span(
         )
     ) {
         let evaluated_start = cadmpeg_ir::eval::decode::curve_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             geometry,
             range[0],
         )
@@ -7458,7 +7525,7 @@ fn edge_span(
             )),
         })?;
         let evaluated_end = cadmpeg_ir::eval::decode::curve_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             geometry,
             range[1],
         )
@@ -7622,6 +7689,7 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[FiniteReal; 3], CodecEr
 }
 
 fn curve_entity(
+    ctx: &DecodeContext<'_>,
     geometry: &SolvedCurveGeometry,
     span: Option<&CurveSpan>,
     version: crate::IgesVersion,
@@ -7811,7 +7879,7 @@ fn curve_entity(
                 transform: Some(placement(center, major, y_axis)?),
             })
         }
-        SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
+        SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(ctx, nurbs, range, "NURBS"),
         SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline)?;
             let nurbs = NurbsCurve::from_lanes(
@@ -7822,7 +7890,7 @@ fn curve_entity(
                 false,
             )
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
-            encode_nurbs(&nurbs, range, "POLYLINE")
+            encode_nurbs(ctx, &nurbs, range, "POLYLINE")
         }
         SolvedCurveGeometry::Degenerate(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
@@ -7840,6 +7908,7 @@ fn curve_entity(
 }
 
 fn encode_nurbs(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsCurve,
     range: FiniteVector<2>,
     label: &'static str,
@@ -7878,7 +7947,7 @@ fn encode_nurbs(
     let control_points = nurbs.pole_rows().raw_points();
     let plane_normal = nurbs_plane_normal(&control_points);
     let planar = plane_normal.is_some();
-    let closed = nurbs_is_closed(nurbs, domain)?;
+    let closed = nurbs_is_closed(ctx, nurbs, domain)?;
     let k = control_count - 1;
     let mut parameters = format!(
         "{k},{},{},{},{},{}",
@@ -7976,9 +8045,13 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
         .then_some(unit_normal)
 }
 
-fn nurbs_is_closed(nurbs: &NurbsCurve, domain: [f64; 2]) -> Result<bool, CodecError> {
+fn nurbs_is_closed(
+    ctx: &DecodeContext<'_>,
+    nurbs: &NurbsCurve,
+    domain: [f64; 2],
+) -> Result<bool, CodecError> {
     let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
         nurbs,
         domain[0],
     ))?
@@ -7986,7 +8059,7 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, domain: [f64; 2]) -> Result<bool, CodecEr
         return Ok(false);
     };
     let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
         nurbs,
         domain[1],
     ))?

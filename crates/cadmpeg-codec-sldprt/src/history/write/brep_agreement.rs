@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
@@ -75,7 +75,8 @@ pub(crate) enum Source<'a> {
 /// back other than the document states; the read-back names them, and no
 /// stale-solid loss calls them written. Without the retained source image,
 /// [`imageless_losses`] names what it can tell, and no edit is known to
-/// shape the solid. `digests` are the codec digests the decode recorded.
+/// shape the solid. `digests` are the codec digests the decode recorded; the
+/// comparison runs under `limits`.
 pub(crate) fn agreement(
     ir: &CadIr,
     digests: &CodecDigests,
@@ -83,13 +84,14 @@ pub(crate) fn agreement(
     source: Option<Source<'_>>,
     unwritten: &UnwrittenEdits,
     misread: &HashSet<(FeatureId, String)>,
+    limits: ResourceLimits,
 ) -> Result<Agreement, CodecError> {
     let kept_definitions = &unwritten.kept_definitions;
     let Some(native) = native else {
         return Ok(Agreement::default());
     };
     let hash_arena = DecodeArena::new();
-    let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy::service())?;
+    let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy { limits })?;
     let features_changed = differs(digests, "sldprt_neutral_feature_local_sha256", || {
         feature_hash(&hash_ctx, &ir.model)
     })?;
@@ -127,12 +129,14 @@ pub(crate) fn agreement(
         Source::Decoded(baseline) => baseline,
         Source::Image(image) => {
             decoded =
-                crate::decode::decode_for_read_back(image).map_err(|failure| match failure {
-                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                    other => CodecError::malformed(format_args!(
-                        "SLDPRT retained source cannot be decoded: {other}"
-                    )),
-                })?;
+                crate::decode::decode_for_read_back(image, limits).map_err(
+                    |failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => CodecError::malformed(format_args!(
+                            "SLDPRT retained source cannot be decoded: {other}"
+                        )),
+                    },
+                )?;
             decoded.ir()
         }
     };
@@ -156,7 +160,7 @@ pub(crate) fn agreement(
         parameter_edits(ir, baseline, unwritten, &mut out);
     }
     if native_changed {
-        native_edits(ir, native, baseline, &mut out)?;
+        native_edits(ir, native, baseline, limits, &mut out)?;
     }
     if configurations_changed {
         configuration_design_edits(ir, baseline, &named, unwritten, &mut out);
@@ -471,12 +475,13 @@ fn native_edits(
     ir: &CadIr,
     native: &SldprtNative,
     source: &CadIr,
+    limits: ResourceLimits,
     out: &mut Agreement,
 ) -> Result<(), CodecError> {
     let source_native = source
         .native
         .namespace("sldprt")
-        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+        .map(|namespace| SldprtNative::load_under(namespace, limits).map_err(CodecError::from))
         .transpose()?;
     let baseline = source_native
         .iter()

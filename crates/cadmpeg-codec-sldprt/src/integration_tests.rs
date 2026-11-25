@@ -3,6 +3,7 @@
 
 mod scan;
 
+mod encode_sets;
 mod extrude_direction;
 mod mesh_bodies;
 mod native_skeleton;

@@ -114,7 +114,7 @@ fn writes_alone(
     match stage {
         Stage::Brep => {
             let attributes = attributes::AttributeIndex::new(target, native);
-            encode_brep(target, native, &attributes).is_ok()
+            encode_brep(target, native, &attributes, limits).is_ok()
         }
         Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
             target,
@@ -133,11 +133,19 @@ fn encode_brep(
     target: &CadIr,
     native: &crate::native::F3dNative,
     attributes: &attributes::AttributeIndex<'_>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    encode_smbh(target, native, attributes)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy { limits };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    encode_smbh(target, native, attributes, &ctx)
 }
 
 /// Write `target` once. `write_design` states whether its native Design
@@ -204,7 +212,7 @@ fn attempt<W: Write + Seek>(
     let brep = if body_less {
         Ok(Vec::new())
     } else {
-        encode_brep(target, &native, &attributes)
+        encode_brep(target, &native, &attributes, limits)
     };
     let smbh = match brep {
         Ok(smbh) => smbh,
@@ -259,7 +267,7 @@ fn attempt<W: Write + Seek>(
         let snapshot = if body_less {
             None
         } else {
-            Some(snapshot_stream(target, &native).map_err(Failure::neutral_design)?)
+            Some(snapshot_stream(target, &native, limits).map_err(Failure::neutral_design)?)
         };
         let members = design
             .archive(
@@ -405,6 +413,7 @@ fn attempt<W: Write + Seek>(
 fn snapshot_stream(
     target: &CadIr,
     native: &crate::native::F3dNative,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     let mut unnamed = native.clone();
     unnamed.persistent_design_links.retain(|link| {
@@ -415,7 +424,7 @@ fn snapshot_stream(
     });
     let attributes =
         attributes::AttributeIndex::new(target, &unnamed).with_body_keys(target, |_| -1);
-    design::history::snapshot(&encode_brep(target, &unnamed, &attributes)?)
+    design::history::snapshot(&encode_brep(target, &unnamed, &attributes, limits)?)
 }
 
 /// The losses of the roster path's archive: the appearances, whose Protein

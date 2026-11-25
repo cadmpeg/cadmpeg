@@ -13,6 +13,7 @@ use std::io::Write;
 use crate::codec::FormatId;
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
+use crate::products::{ProductDefinition, Storage};
 use crate::report::{
     check::{Finding, ValidationReport},
     export::{
@@ -37,6 +38,7 @@ mod carried;
 mod coverage;
 pub mod edge_ranges;
 pub mod edge_recovery;
+mod encode_set;
 mod loss;
 pub use loss::{
     carried_source_losses, definition_placed, dependency_cycle_broken, edit_dropped,
@@ -78,6 +80,12 @@ pub trait EncoderBackend {
     /// a writer [`ExportReport::synthesis_cause`] records why a file of a
     /// same-format source was synthesized.
     const REUSES_SOURCE: bool;
+
+    /// Whether the format stores one definition per file (§3.4, Encode
+    /// sets). For such a backend [`Encoder::plan`] produces one output per
+    /// `File` definition of the document, the root definition included, and
+    /// plans each from the part of the document that output holds.
+    const DEFINITION_PER_FILE: bool = false;
 
     /// The domain this backend's targets come from.
     type Target: TargetDomain;
@@ -136,6 +144,12 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// The decode depth this encoder plans from, [`EncoderBackend::REQUEST`].
     fn request(&self) -> DecodeDepth;
 
+    /// The definitions whose outputs [`Self::plan`] produces from `ir`, the
+    /// root definition's first; `None` keys the output of a document that
+    /// states no root definition. The caller names each one in
+    /// [`EncodeInput::outputs`] (§3.4, Encode sets).
+    fn output_definitions(&self, ir: &CadIr) -> Vec<Option<ProductDefinitionId>>;
+
     /// Plans one export of [`EncodeInput::target`] without writing to the
     /// destination.
     ///
@@ -163,86 +177,28 @@ impl<E: EncoderBackend> Encoder for E {
         E::REQUEST
     }
 
+    fn output_definitions(&self, ir: &CadIr) -> Vec<Option<ProductDefinitionId>> {
+        output_definitions(ir, E::DEFINITION_PER_FILE)
+            .into_iter()
+            .map(|definition| definition.map(|definition| definition.id.clone()))
+            .collect()
+    }
+
     fn plan(&self, input: EncodeInput<'_>) -> Result<ExportPlan, EncodeError> {
-        let outputs = planned_outputs(input.ir, input.outputs)?;
-        let target = E::TARGET
-            .resolve(input.ir, input.target, E::FORMAT)
-            .map_err(EncodeError::from_backend)?;
-        let identity = target.export_target().cloned();
-        let synthesized_identity = target.synthesized_target().cloned();
-        let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
-        let restored = self
-            .restore(input, &target, &mut restore_notes, &mut restore_losses)
-            .map_err(EncodeError::from_backend)?;
-        let input = match &restored {
-            Some(ir) => EncodeInput { ir, ..input },
-            None => input,
+        let outputs = planned_outputs(input.ir, input.outputs, E::DEFINITION_PER_FILE)?;
+        let unchecked = EncodeInput {
+            validation: None,
+            ..input
         };
-        let body = self
-            .plan_resolved(input, target)
-            .map_err(EncodeError::from_backend)?;
-        let ExportBody {
-            bytes,
-            census,
-            write_path,
-            coverage,
-            mut losses,
-            mut notes,
-            synthesis_cause,
-        } = body;
-        notes.extend(restore_notes);
-        losses.extend(restore_losses);
-        losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
-        let same_format = input
-            .ir
-            .source
-            .as_ref()
-            .is_some_and(|source| source.format() == E::FORMAT.as_str());
-        if same_format && matches!(write_path, WritePath::Synthesized { .. }) {
-            losses.extend(loss::dropped_source_loss(input.fidelity));
-        }
-        if !input.ir.model.omitted_arenas_held() && coverage.reads_wire_omitted() {
-            notes.push(format!(
-                "the document was read from CADIR, which does not carry the arenas {}; the {} \
-                 writer writes records of them, and this write holds none",
-                crate::document::ArenaName::WIRE_OMITTED
-                    .iter()
-                    .map(|arena| arena.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                E::FORMAT
-            ));
-        }
-        let recorded = input.ir.scope().depth();
-        if recorded < E::REQUEST {
-            notes.push(format!(
-                "the document records {recorded} depth; the {} writer plans from {}, so it wrote \
-                 what the document holds",
-                E::FORMAT,
-                E::REQUEST
-            ));
-        }
-        let synthesis_cause = match &write_path {
-            WritePath::Synthesized { consumption } if E::REUSES_SOURCE && same_format => {
-                Some(synthesis_cause.unwrap_or_else(|| consumption.patch_declined(input.fidelity)))
-            }
-            WritePath::Synthesized { .. }
-            | WritePath::Patched { .. }
-            | WritePath::VerbatimReplay => None,
+        let (report, coverage, payloads) = if let [_] = outputs.as_slice() {
+            let (report, coverage, bytes) = plan_output(self, unchecked)?;
+            (report, coverage, vec![bytes])
+        } else {
+            plan_encode_set(self, unchecked, &outputs)?
         };
-        let identity = match write_path {
-            WritePath::Synthesized { .. } => synthesized_identity,
-            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
-        };
-        let write_path = write_path.into_report(input.fidelity.is_some());
-        let mut report = match identity {
-            None => ExportReport::cadir(census, write_path, losses, notes),
-            Some(target) => ExportReport::native(target, census, write_path, losses, notes),
-        };
-        report.synthesis_cause = synthesis_cause;
         let mut plan = ExportPlan {
             report,
-            bytes,
+            payloads,
             format: E::FORMAT,
             coverage,
             outputs,
@@ -258,6 +214,192 @@ impl<E: EncoderBackend> Encoder for E {
             })),
         }
     }
+}
+
+/// Plans the output of one file from `input`'s document: its report,
+/// coverage, and payload. The caller charges validation and strictness.
+fn plan_output<E: EncoderBackend>(
+    encoder: &E,
+    input: EncodeInput<'_>,
+) -> Result<(ExportReport, ArenaCoverage, Vec<u8>), EncodeError> {
+    let target = E::TARGET
+        .resolve(input.ir, input.target, E::FORMAT)
+        .map_err(EncodeError::from_backend)?;
+    let identity = target.export_target().cloned();
+    let synthesized_identity = target.synthesized_target().cloned();
+    let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
+    let restored = encoder
+        .restore(input, &target, &mut restore_notes, &mut restore_losses)
+        .map_err(EncodeError::from_backend)?;
+    let input = match &restored {
+        Some(ir) => EncodeInput { ir, ..input },
+        None => input,
+    };
+    let body = encoder
+        .plan_resolved(input, target)
+        .map_err(EncodeError::from_backend)?;
+    let ExportBody {
+        bytes,
+        census,
+        write_path,
+        coverage,
+        mut losses,
+        mut notes,
+        synthesis_cause,
+    } = body;
+    notes.extend(restore_notes);
+    losses.extend(restore_losses);
+    losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+    losses.extend(placed_definition_loss(
+        input.ir,
+        &coverage,
+        E::FORMAT.as_str(),
+    ));
+    let same_format = input
+        .ir
+        .source
+        .as_ref()
+        .is_some_and(|source| source.format() == E::FORMAT.as_str());
+    if same_format && matches!(write_path, WritePath::Synthesized { .. }) {
+        losses.extend(loss::dropped_source_loss(input.fidelity));
+    }
+    if !input.ir.model.omitted_arenas_held() && coverage.reads_wire_omitted() {
+        notes.push(format!(
+            "the document was read from CADIR, which does not carry the arenas {}; the {} \
+                 writer writes records of them, and this write holds none",
+            crate::document::ArenaName::WIRE_OMITTED
+                .iter()
+                .map(|arena| arena.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            E::FORMAT
+        ));
+    }
+    let recorded = input.ir.scope().depth();
+    if recorded < E::REQUEST {
+        notes.push(format!(
+            "the document records {recorded} depth; the {} writer plans from {}, so it wrote \
+                 what the document holds",
+            E::FORMAT,
+            E::REQUEST
+        ));
+    }
+    let synthesis_cause = match &write_path {
+        WritePath::Synthesized { consumption } if E::REUSES_SOURCE && same_format => {
+            Some(synthesis_cause.unwrap_or_else(|| consumption.patch_declined(input.fidelity)))
+        }
+        WritePath::Synthesized { .. } | WritePath::Patched { .. } | WritePath::VerbatimReplay => {
+            None
+        }
+    };
+    let identity = match write_path {
+        WritePath::Synthesized { .. } => synthesized_identity,
+        WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
+    };
+    let write_path = write_path.into_report(input.fidelity.is_some());
+    let mut report = match identity {
+        None => ExportReport::cadir(census, write_path, losses, notes),
+        Some(target) => ExportReport::native(target, census, write_path, losses, notes),
+    };
+    report.synthesis_cause = synthesis_cause;
+    Ok((report, coverage, bytes))
+}
+
+/// Plans each of `outputs` from the part of `input`'s document that it holds
+/// ([`encode_set::output_document`]) and merges their reports into the root
+/// output's: the coverage is the root output's, and the losses and notes are
+/// every output's. Only the root output reads the decode's sidecar.
+fn plan_encode_set<E: EncoderBackend>(
+    encoder: &E,
+    input: EncodeInput<'_>,
+    outputs: &[PlannedOutput],
+) -> Result<(ExportReport, ArenaCoverage, Vec<Vec<u8>>), EncodeError> {
+    let names: OutputNames = outputs
+        .iter()
+        .filter_map(|output| Some((output.definition.clone()?, output.name.clone()?)))
+        .collect();
+    let root = outputs
+        .first()
+        .and_then(|output| output.definition.as_ref());
+    let mut planned: Option<(ExportReport, ArenaCoverage)> = None;
+    let mut payloads = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        let definition = output.definition.as_ref();
+        let document = encode_set::output_document(input.ir, definition, root, &names)
+            .map_err(EncodeError::from_backend)?;
+        let fidelity = if definition == root {
+            input.fidelity
+        } else {
+            None
+        };
+        let (report, coverage, bytes) = plan_output(
+            encoder,
+            EncodeInput {
+                ir: &document,
+                fidelity,
+                ..input
+            },
+        )?;
+        payloads.push(bytes);
+        match &mut planned {
+            None => planned = Some((report, coverage)),
+            Some((merged, _)) => merge_output(merged, output, report),
+        }
+    }
+    let (report, coverage) = planned.ok_or_else(|| {
+        EncodeError::Backend(CodecError::malformed("an encode set holds no output"))
+    })?;
+    Ok((report, coverage, payloads))
+}
+
+/// Adds the report of `output`, an output other than the root's, to
+/// `merged`: its losses and notes, its census where both count on one basis,
+/// and a note naming the output and its write path.
+fn merge_output(merged: &mut ExportReport, output: &PlannedOutput, report: ExportReport) {
+    let name = output.name.as_ref().map_or("", NonBlankString::as_str);
+    let definition = output
+        .definition
+        .as_ref()
+        .map_or("", ProductDefinitionId::as_str);
+    merged.notes.push(format!(
+        "the output {name} holds definition {definition}; its write path is {}",
+        report.write_path()
+    ));
+    if let Some(cause) = report.synthesis_cause() {
+        merged
+            .notes
+            .push(format!("the output {name} was synthesized: {cause}"));
+    }
+    if merged.census.basis == report.census.basis {
+        for (key, count) in report.census.counts {
+            let total = merged.census.counts.entry(key).or_default();
+            *total = total.saturating_add(count);
+        }
+    } else {
+        merged.notes.push(format!(
+            "the output {name} counts its records on another basis than the root output's, \
+             and the census counts the root output's alone"
+        ));
+    }
+    merged.losses.extend(report.losses);
+    merged.notes.extend(report.notes);
+}
+
+/// `export:definition.placed` for a payload that carries bodies and no
+/// product definition: it writes the bodies of each definition that no
+/// occurrence places at the top of the output (§3.4, Encode sets).
+fn placed_definition_loss(ir: &CadIr, coverage: &ArenaCoverage, format: &str) -> Option<LossNote> {
+    use crate::schema::EntityKind;
+    if coverage.carries(EntityKind::ProductDefinition) || !coverage.carries(EntityKind::Body) {
+        return None;
+    }
+    definition_placed(
+        format,
+        "holds no product definition and writes the bodies of each definition that no \
+         occurrence places at the top of the output",
+        crate::products::unplaced_definitions(&ir.model)
+            .map(|definition| definition.id.as_str().to_owned()),
+    )
 }
 
 /// A refused write (§3.4, Refusals).
@@ -313,8 +455,9 @@ pub type OutputNames = BTreeMap<ProductDefinitionId, NonBlankString>;
 /// How the caller names the outputs of one encode (§3.4, Encode sets).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outputs<'a> {
-    /// One output, the root definition's, which the destination of
-    /// [`ExportPlan::write_to`] names.
+    /// No name: the encode writes one output, the root definition's, which
+    /// the destination of [`ExportPlan::write_to`] names. An encode that
+    /// produces more outputs is refused with [`EncodeError::OutputUnnamed`].
     Root,
     /// The caller's name of every output, keyed by definition.
     Named(&'a OutputNames),
@@ -327,32 +470,69 @@ pub struct PlannedOutput {
     /// `None` where the document states none.
     pub definition: Option<ProductDefinitionId>,
     /// The caller's name of the output; `None` where the destination of
-    /// [`ExportPlan::write_to`] names it.
+    /// [`ExportPlan::write_to`] names it. A link that another output writes
+    /// to this one names it.
     pub name: Option<NonBlankString>,
 }
 
-/// The outputs the writers produce: one, the root definition's (§3.4,
-/// Encode sets). An output keyed by no definition, of a document that states
-/// no root definition, takes its name from the destination.
-fn planned_outputs(ir: &CadIr, names: Outputs<'_>) -> Result<Vec<PlannedOutput>, EncodeError> {
-    let definition = ir
-        .model
-        .product_definitions
-        .iter()
-        .find(|definition| definition.is_root())
-        .map(|definition| definition.id.clone());
-    let name = match (names, &definition) {
-        (Outputs::Root, _) | (Outputs::Named(_), None) => None,
-        (Outputs::Named(names), Some(definition)) => Some(
-            names
-                .get(definition)
-                .cloned()
-                .ok_or_else(|| EncodeError::OutputUnnamed {
-                    definition: definition.clone(),
-                })?,
-        ),
-    };
-    Ok(vec![PlannedOutput { definition, name }])
+/// The definitions whose outputs a writer produces (§3.4, Encode sets): the
+/// root definition, `None` where the document states none, then, for a
+/// format that stores one definition per file, every other `File`
+/// definition in arena order.
+fn output_definitions(ir: &CadIr, per_file: bool) -> Vec<Option<&ProductDefinition>> {
+    let definitions = &ir.model.product_definitions;
+    let root = definitions.iter().find(|definition| definition.is_root());
+    std::iter::once(root)
+        .chain(
+            definitions
+                .iter()
+                .filter(|definition| {
+                    per_file
+                        && matches!(
+                            definition.storage,
+                            Storage::File {
+                                source: Some(_),
+                                ..
+                            }
+                        )
+                })
+                .map(Some),
+        )
+        .collect()
+}
+
+/// The outputs the writer produces, each with the caller's name. Refuses
+/// the first output that `names` leaves unnamed: under [`Outputs::Root`],
+/// every output but the root definition's.
+fn planned_outputs(
+    ir: &CadIr,
+    names: Outputs<'_>,
+    per_file: bool,
+) -> Result<Vec<PlannedOutput>, EncodeError> {
+    output_definitions(ir, per_file)
+        .into_iter()
+        .enumerate()
+        .map(|(position, definition)| {
+            let definition = definition.map(|definition| definition.id.clone());
+            let name = match (names, &definition) {
+                (Outputs::Root, _) if position == 0 => None,
+                (_, None) => None,
+                (Outputs::Root, Some(definition)) => {
+                    return Err(EncodeError::OutputUnnamed {
+                        definition: definition.clone(),
+                    })
+                }
+                (Outputs::Named(names), Some(definition)) => {
+                    Some(names.get(definition).cloned().ok_or_else(|| {
+                        EncodeError::OutputUnnamed {
+                            definition: definition.clone(),
+                        }
+                    })?)
+                }
+            };
+            Ok(PlannedOutput { definition, name })
+        })
+        .collect()
 }
 
 /// The strictness of an [`EncodeInput`] that states none: it refuses nothing.
@@ -656,7 +836,8 @@ pub struct ExportPlan {
     format: FormatId,
     coverage: ArenaCoverage,
     report: ExportReport,
-    bytes: Vec<u8>,
+    /// The payload of each of `outputs`, in its order.
+    payloads: Vec<Vec<u8>>,
     outputs: Vec<PlannedOutput>,
 }
 
@@ -743,9 +924,34 @@ impl ExportPlan {
         }
     }
 
-    /// Writes the planned payload and returns the unchanged plan-time report.
+    /// Writes the payload of a plan with one output and returns the
+    /// unchanged plan-time report. A plan with more outputs writes nothing
+    /// and refuses with [`EncodeError::Io`]; write it with
+    /// [`Self::write_each`].
     pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, EncodeError> {
-        writer.write_all(&self.bytes)?;
+        let [bytes] = self.payloads.as_slice() else {
+            return Err(EncodeError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "the plan has {} outputs and one destination",
+                    self.payloads.len()
+                ),
+            )));
+        };
+        writer.write_all(bytes)?;
+        Ok(self.report)
+    }
+
+    /// Gives `write` each output and its payload, in the order of
+    /// [`Self::outputs`], and returns the unchanged plan-time report. The
+    /// first failure stops the write.
+    pub fn write_each(
+        self,
+        mut write: impl FnMut(&PlannedOutput, &[u8]) -> std::io::Result<()>,
+    ) -> Result<ExportReport, EncodeError> {
+        for (output, bytes) in self.outputs.iter().zip(&self.payloads) {
+            write(output, bytes)?;
+        }
         Ok(self.report)
     }
 }

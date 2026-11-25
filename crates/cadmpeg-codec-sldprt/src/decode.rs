@@ -187,12 +187,17 @@ pub(crate) fn decode_without_digests(
     decode_inner(ctx, root, false)
 }
 
-/// Decodes a written SLDPRT byte slice for read-back comparison, skipping
-/// local-digest and canonical-JSON digest calculation that read-back ignores.
+/// Decodes a written SLDPRT byte slice under `limits` for read-back
+/// comparison, skipping local-digest and canonical-JSON digest calculation
+/// that read-back ignores.
 pub(crate) fn decode_for_read_back(
     bytes: &[u8],
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
-    let options = cadmpeg_ir::codec::DecodeOptions::default();
+    let options = cadmpeg_ir::codec::DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy { limits },
+        ..cadmpeg_ir::codec::DecodeOptions::default()
+    };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut cursor = std::io::Cursor::new(bytes);
     let (ctx, root) = cadmpeg_core::decode::DecodeContext::read_root(
@@ -6657,7 +6662,10 @@ pub(crate) fn stamp_local_digests(
 /// whether the retained Parasolid partition may be replayed verbatim while the
 /// rest of the document is written. It carries every limitation
 /// [`cadmpeg_ir::hash::document_local_sha256`] states.
-pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn brep_local_sha256(
+    ir: &CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
     let mut geometry = cadmpeg_ir::document::Topology::default();
@@ -6688,7 +6696,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let (ctx, _) = DecodeContext::from_root_bytes(
         &[],
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        &cadmpeg_core::decode::DecodePolicy { limits },
     )?;
     brep_partition_sha256(&ctx, ir.tolerances, geometry, model).0
 }
@@ -6889,7 +6897,8 @@ mod digest_tests {
         ));
         let appearances = ir.model.appearances.clone();
         let bindings = ir.model.appearance_bindings.clone();
-        let expected_hash = super::brep_local_sha256(&ir).unwrap();
+        let expected_hash =
+            super::brep_local_sha256(&ir, cadmpeg_core::decode::ResourceLimits::desktop()).unwrap();
         let actual_hash = brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
         assert_eq!(actual_hash, expected_hash);
         assert_eq!(ir.model.appearances, appearances);

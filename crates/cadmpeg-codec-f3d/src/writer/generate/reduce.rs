@@ -18,7 +18,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
 use cadmpeg_ir::codec::write::{
@@ -881,13 +881,18 @@ impl<'a> Reduction<'a> {
             .iter()
             .map(|curve| (curve.id.as_str(), curve))
             .collect::<HashMap<_, _>>();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            limits: self.limits,
+        };
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
         let mut starts = Vec::new();
         let mut omitted = Vec::new();
         for (index, edge) in geometry.edges.iter().enumerate() {
             if edge.ends.is_some() {
                 continue;
             }
-            let start = closed_curve_start(edge, &curves, tolerance)?.and_then(|position| {
+            let start = closed_curve_start(edge, &curves, tolerance, &ctx)?.and_then(|position| {
                 let point = PointId::mint(format!("{}/start-point", edge.id))
                     .map_err(|error| error.to_string())?;
                 let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
@@ -1593,6 +1598,7 @@ fn closed_curve_start(
     edge: &cadmpeg_ir::topology::Edge,
     curves: &HashMap<&str, &cadmpeg_ir::geometry::Curve>,
     tolerance: f64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Result<FinitePoint3, String>, CodecError> {
     let Some(curve) = edge.curve() else {
         return Ok(Err("it has no curve".into()));
@@ -1611,7 +1617,7 @@ fn closed_curve_start(
         },
     };
     let point =
-        |parameter| match curve_point_solved(EvaluationAdmission::Standard, solved, parameter) {
+        |parameter| match curve_point_solved(EvaluationAdmission::Decode(ctx), solved, parameter) {
             Ok(point) => Ok(Some(point)),
             Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::ResourceLimit(limit)),
             Err(_) => Ok(None),

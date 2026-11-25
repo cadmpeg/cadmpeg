@@ -48,7 +48,9 @@ pub(crate) fn prepare_configurations_for_write(
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
         &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: edits.limits(),
+        },
     )?;
 
     let feature_state_hash = configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
@@ -158,14 +160,14 @@ fn sync_configuration_design_state(
     exact: Option<&crate::resolved_features::profiles::ExactProfiles>,
     edits: &mut super::edits::SourceEdits<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let policy = DecodePolicy {
+        limits: edits.limits(),
+    };
     let unbound = crate::resolved_features::profiles::ExactProfiles::default();
     let profiles = exact.unwrap_or(&unbound);
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
+    let (hash_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &hash_arena, &policy)?;
 
     let form_padding = ir
         .source
@@ -192,11 +194,8 @@ fn sync_configuration_design_state(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let validation_arena = DecodeArena::new();
-    let (validation_ctx, _) = DecodeContext::from_root_bytes(
-        &validation_bytes,
-        &validation_arena,
-        &DecodePolicy::service(),
-    )?;
+    let (validation_ctx, _) =
+        DecodeContext::from_root_bytes(&validation_bytes, &validation_arena, &policy)?;
     if parameters_with_incoherent_evaluated_values(
         &validation_ctx,
         &ir.model.parameters,
@@ -221,8 +220,7 @@ fn sync_configuration_design_state(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let design_arena = DecodeArena::new();
-    let (design_ctx, _) =
-        DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
+    let (design_ctx, _) = DecodeContext::from_root_bytes(&design_bytes, &design_arena, &policy)?;
     let unprojected = project_configuration_design_states(
         &design_ctx,
         &mut current_projection,
@@ -246,8 +244,7 @@ fn sync_configuration_design_state(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(&projection_bytes, &arena, &policy)?;
     let (projection_losses, mut relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut current_projection,
@@ -341,8 +338,7 @@ fn sync_configuration_design_state(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let design_arena = DecodeArena::new();
-    let (design_ctx, _) =
-        DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
+    let (design_ctx, _) = DecodeContext::from_root_bytes(&design_bytes, &design_arena, &policy)?;
     let unprojected = project_configuration_design_states(
         &design_ctx,
         &mut projected,
@@ -366,8 +362,7 @@ fn sync_configuration_design_state(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(&projection_bytes, &arena, &policy)?;
     let (projection_losses, projected_points) = project_configuration_sketch_states(
         &ctx,
         &mut projected,

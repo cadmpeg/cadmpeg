@@ -229,7 +229,11 @@ pub(super) fn print_export_emission(
     emission: &ExportEmission,
 ) -> io::Result<()> {
     match &emission.artifact {
-        EmittedArtifact::File { path, sidecar } => {
+        EmittedArtifact::File {
+            path,
+            sidecar,
+            others,
+        } => {
             match sidecar {
                 SidecarPersistOutcome::Wrote(sidecar) => {
                     writeln!(writer, "wrote decode sidecar {}", sidecar.display())?;
@@ -245,6 +249,9 @@ pub(super) fn print_export_emission(
                 path.display(),
                 emission.report.census.total()
             )?;
+            for other in others {
+                writeln!(writer, "wrote {}", other.display())?;
+            }
         }
         EmittedArtifact::StdoutWithoutSidecar => {
             writeln!(

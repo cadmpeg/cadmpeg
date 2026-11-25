@@ -7,8 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::Decoded;
+use cadmpeg_ir::codec::{DecodeFailure, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
 use cadmpeg_ir::source_fidelity::CodecDigests;
@@ -180,14 +181,15 @@ pub(crate) fn write_until_read_back(
     input: &CadIr,
     digests: &CodecDigests,
     baseline_key: Option<cadmpeg_ir::hash::digest::Sha256Digest>,
+    limits: ResourceLimits,
     write: &mut Writer<'_>,
-    round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    round_trip: &RoundTrip<'_>,
 ) -> Result<(WrittenPass, ReadBack), CodecError> {
-    let mut judge = Judge::new(input, digests, round_trip);
+    let mut judge = Judge::new(input, digests, limits, round_trip);
     judge.baseline_key = baseline_key;
     let mut withheld = Vec::<(FeatureId, String)>::new();
     let mut pass = write(&withheld)?;
-    let mut read_back = judge.read(&pass);
+    let mut read_back = judge.read(&pass)?;
     loop {
         let new = read_back
             .withhold
@@ -200,9 +202,10 @@ pub(crate) fn write_until_read_back(
             next.extend(new.iter().cloned());
             match write(&next) {
                 Ok(written) => {
-                    read_back = judge.read(&written);
+                    read_back = judge.read(&written)?;
                     (pass, withheld) = (written, next);
                 }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     read_back.unkept.extend(new.into_iter().map(|(_, reason)| {
                         format!("{reason}; writing it with its stored definition record fails ({error}), so the written record states the edit")
@@ -232,10 +235,14 @@ pub(crate) fn write_until_read_back(
         let trial = if suspects.is_empty() {
             None
         } else {
-            write(&all).ok().map(|written| {
-                let read = judge.read(&written);
-                (written, read)
-            })
+            unrefused(write(&all))?
+        };
+        let trial = match trial {
+            Some(written) => {
+                let read = judge.read(&written)?;
+                Some((written, read))
+            }
+            None => None,
         };
         // A trial with an edit that does not read back is judged again once
         // that edit is withheld too, so it shows nothing about the rest.
@@ -261,10 +268,10 @@ pub(crate) fn write_until_read_back(
                     suspect.clone(),
                     held_back(std::slice::from_ref(suspect), &removed),
                 ));
-                let Ok(written) = write(&one) else {
+                let Some(written) = unrefused(write(&one))? else {
                     continue;
                 };
-                let read = judge.read(&written);
+                let read = judge.read(&written)?;
                 if read.withhold.is_empty()
                     && removed
                         .iter()
@@ -309,6 +316,21 @@ fn held_back(features: &[FeatureId], changes: &[String]) -> String {
     }
 }
 
+/// `result` with a failure dropped, unless it is a resource limit of the
+/// caller's.
+fn unrefused<T>(result: Result<T, CodecError>) -> Result<Option<T>, CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Writes the decoded source document with no edit: `None` where the write
+/// fails or gives the source part byte for byte, and an error where a
+/// ceiling of the caller's limits runs out.
+pub(crate) type RoundTrip<'a> = dyn Fn(&Decoded) -> Result<Option<Vec<u8>>, CodecError> + 'a;
+
 /// The caller's document as the read-back compares it, kept across the
 /// passes of one write.
 struct Judge<'a> {
@@ -318,7 +340,9 @@ struct Judge<'a> {
     /// Content digest of the retained source records and digests, used to
     /// memoize the unmodified source round-trip baseline across writes.
     baseline_key: Option<cadmpeg_ir::hash::digest::Sha256Digest>,
-    round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    /// The caller's limits, under which each written pass decodes again.
+    limits: ResourceLimits,
+    round_trip: &'a RoundTrip<'a>,
     stated: Option<Document>,
     /// The decoded source document, from the first pass that states one.
     source: Option<Document>,
@@ -331,12 +355,14 @@ impl<'a> Judge<'a> {
     fn new(
         input: &'a CadIr,
         digests: &'a CodecDigests,
-        round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
+        limits: ResourceLimits,
+        round_trip: &'a RoundTrip<'a>,
     ) -> Self {
         Self {
             input,
             digests,
             baseline_key: None,
+            limits,
             round_trip,
             stated: None,
             source: None,
@@ -345,11 +371,13 @@ impl<'a> Judge<'a> {
     }
 
     /// Judges one pass. A claim that asks to withhold its feature needs no
-    /// decode: that part is written again.
-    fn read(&mut self, (bytes, output): &WrittenPass) -> ReadBack {
+    /// decode: that part is written again. An error is a ceiling of the
+    /// caller's limits that the decode of the pass, or of the source written
+    /// with no edit, runs out of.
+    fn read(&mut self, (bytes, output): &WrittenPass) -> Result<ReadBack, CodecError> {
         let claims = &output.claims;
         let Some(source) = output.source.as_ref() else {
-            return ReadBack::default();
+            return Ok(ReadBack::default());
         };
         let withhold = claims
             .features
@@ -358,15 +386,19 @@ impl<'a> Judge<'a> {
             .map(|claim| (claim.id.clone(), unread(&claim.id)))
             .collect::<Vec<_>>();
         if !withhold.is_empty() {
-            return ReadBack {
+            return Ok(ReadBack {
                 withhold,
                 ..ReadBack::default()
-            };
+            });
         }
-        let decoded = match crate::decode::decode_for_read_back(bytes) {
+        let decoded = match crate::decode::decode_for_read_back(bytes, self.limits) {
             Ok(decoded) => decoded,
+            Err(DecodeFailure::Codec(error @ CodecError::ResourceLimit(_))) => return Err(error),
             Err(error) => {
-                return ReadBack::unreadable(claims, format!("does not decode again ({error})"));
+                return Ok(ReadBack::unreadable(
+                    claims,
+                    format!("does not decode again ({error})"),
+                ));
             }
         };
         let round_trip = self.round_trip;
@@ -392,14 +424,23 @@ impl<'a> Judge<'a> {
             )
             .collect::<Vec<_>>();
         let baseline_key = self.baseline_key.clone();
-        self.judge(
+        let limits = self.limits;
+        let mut refusal = None;
+        let read = self.judge(
             claims,
             &output.written,
             (&source.ir, &output.coverage.omitted(self.input), &naming),
             decoded.ir(),
             None,
-            &mut |stated| baseline_of_cached(baseline_key.as_ref(), round_trip, source, stated),
-        )
+            &mut |stated| {
+                baseline_of_cached(baseline_key.as_ref(), limits, round_trip, source, stated)
+                    .unwrap_or_else(|error| {
+                        refusal.get_or_insert(error);
+                        Vec::new()
+                    })
+            },
+        );
+        refusal.map_or(Ok(read), Err)
     }
 
     /// Judges `written`, the written part decoded, against the document the
@@ -701,50 +742,62 @@ fn settled_by_solid(
         .collect()
 }
 
+/// [`baseline_of`], memoized by the source's content digest and the limits
+/// it decodes under.
 fn baseline_of_cached(
     key: Option<&cadmpeg_ir::hash::digest::Sha256Digest>,
-    round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    limits: ResourceLimits,
+    round_trip: &RoundTrip<'_>,
     source: &Decoded,
     stated: &Document,
-) -> Vec<Difference> {
-    type CachedDifferences = (cadmpeg_ir::hash::digest::Sha256Digest, Vec<Difference>);
+) -> Result<Vec<Difference>, CodecError> {
+    type CachedDifferences = (
+        cadmpeg_ir::hash::digest::Sha256Digest,
+        ResourceLimits,
+        Vec<Difference>,
+    );
     static BASELINE_CACHE: std::sync::Mutex<Vec<CachedDifferences>> =
         std::sync::Mutex::new(Vec::new());
 
     if let Some(key) = key {
         if let Ok(mut guard) = BASELINE_CACHE.lock() {
-            if let Some((_, cached)) = guard.iter().find(|(cached_key, _)| cached_key == key) {
-                return cached.clone();
+            if let Some((_, _, cached)) = guard.iter().find(|(cached_key, cached_limits, _)| {
+                cached_key == key && *cached_limits == limits
+            }) {
+                return Ok(cached.clone());
             }
-            let computed = baseline_of(round_trip, source, stated);
+            let computed = baseline_of(limits, round_trip, source, stated)?;
             if guard.len() >= 2 {
                 guard.remove(0);
             }
-            guard.push((key.clone(), computed.clone()));
-            return computed;
+            guard.push((key.clone(), limits, computed.clone()));
+            return Ok(computed);
         }
     }
-    baseline_of(round_trip, source, stated)
+    baseline_of(limits, round_trip, source, stated)
 }
 
 /// The differences between `source`, the decoded source document whose
 /// records are `stated`, and its write with no edit, decoded again.
 fn baseline_of(
-    round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    limits: ResourceLimits,
+    round_trip: &RoundTrip<'_>,
     source: &Decoded,
     stated: &Document,
-) -> Vec<Difference> {
-    let Some(bytes) = round_trip(source) else {
-        return Vec::new();
+) -> Result<Vec<Difference>, CodecError> {
+    let Some(bytes) = round_trip(source)? else {
+        return Ok(Vec::new());
     };
-    let Ok(decoded) = crate::decode::decode_for_read_back(&bytes) else {
-        return Vec::new();
+    let decoded = match crate::decode::decode_for_read_back(&bytes, limits) {
+        Ok(decoded) => decoded,
+        Err(DecodeFailure::Codec(error @ CodecError::ResourceLimit(_))) => return Err(error),
+        Err(_) => return Ok(Vec::new()),
     };
     let Some(read) = Document::of(decoded.ir()) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let pairing = document::pair(stated, &read);
-    document::differences(stated, &read, &pairing)
+    Ok(document::differences(stated, &read, &pairing))
 }
 
 /// Whether `difference` is `base`: the same record and change, with each

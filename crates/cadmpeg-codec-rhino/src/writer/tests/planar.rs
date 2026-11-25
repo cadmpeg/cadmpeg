@@ -429,7 +429,11 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
     use crate::writer::{model::WritableModel, planar_solid_orientation};
     let ir = planar_tetrahedron();
     for (scale, translation) in [(1.0, 0.0), (1.0, 1e8), (1e200, 0.0), (1e-200, 0.0)] {
-        let mut model = WritableModel::try_new(&ir).unwrap();
+        let mut model = WritableModel::try_new(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &ir,
+        )
+        .unwrap();
         // The sign owner consumes the oriented vertex rings; other writer fields
         // do not enter this calculation.
         for vertex in &mut model.vertices {

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::record_invalid;
 use cadmpeg_ir::document::CadIr;
@@ -60,6 +61,7 @@ impl WritableEdgeCurve<'_> {
     /// there. A NURBS parameter outside the evaluable domain has no value.
     pub(super) fn point(
         self,
+        ctx: &DecodeContext<'_>,
         parameter: FiniteReal,
     ) -> Result<
         cadmpeg_ir::features::geometry::FinitePoint3,
@@ -67,12 +69,12 @@ impl WritableEdgeCurve<'_> {
     > {
         match self {
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
                 parameter.get(),
             ),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 nurbs,
                 cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)
                     .ok_or(cadmpeg_ir::eval::EvaluationFailure::NoValue)?
@@ -385,7 +387,7 @@ fn resolve(positions: &BTreeMap<&str, usize>, id: &str) -> Result<usize, CodecEr
 }
 
 impl<'a> WritableModel<'a> {
-    pub(super) fn try_new(ir: &'a CadIr) -> Result<Self, CodecError> {
+    pub(super) fn try_new(ctx: &DecodeContext<'_>, ir: &'a CadIr) -> Result<Self, CodecError> {
         let model = &ir.model;
         let geometry = &ir.geometry;
         let Some(body) = geometry
@@ -625,33 +627,37 @@ impl<'a> WritableModel<'a> {
                     }
                     let geometry = WritableEdgeCurve::Nurbs(nurbs);
                     let expected_start =
-                        geometry.point(domain[0]).map_err(|failure| match failure {
-                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                CodecError::ResourceLimit(limit)
-                            }
-                            cadmpeg_ir::eval::EvaluationFailure::NoValue
-                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
-                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
-                                CodecError::malformed(format_args!(
-                                    "edge {} curve has no finite start point",
-                                    edge.id.as_str()
-                                ))
-                            }
-                        })?;
+                        geometry
+                            .point(ctx, domain[0])
+                            .map_err(|failure| match failure {
+                                cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                    CodecError::ResourceLimit(limit)
+                                }
+                                cadmpeg_ir::eval::EvaluationFailure::NoValue
+                                | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+                                | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
+                                    CodecError::malformed(format_args!(
+                                        "edge {} curve has no finite start point",
+                                        edge.id.as_str()
+                                    ))
+                                }
+                            })?;
                     let expected_end =
-                        geometry.point(domain[1]).map_err(|failure| match failure {
-                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                CodecError::ResourceLimit(limit)
-                            }
-                            cadmpeg_ir::eval::EvaluationFailure::NoValue
-                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
-                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
-                                CodecError::malformed(format_args!(
-                                    "edge {} curve has no finite end point",
-                                    edge.id.as_str()
-                                ))
-                            }
-                        })?;
+                        geometry
+                            .point(ctx, domain[1])
+                            .map_err(|failure| match failure {
+                                cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                    CodecError::ResourceLimit(limit)
+                                }
+                                cadmpeg_ir::eval::EvaluationFailure::NoValue
+                                | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+                                | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
+                                    CodecError::malformed(format_args!(
+                                        "edge {} curve has no finite end point",
+                                        edge.id.as_str()
+                                    ))
+                                }
+                            })?;
                     (geometry, expected_start.get(), expected_end.get())
                 }
                 _ => {
@@ -852,6 +858,7 @@ impl<'a> WritableModel<'a> {
                             .and_then(|(_, edge)| edge.tolerance)
                             .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
                         if let Some(finding) = validate_singular_trim(
+                            ctx,
                             surfaces[face.surface],
                             face_tolerance.max(edge_tolerance),
                             vertices[vertex].point,
@@ -907,7 +914,7 @@ impl<'a> WritableModel<'a> {
                             (edges[edge].end, edges[edge].start)
                         };
                         if let Some(finding) = validate_nurbs_trim(
-                            surface, face_tolerance, &edges[edge],
+                            ctx, surface, face_tolerance, &edges[edge],
                             [vertices[from].point, vertices[to].point], &pcurve,
                         )? {
                             findings.push(record_invalid(EntityKind::Pcurve, finding));

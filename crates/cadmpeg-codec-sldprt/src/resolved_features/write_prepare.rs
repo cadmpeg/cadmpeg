@@ -52,11 +52,12 @@ pub(crate) fn prepare_sketches_for_write(
     edits: &crate::history::write::edits::SourceEdits<'_>,
     cut: &mut Vec<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let limits = edits.limits();
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
         &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        &cadmpeg_core::decode::DecodePolicy { limits },
     )?;
 
     let (baseline_neutral, baseline_native) = sketch_baselines(digests);
@@ -73,7 +74,7 @@ pub(crate) fn prepare_sketches_for_write(
         }
         validate_source_less_constraints(ir)?;
         let native = native.get_or_insert_with(crate::native::SldprtNative::default);
-        let generated = source_less_lanes(ir, native, cut)?;
+        let generated = source_less_lanes(ir, native, cut, limits)?;
         native.feature_input_lanes.extend(generated);
         return Ok(());
     }
@@ -104,7 +105,7 @@ pub(crate) fn prepare_sketches_for_write(
         )
     })?;
     patch_spatial_sketches(ir, retained)?;
-    patch_line_profiles(ir, retained)
+    patch_line_profiles(ir, retained, limits)
 }
 
 /// The source's neutral and native sketch digests, where the decoder recorded
@@ -1558,6 +1559,7 @@ fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
     cut: &mut Vec<String>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
@@ -1635,7 +1637,7 @@ fn source_less_lanes(
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &lane.native_payload,
             &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
+            &cadmpeg_core::decode::DecodePolicy { limits },
         )?;
         lane.classes = class_declarations(&lane.native_payload, &lane.id)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
@@ -1652,7 +1654,7 @@ fn source_less_lanes(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &bytes,
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        &cadmpeg_core::decode::DecodePolicy { limits },
     )?;
     bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
     Ok(lanes)

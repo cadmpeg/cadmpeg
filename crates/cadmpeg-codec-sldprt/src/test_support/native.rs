@@ -3,10 +3,11 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> crate::native::SldprtNative {
-    crate::native::SldprtNative::load(
+    crate::native::SldprtNative::load_under(
         ir.native
             .namespace("sldprt")
             .expect("SLDPRT native namespace"),
+        cadmpeg_core::decode::ResourceLimits::default(),
     )
     .unwrap()
 }

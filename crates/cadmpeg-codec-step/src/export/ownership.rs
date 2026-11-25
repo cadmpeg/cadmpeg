@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Referenced construction carriers cannot become independent export roots.
 
-use cadmpeg_core::{
-    decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits},
-    CodecError,
-};
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{geometry::SolvedCurveGeometry, schema::EntitySchema, CadIr};
 use std::collections::BTreeSet;
 
 pub(super) fn construction_supports(
     ir: &CadIr,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, CodecError> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy { limits };
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)?;
     let mut supports = BTreeSet::new();
     let mut visit = |id: &str| {
         if !supports.contains(id) {
@@ -37,13 +31,13 @@ pub(super) fn construction_supports(
         }
     }
     for surface in &ir.geometry.procedural_surfaces {
-        surface.visit_references(&ctx, &mut visit)?;
+        surface.visit_references(ctx, &mut visit)?;
     }
     for curve in &ir.geometry.procedural_curves {
-        curve.visit_references(&ctx, &mut visit)?;
+        curve.visit_references(ctx, &mut visit)?;
     }
     for pcurve in &ir.geometry.pcurves {
-        pcurve.visit_references(&ctx, &mut visit)?;
+        pcurve.visit_references(ctx, &mut visit)?;
     }
     Ok(supports)
 }

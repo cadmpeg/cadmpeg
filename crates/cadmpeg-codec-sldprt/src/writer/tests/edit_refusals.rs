@@ -912,15 +912,18 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
         unwritten[0]
     );
     let record = |ir: &CadIr| {
-        crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap())
-            .unwrap()
-            .feature_histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .find(|feature| feature.name == "Axis1")
-            .unwrap()
-            .properties
-            .clone()
+        crate::native::SldprtNative::load_under(
+            ir.native.namespace("sldprt").unwrap(),
+            cadmpeg_core::decode::ResourceLimits::default(),
+        )
+        .unwrap()
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Axis1")
+        .unwrap()
+        .properties
+        .clone()
     };
     assert_eq!(record(written.ir()), record(ftc_08().ir()));
 }
@@ -1199,13 +1202,24 @@ fn an_unedited_lane_is_written_as_stored() {
     let mut lane = decoded_lane.clone();
     lane.scalars[0].feature_ref = Some("sldprt:test:other-owner".into());
 
-    let written =
-        crate::writer::lane_payload(&lane, Some(&lane), &native.feature_histories, &[]).unwrap();
+    let written = crate::writer::lane_payload(
+        &lane,
+        Some(&lane),
+        &native.feature_histories,
+        &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
+    )
+    .unwrap();
     assert_eq!(written, lane.native_payload.to_vec());
 
-    let error =
-        crate::writer::lane_payload(&lane, Some(&decoded_lane), &native.feature_histories, &[])
-            .unwrap_err();
+    let error = crate::writer::lane_payload(
+        &lane,
+        Some(&decoded_lane),
+        &native.feature_histories,
+        &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
+    )
+    .unwrap_err();
     assert!(
         error.to_string().contains("edited named scalars"),
         "{error}"

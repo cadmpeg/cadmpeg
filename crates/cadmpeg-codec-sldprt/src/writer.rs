@@ -170,7 +170,7 @@ pub(crate) fn write_semantic_with_records_cached(
         let loaded = ir
             .native
             .namespace("sldprt")
-            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .map(|namespace| SldprtNative::load_under(namespace, limits).map_err(CodecError::from))
             .transpose()?;
         cache.native = CachedNative::Loaded(loaded);
     }
@@ -268,8 +268,13 @@ pub(crate) fn write_semantic_with_records_cached(
     {
         unwritten.record(&id, Unwritten::SavedProperty, held);
     }
-    let retained_partition =
-        retained_partition(&normalized, digests, source_scan.as_ref(), native.as_ref())?;
+    let retained_partition = retained_partition(
+        &normalized,
+        digests,
+        source_scan.as_ref(),
+        native.as_ref(),
+        limits,
+    )?;
     if native
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
@@ -315,6 +320,7 @@ pub(crate) fn write_semantic_with_records_cached(
             native.as_ref(),
             source_baseline.as_ref().map(|baseline| &baseline.ir),
             withheld,
+            limits,
         )?;
         match prepare_history(
             &mut normalized,
@@ -352,7 +358,7 @@ pub(crate) fn write_semantic_with_records_cached(
         let input_native = ir
             .native
             .namespace("sldprt")
-            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .map(|namespace| SldprtNative::load_under(namespace, limits).map_err(CodecError::from))
             .transpose()?;
         shaping.extend(
             crate::history::write::brep_agreement::agreement(
@@ -364,6 +370,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 )),
                 &written,
                 &HashSet::new(),
+                limits,
             )?
             .shaped,
         );
@@ -376,15 +383,13 @@ pub(crate) fn write_semantic_with_records_cached(
         losses.extend(keywords_text::readable_keywords(&normalized, native));
     }
     if let Some(source_definitions) = &source_definitions {
-        losses.extend(source_definitions.notes(&normalized, native.as_ref()));
+        losses.extend(source_definitions.notes(&normalized, native.as_ref(), limits)?);
     }
     let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
     losses.extend(reduce::invalid_records(ir, &validation));
     if !retain_native_brep {
-        losses.extend(
-            reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?,
-        );
+        losses.extend(reduce::edge_ranges_omitted(ir, annotations, limits)?);
         losses.extend(reduce::producer_attributes_omitted(ir));
     }
     losses.extend(reduce::empty_output(ir));
@@ -480,9 +485,12 @@ pub(crate) fn write_semantic_with_records_cached(
         if !materials.omitted.is_empty() {
             // A source that does not decode leaves the note saying the write
             // cannot tell; it does not refuse the write.
-            let baseline = retained_source_baseline(source_baseline, source_context.as_ref())
-                .ok()
-                .flatten();
+            let baseline = match retained_source_baseline(source_baseline, source_context.as_ref())
+            {
+                Ok(baseline) => baseline,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => None,
+            };
             losses.extend(materials::retained_materials_omitted(
                 ir,
                 baseline.map(|baseline| &baseline.ir),
@@ -601,7 +609,7 @@ pub(crate) fn write_semantic_with_records_cached(
     {
         let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
         match (baseline, source_scan.as_ref()) {
-            (Some(baseline), Some(scan)) => retained_history_sections(baseline, scan)?,
+            (Some(baseline), Some(scan)) => retained_history_sections(baseline, scan, limits)?,
             _ => Vec::new(),
         }
     } else {
@@ -625,6 +633,7 @@ pub(crate) fn write_semantic_with_records_cached(
             &retained_histories,
             &source_blocks,
             &mut losses,
+            limits,
         )? {
             Some(payload) => history_members.push((section, history.id.as_str(), payload)),
             None => {
@@ -664,6 +673,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 source_lanes.get(&lane.id),
                 histories,
                 &feature_input_renames,
+                limits,
             )?,
         );
     }
@@ -694,6 +704,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 CachedNative::Unloaded => None,
             },
             stale: &stale.configurations,
+            limits,
         },
     )?;
     unwritten_edits.extend(opaque.kept_edits);
@@ -1504,11 +1515,12 @@ fn retained_partition(
     digests: &CodecDigests,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
+    limits: ResourceLimits,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     let Some(expected) = crate::codec_digests::baseline(digests, "brep_local_sha256") else {
         return Ok(None);
     };
-    if crate::decode::brep_local_sha256(ir)? != expected {
+    if crate::decode::brep_local_sha256(ir, limits)? != expected {
         return Ok(None);
     }
     let Some(scan) = source_scan else {
@@ -1952,6 +1964,7 @@ struct RetainedBlockPatches<'a> {
     native: Option<&'a SldprtNative>,
     /// The configurations, by name, whose stale mark the write sets.
     stale: &'a BTreeSet<String>,
+    limits: ResourceLimits,
 }
 
 /// The retained blocks the output holds as stored, and the retained blocks it
@@ -1972,7 +1985,7 @@ fn opaque_blocks(
             loaded_native = ir
                 .native
                 .namespace("sldprt")
-                .map(SldprtNative::load)
+                .map(|namespace| SldprtNative::load_under(namespace, patches.limits))
                 .transpose()
                 .map_err(CodecError::from)?;
             loaded_native.as_ref()
@@ -2036,6 +2049,7 @@ fn opaque_blocks(
                 record.id.as_str(),
                 &mut payload,
                 &|id| patches.edited_parameters.contains(id),
+                patches.limits,
             )?);
         }
         if let Some(active_name) = active_name {
@@ -2522,10 +2536,11 @@ fn prepare_history(
     cut: &mut Vec<String>,
     edits: &mut crate::history::write::edits::SourceEdits<'_>,
 ) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
+    let limits = edits.limits();
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::write::native_parameters_match_source(digests, native.as_ref())?;
+        && crate::history::write::native_parameters_match_source(digests, native.as_ref(), limits)?;
     crate::history::write::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,
@@ -2556,7 +2571,9 @@ fn prepare_history(
             |lanes| {
                 source_image(retained_records)
                     .map(|image| {
-                        crate::resolved_features::assembly::source_image_profiles(image, lanes)
+                        crate::resolved_features::assembly::source_image_profiles(
+                            image, lanes, limits,
+                        )
                     })
                     .transpose()
             },
@@ -2630,13 +2647,14 @@ fn lane_payload(
     stored: Option<&crate::records::FeatureInputLane>,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
+    limits: ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     if stored == Some(lane) {
         let mut payload = lane.native_payload.to_vec();
         splice_renamed_names(lane, &mut payload, renames)?;
         return Ok(payload);
     }
-    resolved_feature_payload(lane, histories, renames)
+    resolved_feature_payload(lane, histories, renames, limits)
 }
 
 /// The bytes written for one feature-input lane.
@@ -2650,14 +2668,12 @@ fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
+    limits: ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy { limits })?;
     let expected_classes =
         crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id)?;
     if lane.classes != expected_classes {
@@ -3302,6 +3318,7 @@ fn retained_source_baseline<'a>(
     type CachedBaseline = (
         cadmpeg_ir::hash::digest::Sha256Digest,
         usize,
+        ResourceLimits,
         Arc<cadmpeg_ir::codec::Decoded>,
     );
     static SOURCE_BASELINE_CACHE: std::sync::Mutex<Vec<CachedBaseline>> =
@@ -3314,10 +3331,16 @@ fn retained_source_baseline<'a>(
         let raw = root.window();
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(raw);
         let len = raw.len();
+        // A baseline decoded under other limits may hold what these refuse.
+        let limits = ctx.policy().limits;
         if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
-            if let Some((_, _, cached)) = guard.iter().find(|(cached_digest, cached_len, _)| {
-                *cached_digest == digest && *cached_len == len
-            }) {
+            if let Some((_, _, _, cached)) =
+                guard
+                    .iter()
+                    .find(|(cached_digest, cached_len, cached_limits, _)| {
+                        *cached_digest == digest && *cached_len == len && *cached_limits == limits
+                    })
+            {
                 *baseline = Some(Arc::clone(cached));
                 return Ok(baseline.as_deref());
             }
@@ -3327,7 +3350,7 @@ fn retained_source_baseline<'a>(
             if guard.len() >= 2 {
                 guard.remove(0);
             }
-            guard.push((digest, len, Arc::clone(&shared)));
+            guard.push((digest, len, limits, Arc::clone(&shared)));
             *baseline = Some(shared);
             return Ok(baseline.as_deref());
         }
@@ -3388,6 +3411,7 @@ fn retained_display_sections(
 fn retained_history_sections(
     baseline: &cadmpeg_ir::codec::Decoded,
     scan: &crate::container::ContainerScan<'_>,
+    limits: ResourceLimits,
 ) -> Result<Vec<crate::history::write::keywords::RetainedHistory>, CodecError> {
     // Compare the same source-only decode stage that supplied the caller's
     // native records. In particular, decoding infers configuration source
@@ -3395,7 +3419,7 @@ fn retained_history_sections(
     let Some(namespace) = baseline.ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
-    let native = SldprtNative::load(namespace)?;
+    let native = SldprtNative::load_under(namespace, limits)?;
     let annotations = &baseline.source_fidelity.annotations;
     native
         .feature_histories

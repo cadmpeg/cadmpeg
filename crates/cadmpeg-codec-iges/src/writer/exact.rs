@@ -3,8 +3,10 @@
 
 use super::{
     edge_span, effective_topology_tolerance, flatten_curve, polyline_knots, polyline_parameters,
-    reverse_nurbs, solved_curve, topology_edge_explicit_tolerance, TopologyIndex,
+    reverse_nurbs, solved_curve, topology_edge_explicit_tolerance, CurveSpan, TopologyIndex,
 };
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
@@ -23,14 +25,17 @@ use std::borrow::Cow;
 /// Type 144, or a Type 143 whose loops already carry parameter curves,
 /// requires. Each computed curve is the image of the edge curve under the
 /// plane's inverse frame, so it is exact.
-pub(super) fn state_plane_pcurves(ir: &CadIr) -> Cow<'_, CadIr> {
+pub(super) fn state_plane_pcurves<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Cow<'ir, CadIr>, CodecError> {
     if ir
         .geometry
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty())
     {
-        return Cow::Borrowed(ir);
+        return Ok(Cow::Borrowed(ir));
     }
     let index = TopologyIndex::new(ir);
     let mut computed = Vec::new();
@@ -67,13 +72,13 @@ pub(super) fn state_plane_pcurves(ir: &CadIr) -> Cow<'_, CadIr> {
             if !coedge.pcurves.is_empty() {
                 continue;
             }
-            if let Some(pcurve) = plane_pcurve(&index, plane, coedge) {
+            if let Some(pcurve) = plane_pcurve(ctx, &index, plane, coedge)? {
                 computed.push((coedge.id.clone(), pcurve));
             }
         }
     }
     if computed.is_empty() {
-        return Cow::Borrowed(ir);
+        return Ok(Cow::Borrowed(ir));
     }
     let mut stated = ir.clone();
     for (coedge_id, pcurve) in computed {
@@ -91,34 +96,61 @@ pub(super) fn state_plane_pcurves(ir: &CadIr) -> Cow<'_, CadIr> {
             stated.geometry.pcurves.push(pcurve);
         }
     }
-    Cow::Owned(stated)
+    Ok(Cow::Owned(stated))
 }
 
 /// The parameter curve of `coedge` on `plane`, in the coedge's traversal.
 fn plane_pcurve(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     plane: &PlaneSurface,
     coedge: &Coedge,
-) -> Option<Pcurve> {
-    let id = PcurveId::try_from(format!(
+) -> Result<Option<Pcurve>, CodecError> {
+    let Ok(id) = PcurveId::try_from(format!(
         "iges:writer:pcurve#{}",
         coedge.id.as_str().replace('#', "/")
-    ))
-    .ok()?;
+    )) else {
+        return Ok(None);
+    };
     if index.pcurves.contains_key(id.as_str()) {
-        return None;
+        return Ok(None);
     }
-    let edge = index.edges.get(coedge.edge.as_str()).copied()?;
-    let curve = index.curves.get(edge.curve()?.as_str()).copied()?;
-    let geometry = flatten_curve(solved_curve(curve).ok()?).ok()?;
-    let span = edge_span(index, edge, &geometry).ok()?;
-    let nurbs = nurbs_form(&geometry, span.range)?;
+    let Some(edge) = index.edges.get(coedge.edge.as_str()).copied() else {
+        return Ok(None);
+    };
+    let Some(curve) = edge
+        .curve()
+        .and_then(|curve_id| index.curves.get(curve_id.as_str()).copied())
+    else {
+        return Ok(None);
+    };
+    let Ok(geometry) = solved_curve(curve).and_then(flatten_curve) else {
+        return Ok(None);
+    };
+    let span = match edge_span(ctx, index, edge, &geometry) {
+        Ok(span) => span,
+        Err(refusal @ CodecError::ResourceLimit(_)) => return Err(refusal),
+        Err(_) => return Ok(None),
+    };
+    let tolerance = effective_topology_tolerance(topology_edge_explicit_tolerance(index, edge));
+    Ok(plane_image(plane, coedge, id, &geometry, &span, tolerance))
+}
+
+/// The image of the edge curve under the plane's inverse frame.
+fn plane_image(
+    plane: &PlaneSurface,
+    coedge: &Coedge,
+    id: PcurveId,
+    geometry: &CurveGeometry,
+    span: &CurveSpan,
+    tolerance: f64,
+) -> Option<Pcurve> {
+    let nurbs = nurbs_form(geometry, span.range)?;
     let (nurbs, range) = if coedge.sense == Sense::Reversed {
         reverse_nurbs(&nurbs, span.range).ok()?
     } else {
         (nurbs, span.range)
     };
-    let tolerance = effective_topology_tolerance(topology_edge_explicit_tolerance(index, edge));
     let origin = plane.origin().get();
     let normal = plane.frame().axis().as_raw();
     let u_axis = plane.frame().reference().as_raw();

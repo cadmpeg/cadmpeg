@@ -204,6 +204,7 @@ fn a_face_without_a_boundary_loop_writes_an_untrimmed_type_144() {
 
 #[test]
 fn a_line_pcurve_writes_as_a_degree_1_type_126() {
+    test_ctx!(ctx);
     let pcurve = Pcurve {
         id: "test:model:pcurve#line".try_into().expect("valid identity"),
         geometry: PcurveGeometry::Line(
@@ -216,7 +217,7 @@ fn a_line_pcurve_writes_as_a_degree_1_type_126() {
     let mut ir = CadIr::empty();
     ir.geometry.pcurves.push(pcurve.clone());
     let index = TopologyIndex::new(&ir);
-    let entity = pcurve_entity(&index, &pcurve).expect("a line pcurve is written");
+    let entity = pcurve_entity(&ctx, &index, &pcurve).expect("a line pcurve is written");
     assert_eq!(entity.type_code, 126);
     let parameters = String::from_utf8(entity.parameter_body).expect("ASCII parameters");
     assert!(parameters.starts_with("1,1,"), "{parameters}");

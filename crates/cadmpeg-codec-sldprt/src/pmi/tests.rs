@@ -1355,7 +1355,14 @@ fn u16_precision_survives_plain_patch_round_trip() {
         .iter()
         .any(|p| p.pmi.is_some()));
     let original = payload.clone();
-    patch_payload(decoded.ir(), &record.parent, &mut payload, &|_| true).unwrap();
+    patch_payload(
+        decoded.ir(),
+        &record.parent,
+        &mut payload,
+        &|_| true,
+        cadmpeg_core::decode::ResourceLimits::default(),
+    )
+    .unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
     assert_eq!(payload, original);
 }
@@ -1418,7 +1425,14 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
         parameter.pmi.as_mut().unwrap().subtype = PmiDimensionSubtype::Count;
     }
     let mut patched = payload.clone();
-    let kept = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap();
+    let kept = patch_payload(
+        decoded.ir(),
+        &parent,
+        &mut patched,
+        &|_| true,
+        cadmpeg_core::decode::ResourceLimits::default(),
+    )
+    .unwrap();
     assert_eq!(patched, payload);
     assert_eq!(kept.len(), 1, "{kept:?}");
     assert!(crate::test_support::is_edit_dropped(&kept[0].code));
@@ -1486,14 +1500,23 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
-    if let Err(error) = crate::native::SldprtNative::load(namespace) {
+    if let Err(error) = crate::native::SldprtNative::load_under(
+        namespace,
+        cadmpeg_core::decode::ResourceLimits::default(),
+    ) {
         assert!(!matches!(
             cadmpeg_core::CodecError::from(error),
             cadmpeg_core::CodecError::ResourceLimit(_)
         ));
     }
     assert!(!matches!(
-        patch_payload(&ir, "block", &mut [], &|_| true),
+        patch_payload(
+            &ir,
+            "block",
+            &mut [],
+            &|_| true,
+            cadmpeg_core::decode::ResourceLimits::default()
+        ),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }

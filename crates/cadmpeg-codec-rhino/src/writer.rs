@@ -14,7 +14,7 @@ use model::{
     WritableObjectCurve, WritablePcurve, WritableVertex,
 };
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{native_records_omitted, value_unwritable};
 use cadmpeg_ir::document::CadIr;
@@ -170,14 +170,14 @@ fn write(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
     output: &mut Vec<u8>,
 ) -> Result<Written, CodecError> {
     write_seekable(
         ir,
         version,
         unjoined,
-        limits,
+        ctx,
         &mut std::io::Cursor::new(output),
     )
 }
@@ -186,10 +186,10 @@ fn write_seekable(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
     output: &mut dyn WriteSeek,
 ) -> Result<Written, CodecError> {
-    let mut plan = prepare_write(ir, version, unjoined, limits)?;
+    let mut plan = prepare_write(ir, version, unjoined, ctx)?;
     write_archive_prefix(ir.tolerances.linear.get(), plan.angular, version, output)?;
     let table_start = output.stream_position()?;
     output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
@@ -723,7 +723,7 @@ fn brep_record(
         }
         None => &scope.ir,
     };
-    let mut model = WritableModel::try_new(ir)?;
+    let mut model = WritableModel::try_new(ctx, ir)?;
     model.losses.extend(dropped_tolerances);
     let payload = brep_payload(ctx, &model, archive_version)?;
     let body = model.body;
@@ -1010,13 +1010,11 @@ fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<WritePlan, CodecError> {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::topology::BodyKind;
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
     let mut losses = Vec::new();
     let angular = if ir.tolerances.angular.get() > std::f64::consts::PI {
         losses.extend(value_unwritable(
@@ -1071,7 +1069,7 @@ fn prepare_write(
     let mut written_carriers = BTreeSet::new();
     let mut parts = Vec::new();
     for scope in &breps {
-        let (pieces, dropped) = brep_pieces(&ctx, &compounds, scope);
+        let (pieces, dropped) = brep_pieces(ctx, &compounds, scope);
         records.omitted.extend(dropped);
         if pieces.is_empty() {
             records.omitted.push((
@@ -1090,7 +1088,7 @@ fn prepare_write(
             ));
         }
         for piece in pieces {
-            let built = brep_record(&ctx, &piece, archive_version);
+            let built = brep_record(ctx, &piece, archive_version);
             let Some((record, findings)) = records.admit(&piece.identity, built)? else {
                 continue;
             };
@@ -2042,12 +2040,13 @@ const CLOSEST_POINT_STEPS: usize = 48;
 /// The point of `edge`'s curve at `parameter`: a non-finite point as it is,
 /// `None` where the curve has no point there.
 fn edge_curve_point(
+    ctx: &DecodeContext<'_>,
     edge: &WritableEdge<'_>,
     parameter: f64,
 ) -> Result<Option<cadmpeg_ir::math::Point3>, CodecError> {
     let parameter = FiniteReal::new(parameter)
         .ok_or_else(|| CodecError::malformed("non-finite edge sample parameter"))?;
-    match edge.curve.point(parameter) {
+    match edge.curve.point(ctx, parameter) {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => Ok(failure.non_finite()?),
     }
@@ -2086,6 +2085,7 @@ fn span_samples(domain: [f64; 2], knots: impl IntoIterator<Item = f64>) -> Vec<f
 /// `face_tolerance` is the IR-stated tolerance `stated_write_tolerance`
 /// gives.
 fn validate_nurbs_trim(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     face_tolerance: f64,
     edge: &WritableEdge<'_>,
@@ -2127,7 +2127,7 @@ fn validate_nurbs_trim(
     let edge_parameters = span_samples(edge_domain, edge_knots);
     let mut edge_points = Vec::with_capacity(edge_parameters.len());
     for parameter in &edge_parameters {
-        match edge_curve_point(edge, *parameter)? {
+        match edge_curve_point(ctx, edge, *parameter)? {
             Some(point) => edge_points.push(point),
             None => {
                 return Ok(Some(format!(
@@ -2157,7 +2157,7 @@ fn validate_nurbs_trim(
     for (index, parameter) in samples.into_iter().enumerate() {
         // A non-finite pcurve point fails the domain test.
         let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             &pcurve.geometry,
             parameter,
         ) {
@@ -2180,7 +2180,7 @@ fn validate_nurbs_trim(
         }
         // A non-finite surface point is measured as a finite one is.
         let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             surface,
             uv.u,
             uv.v,
@@ -2196,7 +2196,7 @@ fn validate_nurbs_trim(
                 }
             },
         };
-        let distance = closest_edge_distance(edge, &edge_parameters, &edge_points, mapped)?;
+        let distance = closest_edge_distance(ctx, edge, &edge_parameters, &edge_points, mapped)?;
         if !distance.is_finite() || distance > tolerance {
             return Ok(Some(format!(
                 "pcurve {} misses edge curve {} by {distance}",
@@ -2228,6 +2228,7 @@ fn validate_nurbs_trim(
 /// surface stays at the trim's vertex, and returns the finding where it does
 /// not. `tolerance` is the larger of the face and edge tolerances.
 fn validate_singular_trim(
+    ctx: &DecodeContext<'_>,
     surface: WritableFaceSurface<'_>,
     tolerance: f64,
     vertex: cadmpeg_ir::math::Point3,
@@ -2245,7 +2246,7 @@ fn validate_singular_trim(
     };
     for parameter in span_samples(explicit.domain, knots) {
         let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
             &pcurve.geometry,
             parameter,
         ) {
@@ -2275,7 +2276,7 @@ fn validate_singular_trim(
             }
             WritableFaceSurface::Nurbs { surface, .. } => {
                 match cadmpeg_ir::eval::decode::nurbs_surface_point(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                     surface,
                     uv.u,
                     uv.v,
@@ -2339,6 +2340,7 @@ fn singular_trim_iso(surface: WritableFaceSurface<'_>, pcurve: &WritablePcurve<'
 /// sampled at `parameters`, refined by golden-section search over the
 /// sample spans on either side of it.
 fn closest_edge_distance(
+    ctx: &DecodeContext<'_>,
     edge: &WritableEdge<'_>,
     parameters: &[f64],
     points: &[cadmpeg_ir::math::Point3],
@@ -2358,7 +2360,7 @@ fn closest_edge_distance(
             return Ok(f64::INFINITY);
         };
         Ok(
-            edge_curve_point(edge, parameter.get())?.map_or(f64::INFINITY, |sample| {
+            edge_curve_point(ctx, edge, parameter.get())?.map_or(f64::INFINITY, |sample| {
                 cadmpeg_ir::math::Point3::distance(sample, point)
             }),
         )

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino target resolution and export reporting.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     output_empty, target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions,
@@ -70,14 +71,13 @@ pub(crate) fn plan(
     };
     let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
-    let written = super::write(
-        &recovered.document,
-        version,
-        &unjoined,
-        input.limits,
-        &mut bytes,
-    )?;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: input.limits,
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir, &ctx)?;
+    let written = super::write(&recovered.document, version, &unjoined, &ctx, &mut bytes)?;
     let withheld_meshes = super::withheld_body_meshes(ir);
     let written_meshes = || {
         ir.model

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -34,14 +35,20 @@ pub(crate) fn plan(
     };
     let (schema, displaced) = schema_at(index);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: input.limits,
+    };
+    let context = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let recovered =
+        cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, &context)?;
     let outcome = write_step_outcome(
         &recovered.document,
         &mut bytes,
         schema,
         &codec.options,
         recovered.recovered_edges,
-        input.limits,
+        &context,
     )?;
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {

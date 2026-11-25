@@ -387,7 +387,7 @@ fn replica_written_with(records: &str, transform: Transform) -> WrittenReplica {
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
         std::collections::HashSet::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        crate::test_support::write_context(),
     )
     .expect("a replica is written or left out");
     WrittenReplica {

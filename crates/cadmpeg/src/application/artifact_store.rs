@@ -281,15 +281,38 @@ fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Stage an export plan and hash the emitted bytes.
+/// Stage an export plan and hash the emitted bytes. A plan with several
+/// outputs writes the root output, its first, to `output`, and stages each
+/// other beside it under the name the plan gives it; the digest is the root
+/// output's. The files are not written as one transaction.
 pub(super) fn write_plan_atomic(
     output: &Path,
     plan: ExportPlan,
-) -> Result<(ExportReport, Sha256Digest)> {
+) -> Result<(ExportReport, Sha256Digest, Vec<PathBuf>)> {
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
+    if plan.outputs().len() > 1 {
+        let mut written = Vec::new();
+        let mut root = None;
+        let report = plan.write_each(|planned, bytes| {
+            if root.is_none() {
+                write_bytes_atomic(output, bytes).map_err(io::Error::other)?;
+                root = Some(Sha256Digest::from_bytes(Sha256::digest(bytes).into()));
+                return Ok(());
+            }
+            let path = planned
+                .name
+                .as_ref()
+                .map_or_else(|| output.to_owned(), |name| parent.join(name.as_str()));
+            write_bytes_atomic(&path, bytes).map_err(io::Error::other)?;
+            written.push(path);
+            Ok(())
+        })?;
+        let digest = root.unwrap_or_else(|| Sha256Digest::from_bytes(Sha256::digest(b"").into()));
+        return Ok((report, digest, written));
+    }
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("creating temporary output in {}", parent.display()))?;
     let mut sink = TempFileWriter {
@@ -309,7 +332,7 @@ pub(super) fn write_plan_atomic(
         .persist(output)
         .map_err(|error| error.error)
         .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok((report, digest))
+    Ok((report, digest, Vec::new()))
 }
 
 /// Persist or remove the decode-fidelity sidecar beside a CADIR file.

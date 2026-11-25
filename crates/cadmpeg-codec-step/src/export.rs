@@ -108,7 +108,7 @@ pub(crate) fn write_step_outcome(
     schema: StepSchema,
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    context: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
     // STEP holds no cage, so a cage body is not written as an empty shell
     // either (§5.6); the cage's `geometry.subd-omitted` loss names both.
@@ -116,7 +116,7 @@ pub(crate) fn write_step_outcome(
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(ir);
     let ir = cageless.as_ref().unwrap_or(ir);
     let (ir, dangling) = without_dangling_occurrences(ir);
-    let mut b = Builder::new(&ir, schema, recovered_edges, limits)?;
+    let mut b = Builder::new(&ir, schema, recovered_edges, context)?;
     b.model_name = &opts.product_name;
     b.cage_bodies = cage_bodies;
     if let Some(note) = dangling {
@@ -321,7 +321,8 @@ pub(crate) struct Builder<'a> {
     edge_refs: HashMap<String, Vec<Ref>>,
     edge_midpoints: HashMap<String, Ref>,
     edge_split_index: cadmpeg_ir::index::ModelIndex<'a>,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    /// The encode's evaluation session, under the caller's limits.
+    context: &'a cadmpeg_core::decode::DecodeContext<'a>,
     edge_split_error: Option<cadmpeg_core::CodecError>,
     /// Written edge occurrence of each coedge whose edge a closed shell uses
     /// more than twice. A STEP closed shell admits two uses per edge, so each
@@ -489,9 +490,9 @@ impl<'a> Builder<'a> {
         ir: &'a CadIr,
         schema: StepSchema,
         recovered_edges: HashSet<EdgeId>,
-        limits: cadmpeg_core::decode::ResourceLimits,
+        context: &'a cadmpeg_core::decode::DecodeContext<'a>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let construction_supports = ownership::construction_supports(ir, limits)?;
+        let construction_supports = ownership::construction_supports(ir, context)?;
         let loop_faces = ir
             .geometry
             .faces
@@ -531,7 +532,7 @@ impl<'a> Builder<'a> {
             }
         }
         let mut builder = Builder {
-            approximations: approximation::Approximator::new(ir),
+            approximations: approximation::Approximator::new(ir, context),
             ir,
             schema,
             recovered_edges,
@@ -635,7 +636,7 @@ impl<'a> Builder<'a> {
             edge_refs: HashMap::new(),
             edge_midpoints: HashMap::new(),
             edge_split_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
-            limits,
+            context,
             edge_split_error: None,
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
@@ -3862,7 +3863,7 @@ impl<'a> Builder<'a> {
                 return Ok(false);
             };
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Decode(self.context),
                 &pcurve.geometry,
                 0.5 * (first + second),
             ))?
@@ -3871,7 +3872,7 @@ impl<'a> Builder<'a> {
             };
             let uv = uv.get();
             let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Decode(self.context),
                 self.ir,
                 &surface.geometry,
                 uv.u,
@@ -4230,7 +4231,7 @@ impl<'a> Builder<'a> {
         let midpoint = if let Some(vertex) = self.edge_midpoints.get(edge_id) {
             Some(*vertex)
         } else {
-            match edge_split::midpoint(&self.edge_split_index, edge, self.limits) {
+            match edge_split::midpoint(&self.edge_split_index, edge, self.context) {
                 Ok(edge_split::Split::At(point)) => {
                     let point = geometry::point(&mut self.emitter, point);
                     let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
@@ -4449,7 +4450,7 @@ impl<'a> Builder<'a> {
         let at = |parameter: f64| {
             Ok::<_, cadmpeg_core::decode::ResourceLimit>(
                 cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.context),
                     aligned.as_ref(),
                     parameter,
                 ))?
@@ -4501,7 +4502,7 @@ impl<'a> Builder<'a> {
         };
         let lift = |parameter: f64| {
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Decode(self.context),
                 pcurve,
                 parameter,
             ))?
@@ -4510,7 +4511,7 @@ impl<'a> Builder<'a> {
             };
             let uv = uv.get();
             finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Decode(self.context),
                 self.ir,
                 &surface.geometry,
                 uv.u,

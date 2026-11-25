@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IGES target planning and retained-image replay.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses,
@@ -80,7 +81,13 @@ fn synthesized_body(
 ) -> Result<ExportBody, CodecError> {
     let (consumption, loss, synthesis_cause) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: input.limits,
+    };
+    let context = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let recovered =
+        cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, &context)?;
     let synthesis =
         super::degrade::synthesize_dropping(&recovered.document, version, input.limits)?;
     losses.extend(synthesis.losses.clone());

@@ -91,7 +91,9 @@ pub(crate) fn of_document(ir: &CadIr, limits: ResourceLimits) -> Result<CodecDig
     let native = ir
         .native
         .namespace("sldprt")
-        .map(|namespace| crate::native::SldprtNative::load(namespace).map_err(CodecError::from))
+        .map(|namespace| {
+            crate::native::SldprtNative::load_under(namespace, limits).map_err(CodecError::from)
+        })
         .transpose()?
         .unwrap_or_default();
     let histories = &native.feature_histories;

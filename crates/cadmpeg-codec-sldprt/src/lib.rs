@@ -335,19 +335,22 @@ impl SldprtCodec {
                 limits,
                 &mut cache,
                 &mut bytes,
-            )
-            .ok();
+            );
             let mut shared = shared_cache.borrow_mut();
             if shared.source_baseline.is_none() {
                 shared.source_baseline = cache.source_baseline;
             }
-            result?;
-            (image != Some(bytes.as_slice())).then_some(bytes)
+            match result {
+                Ok(_) => Ok((image != Some(bytes.as_slice())).then_some(bytes)),
+                Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+                Err(_) => Ok(None),
+            }
         };
         let ((bytes, output), read_back) = history::write::read_back::write_until_read_back(
             ir,
             digests,
             baseline_key,
+            limits,
             &mut |withheld| {
                 let mut bytes = Vec::new();
                 let mut cache = shared_cache.borrow_mut();
@@ -386,7 +389,9 @@ impl SldprtCodec {
             writer::CachedNative::Unloaded => ir
                 .native
                 .namespace("sldprt")
-                .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
+                .map(|namespace| {
+                    native::SldprtNative::load_under(namespace, limits).map_err(CodecError::from)
+                })
                 .transpose()?,
         };
         let source = shared
@@ -401,6 +406,7 @@ impl SldprtCodec {
             source,
             &written,
             &read_back.misread,
+            limits,
         )?
         .losses;
         Ok(Written::Semantic {
@@ -611,6 +617,7 @@ impl EncoderBackend for SldprtCodec {
     /// rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
+    const DEFINITION_PER_FILE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 
