@@ -4,8 +4,10 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -34,8 +36,29 @@ def command(arguments: list[str], packages: list[str], *, full: bool = False,
     return ['cargo', arguments[0], '-q', *scope, *arguments[1:]]
 
 
-# Runners at or below this many GiB build with at most two parallel jobs.
-TWO_JOB_RAM_GIB = 18
+# Runners at or below this GiB ceiling serialize heavy rustc invocations via
+# `ci_rustc_lock.py` instead of capping every crate to one job or splitting
+# Cargo into multiple invocations that break workspace feature unification.
+LOW_RAM_GIB = 10
+# Runners at or below this GiB ceiling cap broad builds at two parallel jobs.
+BROAD_BUILD_CAP_RAM_GIB = 18
+
+
+def low_ram_rustc_wrapper() -> Path:
+    """Return the path to the flock-based `RUSTC_WRAPPER` script."""
+    return Path(__file__).resolve().parent / 'ci_rustc_lock.py'
+
+
+def low_ram_test_command(arguments: list[str], *, platform: str) -> list[str]:
+    """Return the full-workspace test command for a low-RAM runner.
+
+    On macOS (`darwin`), `cargo test` runs each crate's tests in-process (34
+    processes instead of 30,000+ Mach-O spawns of 300-500 MB binaries) and
+    shares `LazyLock` fixture decode caches across tests in each binary.
+    """
+    if platform == 'darwin' and arguments[:2] == ['nextest', 'run']:
+        return ['cargo', 'test', '-q', '--workspace', *arguments[2:]]
+    return command(arguments, [], full=True)
 
 
 def main() -> int:
@@ -52,14 +75,26 @@ def main() -> int:
     ram_text = os.environ.get('CI_RUNNER_RAM_GIB', '').strip()
     ram_gib = int(ram_text) if ram_text.isdigit() else None
     env: dict[str, str] | None = None
-    if (full and arguments[:2] == ['nextest', 'run'] and ram_gib is not None
-            and ram_gib <= TWO_JOB_RAM_GIB):
-        env = os.environ.copy()
-        env['CARGO_BUILD_JOBS'] = str(min(int(env.get('CARGO_BUILD_JOBS', '2')), 2))
+    lock_dir: str | None = None
     argv = command(arguments, packages, full=full, codecs=codecs)
-    if env is not None:
-        return subprocess.run(argv, env=env).returncode
-    return subprocess.run(argv).returncode
+    if full and arguments[:2] == ['nextest', 'run'] and ram_gib is not None:
+        env = os.environ.copy()
+        if ram_gib <= LOW_RAM_GIB:
+            if sys.platform != 'win32':
+                lock_dir = tempfile.mkdtemp(prefix='cadmpeg-rustc-lock-')
+                env['RUSTC_WRAPPER'] = str(low_ram_rustc_wrapper())
+                env['CI_RUSTC_LOCK_DIR'] = lock_dir
+            argv = low_ram_test_command(arguments, platform=sys.platform)
+        elif ram_gib <= BROAD_BUILD_CAP_RAM_GIB:
+            current_jobs = int(env.get('CARGO_BUILD_JOBS', '2'))
+            env['CARGO_BUILD_JOBS'] = str(min(current_jobs, 2))
+    try:
+        if env is not None:
+            return subprocess.run(argv, env=env).returncode
+        return subprocess.run(argv).returncode
+    finally:
+        if lock_dir is not None:
+            shutil.rmtree(lock_dir, ignore_errors=True)
 
 
 if __name__ == '__main__':

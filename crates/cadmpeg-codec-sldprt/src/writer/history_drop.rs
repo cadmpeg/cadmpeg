@@ -844,7 +844,7 @@ fn is_tree_node(feature: &cadmpeg_ir::features::Feature) -> bool {
 }
 
 fn value(record: &impl Serialize) -> Value {
-    serde_json::to_value(record).unwrap_or(Value::Null)
+    cadmpeg_core::serde_erase::to_json_value(record).unwrap_or(Value::Null)
 }
 
 /// Whether a string below the record's own `id` equals one of `ids`.
