@@ -654,6 +654,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
             .added,
         ["sldprt:test:configuration#0"]
     );
+    crate::examples::add_document_root(&mut right);
     let report = validate_neutral(&right, Vec::new()).expect("validate the neutral model");
     assert_eq!(report.entity_counts["native.f3d.act_guids"], 1);
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);

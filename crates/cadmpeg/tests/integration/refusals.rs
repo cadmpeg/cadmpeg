@@ -632,7 +632,7 @@ fn report_to_an_unwritable_path_is_an_operational_error() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &unit_cube().expect("unit cube fixture is admitted"),
+        &crate::support::rooted_cube(),
     );
     let report = dir.path().join("missing-subdir").join("report.json");
     Command::cargo_bin("cadmpeg")

@@ -106,6 +106,7 @@ fn a_closed_nest_in_its_own_scope_has_no_finding() {
     body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
     ir.model.history_bodies.push(body);
     assert!(findings(&ir).is_empty(), "{:?}", findings(&ir));
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validation runs");
     assert!(
         !report

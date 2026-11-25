@@ -8,6 +8,7 @@ mod mesh_bodies;
 mod native_skeleton;
 mod profile_data;
 mod root_definition;
+mod saved_cadir;
 mod scalar_relation_values;
 mod sweep_path_section;
 mod swift_nominal;
@@ -217,11 +218,7 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
     let tessellation_exactness = &display.source_fidelity().annotations.exactness()
         [display.ir().model.tessellations[0].id.as_str()];
     assert_eq!(
-        tessellation_exactness.fields()["body"],
-        cadmpeg_ir::Exactness::Derived
-    );
-    assert_eq!(
-        tessellation_exactness.fields()["faces"],
+        tessellation_exactness.fields()["of"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_valid(&display);
@@ -403,10 +400,11 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
 }
 
 /// A document read back from CADIR JSON holds no feature history. Unedited,
-/// it replays its retained part; edited, the semantic writer refuses it
-/// rather than read the empty history arenas as every feature removed.
+/// it replays its retained part; edited, it writes what the decoded part
+/// with the same edit writes, its history restored from the retained part
+/// rather than read as every feature removed.
 #[test]
-fn a_cadir_read_part_replays_unedited_and_refuses_an_edit() {
+fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
     let source = versioned_part();
     let result = decode(source.clone());
     assert!(!result.ir().model.features.is_empty());
@@ -428,14 +426,21 @@ fn a_cadir_read_part_replays_unedited_and_refuses_an_edit() {
     unedited.write_to(&mut written).unwrap();
     assert_eq!(written, source);
 
+    let written = |ir: &cadmpeg_ir::CadIr| {
+        let mut bytes = Vec::new();
+        SldprtCodec
+            .plan(
+                cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(result.source_fidelity())),
+                cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .map(|_| bytes)
+            .map_err(|error| error.to_string())
+    };
     read.geometry.bodies[0].name = Some("edited".into());
-    let error = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&read, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
-        )
-        .expect_err("an edit of a document read from CADIR is refused");
-    assert!(error.to_string().contains("read from CADIR"), "{error}");
+    let mut held = result.ir().clone();
+    held.geometry.bodies[0].name = Some("edited".into());
+    assert_eq!(written(&read), written(&held));
 }
 
 /// A source dialect outside the one-row catalog refuses under `Inherit` once

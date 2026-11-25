@@ -46,7 +46,7 @@ pub(in crate::validate) fn check_procedural_owners(ir: &CadIr, findings: &mut Ve
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(id),
-                format_args!(
+                crate::rule!("topology.procedural-construction-construction-exactly-one", 
                     "procedural {kind} is the construction of {count} {kind}s; it is the construction of exactly one"
                 ),
             );

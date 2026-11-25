@@ -23,7 +23,11 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(sheet.id.as_str()),
-                format_args!("{}", "spreadsheet feature does not resolve"),
+                crate::rule!(
+                    "spreadsheets.spreadsheet-feature-does-not-resolve",
+                    "{}",
+                    "spreadsheet feature does not resolve"
+                ),
             );
         }
         for cell in sheet.cells() {
@@ -33,7 +37,11 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(sheet.id.as_str()),
-                    format_args!("{}", "spreadsheet cell does not resolve"),
+                    crate::rule!(
+                        "spreadsheets.spreadsheet-cell-does-not-resolve",
+                        "{}",
+                        "spreadsheet cell does not resolve"
+                    ),
                 );
                 continue;
             };
@@ -44,7 +52,11 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(sheet.id.as_str()),
-                    format_args!("{}", "spreadsheet cell has a different owner"),
+                    crate::rule!(
+                        "spreadsheets.spreadsheet-cell-different-owner",
+                        "{}",
+                        "spreadsheet cell has a different owner"
+                    ),
                 );
             }
         }

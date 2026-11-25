@@ -512,7 +512,9 @@ pub const NATIVE_ELISION_MARKER: &str =
 #[must_use]
 pub fn fidelity_snapshot(fidelity: &cadmpeg_ir::SourceFidelity) -> serde_json::Value {
     let mut value = serde_json::to_value(fidelity).expect("serialize source_fidelity");
-    value["content_digest"] = ELIDED_DIGEST.into();
+    if let Some(digest) = value.get_mut("content_digest") {
+        *digest = ELIDED_DIGEST.into();
+    }
     if let Some(digests) = value
         .get_mut("codec_digests")
         .and_then(serde_json::Value::as_object_mut)

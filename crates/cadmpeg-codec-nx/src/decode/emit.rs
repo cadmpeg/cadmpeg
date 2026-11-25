@@ -1125,9 +1125,9 @@ pub(super) fn emit_topology(
                     Some("INTERSECTION_PCURVE"),
                 );
                 annotations.derived(pcurve_id.as_str(), "geometry")?;
-                annotations.derived(pcurve_id.as_str(), "parameter_range")?;
+                annotations.derived(pcurve_id.as_str(), "metadata.form.parameter_range")?;
                 if fit_tolerance.is_some() {
-                    annotations.derived(pcurve_id.as_str(), "fit_tolerance")?;
+                    annotations.derived(pcurve_id.as_str(), "metadata.form.fit_tolerance")?;
                 }
 
                 ir.geometry.pcurves.push(Pcurve {
