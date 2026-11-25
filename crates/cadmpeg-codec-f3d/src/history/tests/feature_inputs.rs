@@ -321,14 +321,16 @@ fn input_edge_geometry_keeps_only_selected_edges() {
         }),
     );
     let geometry = |edge: &cadmpeg_ir::ids::HistoricalEdgeId| HistoricalEdgeGeometry {
-        edge: edge.clone(),
-        interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
         tangent: None,
         start: None,
         end: None,
         faces: Default::default(),
         carrier: None,
         supports: Vec::new(),
+        ..HistoricalEdgeGeometry::new(
+            edge.clone(),
+            FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
+        )
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         face_owners: Vec::new(),
@@ -385,8 +387,6 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
         }),
     );
     let geometry = |edge: i64, faces: [i64; 2]| HistoricalEdgeGeometry {
-        edge: crate::ids::history_input_edge_id(&prefix, edge),
-        interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
         tangent: None,
         start: None,
         end: None,
@@ -398,6 +398,10 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
         .unwrap(),
         carrier: None,
         supports: Vec::new(),
+        ..HistoricalEdgeGeometry::new(
+            crate::ids::history_input_edge_id(&prefix, edge),
+            FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
+        )
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         face_owners: Vec::new(),

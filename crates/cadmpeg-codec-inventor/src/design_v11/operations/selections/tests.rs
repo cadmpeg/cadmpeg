@@ -34,14 +34,13 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
     let id = HistoricalEdgeId::mint("inventor:input-edge#synthetic-7").expect("id");
     let point = |values| serde_json::from_value(serde_json::json!(values)).expect("point");
     let sample = HistoricalEdgeGeometry {
-        edge: id.clone(),
-        interior: point([1., 2., 3.]),
         tangent: Some(UnitVector3::X_AXIS),
         start: Some(point([0., 2., 3.])),
         end: Some(point([2., 2., 3.])),
         faces: DistinctMembers::default(),
         carrier: None,
         supports: Vec::new(),
+        ..HistoricalEdgeGeometry::new(id.clone(), point([1., 2., 3.]))
     };
     let input = FeatureInputTopology {
         id: state.clone(),

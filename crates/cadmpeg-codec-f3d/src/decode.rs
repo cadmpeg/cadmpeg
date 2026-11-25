@@ -4059,7 +4059,7 @@ impl<'a> F3dDecodeSession<'a> {
                     crate::history::history_bodies::fill_consumed(
                         ctx,
                         scan,
-                        &mut self.ir.model,
+                        &mut self.ir,
                         &self.native,
                         Some(&index.primary_model_brep_name),
                         &consumers,

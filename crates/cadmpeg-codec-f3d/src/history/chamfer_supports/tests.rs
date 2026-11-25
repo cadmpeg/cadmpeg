@@ -380,15 +380,17 @@ fn attach_filters_out_equal_distance_and_non_two_distances_chamfers() {
     let run = |spec: ChamferSpec| {
         let feature = chamfer_feature(spec, &prefix, edge_id.clone());
         let mut geometry = vec![HistoricalEdgeGeometry {
-            edge: edge_id.clone(),
-            interior: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 5.0, 0.0))
-                .unwrap(),
             tangent: None,
             start: None,
             end: None,
             faces: DistinctMembers::try_from(vec![]).unwrap(),
             carrier: None,
             supports: Vec::new(),
+            ..HistoricalEdgeGeometry::new(
+                edge_id.clone(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 5.0, 0.0))
+                    .unwrap(),
+            )
         }];
         attach(&feature, history, &topology, &prefix, &mut geometry);
         geometry[0].supports.len()

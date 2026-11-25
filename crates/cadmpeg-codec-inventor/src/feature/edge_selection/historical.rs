@@ -413,14 +413,13 @@ pub(crate) fn project(
                 let id = edge_id(token, selected_source)?;
                 if owners.insert(id.clone()) {
                     geometry.push(HistoricalEdgeGeometry {
-                        edge: id.clone(),
                         start: Some(edge.geometry.start),
                         end: Some(edge.geometry.end),
-                        interior: edge.geometry.interior,
                         tangent: Some(edge.geometry.tangent),
                         faces: DistinctMembers::default(),
                         carrier: None,
                         supports: Vec::new(),
+                        ..HistoricalEdgeGeometry::new(id.clone(), edge.geometry.interior)
                     });
                 }
                 edges.push(id);

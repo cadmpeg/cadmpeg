@@ -131,3 +131,5 @@ deleted. Empty Deltas arenas make no source claim and produce no Deltas source
 finding. Resource refusals remain typed check-stage errors.
 
 Encoders count rows with `CadIr::census`, not validation.
+
+Fusion historical input-edge binding uses `DRAFT_CORE` rule membership for each binding. A refused binding preserves samples and operands and reports `feature.historical-edge-topology-unbound`. Each independent binding retains its admission result.

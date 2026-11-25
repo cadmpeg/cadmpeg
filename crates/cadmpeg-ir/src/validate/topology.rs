@@ -25,6 +25,7 @@ use crate::report::{
 mod composite;
 mod datums;
 pub(super) mod graphs;
+mod historical_edges;
 pub(super) mod nested;
 pub(super) mod procedural_owners;
 mod sheet_metal;
@@ -3094,6 +3095,9 @@ fn check_feature_references(
             );
         }
         validate_input_edge_geometry(findings, state);
+        for geometry in &state.edge_geometry {
+            historical_edges::check(ctx, ir, state, geometry, findings)?;
+        }
         validate_input_face_owners(findings, state);
     }
     let mut result_owners = BorrowedIdentities::new();

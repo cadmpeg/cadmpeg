@@ -9,7 +9,8 @@ use crate::features::datums::DecalMapping;
 use crate::features::direct_edit::{FlexForm, FlexMode, ScaleFactors, ThickenSide};
 use crate::features::evaluation::{
     EdgeSupport, FeatureInputTopology, FeatureResultMembers, FeatureResultTopology,
-    HistoricalEdgeCarrier, HistoricalEdgeGeometry, HistoricalFaceOwner,
+    HistoricalEdgeCarrier, HistoricalEdgeGeometry, HistoricalEdgePath, HistoricalEdgeTopologyRef,
+    HistoricalFaceOwner, HistoricalFaceTopologyRef,
 };
 use crate::features::geometry::{
     FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc, FeatureImageBounds,
@@ -66,7 +67,7 @@ rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, v
 rewrite_record!(HistoricalFaceOwner, []; {face, body});
 rewrite_record!(EdgeSupport, []; {face, normal, with_edge});
 rewrite_scalar!(HistoricalEdgeCarrier);
-rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces, carrier, supports});
+rewrite_record!(HistoricalEdgeGeometry, []; {edge, topology, interior, tangent, start, end, faces, carrier, supports});
 rewrite_scalar!(FeatureLineSegment);
 rewrite_record!(FeatureResultMembers, []; {bodies, faces, edges, vertices});
 rewrite_record!(FeatureResultTopology, []; {id, output_of, members, native_ref});
@@ -121,3 +122,7 @@ rewrite_record!(crate::features::sheet_metal_forms::SheetMetalRelief, []; {form,
 rewrite_record!(crate::features::sheet_metal_forms::SheetMetalTransition, []; {form, radius});
 
 rewrite_scalar!(super::sheet_metal::SheetMetalContourThicknessSide);
+
+rewrite_record!(HistoricalEdgeTopologyRef, []; {history_body, path, faces});
+rewrite_record!(HistoricalFaceTopologyRef, []; {face, topology_faces});
+rewrite_enum!(HistoricalEdgePath, []; {Edge {edge}, Loop {loop_id}});

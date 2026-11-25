@@ -226,14 +226,16 @@ mod tests {
         ];
         ir.model.features[1].dependencies.insert(plate_id.clone());
         let geometry = HistoricalEdgeGeometry {
-            edge: edge.clone(),
             start: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)),
             end: FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)),
-            interior: FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point"),
             tangent: Some(crate::units::UnitVector3::X_AXIS),
             faces: DistinctMembers::default(),
             carrier: None,
             supports: Vec::new(),
+            ..HistoricalEdgeGeometry::new(
+                edge.clone(),
+                FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point"),
+            )
         };
         let state = |id, input_of| FeatureInputTopology {
             face_owners: Vec::new(),
