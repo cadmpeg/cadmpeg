@@ -57,6 +57,16 @@ pub(super) fn write_new(
     limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<Generated, CodecError> {
+    // The history-true form writes the state at its timeline marker, which
+    // an evaluation can hold in place of the current state.
+    let staged = match missing_states {
+        MissingStateForm::HistoryTrue => design::state_at_marker(target),
+        MissingStateForm::GeometryTrue => None,
+    };
+    let (target, staged_loss) = match &staged {
+        Some((staged, loss)) => (staged, loss.clone()),
+        None => (target, None),
+    };
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
@@ -95,6 +105,7 @@ pub(super) fn write_new(
         .flatten()
         .is_some_and(|design| design.rolls_back());
     let mut losses = reduction.finish();
+    losses.extend(staged_loss);
     losses.extend(design_losses);
     Ok(Generated {
         coverage,
@@ -231,10 +242,12 @@ fn attempt<W: Write + Seek>(
         }
         Err(error) => return Err(Failure::brep(error)),
     };
-    let smbh = if stamped {
-        design::history::with_insertion_history(&smbh).map_err(Failure::neutral_design)?
-    } else {
-        smbh
+    let (smbh, history_notes) = match neutral.as_ref().filter(|_| stamped) {
+        Some(neutral) => {
+            design::history::with_insertion_history(&smbh, &neutral.history_states(target))
+                .map_err(Failure::neutral_design)?
+        }
+        None => (smbh, Vec::new()),
     };
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
@@ -292,6 +305,7 @@ fn attempt<W: Write + Seek>(
         }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
+        losses.extend(history_notes);
         if body_less {
             omit_geometry(&mut coverage);
             losses.push(crate::loss::F3dLossCode::WriterGeometryOmitted.note(format!(

@@ -103,15 +103,6 @@ pub(crate) struct SemanticOutput {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-/// What the decode kept of the source a semantic write reads: its
-/// annotations, the codec digests it recorded, and its retained records.
-#[derive(Clone, Copy)]
-pub(crate) struct Retained<'a> {
-    pub(crate) annotations: &'a Annotations,
-    pub(crate) digests: &'a CodecDigests,
-    pub(crate) records: &'a [SourceRecord<'a>],
-}
-
 /// Lazy cache for the decoded SLDPRT native namespace across read-back retries.
 #[derive(Default)]
 pub(crate) enum CachedNative {
@@ -128,18 +119,45 @@ pub(crate) struct SemanticWriteCache {
     pub(crate) native: CachedNative,
 }
 
-/// [`write_semantic_with_records_cached`] with a cache of its own.
+/// Per-pass withheld features and shaping edits for one semantic write, and
+/// the caller's resource limits.
+#[derive(Clone, Copy)]
+pub(crate) struct SemanticWriteControls<'a> {
+    pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
+    pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
+    pub(crate) limits: ResourceLimits,
+}
+
+/// Writes a semantic document and returns the dialect and arena coverage it
+/// wrote. Each feature of `withheld` keeps its stored definition record, for
+/// the reason it is paired with. `digests` are the codec digests the decode
+/// recorded. The configuration of each edit in `shaped`, and of each edit the
+/// write finds to shape the solid against its retained source, takes the
+/// stale mark.
 #[cfg(test)]
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
-    retained: Retained<'_>,
+    annotations: &Annotations,
+    digests: &CodecDigests,
+    retained_records: &[SourceRecord<'_>],
     withheld: &[(cadmpeg_ir::features::FeatureId, String)],
     shaped: &[crate::history::write::brep_agreement::ShapingEdit],
-    limits: ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let mut cache = SemanticWriteCache::default();
-    write_semantic_with_records_cached(ir, retained, withheld, shaped, limits, &mut cache, writer)
+    write_semantic_with_records_cached(
+        ir,
+        annotations,
+        digests,
+        retained_records,
+        SemanticWriteControls {
+            withheld,
+            shaped,
+            limits: ResourceLimits::desktop(),
+        },
+        &mut cache,
+        writer,
+    )
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -150,18 +168,18 @@ pub(crate) fn write_semantic_with_records(
 /// and native records across the read-back retries of one semantic write.
 pub(crate) fn write_semantic_with_records_cached(
     ir: &CadIr,
-    retained: Retained<'_>,
-    withheld: &[(cadmpeg_ir::features::FeatureId, String)],
-    shaped: &[crate::history::write::brep_agreement::ShapingEdit],
-    limits: ResourceLimits,
+    annotations: &Annotations,
+    digests: &CodecDigests,
+    retained_records: &[SourceRecord<'_>],
+    controls: SemanticWriteControls<'_>,
     cache: &mut SemanticWriteCache,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
-    let Retained {
-        annotations,
-        digests,
-        records: retained_records,
-    } = retained;
+    let SemanticWriteControls {
+        withheld,
+        shaped,
+        limits,
+    } = controls;
     let source_baseline = &mut cache.source_baseline;
     let policy = DecodePolicy { limits };
     let digest_arena = DecodeArena::new();

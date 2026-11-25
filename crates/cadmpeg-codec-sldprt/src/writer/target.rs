@@ -240,18 +240,14 @@ fn synthesize(
     } else {
         SemanticFidelity::NotConsumed
     };
-    let mut bytes = Vec::new();
-    let mut written = SldprtCodec::write_semantic(
+    let (mut written, bytes) = SldprtCodec::write_semantic(
         &ir,
-        crate::writer::Retained {
-            annotations: &Annotations::default(),
-            digests: &CodecDigests::new(),
-            records: &[],
-        },
+        &Annotations::default(),
+        &CodecDigests::new(),
+        &[],
         &shaped,
         fidelity,
         input.limits,
-        &mut bytes,
     )?;
     if let Written::Semantic { losses, .. } = &mut written {
         losses.extend(native_records_omitted(
@@ -312,37 +308,33 @@ fn write_first(
     digests: &CodecDigests,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let replay_eligible = resolved.preserves_source();
-    let mut bytes = Vec::new();
-    let written = match input.fidelity {
+    match input.fidelity {
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
-            SldprtCodec::write_preserved_with_annotations(
+            let mut bytes = Vec::new();
+            let written = SldprtCodec::write_preserved_with_annotations(
                 input.ir,
                 value,
                 &records,
                 input.limits,
                 &mut bytes,
-            )?
+            )?;
+            Ok((written, bytes))
         }
         Some(_) => SldprtCodec::write_semantic(
             input.ir,
-            crate::writer::Retained {
-                annotations: &Annotations::default(),
-                digests,
-                records: &[],
-            },
+            &Annotations::default(),
+            digests,
+            &[],
             &[],
             SemanticFidelity::NotConsumed,
             input.limits,
-            &mut bytes,
-        )?,
+        ),
         None => SldprtCodec::write_semantic(
             input.ir,
-            crate::writer::Retained {
-                annotations: &Annotations::default(),
-                digests,
-                records: &[],
-            },
+            &Annotations::default(),
+            digests,
+            &[],
             &[],
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
@@ -350,10 +342,8 @@ fn write_first(
                 SemanticFidelity::NotConsumed
             },
             input.limits,
-            &mut bytes,
-        )?,
-    };
-    Ok((written, bytes))
+        ),
+    }
 }
 
 /// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land

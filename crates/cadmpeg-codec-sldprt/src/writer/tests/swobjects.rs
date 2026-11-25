@@ -1609,14 +1609,11 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
         let mut written = Vec::new();
         let output = crate::writer::write_semantic_with_records(
             &ir,
-            crate::writer::Retained {
-                annotations: &fidelity.annotations,
-                digests: &fidelity.codec_digests,
-                records: &records,
-            },
+            &fidelity.annotations,
+            &fidelity.codec_digests,
+            &records,
             &[],
             &[],
-            cadmpeg_core::decode::ResourceLimits::desktop(),
             &mut written,
         )
         .unwrap();
@@ -1654,14 +1651,11 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
     // manager tuple has no generator.
     let output = crate::writer::write_semantic_with_records(
         &baseline,
-        crate::writer::Retained {
-            annotations: &fidelity.annotations,
-            digests: &fidelity.codec_digests,
-            records: &[],
-        },
+        &fidelity.annotations,
+        &fidelity.codec_digests,
         &[],
         &[],
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &[],
         &mut Vec::new(),
     )
     .unwrap();

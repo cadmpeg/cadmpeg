@@ -134,14 +134,11 @@ fn malformed_auxiliary_owner_blocks_semantic_writes() {
     let mut output = Vec::new();
     let result = crate::writer::write_semantic_with_records(
         decoded.ir(),
-        crate::writer::Retained {
-            annotations: &decoded.source_fidelity().annotations,
-            digests: &decoded.source_fidelity().codec_digests,
-            records: &records,
-        },
+        &decoded.source_fidelity().annotations,
+        &decoded.source_fidelity().codec_digests,
+        &records,
         &[],
         &[],
-        cadmpeg_core::decode::ResourceLimits::desktop(),
         &mut output,
     );
     assert!(

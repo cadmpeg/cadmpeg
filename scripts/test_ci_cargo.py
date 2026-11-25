@@ -28,6 +28,11 @@ class CommandTests(unittest.TestCase):
         for crate in HEAVY_CRATES:
             self.assertIn(crate, one_job_args)
 
+    def test_low_ram_prebuild_passes_no_run_once(self):
+        stages = low_ram_prebuild_commands(["nextest", "run", "--no-run", "--bins", "--tests"])
+        for _, argv in stages:
+            self.assertEqual(argv.count("--no-run"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

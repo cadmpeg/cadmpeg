@@ -405,14 +405,11 @@ pub(crate) fn write_in_native_envelope(
     let records = crate::source_records(&ir, &fidelity)?;
     crate::writer::write_semantic_with_records(
         &ir,
-        crate::writer::Retained {
-            annotations: &fidelity.annotations,
-            digests: &fidelity.codec_digests,
-            records: &records,
-        },
+        &fidelity.annotations,
+        &fidelity.codec_digests,
+        &records,
         &[],
         &[],
-        cadmpeg_core::decode::ResourceLimits::desktop(),
         writer,
     )
 }

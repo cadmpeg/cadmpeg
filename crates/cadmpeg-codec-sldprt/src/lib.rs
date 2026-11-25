@@ -147,7 +147,8 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::{report::check::Finding, SourceFidelity};
+use cadmpeg_ir::source_fidelity::CodecDigests;
+use cadmpeg_ir::{report::check::Finding, Annotations, SourceFidelity};
 
 /// Retained-record id of the whole source part, the byte-replay baseline.
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
@@ -205,32 +206,30 @@ impl SldprtCodec {
                 writer.write_all(image)?;
                 return Ok(Written::Stored { losses: vec![loss] });
             }
-            return Self::write_semantic(
+            let (written, bytes) = Self::write_semantic(
                 ir,
-                crate::writer::Retained {
-                    annotations,
-                    digests,
-                    records,
-                },
+                annotations,
+                digests,
+                records,
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
                 limits,
-                writer,
-            );
+            )?;
+            writer.write_all(&bytes)?;
+            return Ok(written);
         }
         let Some(data) = image else {
-            return Self::write_semantic(
+            let (written, bytes) = Self::write_semantic(
                 ir,
-                crate::writer::Retained {
-                    annotations,
-                    digests,
-                    records,
-                },
+                annotations,
+                digests,
+                records,
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
                 limits,
-                writer,
-            );
+            )?;
+            writer.write_all(&bytes)?;
+            return Ok(written);
         };
         writer.write_all(data)?;
         Ok(Written::Replayed)
@@ -254,20 +253,16 @@ impl SldprtCodec {
     /// retained source records fed the write, `Synthesized` when the document was
     /// built from the neutral IR alone. `shaped` names the edits that shape
     /// the stored solid beyond those the write compares with its retained
-    /// source.
+    /// source. Returns the path with the written bytes.
     fn write_semantic(
         ir: &CadIr,
-        retained: writer::Retained<'_>,
+        annotations: &Annotations,
+        digests: &CodecDigests,
+        records: &[SourceRecord<'_>],
         shaped: &[history::write::brep_agreement::ShapingEdit],
         fidelity: SemanticFidelity,
         limits: ResourceLimits,
-        writer: &mut dyn Write,
-    ) -> Result<Written, CodecError> {
-        let writer::Retained {
-            annotations,
-            digests,
-            records,
-        } = retained;
+    ) -> Result<(Written, Vec<u8>), CodecError> {
         if !ir.model.omitted_arenas_held()
             && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
         {
@@ -325,14 +320,14 @@ impl SldprtCodec {
             };
             let result = writer::write_semantic_with_records_cached(
                 &source.ir,
-                crate::writer::Retained {
-                    annotations: &source.source_fidelity.annotations,
-                    digests: source_digests,
-                    records,
+                &source.source_fidelity.annotations,
+                source_digests,
+                records,
+                writer::SemanticWriteControls {
+                    withheld: &[],
+                    shaped: &[],
+                    limits,
                 },
-                &[],
-                &[],
-                limits,
                 &mut cache,
                 &mut bytes,
             );
@@ -356,14 +351,14 @@ impl SldprtCodec {
                 let mut cache = shared_cache.borrow_mut();
                 let output = writer::write_semantic_with_records_cached(
                     ir,
-                    crate::writer::Retained {
-                        annotations,
-                        digests,
-                        records,
+                    annotations,
+                    digests,
+                    records,
+                    writer::SemanticWriteControls {
+                        withheld,
+                        shaped,
+                        limits,
                     },
-                    withheld,
-                    shaped,
-                    limits,
                     &mut cache,
                     &mut bytes,
                 )?;
@@ -371,7 +366,6 @@ impl SldprtCodec {
             },
             &round_trip,
         )?;
-        writer.write_all(&bytes)?;
         let writer::SemanticOutput {
             dialect,
             coverage,
@@ -409,7 +403,7 @@ impl SldprtCodec {
             limits,
         )?
         .losses;
-        Ok(Written::Semantic {
+        let written = Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
             } else {
@@ -422,7 +416,8 @@ impl SldprtCodec {
             unwritten_edits,
             unwritten,
             losses,
-        })
+        };
+        Ok((written, bytes))
     }
 }
 

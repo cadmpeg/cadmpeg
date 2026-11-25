@@ -216,6 +216,30 @@ fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport
     (report, decoded.into_parts().0, bytes)
 }
 
+/// The item tail of a decoded scope: its family, state bytes, `s0`, `s1`,
+/// and current and preceding history-state identities.
+type Tail = (String, [u8; 3], bool, bool, Option<i64>, Option<i64>);
+
+/// The item tails of the decoded scopes that store one, in record order.
+fn tails(decoded: &CadIr) -> Vec<Tail> {
+    let mut scopes = f3d_native(decoded).design_parameter_scopes;
+    scopes.sort_by_key(|scope| scope.record_index);
+    scopes
+        .iter()
+        .filter_map(|scope| {
+            let flags = scope.tail_flags?;
+            Some((
+                format!("{:?}", scope.kind()),
+                flags.stored_state(),
+                flags.no_result,
+                flags.rolled_back,
+                scope.history_state_id(),
+                scope.previous_history_state_id(),
+            ))
+        })
+        .collect()
+}
+
 fn loss<'a>(report: &'a ExportReport, code: &str) -> Vec<&'a str> {
     report
         .losses

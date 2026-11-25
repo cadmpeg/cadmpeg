@@ -250,14 +250,11 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
     // its own.
     let entries = crate::writer::write_semantic_with_records(
         part.ir(),
-        crate::writer::Retained {
-            annotations: &part.source_fidelity().annotations,
-            digests: &part.source_fidelity().codec_digests,
-            records: &records,
-        },
+        &part.source_fidelity().annotations,
+        &part.source_fidelity().codec_digests,
+        &records,
         &[],
         &[],
-        cadmpeg_core::decode::ResourceLimits::desktop(),
         &mut bytes,
     )
     .map(|_| {
