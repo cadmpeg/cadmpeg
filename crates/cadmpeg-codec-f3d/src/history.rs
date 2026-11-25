@@ -69,6 +69,7 @@ mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
 mod face_envelopes;
+mod edge_bounded_face;
 mod face_recipe;
 mod face_samples;
 mod face_support;

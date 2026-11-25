@@ -737,6 +737,39 @@ pub(super) fn bind_historical_face_operand_candidates<'a>(
                 topology_queries,
             )
     });
+    // A fallback face that shares no edge with the recipe's named edges
+    // gives way to the named face those edges bound, whether the fallback
+    // stands as the resolution or was withdrawn.
+    let alternate_start_face = alternate_start_face.or_else(|| {
+        let mut fallback_slots = operand
+            .preceding_candidate_faces
+            .iter()
+            .filter_map(|face| stable_ref(face.as_str()))
+            .collect::<Vec<_>>();
+        let standing = fallback_slots.clone();
+        fallback_slots.extend(withdrawals.faces.get(&operand.id).into_iter().flatten());
+        if extrude_face_role
+            != Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start)
+            || operand.resolved_active_face.is_some()
+            || !(operand.resolved_face_slots.is_empty() || operand.resolved_face_slots == standing)
+        {
+            return None;
+        }
+        let face = super::edge_bounded_face::unique_edge_bounded_face(
+            operand,
+            &fallback_slots,
+            topology,
+            topology_queries,
+        )?;
+        withdrawals
+            .admits(
+                operand,
+                std::slice::from_ref(&face),
+                topology,
+                topology_queries,
+            )
+            .then_some(face)
+    });
     if let Some(face) = alternate_start_face {
         let selected = vec![historical_face_id(face)?];
         operand.preceding_candidate_faces.clone_from(&selected);
