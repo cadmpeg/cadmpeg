@@ -53,18 +53,6 @@ impl fmt::Display for LossCategory {
     }
 }
 
-/// Strict-mode handling for a loss code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum StrictConsequence {
-    /// Strict mode must refuse the operation.
-    Reject,
-    /// Strict mode may proceed.
-    Tolerate,
-}
-
 /// Shared cross-codec loss taxonomy.
 ///
 /// Category and default severity live here. Codec-local loss enums map into a
@@ -622,14 +610,6 @@ impl LossNote {
     pub const fn with_count(mut self, count: u64) -> Self {
         self.count = Some(count);
         self
-    }
-
-    /// Returns strict-mode handling after applying the kind's severity floor.
-    pub fn strict_consequence(&self) -> StrictConsequence {
-        match self.code.strict_floor() {
-            Some(floor) if self.severity >= floor => StrictConsequence::Reject,
-            _ => StrictConsequence::Tolerate,
-        }
     }
 }
 

@@ -573,7 +573,7 @@ fn face_on_untyped_surface_keeps_topology() {
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::LossTaxonomy;
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -603,7 +603,7 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .iter()
         .find(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred)
         .expect("untyped support surface raises a census note");
-    assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
+    assert!(strict_options().strictness.refuses(census, false));
 
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())

@@ -165,6 +165,7 @@ macro_rules! draft_core_rules {
             crate::rule_name!("topology.axisrotate-must-bind-axis-component"),
             crate::rule_name!("topology.bend-attached-plate-must-precede-bend"),
             crate::rule_name!("topology.binder-target-feature-does-not-precede"),
+            crate::rule_name!("topology.cage-must-belong-exactly-one"),
             crate::rule_name!("topology.catmull-clark-cage-edges-state-different"),
             crate::rule_name!("topology.catmull-clark-face-side-holds-more"),
             crate::rule_name!("topology.child-parent-lists"),

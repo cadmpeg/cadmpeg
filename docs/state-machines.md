@@ -135,7 +135,7 @@ Registry `read` in `dialect-support.toml` is a capability column. Golden tests r
 
 **Explicit.** Backend `WritePath`: `VerbatimReplay` \| `Patched` \| `Synthesized`. Fidelity: `NotProvided` \| `NotConsumed` \| `Replayed` \| `Degraded`. `into_report` collapses by `fidelity_provided`. Verbatim cannot be `NotConsumed`. Synthesized cannot be `Replayed`.
 
-Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::new` for non-container Strict mode. CLI `--reject-lossy` refuses every loss at or above `--reject-lossy-floor`, whose default `info` refuses every loss.
+The sealed decode, write and measurement wrappers apply the caller's `Strictness` (`report/strictness.rs`) once to the completed report: `Strictness::refuses` is the one refusal rule, and `LossKind::strict_floor` is the one floor it reads. A pinned strictness refuses an entry whose severity reaches its code's floor, except in a decode at `Container` depth. CLI `--reject-lossy` refuses every loss at or above `--reject-lossy-floor`, whose default `info` refuses every loss.
 
 ## Topology and measurement
 

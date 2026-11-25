@@ -334,7 +334,9 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
-    /// No geometry was placed in the output representations.
+    /// No geometry was placed in the output representations, while other
+    /// records of the document were written. A file that holds no record of
+    /// the document charges `export:output.empty` instead.
     NoGeometryWritten,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
@@ -1135,7 +1137,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
-    use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
+    use cadmpeg_ir::report::{strictness::Strictness, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -1375,7 +1377,7 @@ mod tests {
     fn globally_unproved_pcurve_admission_does_not_refuse_strict_decode() {
         let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!pinned().refuses(&note, false));
     }
 
     /// A kept default replaces a source value, so strict decode refuses it.
@@ -1383,6 +1385,13 @@ mod tests {
     fn substituted_length_uncertainty_refuses_strict_decode() {
         let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
+        assert!(pinned().refuses(&note, false));
+    }
+
+    fn pinned() -> Strictness {
+        Strictness {
+            pinned: true,
+            ..Strictness::default()
+        }
     }
 }

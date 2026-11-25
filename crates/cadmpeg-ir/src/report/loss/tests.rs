@@ -2,7 +2,7 @@
 use crate::report::{
     loss::{
         LossCategory, LossKind, LossNamespace, LossNamespaceError, LossNote, LossTaxonomy,
-        NamespacedLossKind, StrictConsequence, SHARED_LOSS_NAMESPACE,
+        NamespacedLossKind, SHARED_LOSS_NAMESPACE,
     },
     Severity,
 };
@@ -169,31 +169,14 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
 }
 
 #[test]
-fn loss_kind_strict_consequence_depends_on_severity() {
+fn a_missing_topology_pins_warning_and_a_retained_record_pins_no_floor() {
     assert_eq!(
-        LossNote::new(
-            LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            "missing topology"
-        )
-        .strict_consequence(),
-        StrictConsequence::Reject
+        LossKind::shared(LossTaxonomy::TopologyNotTransferred).strict_floor(),
+        Some(Severity::Warning)
     );
     assert_eq!(
-        LossNote::new(
-            LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            "diagnostic"
-        )
-        .with_severity(Severity::Info)
-        .strict_consequence(),
-        StrictConsequence::Tolerate
-    );
-    assert_eq!(
-        LossNote::new(
-            LossKind::shared(LossTaxonomy::PassthroughRecordOmitted),
-            "retained source"
-        )
-        .strict_consequence(),
-        StrictConsequence::Tolerate
+        LossKind::shared(LossTaxonomy::PassthroughRecordOmitted).strict_floor(),
+        None
     );
 }
 
@@ -238,10 +221,6 @@ fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
     assert_eq!(kind.category(), LossCategory::Other);
     assert_eq!(kind.default_severity(), Severity::Warning);
     assert_eq!(kind.strict_floor(), Some(Severity::Warning));
-    assert_eq!(
-        LossNote::new(kind, "source order is noncanonical").strict_consequence(),
-        StrictConsequence::Reject
-    );
 }
 
 #[test]
@@ -254,10 +233,6 @@ fn integrity_failure_is_a_strict_rejectable_error() {
     assert_eq!(kind.category(), LossCategory::Other);
     assert_eq!(kind.default_severity(), Severity::Error);
     assert_eq!(kind.strict_floor(), Some(Severity::Warning));
-    assert_eq!(
-        LossNote::new(kind, "stored checksum differs").strict_consequence(),
-        StrictConsequence::Reject
-    );
 }
 
 /// §3.2 states no strict floor for `target.source-dialect-displaced` or
@@ -291,10 +266,6 @@ fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
     assert_eq!(roundtrip.local_code(), "geometry.pcurve-ambiguous");
     assert_eq!(roundtrip.taxonomy(), LossTaxonomy::PcurveOmitted);
     assert_eq!(roundtrip.strict_floor(), None);
-    assert_eq!(
-        LossNote::new(roundtrip, "ambiguous").strict_consequence(),
-        StrictConsequence::Tolerate
-    );
 }
 
 #[test]

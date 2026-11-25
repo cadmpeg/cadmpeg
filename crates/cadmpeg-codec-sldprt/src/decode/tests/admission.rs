@@ -87,7 +87,7 @@ fn active_site_copy_refuses_retained_limit() {
         ResourceDimension::RetainedBytes,
         "retain SLDPRT active site",
         |limit| {
-            let mut limited = options;
+            let mut limited = options.clone();
             limited.policy.limits.max_retained_bytes = limit;
             SldprtCodec
                 .decode(&mut Cursor::new(&source), &limited)
@@ -334,10 +334,38 @@ fn strict_accepts_operator_requested_container_only() {
         .expect("strict container-only decode is accepted");
 }
 
+/// A container decode of a part whose metadata and history a full decode
+/// states as model records states none of them, so its container scope holds.
+#[test]
+fn a_container_decode_states_no_model_record() {
+    for fixture in [
+        crate::test_support::container::sldprt_with_body_and_envelope(&triangle_body()),
+        sldprt_with_body_and_history(&triangle_body()),
+    ] {
+        let full = SldprtCodec
+            .decode(&mut Cursor::new(&fixture), &DecodeOptions::default())
+            .expect("full decode");
+        assert!(full.ir().model.features.len() + full.ir().model.attributes.len() > 0);
+        let container = SldprtCodec
+            .decode(
+                &mut Cursor::new(&fixture),
+                &DecodeOptions {
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("container decode");
+        for class in ArenaClass::ALL {
+            assert_eq!(container.ir().populated_arena(class), None, "{class}");
+        }
+        assert!(container.ir().source.is_some());
+    }
+}
+
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     use crate::loss::SldprtLossCode;
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::LossTaxonomy;
 
     let fixture = synthetic_sldprt();
 
@@ -359,7 +387,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .report()
         .losses
         .iter()
-        .any(|note| note.strict_consequence() == StrictConsequence::Reject));
+        .any(|note| strict_options().strictness.refuses(note, false)));
 
     // Name the code rather than the `sldprt/` prefix: this fixture also
     // declares no `swVersion`, so `source.dialect-unverified` rejects under
@@ -381,8 +409,6 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::loss::StrictConsequence;
-
     // The fixture declares a `swVersion` so this test keeps asserting what it
     // is about. A part that declares nothing classifies as `sldprt:unknown`
     // and charges `source.dialect-unverified`, whose strict floor rejects; the
@@ -398,7 +424,7 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report()
         .losses
         .iter()
-        .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
+        .all(|note| !strict_options().strictness.refuses(note, false)));
 }
 
 #[test]

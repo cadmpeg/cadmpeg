@@ -5275,10 +5275,12 @@ mod tests {
     #[test]
     fn unread_design_records_keep_strict_refusal() {
         for code in UNREAD_DESIGN_RECORD_CODES {
-            assert_eq!(
-                code.note("synthetic unread Design record")
-                    .strict_consequence(),
-                cadmpeg_ir::report::loss::StrictConsequence::Reject,
+            assert!(
+                cadmpeg_ir::report::strictness::Strictness {
+                    pinned: true,
+                    ..Default::default()
+                }
+                .refuses(&code.note("synthetic unread Design record"), false),
                 "{}",
                 code.kind().local_code()
             );

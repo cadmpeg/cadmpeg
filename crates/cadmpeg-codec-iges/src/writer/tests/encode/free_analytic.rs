@@ -15,7 +15,7 @@ use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_f
 use crate::{IgesCodec, IgesVersion};
 
 #[test]
-fn encode_refuses_a_model_of_free_analytic_surfaces_and_names_them() {
+fn encode_writes_a_model_of_free_analytic_surfaces_as_the_empty_file_and_names_them() {
     let mut ir = CadIr::empty();
     ir.geometry.surfaces.extend([
         Surface {
@@ -79,19 +79,30 @@ fn encode_refuses_a_model_of_free_analytic_surfaces_and_names_them() {
         },
     ]);
 
-    let error = plan_at(IgesVersion::V5_3, &ir, None)
-        .expect_err("a model whose only surfaces are free analytic ones writes no entity");
-    let message = error.to_string();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let losses = &plan.report().losses;
     assert!(
-        message.contains(
-            "refuses an empty model; 4 analytic surface record(s) on no face were withheld"
-        ),
-        "{message}"
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/output.empty"),
+        "{losses:#?}"
     );
+    let withheld = losses
+        .iter()
+        .find(|loss| {
+            loss.code.to_string() == "iges/writer.free-geometry-omitted"
+                && loss
+                    .message
+                    .starts_with("4 analytic surface record(s) on no face were withheld")
+        })
+        .unwrap_or_else(|| panic!("{losses:#?}"));
     for name in ["cylinder", "cone", "sphere", "torus"] {
         assert!(
-            message.contains(&format!("test:model:surface#{name}")),
-            "{message}"
+            withheld
+                .message
+                .contains(&format!("test:model:surface#{name}")),
+            "{}",
+            withheld.message
         );
     }
 }

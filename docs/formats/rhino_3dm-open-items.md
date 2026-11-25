@@ -757,8 +757,8 @@ runnable witness set with the same totals so the fast suite covers the floor.
 
 **Known.** `loss.rs:355-362` assigns `IntegrityFailure` (and
 `ObjectFramingUndecodable`) error severity, while `loss.rs:429-435` pins
-their strict floor to warning and leaves `SourceWriterStampUnverified` floorless; `SourceDialectUnverified` inherits its shared taxonomy floor. Under
-`strict_consequence` at `cadmpeg-ir/src/report/loss.rs:590-596`, strict mode
+their strict floor to warning and leaves `SourceWriterStampUnverified` floorless; `SourceDialectUnverified` inherits its shared taxonomy floor. Under a
+pinned `Strictness` (`Strictness::refuses`), strict mode
 rejects a loss whose severity reaches its floor and tolerates any loss with no
 floor. The missing-stamp loss stays at record level (`dialect.rs:59-69`), so strict mode always tolerates it, while the
 residual-dialect loss is charged once per archive at admission
