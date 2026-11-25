@@ -405,6 +405,10 @@ pub(crate) enum StepLossCode {
     /// An open edge whose ends coincide within the linear tolerance was
     /// written as one edge: no point of its curve between the ends was found.
     OpenEdgeUnsplit,
+    /// A face the source holds with no boundary on a plane, cylinder, or
+    /// cone, whose domain is unbounded, or whose stored boundary does not
+    /// resolve to a closed loop, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated,
     /// An edge vertex lies off its own carrier by more than the document
     /// tolerance, and the edge's parameter range was derived anyway.
     ///
@@ -628,6 +632,7 @@ impl StepLossCode {
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
         Self::OpenEdgeUnsplit,
+        Self::TopologyFaceBoundaryUnstated,
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
@@ -846,6 +851,7 @@ impl StepLossCode {
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::OpenEdgeUnsplit => "topology.open-edge-unsplit",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
@@ -1047,7 +1053,8 @@ impl StepLossCode {
             | Self::EdgeEndVertexMissing
             | Self::EdgeNoVertex
             | Self::NonManifoldEdgeSplit
-            | Self::OpenEdgeUnsplit => LossTaxonomy::TopologyNotTransferred,
+            | Self::OpenEdgeUnsplit
+            | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -1340,6 +1347,7 @@ mod tests {
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
                 "topology.open-edge-unsplit",
+                "topology.face-boundary-unstated",
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",

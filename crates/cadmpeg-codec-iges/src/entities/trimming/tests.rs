@@ -988,6 +988,79 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
 }
 
 #[test]
+fn a_trimmed_cylinder_with_no_boundary_is_a_partial_face_with_no_loop() {
+    // A Type 144 whose outer boundary is the support's own domain, on a
+    // cylinder: the domain is unbounded along the axis, so the face states
+    // no extent and is partial, with the loss naming it.
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "ORIGIN".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 192,
+            form: 0,
+            label: "CYLINDER".into(),
+            status: "00010000",
+            parameters: "192,1,3,10;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "DOMAIN".into(),
+            status: "00000000",
+            parameters: "144,5,0,0,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let face = result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "iges:model:face#D7")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    assert_eq!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let unstated: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::TopologyFaceBoundaryUnstated.kind())
+        .collect();
+    assert_eq!(unstated.len(), 1, "{:#?}", result.report().losses);
+    assert!(unstated[0].message.contains("a cylinder"));
+    assert!(unstated[0]
+        .message
+        .split_whitespace()
+        .any(|word| word == face.id.as_str()));
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
+    assert!(
+        !validation.findings.iter().any(|finding| finding
+            .rule
+            .to_string()
+            .starts_with("topology.loopless-face")),
+        "{:#?}",
+        validation.findings
+    );
+}
+
+#[test]
 fn decode_rejects_a_nonzero_implicit_outer_boundary_pointer() {
     let result = IgesCodec
         .decode(

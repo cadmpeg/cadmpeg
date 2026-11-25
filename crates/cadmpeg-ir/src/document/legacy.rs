@@ -29,6 +29,22 @@ pub(super) fn omitted_arena_refusal(message: &str) -> Option<String> {
     ))
 }
 
+/// The hint a read reports with an ignored `model` member that names an
+/// arena the wire omits.
+pub(super) fn omitted_arena_hint(key: &str) -> String {
+    if super::ArenaName::WIRE_OMITTED
+        .iter()
+        .any(|arena| arena.key() == key)
+    {
+        format!(
+            "; `model.{key}` is a design arena that an earlier build of wire {IR_VERSION} \
+             wrote and the current wire omits; decode the source file again"
+        )
+    } else {
+        String::new()
+    }
+}
+
 /// The refusal of a document whose `ir_version` is not [`IR_VERSION`].
 pub(super) fn unsupported_version(version: Option<&str>) -> String {
     match version {
