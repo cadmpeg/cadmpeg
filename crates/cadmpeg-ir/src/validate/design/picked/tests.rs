@@ -18,10 +18,11 @@ use crate::design::ops::sheet_metal::{
     BendSet, BendSpec, Convert, ConvertBend, ConvertFrom, Flange, FlangeWidth, SheetMetal,
     SheetMetalKind, StampForm, StampOutline, VertexBend,
 };
-use crate::design::ops::surface::{Patch, PatchBounds, PatchEdge, Unsew};
+use crate::design::ops::surface::{Extend, ExtendLimit, Patch, PatchBounds, PatchEdge, Unsew};
 use crate::design::ops::swept::{Guide, Loft, LoftShape, Revolve};
 use crate::design::options::{
-    BodyForm, CornerRound, SheetOutput, SolidOutput, Thickness, ThinWall, WallSide,
+    BodyForm, CornerRound, SectionCondition, SheetOutput, SolidOutput, Support, Thickness,
+    ThinWall, WallSide,
 };
 use crate::design::refs::EntityRef;
 use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, SetSelection};
@@ -127,16 +128,26 @@ fn height(ir: &CadIr, vertex: &VertexId) -> f64 {
 
 /// The edges of the cube's bottom face: those with both ends at height 0.
 fn bottom_edges(ir: &CadIr) -> Vec<usize> {
+    level_edges(ir, 0.0)
+}
+
+/// The edges with both ends at height `z`.
+fn level_edges(ir: &CadIr, z: f64) -> Vec<usize> {
     let edges = ir.geometry.edges.iter().enumerate();
     edges
-        .filter(|(_, edge)| edge.vertices().all(|end| height(ir, end) == 0.0))
+        .filter(|(_, edge)| edge.vertices().all(|end| height(ir, end) == z))
         .map(|(index, _)| index)
         .collect()
 }
 
 /// The cube's bottom face: the face that uses the bottom edges.
 fn bottom(ir: &CadIr) -> usize {
-    let edges: BTreeSet<_> = bottom_edges(ir)
+    level(ir, 0.0)
+}
+
+/// The face of the cube at height `z`: the face that uses the edges there.
+fn level(ir: &CadIr, z: f64) -> usize {
+    let edges: BTreeSet<_> = level_edges(ir, z)
         .into_iter()
         .map(|index| &ir.geometry.edges[index].id)
         .collect();
@@ -592,35 +603,85 @@ fn a_variable_fillet_chain_starts_at_an_end_of_its_chain() {
     assert!(ruled(&ir, rule).is_empty());
 }
 
+fn patch(outer: Vec<PatchEdge>) -> FeatureOperation {
+    FeatureOperation::Patch(Box::new(Patch {
+        bounds: PatchBounds::Loops {
+            outer,
+            inner: Vec::new(),
+        },
+        passing: None,
+        planar: None,
+        simplified: None,
+        output: SheetOutput {
+            solid: None,
+            boolean: None,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
 #[test]
-fn a_patch_loop_is_one_closed_chain() {
-    let patch = |ir: &CadIr, outer: &[usize]| {
-        let outer = outer.iter().map(|index| PatchEdge {
-            curve: current(vec![edge(ir, *index)]),
-            condition: None,
-        });
-        FeatureOperation::Patch(Box::new(Patch {
-            bounds: PatchBounds::Loops {
-                outer: outer.collect(),
-                inner: Vec::new(),
-            },
-            passing: None,
-            planar: None,
-            simplified: None,
-            output: SheetOutput {
-                solid: None,
-                boolean: None,
-            },
+fn a_patch_support_face_meets_its_boundary_curve() {
+    let supported = |ir: &CadIr, curve: usize, face_index: usize| {
+        patch(vec![PatchEdge {
+            curve: current(vec![edge(ir, curve)]),
+            condition: Some(SectionCondition::Tangent {
+                support: Some(Support::Faces(current(vec![face(ir, face_index)]))),
+                weight: None,
+                flip: None,
+            }),
+        }])
+    };
+    let rule = "design.patch-support-face-off-curve";
+    let mut ir = fixture::document();
+    let top = level_edges(&ir, 10.0)[0];
+    with(&mut ir, |ir| supported(ir, bottom_edges(ir)[0], bottom(ir)));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| supported(ir, top, level(ir, 10.0)));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| supported(ir, top, bottom(ir)));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    round_edge(&mut ir, top);
+    assert!(ruled(&ir, rule).is_empty());
+}
+
+#[test]
+fn a_natural_extend_picks_whole_face_loops() {
+    let extend = |ir: &CadIr, picked: &[usize]| {
+        FeatureOperation::Extend(Box::new(Extend {
+            edges: current(edges(ir, picked)),
+            limit: Some(ExtendLimit::Natural),
+            method: None,
+            output: None,
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }))
     };
+    let rule = "design.natural-extend-edge-not-loop";
+    let mut ir = fixture::document();
+    let around = bottom_edges(&ir);
+    with(&mut ir, |ir| extend(ir, &around));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| extend(ir, &around[..3]));
+    assert_eq!(ruled(&ir, rule).len(), 3);
+}
+
+#[test]
+fn a_patch_loop_is_one_closed_chain() {
+    let looped = |ir: &CadIr, outer: &[usize]| {
+        let outer = outer.iter().map(|index| PatchEdge {
+            curve: current(vec![edge(ir, *index)]),
+            condition: None,
+        });
+        patch(outer.collect())
+    };
     let rule = "design.patch-loop-not-closed-chain";
     let mut ir = fixture::document();
     let around = bottom_edges(&ir);
-    with(&mut ir, |ir| patch(ir, &around));
+    with(&mut ir, |ir| looped(ir, &around));
     assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| patch(ir, &around[..3]));
+    with(&mut ir, |ir| looped(ir, &around[..3]));
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 

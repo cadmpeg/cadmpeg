@@ -2,8 +2,9 @@
 //! The rules of §6 that read the chain a selection's edges form in a stored
 //! state: a path is one connected chain, a patch loop is closed, a contour
 //! flange's profile is open, a wall's side fits whether its profile is open,
-//! a chain's start is an end of it, and a vertex bend sits where two pieces
-//! meet.
+//! a chain's start is an end of it, a vertex bend sits where two pieces
+//! meet, a patch condition's support meets its curve, and a natural extend
+//! picks whole loops.
 //!
 //! A chain is read where every pick of the selection resolves to edges of
 //! the state. Two ends are one node where they are one vertex or lie within
@@ -14,16 +15,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::design::feature::FeatureOperation;
 use crate::design::ops::dressup::{DraftAngle, FilletSet, FilletSize, Stations};
 use crate::design::ops::sheet_metal::{SheetMetalKind, VertexBend};
-use crate::design::ops::surface::{PatchBounds, PatchEdge};
+use crate::design::ops::surface::{ExtendLimit, PatchBounds, PatchEdge};
 use crate::design::ops::swept::{Spine, SweepSection};
-use crate::design::options::{BodyForm, CornerRound, SolidOutput, Thickness, WallSide};
-use crate::design::selection::{MemberOrder, Selection};
-use crate::geometry::SolvedCurveGeometry;
+use crate::design::options::{
+    BodyForm, CornerRound, SectionCondition, SolidOutput, Support, Thickness, WallSide,
+};
+use crate::design::selection::{MemberOrder, Selection, SetSelection};
+use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use crate::math::Point3;
 use crate::topology::EdgeCarrier;
 
 use super::super::matching::StateTopology;
-use super::{all_entities, Entity, InState, Probe};
+use super::{all_entities, edge_placed, position, surface_shape, Entity, InState, Probe};
 
 /// How the edges of a selection join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -96,8 +99,7 @@ fn chain<'a>(
     let mut vertices: Vec<(&'a str, Point3)> = Vec::new();
     for vertex in ends.iter().flat_map(|&(start, end)| [start, end]) {
         if vertices.iter().all(|(held, _)| *held != vertex) {
-            let point = topology.vertices.get(vertex)?.point.as_str();
-            vertices.push((vertex, topology.points.get(point)?.position().get()));
+            vertices.push((vertex, position(topology, vertex)?));
         }
     }
     let mut parent: Vec<usize> = (0..vertices.len()).collect();
@@ -186,6 +188,68 @@ fn on_line(topology: &StateTopology<'_>, edge: &str) -> Option<bool> {
     }
 }
 
+/// The faces a condition takes its continuity from, where it names them.
+fn support(condition: &SectionCondition) -> Option<&SetSelection> {
+    match condition {
+        SectionCondition::Free { support }
+        | SectionCondition::Tangent { support, .. }
+        | SectionCondition::Curvature { support, .. } => match support {
+            Some(Support::Faces(faces)) => Some(faces),
+            Some(Support::Computed) | None => None,
+        },
+        SectionCondition::Default
+        | SectionCondition::Direction { .. }
+        | SectionCondition::NormalToProfile { .. }
+        | SectionCondition::Native(_) => None,
+    }
+}
+
+/// Whether `face` uses one of `edges` or one of their vertices.
+fn touches(topology: &StateTopology<'_>, face: &str, edges: &BTreeSet<&str>) -> bool {
+    let holds = |faces: Option<&BTreeSet<&str>>| faces.is_some_and(|faces| faces.contains(face));
+    edges.iter().any(|&edge| {
+        holds(topology.edge_faces.get(edge))
+            || topology.edges.get(edge).is_some_and(|record| {
+                record
+                    .vertices()
+                    .any(|vertex| holds(topology.vertex_faces.get(vertex.as_str())))
+            })
+    })
+}
+
+/// Whether `edge` lies wholly on one side of the plane of `face`, farther
+/// than `tolerance` from it. `None` where the face is not an unplaced plane,
+/// the edge is not on an unplaced line with two ends or a circle, or a body
+/// that holds either has a placement of its own.
+fn apart(topology: &StateTopology<'_>, face: &str, edge: &str, tolerance: f64) -> Option<bool> {
+    if topology.face_body(face)?.transform.is_some() || edge_placed(topology, edge) {
+        return None;
+    }
+    let (SolvedSurfaceGeometry::Plane(plane), false) = surface_shape(topology, face)? else {
+        return None;
+    };
+    let normal = *plane.frame().axis().as_raw();
+    let height = |point: Point3| point.vector_from(plane.origin().get()).dot(normal);
+    let record = topology.edges.get(edge)?;
+    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) = &record.carrier else {
+        return None;
+    };
+    match topology.curves.get(curve.as_str())?.geometry.solved()? {
+        SolvedCurveGeometry::Line(_) => {
+            let ends = record.ends.as_ref()?;
+            let start = height(position(topology, ends.start.as_str())?);
+            let end = height(position(topology, ends.end.as_str())?);
+            Some(start * end > 0.0 && start.abs().min(end.abs()) > tolerance)
+        }
+        SolvedCurveGeometry::Circle(circle) => {
+            let axis = *circle.frame().axis().as_raw();
+            let reach = circle.radius().get() * normal.cross(axis).norm();
+            Some(height(circle.center().get()).abs() - reach > tolerance)
+        }
+        _ => None,
+    }
+}
+
 impl<'a> Probe<'_, 'a> {
     /// The chains a selection's edges form in each stored state it anchors
     /// in, with the state.
@@ -252,7 +316,13 @@ impl<'a> Probe<'_, 'a> {
                 if let PatchBounds::Loops { outer, inner } = &patch.bounds {
                     for edges in std::iter::once(outer).chain(inner) {
                         self.patch_loop(edges);
+                        self.patch_supports(edges);
                     }
+                }
+            }
+            FeatureOperation::Extend(extend) => {
+                if let Some(ExtendLimit::Natural) = extend.limit {
+                    self.natural(&extend.edges);
                 }
             }
             FeatureOperation::Fillet(fillet) => {
@@ -347,7 +417,7 @@ impl<'a> Probe<'_, 'a> {
         }
     }
 
-    /// Each patch loop's curves form one closed chain (§6.5).
+    /// Each patch loop's curves form one closed chain (§6.6).
     fn patch_loop(&mut self, edges: &'a [PatchEdge]) {
         let [first, ..] = edges else {
             return;
@@ -375,6 +445,83 @@ impl<'a> Probe<'_, 'a> {
             self.error(crate::rule!(
                 "design.patch-loop-not-closed-chain",
                 "a PatchBounds::Loops loop's curves do not form one closed chain"
+            ));
+        }
+    }
+
+    /// Each patch condition's support faces meet its boundary curve (§6.6).
+    /// A face is judged where it shares no edge or vertex with the curve.
+    fn patch_supports(&mut self, edges: &'a [PatchEdge]) {
+        let mut off = BTreeSet::new();
+        for edge in edges {
+            let Some(faces) = edge.condition.as_ref().and_then(support) else {
+                continue;
+            };
+            if faces.at != edge.curve.at {
+                continue;
+            }
+            for state in self.states(&edge.curve.at) {
+                let Some(topology) = state.matcher.topology() else {
+                    continue;
+                };
+                let Some(curve) = self::edges(&state, topology, &edge.curve) else {
+                    continue;
+                };
+                for entity in all_entities(&state.matcher, topology, faces)
+                    .into_iter()
+                    .flatten()
+                {
+                    let Entity::Face(face) = entity else {
+                        continue;
+                    };
+                    let separate = curve
+                        .iter()
+                        .all(|&edge| apart(topology, face, edge, self.linear) == Some(true));
+                    if separate && !touches(topology, face, &curve) {
+                        off.insert(face);
+                    }
+                }
+            }
+        }
+        for face in off {
+            self.error(crate::rule!(
+                "design.patch-support-face-off-curve",
+                "a PatchEdge condition's support face {face} does not meet its boundary curve"
+            ));
+        }
+    }
+
+    /// `ExtendLimit::Natural` occurs only where `edges` picks loops of faces
+    /// or wire edges (§6.6). An edge that no face loop of the state uses, a
+    /// wire edge among them, is not judged.
+    fn natural<O: MemberOrder>(&mut self, selection: &'a Selection<O>) {
+        let mut loose = BTreeSet::new();
+        for state in self.states(&selection.at) {
+            let Some(topology) = state.matcher.topology() else {
+                continue;
+            };
+            let Some(picked) = edges(&state, topology, selection) else {
+                continue;
+            };
+            for &edge in &picked {
+                let Some(loops) = topology.edge_loops.get(edge) else {
+                    continue;
+                };
+                let whole = loops.iter().any(|id| {
+                    topology
+                        .loop_edges
+                        .get(id)
+                        .is_some_and(|all| all.is_subset(&picked))
+                });
+                if !whole {
+                    loose.insert(edge);
+                }
+            }
+        }
+        for edge in loose {
+            self.error(crate::rule!(
+                "design.natural-extend-edge-not-loop",
+                "ExtendLimit::Natural occurs with Extend.edges picking edge {edge}, which is an edge of a face loop it does not pick whole"
             ));
         }
     }
