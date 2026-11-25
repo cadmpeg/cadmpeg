@@ -1269,9 +1269,11 @@ mod tests {
         });
         let options = MeasureOptions::default();
         let ctx_sep = service_context();
-        let mut expected = crate::session::findings(&ctx_sep, &cube, options).expect("findings");
-        expected
-            .extend(crate::declared_findings(&ctx_sep, &cube, options).expect("declared findings"));
+        let mut expected =
+            crate::session::findings(&ctx_sep, &cube, options.clone()).expect("findings");
+        expected.extend(
+            crate::declared_findings(&ctx_sep, &cube, options.clone()).expect("declared findings"),
+        );
         ctx_sep.finish_session().expect("session");
 
         let ctx_combined = service_context();

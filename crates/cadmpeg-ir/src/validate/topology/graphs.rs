@@ -4,13 +4,14 @@
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
+use crate::geometry::SurfaceGeometry;
 use crate::index::identities::BorrowedIdentities;
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
 use crate::topology::RegionUnstated;
-use crate::validate::record_finding;
+use crate::validate::{record_finding, record_related_finding};
 
 #[derive(Clone, Copy)]
 enum RadialStatus {
@@ -283,7 +284,7 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
     check_cage_shells(ir, findings);
 }
 
-/// A subdivision cage belongs to at most one shell, and a shell whose
+/// A subdivision cage belongs to exactly one shell, and a shell whose
 /// `members` name a cage names nothing else, holds no face, and is the only
 /// shell of its body's only region (§5.6).
 fn check_cage_shells(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -295,15 +296,15 @@ fn check_cage_shells(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     });
     for cage in &ir.geometry.subds {
-        if cage_owners.match_count(cage.id.as_str()) > 1 {
+        if cage_owners.match_count(cage.id.as_str()) != 1 {
             record_finding(
                 findings,
                 Check::WireTopology,
                 Severity::Error,
                 Some(cage.id.as_str()),
                 crate::rule!(
-                    "topology.cage-belongs-more-one-shell",
-                    "subdivision cage belongs to more than one shell"
+                    "topology.cage-must-belong-exactly-one",
+                    "subdivision cage must belong to exactly one shell"
                 ),
             );
         }
@@ -796,6 +797,66 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
     }
 }
 
+/// A face `Unspecified` with no loops is the only face of its shell, and its surface is no
+/// plane, cylinder, or cone, and no placed surface whose basis, through every
+/// placement, is one (part 10, Topology and model records; §5.6). Each face
+/// is checked by itself: a partial face states no boundary and is not one,
+/// and a marked shell does not state how many faces it holds, so only the
+/// surface is checked there. A procedural surface is read through its
+/// construction, which this rule does not evaluate.
+pub(in crate::validate) fn check_loopless_faces(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let geometry = &ir.geometry;
+    let child_lists = geometry.child_lists();
+    let surfaces = BorrowedIdentities::build(|add| {
+        for surface in &geometry.surfaces {
+            add(surface.id.as_str(), surface);
+        }
+    });
+    for shell in &geometry.shells {
+        let faces = child_lists.stated_shell_faces(&shell.id);
+        let complete = child_lists.complete_shell_faces(&shell.id).is_some();
+        for face in faces.iter().filter(|face| {
+            face.loops
+                .boundary()
+                .is_some_and(crate::topology::FaceBoundary::is_empty)
+        }) {
+            if complete && faces.len() > 1 {
+                record_related_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    face.id.as_str(),
+                    &[shell.id.as_str()],
+                    crate::rule!(
+                        "topology.loopless-face-shares-shell",
+                        "a face with no loops shares its shell with {} other face(s); it is the only face of its shell",
+                        faces.len() - 1
+                    ),
+                );
+            }
+            let kind =
+                surfaces
+                    .get(face.surface.as_str())
+                    .and_then(|surface| match &surface.geometry {
+                        SurfaceGeometry::Solved(solved) => solved.plane_cylinder_or_cone(),
+                        SurfaceGeometry::Procedural { .. } => None,
+                    });
+            if let Some(kind) = kind {
+                record_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    Some(face.id.as_str()),
+                    crate::rule!(
+                        "topology.loopless-face-bounded-surface",
+                        "a face with no loops lies on a {kind}, which a face bounds with a loop"
+                    ),
+                );
+            }
+        }
+    }
+}
+
 /// A partial face and a marked region, shell, or body are reported at
 /// Warning (part 10, Topology and model records).
 pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -824,7 +885,7 @@ pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec
                 .faces
                 .iter()
                 .filter(|face| face.loops.is_partial())
-                .map(|face| (face.id.as_str(), "face does not state every loop")),
+                .map(|face| (face.id.as_str(), "face does not state its boundary in full")),
         );
     for (id, message) in partial {
         record_finding(

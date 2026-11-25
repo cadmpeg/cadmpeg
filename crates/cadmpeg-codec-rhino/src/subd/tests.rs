@@ -906,6 +906,15 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .x,
         25.4
     );
+    // The SubD object is a body of its own whose only shell holds the cage.
+    let [body] = result.ir().geometry.bodies.as_slice() else {
+        panic!("one cage body: {:#?}", result.ir().geometry.bodies);
+    };
+    let [shell] = result.ir().geometry.shells.as_slice() else {
+        panic!("one cage shell: {:#?}", result.ir().geometry.shells);
+    };
+    assert_eq!(shell.subds().collect::<Vec<_>>(), [&subd.id]);
+    assert_eq!(result.ir().geometry.regions[0].body, body.id);
     assert_eq!(
         result
             .source_fidelity()
@@ -924,7 +933,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .iter()
             .map(cadmpeg_ir::ids::Identity::as_str)
             .collect::<Vec<_>>(),
-        vec![subd.id.to_string()]
+        vec![body.id.to_string()]
     );
     assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code

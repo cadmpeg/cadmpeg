@@ -1,26 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode modes, resource ceilings, and input-proportional allowances.
+//! Decode resource ceilings and input-proportional allowances.
 
-use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 const MIB: u64 = 1024 * 1024;
 const GIB: u64 = 1024 * MIB;
-
-/// Whether a successful decode may report mandatory transfer losses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, DeserializeName)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum DecodeMode {
-    /// Reject a completed decode that reports a mandatory transfer loss.
-    Strict,
-    /// Return the decoded result with its loss report.
-    #[default]
-    Salvage,
-}
 
 /// Absolute resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,30 +71,26 @@ impl Default for ResourceLimits {
     }
 }
 
-/// Decode mode and resource ceilings.
+/// Decode resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DecodePolicy {
-    /// How mandatory transfer losses are handled.
-    pub mode: DecodeMode,
     /// The absolute ceilings.
     pub limits: ResourceLimits,
 }
 
 impl DecodePolicy {
-    /// The default desktop profile in salvage mode.
+    /// The default desktop profile.
     pub const fn desktop() -> Self {
         Self {
-            mode: DecodeMode::Salvage,
             limits: ResourceLimits::desktop(),
         }
     }
 
-    /// The tight service profile in salvage mode.
+    /// The tight service profile.
     pub const fn service() -> Self {
         Self {
-            mode: DecodeMode::Salvage,
             limits: ResourceLimits::service(),
         }
     }
@@ -211,7 +193,7 @@ mod tests {
             let limits = format!(
                 r#"{{"max_input_bytes":1,"max_decompressed_bytes_total":2,"max_decompressed_bytes_per_expand":3,"{field}":4}}"#
             );
-            let policy = format!(r#"{{"mode":"salvage","limits":{limits}}}"#);
+            let policy = format!(r#"{{"limits":{limits}}}"#);
             let expected = format!("unknown field `{field}`");
             let error = serde_json::from_str::<ResourceLimits>(&limits).unwrap_err();
             assert!(error.to_string().contains(&expected), "{error}");

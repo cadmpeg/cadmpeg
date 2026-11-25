@@ -15,6 +15,7 @@ fuzz_target!(|data: &[u8]| {
     let options = DecodeOptions {
         depth: DecodeDepth::Full,
         policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     if let Ok((ctx, root)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
