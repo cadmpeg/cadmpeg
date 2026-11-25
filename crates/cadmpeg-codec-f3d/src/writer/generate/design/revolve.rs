@@ -59,6 +59,13 @@ pub(super) struct RevolvePlan<'a> {
     on_axis: BTreeSet<usize>,
     /// The `AlongAngle` parameter.
     pub(super) angle: OwnedParameter,
+    /// The body and faces of its state; `None` for a rolled-back revolve.
+    pub(super) result: Option<RevolveResult<'a>>,
+}
+
+/// The result body of a `Revolve` item and its faces.
+#[derive(Debug)]
+pub(super) struct RevolveResult<'a> {
     pub(super) body: &'a BodyId,
     /// The face of each loop entry off the axis, in [`RevolvePlan::entries`]
     /// order.
@@ -113,23 +120,29 @@ pub(super) fn plan<'a>(
     let angular = target.tolerances.angular.get();
     let angle = angle(revolve, parameters, ordinal, angular)?;
     new_solid(&revolve.output)?;
-    // The scope frame stores the solid flag, and a full turn of a sheet has
-    // the faces of the solid: the face row cannot tell them apart.
-    let kind = target
-        .geometry
-        .bodies
-        .iter()
-        .find(|candidate| &candidate.id == body)
-        .map(|candidate| candidate.kind);
-    if kind != Some(BodyKind::Solid) {
-        return Err("its body is not a solid");
-    }
-    let entries = off_axis(&loops, &on_axis)
-        .map(|(profile_loop, at)| profile_loop.entries[at].curve)
-        .collect::<Vec<_>>();
-    let sides = Faces::new(target, body, linear, angular)
-        .matched(planned, &frame, &entries, &line.model(&frame))
-        .ok_or("its faces do not match its profile")?;
+    let result = body
+        .map(|body| {
+            // The scope frame stores the solid flag, and a full turn of a
+            // sheet has the faces of the solid: the face row cannot tell
+            // them apart.
+            let kind = target
+                .geometry
+                .bodies
+                .iter()
+                .find(|candidate| &candidate.id == body)
+                .map(|candidate| candidate.kind);
+            if kind != Some(BodyKind::Solid) {
+                return Err("its body is not a solid");
+            }
+            let entries = off_axis(&loops, &on_axis)
+                .map(|(profile_loop, at)| profile_loop.entries[at].curve)
+                .collect::<Vec<_>>();
+            let sides = Faces::new(target, body, linear, angular)
+                .matched(planned, &frame, &entries, &line.model(&frame))
+                .ok_or("its faces do not match its profile")?;
+            Ok(RevolveResult { body, sides })
+        })
+        .transpose()?;
     Ok(RevolvePlan {
         feature: rows.feature,
         sketch,
@@ -139,8 +152,7 @@ pub(super) fn plan<'a>(
         axis,
         on_axis,
         angle,
-        body,
-        sides,
+        result,
     })
 }
 
@@ -696,11 +708,14 @@ pub(super) fn stamp(
     plan: &RevolvePlan<'_>,
     native: &mut crate::native::F3dNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let result = plan.result.as_ref().ok_or_else(|| {
+        cadmpeg_core::CodecError::Malformed("a rolled-back Revolve has no result".into())
+    })?;
     extrude::name_result(
         "revolve",
         plan.preceding,
-        plan.body,
-        (FIRST_SIDE_TOKEN..).zip(plan.sides.iter().copied()),
+        result.body,
+        (FIRST_SIDE_TOKEN..).zip(result.sides.iter().copied()),
         native,
     )
 }

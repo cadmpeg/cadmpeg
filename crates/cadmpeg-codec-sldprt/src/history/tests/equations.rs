@@ -820,12 +820,11 @@ fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_writte
             .get(&dependent.id),
         Some(&ParameterValue::Length(Length::new(100.0).unwrap()))
     );
-    let round_trip =
-        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+    let round_trip: Vec<cadmpeg_ir::features::parameters::DesignConfiguration> =
+        serde_json::from_str(&serde_json::to_string(&decoded.ir().model.configurations).unwrap())
+            .unwrap();
     assert_eq!(
-        round_trip.model.configurations[1]
-            .parameter_values
-            .get(&parameter.id),
+        round_trip[1].parameter_values.get(&parameter.id),
         Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
     );
 
@@ -837,16 +836,12 @@ fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_writte
         parameter_id.clone(),
         ParameterValue::Length(Length::new(75.0).unwrap()),
     );
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &incoherent,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    );
     assert!(
-        error
-            .to_string()
-            .contains("configuration parameter values are inconsistent with their expressions"),
+        error.contains("configuration parameter values are inconsistent with their expressions"),
         "unexpected error: {error}"
     );
 
@@ -884,15 +879,13 @@ fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_writte
         let offset = usize::try_from(scalar.offset).unwrap();
         lane.native_payload[offset..offset + 8].copy_from_slice(&0.060f64.to_le_bytes());
     });
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &conflicting,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT configuration design-state edits"));
+    );
+    assert!(
+        error.contains("conflicting neutral and native SLDPRT configuration design-state edits")
+    );
 
     let mut unavailable_fidelity = decoded.source_fidelity().clone();
     crate::test_support::make_source_image_unavailable(&mut unavailable_fidelity);

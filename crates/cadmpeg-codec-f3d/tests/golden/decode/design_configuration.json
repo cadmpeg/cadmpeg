@@ -247,49 +247,6 @@
     },
     "model": {
       "assets": [],
-      "features": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [
-        {
-          "id": "f3d:configuration:variant#59:FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg4:wide",
-          "ordinal": 1,
-          "active": false,
-          "name": "Wide",
-          "properties": {
-            "parameter:W": "25 mm",
-            "property:Part Number": "W-1",
-            "suppressed:S": "true"
-          },
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "feature_states": {},
-          "native_ref": "f3d:configuration:entry#FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg"
-        },
-        {
-          "id": "f3d:configuration:variant#59:FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg6:narrow",
-          "ordinal": 0,
-          "active": false,
-          "name": "Narrow",
-          "properties": {
-            "parameter:W": "10 mm",
-            "property:Part Number": "N-1",
-            "suppressed:S": "false"
-          },
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "feature_states": {},
-          "native_ref": "f3d:configuration:entry#FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg"
-        }
-      ],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:product-definition#root",
@@ -303,12 +260,10 @@
           ],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -327,8 +282,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],
@@ -1030,8 +984,8 @@
       "exactness": {
         "f3d:brep:entity#6": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         }

@@ -40,6 +40,7 @@ fn face_on_unknown_surface_validates_clean() {
     .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),

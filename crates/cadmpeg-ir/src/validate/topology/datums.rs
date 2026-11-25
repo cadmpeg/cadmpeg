@@ -14,6 +14,7 @@ use crate::features::parameters::ParameterValue;
 use crate::features::Feature;
 use crate::index::ModelIndex;
 use crate::math::portable::Portable;
+use crate::report::check::Ruled;
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -27,6 +28,7 @@ mod references;
 pub(super) fn validate(
     ctx: &DecodeContext<'_>,
     ids: &ModelIndex<'_>,
+    file_keys: &std::collections::BTreeSet<&str>,
     owner: &Feature,
     axis: &DatumAxis,
     linear_tolerance: f64,
@@ -48,13 +50,14 @@ pub(super) fn validate(
             error(
                 findings,
                 owner,
-                "datum-axis feature input must precede its consumer and occur in its dependencies",
+                crate::rule!("topology.datum-axis-feature-input-must-precede", "datum-axis feature input must precede its consumer and occur in its dependencies"),
             );
         }
     }
     let mut walk = Walk {
         ctx,
         ids,
+        file_keys,
         owner,
         linear_tolerance,
         findings,
@@ -63,18 +66,20 @@ pub(super) fn validate(
     walk.options(axis.native_options())?;
     walk.options(axis.source_settings())
 }
-fn error(findings: &mut Vec<Finding>, owner: &Feature, message: &str) {
+fn error(findings: &mut Vec<Finding>, owner: &Feature, message: Ruled<'_>) {
     super::super::record_finding(
         findings,
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(owner.id.as_str()),
-        format_args!("{message}"),
+        message,
     );
 }
 struct Walk<'a, 'b, 'ir> {
     ctx: &'a DecodeContext<'b>,
     ids: &'a ModelIndex<'ir>,
+    /// The keys of the document's component files (§2.2).
+    file_keys: &'a std::collections::BTreeSet<&'a str>,
     owner: &'a Feature,
     linear_tolerance: f64,
     findings: &'a mut Vec<Finding>,
@@ -112,14 +117,20 @@ impl Walk<'_, '_, '_> {
             error(
                 self.findings,
                 self.owner,
-                "a ZAxis constraint must act on the whole construction",
+                crate::rule!(
+                    "topology.zaxis-constraint-must-act-whole-construction",
+                    "a ZAxis constraint must act on the whole construction"
+                ),
             );
         }
         if kind != Kind::Curve && matches!(role.relation, Relation::Radius | Relation::Limit) {
             error(
                 self.findings,
                 self.owner,
-                "Radius and Limit require a curve construction",
+                crate::rule!(
+                    "topology.radius-limit-require-curve-construction",
+                    "Radius and Limit require a curve construction"
+                ),
             );
         }
         if matches!(role.relation, Relation::Fold)
@@ -128,7 +139,10 @@ impl Walk<'_, '_, '_> {
             error(
                 self.findings,
                 self.owner,
-                "Fold requires the whole of a plane or frame",
+                crate::rule!(
+                    "topology.fold-requires-whole-plane-frame",
+                    "Fold requires the whole of a plane or frame"
+                ),
             );
         }
         if input.reversed.is_some()
@@ -147,7 +161,10 @@ impl Walk<'_, '_, '_> {
             error(
                 self.findings,
                 self.owner,
-                "construction relation does not admit reversed",
+                crate::rule!(
+                    "topology.construction-relation-does-not-admit-reversed",
+                    "construction relation does not admit reversed"
+                ),
             );
         }
         if let Some(value) = &input.value {
@@ -185,7 +202,10 @@ impl Walk<'_, '_, '_> {
                 error(
                     self.findings,
                     self.owner,
-                    "construction relation has an incompatible scalar value",
+                    crate::rule!(
+                        "topology.construction-relation-incompatible-scalar-value",
+                        "construction relation has an incompatible scalar value"
+                    ),
                 );
             }
         }
@@ -207,13 +227,23 @@ impl Walk<'_, '_, '_> {
                 error(
                     self.findings,
                     self.owner,
-                    "construction relation has an incompatible operand count",
+                    crate::rule!(
+                        "topology.construction-relation-incompatible-operand-count",
+                        "construction relation has an incompatible operand count"
+                    ),
                 );
             }
         }
         if let Some(InputReference::Built(value)) = &input.reference {
             if matches!(role.relation, Relation::Fold) {
-                error(self.findings, self.owner, "Fold requires four picked edges");
+                error(
+                    self.findings,
+                    self.owner,
+                    crate::rule!(
+                        "topology.fold-requires-four-picked-edges",
+                        "Fold requires four picked edges"
+                    ),
+                );
             }
             if matches!(role.relation, Relation::Coordinates)
                 && !matches!(value.as_ref(), AnyConstruction::Frame(_))
@@ -221,7 +251,10 @@ impl Walk<'_, '_, '_> {
                 error(
                     self.findings,
                     self.owner,
-                    "Coordinates requires a frame reference",
+                    crate::rule!(
+                        "topology.coordinates-requires-frame-reference",
+                        "Coordinates requires a frame reference"
+                    ),
                 );
             }
             if kind != Kind::Frame
@@ -232,7 +265,10 @@ impl Walk<'_, '_, '_> {
                 error(
                     self.findings,
                     self.owner,
-                    "a whole coincident frame requires a frame result",
+                    crate::rule!(
+                        "topology.whole-coincident-frame-requires-frame-result",
+                        "a whole coincident frame requires a frame result"
+                    ),
                 );
             }
         }
@@ -249,7 +285,10 @@ impl Walk<'_, '_, '_> {
             geometry_error(
                 self.findings,
                 self.owner.id.as_str(),
-                "construction frame must be orthonormal and right-handed",
+                crate::rule!(
+                    "topology.construction-frame-must-orthonormal-right-handed",
+                    "construction frame must be orthonormal and right-handed"
+                ),
             );
         }
     }
@@ -274,7 +313,10 @@ impl Walk<'_, '_, '_> {
                     geometry_error(
                         self.findings,
                         self.owner.id.as_str(),
-                        "construction arc endpoint is outside its radius or plane tolerance",
+                        crate::rule!(
+                            "topology.construction-arc-endpoint-outside-radius-plane",
+                            "construction arc endpoint is outside its radius or plane tolerance"
+                        ),
                     );
                 }
             }
@@ -291,7 +333,10 @@ impl Walk<'_, '_, '_> {
             error(
                 self.findings,
                 self.owner,
-                "datum-axis dimension target must name a design parameter",
+                crate::rule!(
+                    "topology.datum-axis-dimension-target-must-name",
+                    "datum-axis dimension target must name a design parameter"
+                ),
             );
             return;
         };
@@ -299,14 +344,20 @@ impl Walk<'_, '_, '_> {
             error(
                 self.findings,
                 self.owner,
-                "datum-axis dimension must bind a parameter of its own definition scope",
+                crate::rule!(
+                    "topology.datum-axis-dimension-must-bind-parameter",
+                    "datum-axis dimension must bind a parameter of its own definition scope"
+                ),
             );
         }
         if kind == "text" && matches!(value, Dimension::Negated(_)) {
             error(
                 self.findings,
                 self.owner,
-                "text dimensions cannot negate a parameter",
+                crate::rule!(
+                    "topology.text-dimensions-cannot-negate-parameter",
+                    "text dimensions cannot negate a parameter"
+                ),
             );
         }
         if let Some(owner) = parameter.owner.as_ref().filter(|id| *id != &self.owner.id) {
@@ -318,7 +369,7 @@ impl Walk<'_, '_, '_> {
                         || !self.owner.dependencies.iter().any(|id| id == owner)
                 })
             {
-                error(self.findings,self.owner,"datum-axis parameter owner must precede its consumer and occur in its dependencies");
+                error(self.findings,self.owner,crate::rule!("topology.datum-axis-parameter-owner-must-precede", "datum-axis parameter owner must precede its consumer and occur in its dependencies"));
             }
         }
         if let Some(value) = &parameter.value {
@@ -334,7 +385,10 @@ impl Walk<'_, '_, '_> {
                 error(
                     self.findings,
                     self.owner,
-                    "datum-axis dimension binds a parameter with an incompatible value kind",
+                    crate::rule!(
+                        "topology.datum-axis-dimension-binds-parameter-incompatible",
+                        "datum-axis dimension binds a parameter with an incompatible value kind"
+                    ),
                 );
             }
         }
@@ -364,7 +418,10 @@ impl Walk<'_, '_, '_> {
                     error(
                         self.findings,
                         self.owner,
-                        "construction subject is not a part of its result kind",
+                        crate::rule!(
+                            "topology.construction-subject-not-part-result-kind",
+                            "construction subject is not a part of its result kind"
+                        ),
                     );
                 }
                 if matches!(input.reference.as_ref(),Some(InputReference::Built(value)) if matches!(value.as_ref(),AnyConstruction::Point(_)))
@@ -381,7 +438,10 @@ impl Walk<'_, '_, '_> {
                     error(
                         self.findings,
                         self.owner,
-                        "a point operand cannot supply a construction direction",
+                        crate::rule!(
+                            "topology.point-operand-cannot-supply-construction-direction",
+                            "a point operand cannot supply a construction direction"
+                        ),
                     );
                 }
                 self.role(input, role, kind);
@@ -415,7 +475,10 @@ impl Walk<'_, '_, '_> {
                             error(
                                 self.findings,
                                 self.owner,
-                                "plane equation normal cannot be zero",
+                                crate::rule!(
+                                    "topology.plane-equation-normal-cannot-zero",
+                                    "plane equation normal cannot be zero"
+                                ),
                             );
                         }
                         self.dimension(a, "real");
@@ -445,7 +508,10 @@ impl Walk<'_, '_, '_> {
                                     error(
                                         self.findings,
                                         self.owner,
-                                        "construction plane axes must be perpendicular",
+                                        crate::rule!(
+                                            "topology.construction-plane-axes-must-perpendicular",
+                                            "construction plane axes must be perpendicular"
+                                        ),
                                     );
                                 }
                             }
@@ -478,14 +544,20 @@ impl Walk<'_, '_, '_> {
                 error(
                     self.findings,
                     self.owner,
-                    "construction has no input, step or resolved value",
+                    crate::rule!(
+                        "topology.construction-no-input-step-resolved-value",
+                        "construction has no input, step or resolved value"
+                    ),
                 );
             }
             if !value.resolved_in.is_empty() {
                 error(
                     self.findings,
                     self.owner,
-                    "a fixed construction cannot carry resolved_in values",
+                    crate::rule!(
+                        "topology.fixed-construction-cannot-carry-resolved-values",
+                        "a fixed construction cannot carry resolved_in values"
+                    ),
                 );
             }
         }
@@ -493,7 +565,10 @@ impl Walk<'_, '_, '_> {
             error(
                 self.findings,
                 self.owner,
-                "construction solution must be positive",
+                crate::rule!(
+                    "topology.construction-solution-must-positive",
+                    "construction solution must be positive"
+                ),
             );
         }
         self.inputs(&value.inputs, kind)?;
@@ -505,7 +580,10 @@ impl Walk<'_, '_, '_> {
                         error(
                             self.findings,
                             self.owner,
-                            "a literal false Flip is redundant",
+                            crate::rule!(
+                                "topology.literal-false-flip-redundant",
+                                "a literal false Flip is redundant"
+                            ),
                         );
                     }
                 }
@@ -516,7 +594,10 @@ impl Walk<'_, '_, '_> {
                         error(
                             self.findings,
                             self.owner,
-                            "AxisRotate must bind an axis component",
+                            crate::rule!(
+                                "topology.axisrotate-must-bind-axis-component",
+                                "AxisRotate must bind an axis component"
+                            ),
                         );
                     }
                     for value in axis {
@@ -554,7 +635,10 @@ impl Walk<'_, '_, '_> {
                     error(
                         self.findings,
                         self.owner,
-                        "a single explicit selection term must use Named picks",
+                        crate::rule!(
+                            "topology.single-explicit-selection-term-must-use",
+                            "a single explicit selection term must use Named picks"
+                        ),
                     );
                 }
                 for term in terms.iter().chain(excluded) {
@@ -566,7 +650,10 @@ impl Walk<'_, '_, '_> {
                         error(
                             self.findings,
                             self.owner,
-                            "selection rule has an incompatible seed count",
+                            crate::rule!(
+                                "topology.selection-rule-incompatible-seed-count",
+                                "selection rule has an incompatible seed count"
+                            ),
                         );
                     }
                     self.members(&term.seeds)?;
@@ -607,7 +694,7 @@ impl Walk<'_, '_, '_> {
             if let Some(body) = &witness.body {
                 body.visit_identity_references(self.ctx, &mut |_| Ok(()))?;
                 let mut nested = Vec::new();
-                super::nested::check(self.ctx, body.as_ref().clone(), &mut nested)?;
+                super::nested::check(self.ctx, body.as_ref().clone(), self.file_keys, &mut nested)?;
                 for mut finding in nested {
                     if let Some(entity) = finding.entity.replace(self.owner.id.as_str().to_owned())
                     {

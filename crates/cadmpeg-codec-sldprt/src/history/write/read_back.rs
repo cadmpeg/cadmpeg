@@ -179,10 +179,12 @@ pub(crate) type Writer<'a> =
 pub(crate) fn write_until_read_back(
     input: &CadIr,
     digests: &CodecDigests,
+    baseline_key: Option<cadmpeg_ir::hash::digest::Sha256Digest>,
     write: &mut Writer<'_>,
     round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
 ) -> Result<(WrittenPass, ReadBack), CodecError> {
     let mut judge = Judge::new(input, digests, round_trip);
+    judge.baseline_key = baseline_key;
     let mut withheld = Vec::<(FeatureId, String)>::new();
     let mut pass = write(&withheld)?;
     let mut read_back = judge.read(&pass);
@@ -313,6 +315,9 @@ struct Judge<'a> {
     input: &'a CadIr,
     /// The codec digests the decode of `input` recorded.
     digests: &'a CodecDigests,
+    /// Content digest of the retained source records and digests, used to
+    /// memoize the unmodified source round-trip baseline across writes.
+    baseline_key: Option<cadmpeg_ir::hash::digest::Sha256Digest>,
     round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
     stated: Option<Document>,
     /// The decoded source document, from the first pass that states one.
@@ -331,6 +336,7 @@ impl<'a> Judge<'a> {
         Self {
             input,
             digests,
+            baseline_key: None,
             round_trip,
             stated: None,
             source: None,
@@ -341,8 +347,6 @@ impl<'a> Judge<'a> {
     /// Judges one pass. A claim that asks to withhold its feature needs no
     /// decode: that part is written again.
     fn read(&mut self, (bytes, output): &WrittenPass) -> ReadBack {
-        use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
         let claims = &output.claims;
         let Some(source) = output.source.as_ref() else {
             return ReadBack::default();
@@ -359,9 +363,7 @@ impl<'a> Judge<'a> {
                 ..ReadBack::default()
             };
         }
-        let decoded = match crate::SldprtCodec
-            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-        {
+        let decoded = match crate::decode::decode_for_read_back(bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
                 return ReadBack::unreadable(claims, format!("does not decode again ({error})"));
@@ -389,13 +391,14 @@ impl<'a> Judge<'a> {
                 .map(|id| id.as_str().to_owned()),
             )
             .collect::<Vec<_>>();
+        let baseline_key = self.baseline_key.clone();
         self.judge(
             claims,
             &output.written,
             (&source.ir, &output.coverage.omitted(self.input), &naming),
             decoded.ir(),
             None,
-            &mut |stated| baseline_of(round_trip, source, stated),
+            &mut |stated| baseline_of_cached(baseline_key.as_ref(), round_trip, source, stated),
         )
     }
 
@@ -698,6 +701,32 @@ fn settled_by_solid(
         .collect()
 }
 
+fn baseline_of_cached(
+    key: Option<&cadmpeg_ir::hash::digest::Sha256Digest>,
+    round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    source: &Decoded,
+    stated: &Document,
+) -> Vec<Difference> {
+    type CachedDifferences = (cadmpeg_ir::hash::digest::Sha256Digest, Vec<Difference>);
+    static BASELINE_CACHE: std::sync::Mutex<Vec<CachedDifferences>> =
+        std::sync::Mutex::new(Vec::new());
+
+    if let Some(key) = key {
+        if let Ok(mut guard) = BASELINE_CACHE.lock() {
+            if let Some((_, cached)) = guard.iter().find(|(cached_key, _)| cached_key == key) {
+                return cached.clone();
+            }
+            let computed = baseline_of(round_trip, source, stated);
+            if guard.len() >= 2 {
+                guard.remove(0);
+            }
+            guard.push((key.clone(), computed.clone()));
+            return computed;
+        }
+    }
+    baseline_of(round_trip, source, stated)
+}
+
 /// The differences between `source`, the decoded source document whose
 /// records are `stated`, and its write with no edit, decoded again.
 fn baseline_of(
@@ -705,14 +734,10 @@ fn baseline_of(
     source: &Decoded,
     stated: &Document,
 ) -> Vec<Difference> {
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
     let Some(bytes) = round_trip(source) else {
         return Vec::new();
     };
-    let Ok(decoded) =
-        crate::SldprtCodec.decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-    else {
+    let Ok(decoded) = crate::decode::decode_for_read_back(&bytes) else {
         return Vec::new();
     };
     let Some(read) = Document::of(decoded.ir()) else {
@@ -1301,7 +1326,7 @@ impl ReadBack {
             let read = claim.read(written, pairing).and_then(|read| {
                 Some((
                     read,
-                    serde_json::to_value(read.evaluation.definition()).ok()?,
+                    cadmpeg_core::serde_erase::to_json_value(read.evaluation.definition()).ok()?,
                 ))
             });
             let Some((read, read_definition)) = read else {

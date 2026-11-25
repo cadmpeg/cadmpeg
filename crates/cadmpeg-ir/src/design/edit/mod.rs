@@ -41,7 +41,7 @@ mod members;
 mod removal;
 mod resolve;
 pub mod state_view;
-mod states;
+pub(crate) mod states;
 mod wire;
 
 #[cfg(test)]
@@ -223,20 +223,10 @@ fn findings(document: &CadIr) -> Result<Vec<Finding>, EditError> {
 }
 
 /// The Error findings of `after` beyond those of `before`: for each rule
-/// and record, the findings past the count `before` holds. A finding's rule
-/// is its check and its message with identities, numbers, and quoted text
-/// replaced ([`Signature`](crate::repro::Signature)); its record is its
-/// entity, and a finding that names none counts under its rule alone. A
-/// Warning is never added.
+/// and record, the findings past the count `before` holds. A finding that
+/// names no record counts under its rule alone. A Warning is never added.
 fn added_errors(before: &[Finding], after: &[Finding]) -> Vec<Finding> {
-    let rule = |finding: &Finding| {
-        let signature = crate::repro::Signature::new(
-            finding,
-            crate::codec_id!("cadir"),
-            crate::repro::Stage::Check,
-        );
-        (finding.check, finding.entity.clone(), signature.message)
-    };
+    let rule = |finding: &Finding| (finding.rule.clone(), finding.entity.clone());
     let mut held = std::collections::BTreeMap::<_, usize>::new();
     for finding in before
         .iter()

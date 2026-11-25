@@ -106,6 +106,7 @@ fn a_closed_nest_in_its_own_scope_has_no_finding() {
     body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
     ir.model.history_bodies.push(body);
     assert!(findings(&ir).is_empty(), "{:?}", findings(&ir));
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validation runs");
     assert!(
         !report
@@ -249,14 +250,15 @@ fn nest_records_are_not_seen_by_the_top_level_reference_check() {
 }
 
 #[test]
-fn a_document_with_a_nest_round_trips_through_json() {
+fn a_nest_round_trips_through_json_and_stays_out_of_the_document() {
     let mut ir = CadIr::empty();
     ir.model
         .history_bodies
         .push(history_body("0", scoped(cube_nest())));
-    let json = serde_json::to_string(&ir).expect("serialize");
-    let back: CadIr = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(back.model.history_bodies, ir.model.history_bodies);
-    let empty = serde_json::to_value(CadIr::empty()).expect("serialize");
-    assert_eq!(empty["model"]["history_bodies"], serde_json::json!([]));
+    let json = serde_json::to_string(&ir.model.history_bodies).expect("serialize");
+    let back: Vec<crate::history_body::HistoryBody> =
+        serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back, ir.model.history_bodies);
+    let document = serde_json::to_value(&ir).expect("serialize");
+    assert!(document["model"].get("history_bodies").is_none());
 }

@@ -77,6 +77,9 @@ loss_codes! {
     BoundaryPcurveDisagrees => "topology.boundary-pcurve-disagrees",
     /// A Type 144 boundary has no winding about its support normal and keeps its source traversal.
     BoundaryWindingUnresolved => "topology.boundary-winding-unresolved",
+    /// A face its source holds with no boundary on a plane, cylinder, or cone,
+    /// whose domain is unbounded, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved => "graph.pointer-unresolved",
     /// Parameter Data has more than one structural trailing pointer-group boundary.
@@ -95,6 +98,9 @@ loss_codes! {
     CardFramingRecovered => "card.framing-recovered",
     /// Directory display, font, or color data was not projected.
     DisplayDataNotProjected => "presentation.display-data-not-projected",
+    /// A blanked carrier that no topology uses states no color, so no
+    /// appearance binding states its blank status.
+    FreeGeometryBlankStatusNotStated => "presentation.free-geometry-blank-status-not-stated",
     /// A drawing has conflicting valid properties of the same form.
     DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
     /// A body owner has conflicting valid Type 406 Form 15 names.
@@ -121,8 +127,6 @@ loss_codes! {
     GlobalNoncanonicalFraming => "global.noncanonical-framing",
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified => "source.dialect-unverified",
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced => "target.source-dialect-displaced",
     /// Preserved source image required for a byte-exact write was unavailable.
     PreservedSourceUnavailable => "source.preserved-image-unavailable",
     /// Procedural definitions were reduced to writable solved carriers.
@@ -137,7 +141,8 @@ loss_codes! {
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
     /// An unowned dependent edge was withheld.
     WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
-    /// Free-geometry points or vertices have no topology output.
+    /// Free-geometry points or vertices have no topology output, or an
+    /// analytic surface on no face has no bounded output.
     WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
     /// Free edges or curves that duplicate a written carrier were not written.
     WriterDuplicateCarrierOmitted => "writer.duplicate-carrier-omitted",
@@ -151,6 +156,24 @@ loss_codes! {
     WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
     /// A free-geometry body has no single Directory Entry for visibility.
     WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
+    /// A face the writer cannot write was dropped with the records only it uses.
+    WriterFaceOmitted => "writer.face-omitted",
+    /// A body the writer cannot write was dropped with the records only it uses.
+    WriterBodyOmitted => "writer.body-omitted",
+    /// An open shell was written as unjoined trimmed surfaces for a version
+    /// that defines no open shell.
+    WriterOpenShellUnjoined => "writer.open-shell-unjoined",
+    /// A solid was written as unjoined trimmed surfaces for a version that
+    /// defines no manifold solid B-rep.
+    WriterSolidUnjoined => "writer.solid-unjoined",
+    /// An open edge with no stated range was written over one of several
+    /// ranges its vertices bound, or between its vertices' feet on its curve.
+    WriterEdgeRangeAssumed => "writer.edge-range-assumed",
+    /// A face was written with its model-space boundary, without the parameter
+    /// curves that have no exact image on its written support.
+    WriterPcurveOmitted => "writer.pcurve-omitted",
+    /// A vertex tolerance was raised to its distance from an edge's curve.
+    VertexToleranceWidened => "geometry.vertex-tolerance-widened",
     /// The decoded document holds an error-severity validation finding.
     ProjectionInvalid => "projection.invalid",
 }
@@ -181,6 +204,7 @@ impl IgesLossCode {
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::BoundaryPcurveDisagrees
             | Self::BoundaryWindingUnresolved
+            | Self::TopologyFaceBoundaryUnstated
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
@@ -190,6 +214,7 @@ impl IgesLossCode {
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
+            | Self::FreeGeometryBlankStatusNotStated
             | Self::DrawingPropertyAmbiguous
             | Self::BodyNameAmbiguous
             | Self::LineWeightScaleUnavailable
@@ -204,7 +229,6 @@ impl IgesLossCode {
             | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted
             | Self::WriterSupportGeometryNotRepresented
@@ -215,15 +239,27 @@ impl IgesLossCode {
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
             | Self::WriterBodyVisibilityNotRepresented
+            | Self::WriterEdgeRangeAssumed
+            | Self::WriterPcurveOmitted
+            | Self::WriterOpenShellUnjoined
+            | Self::WriterSolidUnjoined
+            | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
+            Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
         }
     }
 
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
-            Self::OccurrenceExpansionOutputTruncated
+            Self::WriterSupportEdgeNotRepresented
+            | Self::WriterFaceOmitted
+            | Self::WriterBodyOmitted
+            | Self::WriterOpenShellUnjoined
+            | Self::WriterSolidUnjoined => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::VertexToleranceWidened
+            | Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
@@ -235,6 +271,7 @@ impl IgesLossCode {
                 LossTaxonomy::SourceTopologyInvalid
             }
             Self::BoundaryWindingUnresolved => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::DisplayDataNotProjected | Self::LineWeightScaleUnavailable => {
@@ -242,6 +279,7 @@ impl IgesLossCode {
             }
             Self::DrawingPropertyAmbiguous
             | Self::BodyNameAmbiguous
+            | Self::FreeGeometryBlankStatusNotStated
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
@@ -251,7 +289,8 @@ impl IgesLossCode {
             | Self::GeometryNotProjected
             | Self::WriterSupportGeometryNotRepresented
             | Self::WriterFreeGeometryOmitted
-            | Self::WriterDuplicateCarrierOmitted => LossTaxonomy::GeometryNotTransferred,
+            | Self::WriterDuplicateCarrierOmitted
+            | Self::WriterPcurveOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted
@@ -267,7 +306,6 @@ impl IgesLossCode {
             | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
@@ -287,7 +325,7 @@ impl IgesLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("iges") {
                     Ok(namespace) => namespace,
@@ -296,14 +334,20 @@ impl IgesLossCode {
             },
             self.code(),
             self.shared_taxonomy(),
-        )
+        );
+        match self {
+            Self::WriterSolidUnjoined | Self::WriterPcurveOmitted => kind.with_strict_floor(None),
+            _ => kind,
+        }
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `iges/<local>`; the message is the per-instance
     /// text only. Severity comes from the local code and the strict floor from
-    /// the shared taxonomy.
+    /// the shared taxonomy; `writer.solid-unjoined` and `writer.pcurve-omitted`
+    /// pin no floor.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -338,6 +382,7 @@ mod tests {
                 "topology.boundary-pcurve-outside-support-domain",
                 "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",
+                "topology.face-boundary-unstated",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
@@ -347,6 +392,7 @@ mod tests {
                 "parameter.data-quarantined",
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",
+                "presentation.free-geometry-blank-status-not-stated",
                 "presentation.drawing-property-ambiguous",
                 "presentation.body-name-ambiguous",
                 "presentation.line-weight-scale-unavailable",
@@ -360,7 +406,6 @@ mod tests {
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "geometry.edge-pcurve-agreement-sampled",
@@ -375,6 +420,13 @@ mod tests {
                 "writer.body-color-not-represented",
                 "writer.body-opacity-not-represented",
                 "writer.body-visibility-not-represented",
+                "writer.face-omitted",
+                "writer.body-omitted",
+                "writer.open-shell-unjoined",
+                "writer.solid-unjoined",
+                "writer.edge-range-assumed",
+                "writer.pcurve-omitted",
+                "geometry.vertex-tolerance-widened",
                 "projection.invalid",
             ]
         );
@@ -394,6 +446,16 @@ mod tests {
                     .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
                 "code {text} is not lowercase kebab"
             );
+        }
+    }
+
+    #[test]
+    fn the_unjoined_solid_and_the_omitted_pcurve_pin_no_strict_floor() {
+        for code in [
+            IgesLossCode::WriterSolidUnjoined,
+            IgesLossCode::WriterPcurveOmitted,
+        ] {
+            assert_eq!(code.note("").code.strict_floor(), None, "{}", code.code());
         }
     }
 

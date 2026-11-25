@@ -12,8 +12,9 @@
 //! codec wrapper stamps the identity the IR source authored onto the report.
 //! Untyped surface and curve carriers become opaque geometry linked to the
 //! retained Parasolid source record. If no body stream yields geometry, decoding returns a
-//! metadata-only IR and blocking loss notes. `DecodeDepth::Container`
-//! requests the metadata-only path.
+//! metadata-only IR and blocking loss notes. `DecodeDepth::Container` reads
+//! the container only: the document states the source metadata, the active
+//! site, and the source image, and no model record.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
@@ -173,6 +174,52 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+    decode_inner(ctx, root, true)
+}
+
+/// Decodes a retained `.sldprt` source image without stamping local SHA-256
+/// digests, for internal writer baselines that compare against the caller's
+/// recorded digests.
+pub(crate) fn decode_without_digests(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<Decoded, CodecError> {
+    decode_inner(ctx, root, false)
+}
+
+/// Decodes a written SLDPRT byte slice for read-back comparison, skipping
+/// local-digest and canonical-JSON digest calculation that read-back ignores.
+pub(crate) fn decode_for_read_back(
+    bytes: &[u8],
+) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
+    let options = cadmpeg_ir::codec::DecodeOptions::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut cursor = std::io::Cursor::new(bytes);
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::read_root(
+        &mut cursor,
+        &arena,
+        &options.policy,
+        options.depth,
+    )?;
+    let result = decode_inner(&ctx, root, false)
+        .map_err(Into::into)
+        .and_then(|decoded| {
+            cadmpeg_ir::codec::DecodeResult::from_decoded_without_digests(
+                &ctx,
+                decoded,
+                <crate::SldprtCodec as cadmpeg_ir::codec::CodecBackend>::FORMAT,
+                &options.strictness,
+            )
+        });
+    ctx.finish_session()?;
+    result
+}
+
+fn decode_inner(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    stamp_digests: bool,
+) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let assembly = crate::assembly::read(ctx, &scan)?;
     let placed_virtual = assembly
@@ -213,7 +260,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         let root = root.id.clone();
         decoded.ir.display_unresolved_meshes(&root);
     }
-    stamp_local_digests(ctx, &mut decoded.ir)?;
+    if stamp_digests {
+        stamp_local_digests(ctx, &mut decoded.ir)?;
+    }
     crate::codec_digests::move_to_sidecar(&mut decoded)?;
     Ok(decoded)
 }
@@ -246,15 +295,8 @@ fn decode_scan(
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut retention, mut pmi_losses) = build_metadata_ir(
-            ctx,
-            &scan,
-            &classification,
-            form_padding,
-            &mut admitted_entities,
-            false,
-            false,
-        )?;
+        let (ir, annotations, unknowns, mut retention) =
+            build_container_ir(ctx, &scan, &classification)?;
         retention.give_up(given_up);
         let mut report = build_container_report(
             ctx,
@@ -265,7 +307,6 @@ fn decode_scan(
             parasolid_owner_unread,
         )?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
-        report.losses.append(&mut pmi_losses);
         return decode_result(
             ctx,
             decode_digest,
@@ -327,7 +368,6 @@ fn decode_scan(
         &classification,
         form_padding,
         &mut admitted_entities,
-        true,
         part,
     )?;
     retention.give_up(given_up);
@@ -1195,7 +1235,6 @@ pub(crate) fn append_design_losses(
         .iter()
         .filter(|constraint| {
             !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
-                && constraint.active != Some(false)
         })
         .count();
     let native_spatial_constraints = ir
@@ -3742,10 +3781,12 @@ fn build_geometry_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -3763,6 +3804,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
@@ -4517,8 +4559,7 @@ fn build_geometry_ir(
         annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
     }
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(id.as_str(), "body", Exactness::Derived)?;
-        annotation_builder.field_exactness(id.as_str(), "faces", Exactness::Derived)?;
+        annotation_builder.field_exactness(id.as_str(), "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -5152,13 +5193,92 @@ fn build_geometry_report(
     })
 }
 
+/// The source metadata of a decode that projects no Parasolid geometry: the
+/// outer version, the metadata the XML members of `scan` state, and the
+/// active Parasolid site, which is retained undecoded.
+fn unprojected_source_meta(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
+    retention: &mut retention::Retention,
+    annotations: &mut Annotations,
+    unknowns: &mut Vec<UnknownRecord>,
+) -> Result<SourceMeta, CodecError> {
+    let mut attributes = BTreeMap::new();
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("outer_version"),
+        format!("0x{:08x}", scan.version),
+    );
+    add_solidworks_xml_metadata(scan, &mut attributes)?;
+
+    if let Some(site) = container::select_active_parasolid_site(scan) {
+        let id = site.section.native_id();
+        // This route retains the body stream without projecting its geometry.
+        retention.record(id.as_str(), cadmpeg_core::decode::ArenaClass::Model);
+        let offset = match site.section {
+            container::Section::Block(block) => u64_from_index(block.offset),
+            container::Section::Compound(_) => 0,
+        };
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+            site.source_stream().as_str().to_owned(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("parasolid_schema"),
+            site.header.schema.value().to_owned(),
+        );
+        crate::annotations::note(
+            annotations,
+            id.as_str(),
+            site.source_stream(),
+            0,
+            "parasolid_stream",
+            Exactness::Unknown,
+        )?;
+        unknowns.push(UnknownRecord::retained(
+            id,
+            offset,
+            retained_copy(ctx, site.payload, "retain SLDPRT active site")?,
+            Vec::new(),
+        ));
+    }
+
+    Ok(SourceMeta::classified(
+        classification.layers().clone(),
+        attributes,
+    ))
+}
+
+/// The document of a container decode. Its scope holds no model, so it
+/// states the source metadata, the active Parasolid site, and the source
+/// image, and reads no model record.
+fn build_container_ir(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
+) -> Result<(CadIr, Annotations, Vec<UnknownRecord>, retention::Retention), CodecError> {
+    let mut ir = CadIr::empty();
+    let mut retention = retention::Retention::default();
+    let mut unknowns = Vec::new();
+    let mut annotations = Annotations::default();
+    ir.source = Some(unprojected_source_meta(
+        ctx,
+        scan,
+        classification,
+        &mut retention,
+        &mut annotations,
+        &mut unknowns,
+    )?);
+    preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
+    Ok((ir, annotations, unknowns, retention))
+}
+
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-    transfer_display: bool,
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
@@ -5216,49 +5336,14 @@ fn build_metadata_ir(
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
     ir.model.sketch_constraints = sketch_constraints;
-    let mut attributes = BTreeMap::new();
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("outer_version"),
-        format!("0x{:08x}", scan.version),
-    );
-    add_solidworks_xml_metadata(scan, &mut attributes)?;
-
-    if let Some(site) = container::select_active_parasolid_site(scan) {
-        let id = site.section.native_id();
-        // This route retains the body stream without projecting its geometry.
-        retention.record(id.as_str(), cadmpeg_core::decode::ArenaClass::Model);
-        let offset = match site.section {
-            container::Section::Block(block) => u64_from_index(block.offset),
-            container::Section::Compound(_) => 0,
-        };
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            site.source_stream().as_str().to_owned(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("parasolid_schema"),
-            site.header.schema.value().to_owned(),
-        );
-        crate::annotations::note(
-            &mut annotations,
-            id.as_str(),
-            site.source_stream(),
-            0,
-            "parasolid_stream",
-            Exactness::Unknown,
-        )?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            offset,
-            retained_copy(ctx, site.payload, "retain SLDPRT active site")?,
-            Vec::new(),
-        ));
-    }
-
-    ir.source = Some(SourceMeta::classified(
-        classification.layers().clone(),
-        attributes,
-    ));
+    ir.source = Some(unprojected_source_meta(
+        ctx,
+        scan,
+        classification,
+        &mut retention,
+        &mut annotations,
+        &mut unknowns,
+    )?);
     project_design_history(
         ctx,
         &mut ir,
@@ -5277,10 +5362,12 @@ fn build_metadata_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -5298,6 +5385,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
@@ -5600,56 +5688,54 @@ fn build_metadata_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(ctx, &mut ir)?;
-    if transfer_display {
-        let (display_sections, _) = collect_display_sections(ctx, scan)?;
-        let eligible = BTreeSet::new();
-        let push = push_display_meshes(
-            ctx,
-            scan,
-            display_sections,
-            &mut ir,
-            &mut annotations,
-            &mut unknowns,
-            &eligible,
-        )?;
-        for unresolved in push.unresolved {
-            let hex = unresolved
-                .packed_hex
-                .as_deref()
-                .map_or(String::new(), |hex| format!(" packed_hex={hex}"));
-            let message = format!(
-                "unresolved appearance binding: owner_class={} identity={} appearance_index={} reason={} source_offset={}{hex}",
-                unresolved.owner_class,
-                unresolved.identity,
-                unresolved.appearance_index,
-                unresolved.reason,
-                unresolved.source_offset,
-            );
-            pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
-            retain_unresolved_appearance(&mut ir, &unresolved);
-        }
-        let _assigned = crate::tessellation::assign_persistent_owners(
-            &mut ir,
-            &[],
-            &push.persistent_face_bindings,
-            &HashSet::new(),
+    let (display_sections, _) = collect_display_sections(ctx, scan)?;
+    let eligible = BTreeSet::new();
+    let push = push_display_meshes(
+        ctx,
+        scan,
+        display_sections,
+        &mut ir,
+        &mut annotations,
+        &mut unknowns,
+        &eligible,
+    )?;
+    for unresolved in push.unresolved {
+        let hex = unresolved
+            .packed_hex
+            .as_deref()
+            .map_or(String::new(), |hex| format!(" packed_hex={hex}"));
+        let message = format!(
+            "unresolved appearance binding: owner_class={} identity={} appearance_index={} reason={} source_offset={}{hex}",
+            unresolved.owner_class,
+            unresolved.identity,
+            unresolved.appearance_index,
+            unresolved.reason,
+            unresolved.source_offset,
         );
-        let mut owner_losses = Vec::new();
-        let _assigned_unique = crate::tessellation::assign_unique_surface_owners(
-            ctx,
-            &mut ir,
-            &HashSet::new(),
-            &mut owner_losses,
-        )?;
-        pmi_losses.append(&mut owner_losses);
-        if push.mesh_count > 0 {
-            pmi_losses.push(
-                SldprtLossCode::TessellationDisplayWithoutGeometry.note(format!(
-                    "{} DisplayLists tessellation mesh(es) transferred without B-rep geometry; ownership is unresolved and geometry_transferred is false.",
-                    push.mesh_count
-                )),
-            );
-        }
+        pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
+        retain_unresolved_appearance(&mut ir, &unresolved);
+    }
+    let _assigned = crate::tessellation::assign_persistent_owners(
+        &mut ir,
+        &[],
+        &push.persistent_face_bindings,
+        &HashSet::new(),
+    );
+    let mut owner_losses = Vec::new();
+    let _assigned_unique = crate::tessellation::assign_unique_surface_owners(
+        ctx,
+        &mut ir,
+        &HashSet::new(),
+        &mut owner_losses,
+    )?;
+    pmi_losses.append(&mut owner_losses);
+    if push.mesh_count > 0 {
+        pmi_losses.push(
+            SldprtLossCode::TessellationDisplayWithoutGeometry.note(format!(
+                "{} DisplayLists tessellation mesh(es) transferred without B-rep geometry; ownership is unresolved and geometry_transferred is false.",
+                push.mesh_count
+            )),
+        );
     }
     let native = crate::native::SldprtNative {
         feature_histories: histories,

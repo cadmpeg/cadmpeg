@@ -487,8 +487,8 @@
       },
       {
         "id": "synthetic:cube:edge#4",
-        "carrier": {
-          "curve": "s†nthetic:cube:curve#4",
+        "carrierÝ: {
+          "curve": "synthetic:cube:curve#4",
           "param_range": [
             0.0,
             10.0
@@ -1053,21 +1053,23 @@
   },
   "model": {
     "assets": [],
-    "features": [],
-    "feature_input_topologies": [],
-    "feature_result_topologies": [],
-    "configurations": [],
-    "parameters": [],
-    "sketches": [],
-    "sketch_entities": [],
-    "sketch_constraints": [],
-    "spatial_sketches": [],
-    "spatial_sketch_entities": [],
-    "spatial_sketch_constraints": [],
-    "spreadsheets": [],
-    "product_definitions": [],
+    "product_definitions": [
+      {
+        "id": "test:model:product-definition#document",
+        "bom_properties": {},
+        "storage": {
+          "kind": "file",
+          "document": {}
+        },
+        "bodies": [
+          "synthetic:cube:body#0"
+        ],
+        "occurrences": [],
+        "instance_bodies": [],
+        "representations": []
+      }
+    ],
     "occurrences": [],
-    "assembly_joints": [],
     "drawings": [],
     "semantic_annotations": [],
     "presentation_documents": [],
@@ -1086,8 +1088,7 @@
     "physics_scenes": [],
     "solver_settings": [],
     "declared_measures": [],
-    "point_clouds": [],
-    "history_bodies": []
+    "point_clouds": []
   },
   "design": {
     "scopes": [],

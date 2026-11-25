@@ -129,6 +129,17 @@ fn has(losses: &[(cadmpeg_ir::report::loss::LossKind, String)], code: SldprtLoss
     losses.iter().any(|(kind, _)| *kind == code.kind())
 }
 
+/// Whether an `export:evaluation.stale` loss names `feature`: the writer
+/// writes its edit and regenerates no state (§3.4, States).
+fn stale_evaluation(
+    losses: &[(cadmpeg_ir::report::loss::LossKind, String)],
+    feature: &cadmpeg_ir::features::FeatureId,
+) -> bool {
+    losses.iter().any(|(kind, message)| {
+        kind.local_code() == "evaluation.stale" && message.contains(feature.as_str())
+    })
+}
+
 #[test]
 fn decoded_opposite_cap_retains_travel_with_a_mirrored_cap_control() {
     for side in [-1.0, 1.0] {
@@ -445,7 +456,7 @@ type Written = (Vec<u8>, Vec<(cadmpeg_ir::report::loss::LossKind, String)>);
 fn edit_and_write(
     decoded: cadmpeg_ir::codec::DecodeResult,
     edit: impl FnOnce(&mut cadmpeg_ir::CadIr),
-) -> Result<Written, cadmpeg_core::CodecError> {
+) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
@@ -457,7 +468,7 @@ fn edit_and_write(
 /// Writes `decoded` through `Inherit` with its sidecar.
 fn write_editable(
     decoded: &cadmpeg_test_support::EditableDecodeResult,
-) -> Result<Written, cadmpeg_core::CodecError> {
+) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec.plan(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -482,6 +493,7 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
     let (bytes, anchor) = lane_flagged(None, None);
     let decoded = decode(bytes);
     let (feature, direction, word) = extrusion_state(decoded.ir(), anchor);
+    let extrude = feature.id.clone();
     assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
     assert!(!crate::history::extrude_direction::reversal_unread(
         &feature.source_properties
@@ -500,7 +512,11 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
-    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
+    assert!(
+        stale_evaluation(&write_losses, &extrude),
+        "{write_losses:?}"
+    );
     let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
     assert!(
         stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
@@ -524,7 +540,8 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
 fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     let (bytes, anchor) = lane_flagged(Some(-1.0), None);
     let decoded = decode(bytes);
-    let (_, direction, word) = extrusion_state(decoded.ir(), anchor);
+    let (feature, direction, word) = extrusion_state(decoded.ir(), anchor);
+    let extrude = feature.id.clone();
     assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
     assert_eq!(word, [1, 0, 0, 0]);
     // The solid holds the reversal, so it rests on more than the flag.
@@ -534,7 +551,11 @@ fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     ));
 
     let (written, write_losses) = clear_and_write(decoded);
-    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
+    assert!(
+        stale_evaluation(&write_losses, &extrude),
+        "{write_losses:?}"
+    );
     let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
     assert!(
         stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
@@ -761,6 +782,7 @@ fn an_active_configuration_reversal_takes_the_active_solid_verdict() {
 fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
     let (bytes, anchor) = lane_flagged(None, Some(0));
     let decoded = decode(bytes);
+    let extrude = extrusion_state(decoded.ir(), anchor).0.id.clone();
     assert_eq!(
         lane_words(decoded.ir(), anchor),
         [[1, 0, 0, 0], [1, 0, 0, 0]]
@@ -785,7 +807,11 @@ fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
         stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
         "{write_losses:?}"
     );
-    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
+    assert!(
+        stale_evaluation(&write_losses, &extrude),
+        "{write_losses:?}"
+    );
+    assert_eq!(write_losses.len(), 3, "{write_losses:?}");
 
     let again = decode(written);
     assert_eq!(lane_words(again.ir(), anchor), [[0, 0, 0, 0], [0, 0, 0, 0]]);
@@ -888,20 +914,22 @@ fn directions(
 /// reversal the decoder settled against the active solid is no native edit:
 /// the writer settles the states it reads back from the lanes as the
 /// decoder settled them. The fixture states the depth only as a Keywords
-/// dimension, so no lane scalar can carry the edit, and the writer names
-/// that alike whether the solid holds the reversal or contradicts it.
+/// dimension, so no lane scalar can carry the edit: the patch path declines
+/// it, and the write names that alike whether the solid holds the reversal
+/// or contradicts it.
 #[test]
 fn a_configuration_edit_over_settled_reversals_is_no_native_edit() {
     let outcomes = SETTLED_CASES.map(|(alternate, side)| {
         let (bytes, _) = lane_flagged(Some(side), Some(alternate));
-        let error = edit_and_write(decode(bytes), deepen_alternate)
-            .map(|_| ())
-            .expect_err("no lane scalar holds the depth");
-        (alternate, side, error.to_string())
+        let (written, losses) =
+            edit_and_write(decode(bytes), deepen_alternate).expect("the write completes");
+        decode(written);
+        (alternate, side, losses)
     });
-    for (alternate, side, error) in &outcomes {
+    for (alternate, side, losses) in &outcomes {
         assert!(
-            error.contains("configuration design-state edit has no complete native lane encoding"),
+            losses.iter().any(|(_, message)| message
+                .contains("configuration design-state edit has no complete native lane encoding")),
             "alternate={alternate} side={side}: {outcomes:#?}"
         );
     }

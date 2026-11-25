@@ -320,7 +320,7 @@ fn layout<'ir>(
     let mut poles: Vec<(Uv, Option<Point3>)> = Vec::new();
     let boundary = face.loops.boundary().ok_or_else(|| {
         Refusal::new(format!(
-            "the face {} does not state every loop, so its extent is not stated",
+            "the face {} does not state its boundary in full, so its extent is not stated",
             face.id
         ))
     })?;

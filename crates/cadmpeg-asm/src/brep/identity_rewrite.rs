@@ -2,7 +2,7 @@
 //! Walk the typed ASM graph without rebuilding it through serde.
 
 use super::annotations::AnnotationRecord;
-use super::{AsmBrep, Stats};
+use super::{AsmBrep, Stats, UnboundedFace};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
@@ -15,7 +15,7 @@ macro_rules! graph {
                 $(self.$field.visit_identity_references(ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(mut self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+            fn rewrite_identities(mut self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_>) -> Result<Self, CodecError> {
                 let _depth = ctx.enter_nested("rewrite ASM graph fields")?;
                 $(self.$field = self.$field.rewrite_identities(ctx, map)?;)*
                 Ok(self)
@@ -23,8 +23,26 @@ macro_rules! graph {
         }
     };
 }
-graph!(AsmBrep; bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves, procedural_surfaces, procedural_curves, edge_continuities, edge_ownerships, vertex_ownerships, face_sidedness, face_native_keys, tolerant_coedge_parameters, tolerant_edge_tails, tolerant_vertex_tails, mesh_surface_sentinels, transform_hints, body_native_keys, wire_topologies, attributes, unknowns, stats, annotation_records);
+graph!(AsmBrep; bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves, procedural_surfaces, procedural_curves, edge_continuities, edge_ownerships, vertex_ownerships, face_sidedness, face_native_keys, tolerant_coedge_parameters, tolerant_edge_tails, tolerant_vertex_tails, mesh_surface_sentinels, transform_hints, body_native_keys, wire_topologies, attributes, unknowns, stats, annotation_records, unbounded_faces);
 graph!(Stats; missing_face_surface_kinds, unknown_surface_kinds, mesh_surface_faces, nurbs_surfaces, nurbs_curves, procedural_curve_kinds, undecoded_pcurve_kinds, partial_procedural_supports, other_record_kinds);
+
+impl RewriteIdentities for UnboundedFace {
+    fn visit_identity_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        self.face.visit_identity_references(ctx, visitor)
+    }
+    fn rewrite_identities(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        map: &mut IdentityMap<'_>,
+    ) -> Result<Self, CodecError> {
+        self.face = self.face.rewrite_identities(ctx, map)?;
+        Ok(self)
+    }
+}
 
 impl RewriteIdentities for AnnotationRecord {
     fn visit_identity_references(
@@ -34,10 +52,10 @@ impl RewriteIdentities for AnnotationRecord {
     ) -> Result<(), CodecError> {
         visitor(&self.id)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         _ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         self.id = map.identity(&self.id)?;
         Ok(self)

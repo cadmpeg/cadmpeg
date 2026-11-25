@@ -39,6 +39,10 @@ fn decode(bytes: Vec<u8>) -> DecodeResult {
         .unwrap()
 }
 
+fn decode_read_back(bytes: &[u8]) -> DecodeResult {
+    crate::decode::decode_for_read_back(bytes).unwrap()
+}
+
 fn messages(report: &ExportReport, code: SldprtLossCode) -> Vec<&str> {
     report
         .losses
@@ -59,13 +63,14 @@ fn all_messages(report: &ExportReport) -> Vec<&str> {
         .collect()
 }
 
+/// The messages of the `export:edit.dropped` losses.
 fn unwritten(report: &ExportReport) -> Vec<&str> {
-    let mut messages = messages(report, SldprtLossCode::WriterParameterEditUnwritten);
-    messages.extend(self::messages(
-        report,
-        SldprtLossCode::WriterFeatureEditUnwritten,
-    ));
-    messages
+    report
+        .losses
+        .iter()
+        .filter(|loss| crate::test_support::is_edit_dropped(&loss.code))
+        .map(|loss| loss.message.as_str())
+        .collect()
 }
 
 fn owner<'a>(ir: &'a CadIr, parameter: &DesignParameter) -> &'a Feature {
@@ -170,7 +175,7 @@ fn an_edit_beside_display_only_relation_parameters_is_written() {
     let (report, output) = write(&decoded);
 
     assert_eq!(unwritten(&report), Vec::<&str>::new());
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let parameter = named_parameter(written.ir(), &owner, &name);
     assert!((length(parameter) - value).abs() <= 1.0e-9, "{parameter:?}");
     assert!(written.ir().model.parameters.iter().any(is_reference));
@@ -209,11 +214,11 @@ fn an_edited_display_only_relation_parameter_is_named_and_kept_as_solved() {
 
     let (report, output) = write(&decoded);
 
-    let unwritten = messages(&report, SldprtLossCode::WriterParameterEditUnwritten);
+    let unwritten = unwritten(&report);
     assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
     assert!(unwritten[0].contains(id.as_str()), "{}", unwritten[0]);
     assert_eq!(stale(&report), Vec::<&str>::new());
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let source = source(&decoded);
     assert_eq!(
         readback::unnamed(
@@ -247,7 +252,7 @@ fn a_bare_number_dimension_bound_to_a_scalar_is_written() {
     let (report, output) = write(&decoded);
 
     assert_eq!(unwritten(&report), Vec::<&str>::new());
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let parameter = named_parameter(written.ir(), &owner, &name);
     assert!((length(parameter) - value).abs() <= 1.0e-9, "{parameter:?}");
 }
@@ -274,11 +279,11 @@ fn a_rename_beside_decoder_resolved_fillet_edges_is_written() {
     a_rename_keeps_every_other_record(ftc_08(), is_hole);
 }
 
-/// An edited compound-file part whose write into a native envelope refuses
-/// (a global parameter no feature record can hold) is written as its stored
-/// part, and the write states the refusal and that no edit is written.
+/// An edited compound-file part with a global parameter, which no feature
+/// record holds, is written into a native envelope without that parameter,
+/// and the history drop names it.
 #[test]
-fn an_edited_compound_file_part_the_native_envelope_refuses_is_written_as_stored() {
+fn an_edited_compound_file_part_drops_a_global_parameter() {
     let source = cadmpeg_test_support::compound::compound_fixture();
     let mut decoded = EditableDecodeResult::from(decode(source.clone()));
     decoded.ir_mut().model.parameters.push(DesignParameter {
@@ -300,11 +305,83 @@ fn an_edited_compound_file_part_the_native_envelope_refuses_is_written_as_stored
 
     let (report, output) = write(&decoded);
 
+    assert!(
+        !crate::test_support::container::is_compound_file(&output),
+        "{:?}",
+        report.losses
+    );
+    let dropped = messages(&report, SldprtLossCode::WriterFeaturesOmitted);
+    assert_eq!(dropped.len(), 1, "{:?}", report.losses);
+    assert!(
+        dropped[0].contains("parameters [synthetic:test:id#edited-parameter]"),
+        "{}",
+        dropped[0]
+    );
+    decode_read_back(&output);
+}
+
+/// An edit that the patch path cannot write, of a part whose synthesis
+/// without its `SolidWorks` history lands on another dialect than the
+/// source's, leaves the part as stored. The decoded source isolates the
+/// edited record: one `export:edit.dropped` loss names it and why each path
+/// declines it (§3.4, Paths item 4).
+#[test]
+fn an_edit_no_path_writes_leaves_the_part_as_stored() {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId,
+    };
+
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let source = decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .and_then(|record| record.data())
+        .unwrap()
+        .to_vec();
+    let sketch = decoded.ir().model.sketches[0].id.clone();
+    let entity = decoded
+        .ir()
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.sketch == sketch)
+        .unwrap()
+        .id()
+        .clone();
+    let constraint = SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap();
+    decoded
+        .ir_mut()
+        .model
+        .sketch_constraints
+        .push(SketchConstraint {
+            id: constraint.clone(),
+            sketch,
+            definition: SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::Horizontal { entity },
+            )
+            .unwrap(),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
+
+    let (report, output) = write(&decoded);
+
     assert_eq!(output, source);
-    let losses = messages(&report, SldprtLossCode::WriterCompoundFileEditUnwritten);
+    let losses = unwritten(&report);
     assert_eq!(losses.len(), 1, "{:?}", report.losses);
     assert!(
-        losses[0].contains("global SLDPRT parameter") && losses[0].contains("compound-file writer"),
+        losses[0].contains(&format!("as stored ({})", crate::SOURCE_IMAGE_ID))
+            && losses[0].contains("sketch relation editing")
+            && losses[0].contains(constraint.as_str()),
         "{}",
         losses[0]
     );
@@ -317,17 +394,16 @@ fn an_edited_compound_file_part_the_native_envelope_refuses_is_written_as_stored
 fn a_compound_file_part_read_as_edited_is_written_into_a_native_envelope() {
     let source = cadmpeg_test_support::compound::compound_fixture();
     let mut decoded = EditableDecodeResult::from(decode(source));
-    decoded.source_fidelity_mut().content_digest =
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    decoded.source_fidelity_mut().content_digest = None;
 
     let (report, output) = write(&decoded);
 
     assert!(
-        !crate::container::is_compound_file(&output),
+        !crate::test_support::container::is_compound_file(&output),
         "{:?}",
         report.losses
     );
-    assert!(messages(&report, SldprtLossCode::WriterCompoundFileEditUnwritten).is_empty());
+    assert!(unwritten(&report).is_empty(), "{:?}", report.losses);
     assert!(
         report.losses.iter().any(|loss| {
             loss.code.local_code() == "native.records-omitted"
@@ -340,6 +416,13 @@ fn a_compound_file_part_read_as_edited_is_written_into_a_native_envelope() {
 
 /// The source document decoded from the retained source image.
 fn source(decoded: &EditableDecodeResult) -> DecodeResult {
+    if let Some(digest) = decoded.source_fidelity().content_digest.as_ref() {
+        for cached in [ftc_06(), ftc_08()] {
+            if cached.source_fidelity().content_digest.as_ref() == Some(digest) {
+                return cached.clone();
+            }
+        }
+    }
     decode(
         decoded
             .source_fidelity()
@@ -362,7 +445,7 @@ fn a_parameter_edit_keeps_every_other_record(source_part: &DecodeResult) {
     let (report, output) = write(&decoded);
 
     assert_eq!(unwritten(&report), Vec::<&str>::new());
-    let written = decode(output);
+    let written = decode_read_back(&output);
     assert!((length(named_parameter(written.ir(), &owner, &name)) - value).abs() <= 1.0e-9);
     let source = source(&decoded);
     let feature = decoded
@@ -389,6 +472,117 @@ fn a_parameter_edit_keeps_every_other_record(source_part: &DecodeResult) {
         ),
         Vec::<String>::new()
     );
+}
+
+/// The active configuration of `ir`.
+fn active(ir: &CadIr) -> &cadmpeg_ir::features::parameters::DesignConfiguration {
+    ir.model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.active)
+        .unwrap()
+}
+
+/// Whether the active configuration's row of `ir` carries the stale mark.
+fn active_stale(ir: &CadIr) -> bool {
+    crate::decode::configuration_source_needs_update(ir, active(ir))
+}
+
+/// The messages of the `export:evaluation.stale` losses.
+fn evaluation_stale(report: &ExportReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "evaluation.stale")
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// The writer regenerates no state: a written parameter edit marks the
+/// active configuration's row `swConfigurationNeedsUpdate`, and an
+/// `export:evaluation.stale` loss names the edit (§3.4, States).
+#[test]
+fn a_written_parameter_edit_marks_the_active_configuration_stale() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    assert!(!active_stale(decoded.ir()));
+    let (owner, name, _) = edit_extrusion_length(&mut decoded);
+    let parameter = named_parameter(decoded.ir(), &owner, &name).id.clone();
+
+    let (report, output) = write(&decoded);
+
+    assert!(active_stale(decode_read_back(&output).ir()));
+    assert!(
+        evaluation_stale(&report).iter().any(|message| {
+            message.contains(parameter.as_str()) && message.contains("swConfigurationNeedsUpdate")
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// A suppression edit is no construction edit, and it shapes the stored
+/// solid: it marks the active configuration's row, and
+/// `export:evaluation.stale` names the feature (§3.4, States).
+#[test]
+fn a_suppression_edit_marks_the_active_configuration_stale() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let feature = {
+        let mut ir = decoded.ir_mut();
+        let feature = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| is_extrusion(feature) && feature.suppressed != Some(true))
+            .unwrap();
+        feature.suppressed = Some(true);
+        feature.id.clone()
+    };
+
+    let (report, output) = write(&decoded);
+
+    assert!(
+        active_stale(decode_read_back(&output).ir()),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        evaluation_stale(&report)
+            .iter()
+            .any(|message| message.contains(feature.as_str())),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// A parameter's display is a record difference that shapes no state: the
+/// write marks no configuration and charges no `export:evaluation.stale`.
+#[test]
+fn a_parameter_display_edit_marks_no_configuration_stale() {
+    use cadmpeg_ir::features::parameters::DimensionDisplay;
+
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| {
+                parameter.display.is_none()
+                    && matches!(parameter.value, Some(ParameterValue::Length(_)))
+            })
+            .unwrap();
+        parameter.display = Some(DimensionDisplay::Radius);
+    }
+
+    let (report, output) = write(&decoded);
+
+    assert!(
+        !active_stale(decode_read_back(&output).ir()),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(evaluation_stale(&report), Vec::<&str>::new());
 }
 
 #[test]
@@ -424,7 +618,7 @@ fn a_rename_keeps_every_other_record(source_part: &DecodeResult, selected: fn(&F
 
     assert_eq!(unwritten(&report), Vec::<&str>::new());
     assert_eq!(stale(&report), Vec::<&str>::new());
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let source = source(&decoded);
     let id = decoded
         .ir()
@@ -595,7 +789,7 @@ fn a_kept_fillet_does_not_name_the_radius_its_parameter_carries() {
         "{}",
         unwritten[0]
     );
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let fillet = written
         .ir()
         .model
@@ -660,7 +854,7 @@ fn a_fillet_radius_definition_edit_is_written() {
 
     assert_eq!(unwritten(&report), Vec::<&str>::new());
     assert_eq!(stale(&report).len(), 1, "{:?}", report.losses);
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let fillet = written
         .ir()
         .model
@@ -824,7 +1018,7 @@ fn an_integer_value_bound_to_a_scalar_is_written_exactly() {
     )
     .unwrap();
 
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let scalar = sldprt_native(written.ir())
         .feature_input_lanes
         .iter()
@@ -862,7 +1056,7 @@ fn a_value_the_expression_does_not_state_is_named_and_not_called_written() {
 
     let (report, output) = write(&decoded);
 
-    let unwritten = messages(&report, SldprtLossCode::WriterParameterEditUnwritten);
+    let unwritten = unwritten(&report);
     assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
     assert!(unwritten[0].contains(id.as_str()), "{}", unwritten[0]);
     assert_eq!(stale(&report), Vec::<&str>::new());
@@ -870,7 +1064,7 @@ fn a_value_the_expression_does_not_state_is_named_and_not_called_written() {
     assert_eq!(
         readback::unnamed(
             readback::beyond(
-                readback::diff(source.ir(), decode(output).ir()),
+                readback::diff(source.ir(), decode_read_back(&output).ir()),
                 &readback::baseline(&source)
             ),
             &all_messages(&report)
@@ -1093,7 +1287,7 @@ fn a_plane_distance_edit_reads_back_as_the_source_or_as_edited() {
 
     let (report, output) = write(&decoded);
 
-    let unwritten = messages(&report, SldprtLossCode::WriterFeatureEditUnwritten);
+    let unwritten = unwritten(&report);
     assert!(
         unwritten
             .iter()
@@ -1104,7 +1298,7 @@ fn a_plane_distance_edit_reads_back_as_the_source_or_as_edited() {
     assert_eq!(
         readback::unnamed(
             readback::beyond(
-                readback::diff(source.ir(), decode(output).ir()),
+                readback::diff(source.ir(), decode_read_back(&output).ir()),
                 &readback::baseline(&source)
             ),
             &all_messages(&report)
@@ -1132,7 +1326,7 @@ fn a_held_back_edit_names_only_its_own_feature() {
 
     let (report, output) = write(&decoded);
 
-    let unwritten = messages(&report, SldprtLossCode::WriterFeatureEditUnwritten);
+    let unwritten = unwritten(&report);
     assert!(
         unwritten
             .iter()
@@ -1145,7 +1339,7 @@ fn a_held_back_edit_names_only_its_own_feature() {
             .all(|message| !message.contains(extrusion.as_str())),
         "{unwritten:?}"
     );
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let read = written
         .ir()
         .model
@@ -1185,7 +1379,7 @@ fn a_variant_edit_names_the_parameter_its_record_gains() {
         "{:?}",
         report.losses
     );
-    let written = decode(output);
+    let written = decode_read_back(&output);
     assert!(written
         .ir()
         .model
@@ -1237,7 +1431,7 @@ fn a_swapped_pair_is_written_in_place_or_named() {
 
     let (report, output) = write(&decoded);
 
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let messages = all_messages(&report);
     for name in names {
         let asked = named_feature(decoded.ir(), name);
@@ -1288,7 +1482,7 @@ fn a_depth_edit_beside_a_removed_hole_is_carried() {
 
     let (report, output) = write(&decoded);
 
-    let written = decode(output);
+    let written = decode_read_back(&output);
     let mut wire = serde_json::to_value(
         named_feature(written.ir(), "Boss-Extrude1")
             .evaluation

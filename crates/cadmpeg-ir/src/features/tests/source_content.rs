@@ -51,7 +51,7 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
 }
 
 #[test]
-fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
+fn feature_membership_is_checked_on_the_feature_wire() {
     let mut feature = Feature {
         product_definition: None,
         id: FeatureId::mint("test:test:feature#owner").unwrap(),
@@ -91,13 +91,7 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     ] {
         let mut wire = original.clone();
         wire[field] = bad;
-        assert!(serde_json::from_value::<Feature>(wire.clone())
-            .unwrap_err()
-            .to_string()
-            .contains(field));
-        let mut model = serde_json::to_value(crate::document::Model::default()).unwrap();
-        model["features"] = serde_json::json!([wire]);
-        assert!(serde_json::from_value::<crate::document::Model>(model)
+        assert!(serde_json::from_value::<Feature>(wire)
             .unwrap_err()
             .to_string()
             .contains(field));

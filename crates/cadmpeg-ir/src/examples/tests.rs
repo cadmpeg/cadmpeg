@@ -7,7 +7,8 @@ use crate::validate::validate_neutral;
 
 #[test]
 fn directed_subd_sum_fixture_round_trips_and_validates() {
-    let ir = directed_subd_sum().unwrap();
+    let mut ir = directed_subd_sum().unwrap();
+    crate::examples::add_document_root(&mut ir);
     let report =
         crate::validate::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
@@ -98,6 +99,11 @@ fn unit_cube_has_expected_census() {
     assert_eq!(ir.geometry.points.len(), 8);
     assert_eq!(ir.geometry.surfaces.len(), 6);
     assert_eq!(ir.geometry.curves.len(), 12);
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition: {:?}", ir.model.product_definitions);
+    };
+    assert!(root.is_root());
+    assert_eq!(root.bodies, [ir.geometry.bodies[0].id.clone()]);
 }
 
 #[test]

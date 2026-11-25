@@ -93,26 +93,34 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "rhino:model:layer#284434a6-8100-1c94-6093-9b8d5a958003",
+          "items": [
+            {
+              "entity": {
+                "body": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
+                "kind": "body"
+              }
+            }
+          ],
+          "name": "Default",
+          "native_ref": "rhino:presentation:layer#284434a6-8100-1c94-6093-9b8d5a958003",
+          "visible": true
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [
@@ -123,7 +131,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -132,14 +139,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

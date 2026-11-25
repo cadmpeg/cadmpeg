@@ -3785,18 +3785,17 @@ fn decode_result(
     retained: (Annotations, Vec<UnknownRecord>, BTreeSet<ArenaClass>),
 ) -> Result<Decoded, CodecError> {
     let (annotations, unknowns, untyped) = retained;
-    // A scoped root lists no body: no member the design states produces one
-    // (interim, errata A1).
-    if ir.design.scopes.is_empty() {
-        ir.state_root_definition(
-            ctx,
-            cadmpeg_ir::ids::ProductDefinitionId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "model", "product-definition"),
-                cadmpeg_ir::identity_key!("root"),
-            ),
-            cadmpeg_ir::products::ExternalDocument::default(),
-        )?;
-    }
+    ir.state_root_definition(
+        ctx,
+        cadmpeg_ir::ids::ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "model", "product-definition"),
+            cadmpeg_ir::identity_key!("root"),
+        ),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
+    body.losses
+        .extend(crate::design_v11::state_unproduced(&mut ir));
+    crate::assemble::state_loopless_faces(&mut ir, &mut body.losses);
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {

@@ -1235,7 +1235,6 @@ pub(crate) mod tests {
                 .arena_as::<crate::native::joint::JointRecord>("joints")
                 .expect("joints");
             assert_eq!(restored_joints[0].parameters().raw("Suppressed"), Some(raw));
-            assert_eq!(restored.model.assembly_joints[0].suppressed, expected);
         }
     }
 }

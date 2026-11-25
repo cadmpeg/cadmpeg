@@ -33,9 +33,6 @@ pub(super) struct ChoiceSite {
 /// The values one record holds that the process rules check.
 #[derive(Default)]
 pub(super) struct Found {
-    /// The deepest JSON nesting inside the record, counting the record's own
-    /// object as one level.
-    pub(super) depth: usize,
     pub(super) choices: Vec<ChoiceSite>,
     /// Every `ParamRef`: a process dimension's binding and an expression's
     /// reference.
@@ -188,19 +185,23 @@ impl Capture {
                 },
             }),
             Self::ParamRef => {
-                if let Ok(reference) = serde_json::from_value(Value::Object(members)) {
+                if let Ok(reference) =
+                    cadmpeg_core::serde_erase::from_json_value(&Value::Object(members))
+                {
                     found.references.push((at, reference));
                 }
             }
             Self::PickContext => {
-                if let Ok(context) = serde_json::from_value(Value::Object(members)) {
+                if let Ok(context) =
+                    cadmpeg_core::serde_erase::from_json_value(&Value::Object(members))
+                {
                     found.contexts.push((at, context));
                 }
             }
             Self::Selection => {
                 if let Some(anchor) = members
                     .remove("at")
-                    .and_then(|value| serde_json::from_value(value).ok())
+                    .and_then(|value| cadmpeg_core::serde_erase::from_json_value(&value).ok())
                 {
                     found.anchors.push((at, anchor));
                 }
@@ -295,7 +296,6 @@ impl Reader {
 
     fn open(&mut self, container: Container) {
         self.containers.push(container);
-        self.found.depth = self.found.depth.max(self.containers.len());
     }
 
     /// The JSON pointer of the value about to be written.

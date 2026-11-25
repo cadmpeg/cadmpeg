@@ -1,26 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode modes, resource ceilings, and input-proportional allowances.
+//! Decode resource ceilings and input-proportional allowances.
 
-use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 const MIB: u64 = 1024 * 1024;
 const GIB: u64 = 1024 * MIB;
-
-/// Whether a successful decode may report mandatory transfer losses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, DeserializeName)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum DecodeMode {
-    /// Reject a completed decode that reports a mandatory transfer loss.
-    Strict,
-    /// Return the decoded result with its loss report.
-    #[default]
-    Salvage,
-}
 
 /// Absolute resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,21 +29,6 @@ pub struct ResourceLimits {
     /// Maximum active recursive nesting depth.
     #[serde(default = "default_max_recursion_depth")]
     pub max_recursion_depth: u64,
-    /// Maximum nesting depth of canonical expression text that reading CADIR
-    /// admits.
-    #[serde(default = "default_max_expression_depth")]
-    pub max_expression_depth: u64,
-    /// Maximum nesting depth of a `TopoName` that reading CADIR admits.
-    #[serde(default = "default_max_name_depth")]
-    pub max_name_depth: u64,
-    /// Maximum nesting depth of a `Picked` inside a pick that reading CADIR
-    /// admits.
-    #[serde(default = "default_max_pick_depth")]
-    pub max_pick_depth: u64,
-    /// Maximum nesting depth of a construction's nested constructions that
-    /// reading CADIR admits.
-    #[serde(default = "default_max_construction_depth")]
-    pub max_construction_depth: u64,
     /// Maximum depth of a chain of state bases that reading CADIR admits:
     /// the process states and evaluations with content that a chain of
     /// `ProcessBase::State` and `StateBase::Evaluation` bases passes through,
@@ -76,10 +47,6 @@ impl ResourceLimits {
             max_retained_bytes: 4 * GIB,
             max_entities: 64_000_000,
             max_recursion_depth: 256,
-            max_expression_depth: 64,
-            max_name_depth: 32,
-            max_pick_depth: 16,
-            max_construction_depth: 16,
             max_state_chain_depth: 4096,
         }
     }
@@ -93,10 +60,6 @@ impl ResourceLimits {
             max_retained_bytes: 512 * MIB,
             max_entities: 8_000_000,
             max_recursion_depth: 128,
-            max_expression_depth: 32,
-            max_name_depth: 16,
-            max_pick_depth: 8,
-            max_construction_depth: 8,
             max_state_chain_depth: 2048,
         }
     }
@@ -108,30 +71,26 @@ impl Default for ResourceLimits {
     }
 }
 
-/// Decode mode and resource ceilings.
+/// Decode resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DecodePolicy {
-    /// How mandatory transfer losses are handled.
-    pub mode: DecodeMode,
     /// The absolute ceilings.
     pub limits: ResourceLimits,
 }
 
 impl DecodePolicy {
-    /// The default desktop profile in salvage mode.
+    /// The default desktop profile.
     pub const fn desktop() -> Self {
         Self {
-            mode: DecodeMode::Salvage,
             limits: ResourceLimits::desktop(),
         }
     }
 
-    /// The tight service profile in salvage mode.
+    /// The tight service profile.
     pub const fn service() -> Self {
         Self {
-            mode: DecodeMode::Salvage,
             limits: ResourceLimits::service(),
         }
     }
@@ -171,22 +130,6 @@ const fn default_max_recursion_depth() -> u64 {
     ResourceLimits::desktop().max_recursion_depth
 }
 
-const fn default_max_expression_depth() -> u64 {
-    ResourceLimits::desktop().max_expression_depth
-}
-
-const fn default_max_name_depth() -> u64 {
-    ResourceLimits::desktop().max_name_depth
-}
-
-const fn default_max_pick_depth() -> u64 {
-    ResourceLimits::desktop().max_pick_depth
-}
-
-const fn default_max_construction_depth() -> u64 {
-    ResourceLimits::desktop().max_construction_depth
-}
-
 const fn default_max_state_chain_depth() -> u64 {
     ResourceLimits::desktop().max_state_chain_depth
 }
@@ -206,10 +149,6 @@ mod tests {
         assert_eq!(d.max_retained_bytes, 4 * GIB);
         assert_eq!(d.max_entities, 64_000_000);
         assert_eq!(d.max_recursion_depth, 256);
-        assert_eq!(d.max_expression_depth, 64);
-        assert_eq!(d.max_name_depth, 32);
-        assert_eq!(d.max_pick_depth, 16);
-        assert_eq!(d.max_construction_depth, 16);
         assert_eq!(d.max_state_chain_depth, 4096);
     }
 
@@ -222,10 +161,6 @@ mod tests {
         assert_eq!(s.max_retained_bytes, 512 * MIB);
         assert_eq!(s.max_entities, 8_000_000);
         assert_eq!(s.max_recursion_depth, 128);
-        assert_eq!(s.max_expression_depth, 32);
-        assert_eq!(s.max_name_depth, 16);
-        assert_eq!(s.max_pick_depth, 8);
-        assert_eq!(s.max_construction_depth, 8);
         assert_eq!(s.max_state_chain_depth, 2048);
     }
 
@@ -241,13 +176,6 @@ mod tests {
         assert_eq!(limits.max_retained_bytes, desktop.max_retained_bytes);
         assert_eq!(limits.max_entities, desktop.max_entities);
         assert_eq!(limits.max_recursion_depth, desktop.max_recursion_depth);
-        assert_eq!(limits.max_expression_depth, desktop.max_expression_depth);
-        assert_eq!(limits.max_name_depth, desktop.max_name_depth);
-        assert_eq!(limits.max_pick_depth, desktop.max_pick_depth);
-        assert_eq!(
-            limits.max_construction_depth,
-            desktop.max_construction_depth
-        );
         assert_eq!(limits.max_state_chain_depth, desktop.max_state_chain_depth);
     }
 
@@ -257,11 +185,15 @@ mod tests {
             "max_materialized_bytes",
             "max_collection_items",
             "max_work_units",
+            "max_expression_depth",
+            "max_name_depth",
+            "max_pick_depth",
+            "max_construction_depth",
         ] {
             let limits = format!(
                 r#"{{"max_input_bytes":1,"max_decompressed_bytes_total":2,"max_decompressed_bytes_per_expand":3,"{field}":4}}"#
             );
-            let policy = format!(r#"{{"mode":"salvage","limits":{limits}}}"#);
+            let policy = format!(r#"{{"limits":{limits}}}"#);
             let expected = format!("unknown field `{field}`");
             let error = serde_json::from_str::<ResourceLimits>(&limits).unwrap_err();
             assert!(error.to_string().contains(&expected), "{error}");

@@ -728,6 +728,7 @@ impl Fixture {
                 entities: &[],
                 profile_bodies: &[],
                 result_model: None,
+                result_states: None,
             },
         )
     }

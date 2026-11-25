@@ -9,7 +9,7 @@ use crate::test_support::projection::{base_fixture, changed, changed_fixture, se
 use crate::test_support::review::parameter;
 use crate::test_support::{fixture, Report};
 
-fn read(bytes: &[u8]) -> (Value, Report) {
+pub(super) fn read(bytes: &[u8]) -> (Value, Report) {
     let mut report = Report::default();
     let model = crate::test_support::read_bytes(
         std::path::Path::new("synthetic.onshape-bundle"),
@@ -17,7 +17,7 @@ fn read(bytes: &[u8]) -> (Value, Report) {
         &mut report,
     )
     .unwrap();
-    let mut wire = serde_json::to_value(model.ir.model).unwrap();
+    let mut wire = cadmpeg_test_support::wire::in_memory_json(&model.ir)["model"].take();
     wire["features"]
         .as_array_mut()
         .unwrap()
@@ -62,7 +62,7 @@ pub(super) fn replace_query(query: &mut Value, value: &Value) {
     ));
 }
 
-fn kinds(wire: &Value) -> Vec<&str> {
+pub(super) fn kinds(wire: &Value) -> Vec<&str> {
     wire["features"]
         .as_array()
         .unwrap()
@@ -440,7 +440,7 @@ fn zlib_cap_queries_refuse_unresolved_attachment_frames() {
 
 // A sketch on a side face: the zlib query names the face by its deterministic id
 // in the rollback state before the sketch, which supplies the face's plane.
-fn face_sketch_bundle(normal: [f64; 3], orientation: bool) -> Vec<u8> {
+pub(super) fn face_sketch_bundle(normal: [f64; 3], orientation: bool) -> Vec<u8> {
     use base64::Engine;
     let bytes = changed(|response| {
         let mut face_sketch = response["features"][0].clone();

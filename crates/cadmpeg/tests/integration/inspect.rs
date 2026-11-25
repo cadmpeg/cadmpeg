@@ -402,7 +402,7 @@ fn cadir_override_bypasses_native_detection() {
     let input = fixture(
         dir.path(),
         "no-extension",
-        &unit_cube().expect("unit cube fixture is admitted"),
+        &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
     );
     Command::cargo_bin("cadmpeg")
         .unwrap()

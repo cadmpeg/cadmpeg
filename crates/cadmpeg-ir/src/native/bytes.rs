@@ -243,10 +243,10 @@ impl<'de, T: TryFrom<Vec<u8>>> Deserialize<'de> for NativeBytes<T> {
 }
 
 impl<T> crate::schema::rewrite::typed::RewriteIdentities for NativeBytes<T> {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_native_value(
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _value: &mut serde_json::Value,
-        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
@@ -259,10 +259,10 @@ impl<T> crate::schema::rewrite::typed::RewriteIdentities for NativeBytes<T> {
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(self)
     }

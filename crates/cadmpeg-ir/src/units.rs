@@ -237,7 +237,7 @@ impl<const N: usize> NonzeroVector<N> {
 }
 
 macro_rules! vector_wire {
-    ($name:ident, $error:literal) => {
+    ($name:ident, $schema_name:literal, $error:literal) => {
         impl<const N: usize> Serialize for $name<N>
         where
             [f64; N]: Serialize,
@@ -264,7 +264,7 @@ macro_rules! vector_wire {
             [f64; N]: JsonSchema,
         {
             fn schema_name() -> std::borrow::Cow<'static, str> {
-                format!("{}{}", stringify!($name), N).into()
+                format!("{}{}", $schema_name, N).into()
             }
             fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
                 <[f64; N]>::json_schema(generator)
@@ -273,9 +273,15 @@ macro_rules! vector_wire {
     };
 }
 
-vector_wire!(FiniteVector, "coordinates must be finite");
+// `FiniteVector3` names the finite displacement of `features::geometry`.
+vector_wire!(
+    FiniteVector,
+    "FiniteCoordinates",
+    "coordinates must be finite"
+);
 vector_wire!(
     NonzeroVector,
+    "NonzeroVector",
     "coordinates must be finite with squared norm greater than epsilon"
 );
 
@@ -692,7 +698,21 @@ fn divided_by_largest_component(value: Vector3, largest: f64) -> Vector3 {
 impl TryFrom<Vector3> for UnitVector3 {
     type Error = &'static str;
     fn try_from(value: Vector3) -> Result<Self, Self::Error> {
-        Self::new(value).ok_or("direction must have unit length")
+        Self::new(value)
+            .or_else(|| {
+                let unit = Self::normalized(value)?;
+                cadmpeg_core::read_session::repair(
+                    cadmpeg_core::read_session::Repair::Value,
+                    || {
+                        format!(
+                            "direction {:?} is normalized to unit length",
+                            [value.x, value.y, value.z]
+                        )
+                    },
+                )
+                .then_some(unit)
+            })
+            .ok_or("direction must have unit length")
     }
 }
 impl From<UnitVector3> for Vector3 {
@@ -793,7 +813,17 @@ impl UnitVector2 {
 impl TryFrom<[f64; 2]> for UnitVector2 {
     type Error = &'static str;
     fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
-        Self::new(value).ok_or("a planar direction has unit length")
+        Self::new(value)
+            .or_else(|| {
+                let (direction, _) = HypotDirection2::normalized_with_length(value)?;
+                let unit = Self::new(direction.0.get())?;
+                cadmpeg_core::read_session::repair(
+                    cadmpeg_core::read_session::Repair::Value,
+                    || format!("planar direction {value:?} is normalized to unit length"),
+                )
+                .then_some(unit)
+            })
+            .ok_or("a planar direction has unit length")
     }
 }
 impl From<UnitVector2> for [f64; 2] {

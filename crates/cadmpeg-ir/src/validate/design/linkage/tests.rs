@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::ContentScope;
+use cadmpeg_core::decode::{ArenaClass, ContentScope};
 use serde_json::Map;
 
 use crate::design::construction::{AxisValue, Construction};
@@ -10,12 +10,15 @@ use crate::design::container::Container;
 use crate::design::feature::{Feature, FeatureOperation, Link, OperationFamily};
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::refs::Member;
+use crate::document::{ArenaName, CadIr, ScopeViolation};
 use crate::features::geometry::FinitePoint3;
 use crate::ids::Identity;
 use crate::math::Point3;
+use crate::report::Severity;
 use crate::units::UnitVector3;
 use crate::validate::design::fixture::{
-    assert_finding, assert_no_design_finding, document, feature, unresolved,
+    assert_finding, assert_no_design_finding, configuration, design_findings, document, feature,
+    id, unresolved,
 };
 use crate::NativeRecord;
 
@@ -26,13 +29,91 @@ fn the_baseline_document_breaks_no_rule() {
     assert!(report.findings.is_empty(), "{:#?}", report.findings);
 }
 
+/// The scope findings of `ir`, as rule and message.
+fn scope_findings(ir: &CadIr) -> Vec<(String, String)> {
+    design_findings(ir)
+        .into_iter()
+        .filter(|finding| finding.rule.as_str().starts_with("design.scope-"))
+        .inspect(|finding| assert_eq!(finding.severity, Severity::Error))
+        .map(|finding| (finding.rule.as_str().to_owned(), finding.message))
+        .collect()
+}
+
+/// One finding per violation, under the rule of its variant.
+fn reported(violations: &[ScopeViolation]) -> Vec<(String, String)> {
+    violations
+        .iter()
+        .map(|violation| {
+            let rule = match violation {
+                ScopeViolation::Unmet { .. } => "design.scope-holds-class-without-required-class",
+                ScopeViolation::Populated { .. } => "design.scope-excluded-arena-holds-records",
+                ScopeViolation::Referenced { .. } => {
+                    "design.scope-excluded-class-referenced-another-arena"
+                }
+            };
+            (rule.to_owned(), violation.to_string())
+        })
+        .collect()
+}
+
 #[test]
-fn design_records_outside_the_scope_break_the_scope_invariants() {
+fn a_scope_that_holds_a_class_without_its_requirement_is_one_finding() {
+    let mut ir = CadIr::empty();
+    ir.set_scope(ContentScope::container().with(ArenaClass::Design, true));
+    let violations = ir.scope_violations();
+    assert_eq!(
+        violations,
+        [ScopeViolation::Unmet {
+            held: ArenaClass::Design,
+            required: ArenaClass::Model,
+        }]
+    );
+    assert_eq!(scope_findings(&ir), reported(&violations));
+}
+
+#[test]
+fn each_breach_of_the_scope_is_its_own_finding() {
     let mut ir = document();
-    let design = std::mem::take(&mut ir.design);
-    ir.set_scope(ContentScope::geometry()).unwrap();
-    ir.design = design;
-    assert_finding(&ir, "breaks the scope invariants");
+    ir.model
+        .solver_settings
+        .push(crate::physics::solver::SolverSettings {
+            id: crate::ids::SolverSettingsId::mint("test:model:solver#hinge").unwrap(),
+            solver: "physx".to_owned(),
+            schema: "PhysxJointAPI".to_owned(),
+            target: crate::physics::solver::SolverTarget::Joint {
+                joint: id("feature", "hinge"),
+            }
+            .into(),
+            values: BTreeMap::new(),
+            native_ref: None,
+        });
+    ir.set_scope(ContentScope::geometry());
+    let violations = ir.scope_violations();
+    assert!(violations.contains(&ScopeViolation::Populated {
+        arena: ArenaName::parse("design.scopes").unwrap(),
+    }));
+    assert!(violations.contains(&ScopeViolation::Populated {
+        arena: ArenaName::parse("design.features").unwrap(),
+    }));
+    assert!(violations.contains(&ScopeViolation::Referenced {
+        class: ArenaClass::Design,
+        arena: ArenaName::parse("solver_settings").unwrap(),
+    }));
+    assert_eq!(scope_findings(&ir), reported(&violations));
+
+    ir.set_scope(ContentScope::container().with(ArenaClass::Design, true));
+    let violations = ir.scope_violations();
+    assert_eq!(
+        violations[0],
+        ScopeViolation::Unmet {
+            held: ArenaClass::Design,
+            required: ArenaClass::Model,
+        }
+    );
+    assert!(violations.contains(&ScopeViolation::Populated {
+        arena: ArenaName::parse("bodies").unwrap(),
+    }));
+    assert_eq!(scope_findings(&ir), reported(&violations));
 }
 
 #[test]
@@ -42,6 +123,18 @@ fn design_identities_are_unique() {
         .features
         .push(unresolved("fillet", OperationFamily::Fillet));
     assert_finding(&ir, "is not unique among the design records");
+}
+
+#[test]
+fn a_design_record_shares_no_id_with_a_model_record() {
+    let mut ir = document();
+    let mut shared = configuration("shared", None);
+    shared.id = id("definition", "part");
+    ir.design.configurations.push(shared);
+    assert_finding(
+        &ir,
+        "design.configurations record id is also the id of a product_definitions record",
+    );
 }
 
 /// A datum axis feature whose record and link name native records.

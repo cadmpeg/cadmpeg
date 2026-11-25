@@ -250,22 +250,6 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
     }
 }
 
-#[test]
-fn current_json_without_configurations_is_refused() {
-    let ir = unit_cube().expect("valid unit cube fixture");
-    let mut value = serde_json::to_value(&ir).unwrap();
-    value
-        .get_mut("model")
-        .and_then(serde_json::Value::as_object_mut)
-        .unwrap()
-        .remove("configurations");
-
-    let error = serde_json::from_value::<CadIr>(value)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("missing field `configurations`"), "{error}");
-}
-
 /// A tree node `parent` that owns `child`, its one history child.
 fn tree_node_model() -> (
     Model,
@@ -330,7 +314,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 
     let (model, parent_id, child_id) = tree_node_model();
-    let value = serde_json::to_value(&model).unwrap();
+    let value = serde_json::to_value(model.sorted_omitted()).unwrap();
     assert!(value["features"][1].get("parent").is_none());
     assert!(value["features"][1].get("regeneration_parent").is_none());
     assert_eq!(
@@ -338,7 +322,6 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         child_id.as_str()
     );
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
-    assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);
 
     let mut regeneration = Model {
         features: vec![
@@ -380,106 +363,11 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     regeneration
         .set_feature_regeneration_parent(&(child_id), &(parent_id.clone()))
         .unwrap();
-    let value = serde_json::to_value(&regeneration).unwrap();
+    let value = serde_json::to_value(regeneration.sorted_omitted()).unwrap();
     assert_eq!(
         value["features"][1]["regeneration_parent"],
         parent_id.as_str()
     );
-    assert_eq!(
-        serde_json::from_value::<Model>(value).unwrap(),
-        regeneration
-    );
-}
-
-/// The deleted `parent` key is refused at the level it was deleted from.
-#[test]
-fn feature_wire_refuses_the_deleted_parent_key() {
-    let (model, parent_id, _) = tree_node_model();
-    let mut wire = serde_json::to_value(&model).unwrap();
-    wire["features"][1]["parent"] = serde_json::json!(parent_id.as_str());
-    let error = serde_json::from_value::<Model>(wire)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("unknown field `parent`"), "{error}");
-}
-
-/// A tree child cannot also state a regeneration predecessor.
-#[test]
-fn feature_parent_wire_rejects_disagreement_with_tree_children() {
-    use crate::features::tree::FeatureTreeNodeRole;
-    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-
-    let first_id = FeatureId::mint("test:model:feature#1-first").expect("identity grammar");
-    let second_id = FeatureId::mint("test:model:feature#2-second").expect("identity grammar");
-    let child_id = FeatureId::mint("test:model:feature#3-child").expect("identity grammar");
-    let model = Model {
-        features: vec![
-            Feature {
-                product_definition: None,
-                id: first_id,
-                ordinal: 0,
-                name: None,
-                suppressed: None,
-                dependencies: crate::features::selections::DistinctMembers::default(),
-                source_properties: std::collections::BTreeMap::default(),
-                source_tag: None,
-                source_text: None,
-                source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                        role: FeatureTreeNodeRole::History,
-                        children: crate::features::tree::TreeChildren::new(
-                            vec![child_id.clone()],
-                            None,
-                        )
-                        .unwrap(),
-                    }),
-                ),
-                native_ref: None,
-            },
-            Feature {
-                product_definition: None,
-                id: second_id.clone(),
-                ordinal: 1,
-                name: None,
-                suppressed: None,
-                dependencies: crate::features::selections::DistinctMembers::default(),
-                source_properties: std::collections::BTreeMap::default(),
-                source_tag: None,
-                source_text: None,
-                source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-                ),
-                native_ref: None,
-            },
-            Feature {
-                product_definition: None,
-                id: child_id,
-                ordinal: 2,
-                name: None,
-                suppressed: None,
-                dependencies: crate::features::selections::DistinctMembers::default(),
-                source_properties: std::collections::BTreeMap::default(),
-                source_tag: None,
-                source_text: None,
-                source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-                ),
-                native_ref: None,
-            },
-        ],
-        ..Model::default()
-    };
-    let mut value = serde_json::to_value(model).unwrap();
-    value["features"][2]["regeneration_parent"] =
-        serde_json::Value::String(second_id.into_string());
-
-    let error = serde_json::from_value::<Model>(value)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("states no regeneration parent"), "{error}");
 }
 
 #[test]
@@ -651,44 +539,6 @@ fn procedural_curve_attachment_moves_solved_cache() {
 }
 
 #[test]
-fn current_json_without_parameters_is_refused() {
-    let ir = unit_cube().expect("valid unit cube fixture");
-    let mut value = serde_json::to_value(&ir).unwrap();
-    value
-        .get_mut("model")
-        .and_then(serde_json::Value::as_object_mut)
-        .unwrap()
-        .remove("parameters");
-
-    let error = serde_json::from_value::<CadIr>(value)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("missing field `parameters`"), "{error}");
-}
-
-#[test]
-fn current_json_without_a_sketch_arena_is_refused() {
-    let ir = unit_cube().expect("valid unit cube fixture");
-    let document = serde_json::to_value(&ir).unwrap();
-    for arena in ["sketches", "sketch_entities", "sketch_constraints"] {
-        let mut value = document.clone();
-        value
-            .get_mut("model")
-            .and_then(serde_json::Value::as_object_mut)
-            .unwrap()
-            .remove(arena);
-
-        let error = serde_json::from_value::<CadIr>(value)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains(&format!("missing field `{arena}`")),
-            "{error}"
-        );
-    }
-}
-
-#[test]
 fn json_round_trips_and_is_deterministic() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let json1 = ir.to_canonical_json().unwrap();
@@ -739,25 +589,73 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     let canonical = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
-        (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
-        (Some(serde_json::Value::String("8".into())), "Some(\"8\")"),
-        (Some(serde_json::Value::String("9".into())), "Some(\"9\")"),
-        (Some(serde_json::Value::String("12".into())), "Some(\"12\")"),
-        (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
-        (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
-        (Some(serde_json::Value::String("35".into())), "Some(\"35\")"),
-        (Some(serde_json::Value::String("34".into())), "Some(\"34\")"),
-        (Some(serde_json::Value::String("33".into())), "Some(\"33\")"),
-        (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
-        (Some(serde_json::Value::String("14".into())), "Some(\"14\")"),
-        (Some(serde_json::Value::String("15".into())), "Some(\"15\")"),
-        (Some(serde_json::Value::String("16".into())), "Some(\"16\")"),
-        (Some(serde_json::Value::String("17".into())), "Some(\"17\")"),
-        (Some(serde_json::Value::String("29".into())), "Some(\"29\")"),
-        (None, "None"),
-        (Some(serde_json::Value::Number(1.into())), "None"),
+        (
+            Some(serde_json::Value::String("7".into())),
+            "unsupported ir_version \"7\"",
+        ),
+        (
+            Some(serde_json::Value::String("8".into())),
+            "unsupported ir_version \"8\"",
+        ),
+        (
+            Some(serde_json::Value::String("9".into())),
+            "unsupported ir_version \"9\"",
+        ),
+        (
+            Some(serde_json::Value::String("12".into())),
+            "unsupported ir_version \"12\"",
+        ),
+        (
+            Some(serde_json::Value::String("37".into())),
+            "unsupported ir_version \"37\"",
+        ),
+        (
+            Some(serde_json::Value::String("36".into())),
+            "unsupported ir_version \"36\"",
+        ),
+        (
+            Some(serde_json::Value::String("35".into())),
+            "unsupported ir_version \"35\"",
+        ),
+        (
+            Some(serde_json::Value::String("34".into())),
+            "unsupported ir_version \"34\"",
+        ),
+        (
+            Some(serde_json::Value::String("33".into())),
+            "unsupported ir_version \"33\"",
+        ),
+        (
+            Some(serde_json::Value::String("0".into())),
+            "unsupported ir_version \"0\"",
+        ),
+        (
+            Some(serde_json::Value::String("14".into())),
+            "unsupported ir_version \"14\"",
+        ),
+        (
+            Some(serde_json::Value::String("15".into())),
+            "unsupported ir_version \"15\"",
+        ),
+        (
+            Some(serde_json::Value::String("16".into())),
+            "unsupported ir_version \"16\"",
+        ),
+        (
+            Some(serde_json::Value::String("17".into())),
+            "unsupported ir_version \"17\"",
+        ),
+        (
+            Some(serde_json::Value::String("29".into())),
+            "unsupported ir_version \"29\"",
+        ),
+        (None, "no `ir_version`"),
+        (
+            Some(serde_json::Value::Number(1.into())),
+            "unsupported ir_version 1",
+        ),
     ] {
-        let expected = format!("unsupported ir_version {found}; expected {expected_version}");
+        let expected = format!("{found}; expected {expected_version}");
         let mut value = canonical.clone();
         let object = value.as_object_mut().unwrap();
         match version {
@@ -854,111 +752,105 @@ fn a_geometry_document_without_design_records_round_trips() {
 }
 
 #[test]
-fn a_scope_missing_a_required_class_fails_to_parse() {
+fn a_scope_missing_a_required_class_reads_and_writes_as_stated() {
     let ir = CadIr::empty();
-    for (scope, expected) in [
-        (
-            serde_json::json!({"model": false, "design": true, "process": false}),
-            "the scope holds design but excludes model",
-        ),
-        (
-            serde_json::json!({"model": true, "design": false, "process": true}),
-            "the scope holds process but excludes design",
-        ),
+    for (held, required) in [
+        (ArenaClass::Design, ArenaClass::Model),
+        (ArenaClass::Process, ArenaClass::Design),
     ] {
-        let error = CadIr::from_json(&with_scope(&ir, scope)).unwrap_err();
-        assert!(error.to_string().contains(expected), "{error}");
+        let scope = ContentScope::full()
+            .with(required, false)
+            .with(ArenaClass::Process, held == ArenaClass::Process);
+        let mut set = ir.clone();
+        set.set_scope(scope);
+        assert_eq!(set.scope(), scope);
+        let violation = ScopeViolation::Unmet { held, required };
+        assert_eq!(set.scope_violations(), [violation]);
+        assert_eq!(
+            violation.to_string(),
+            format!(
+                "the document's scope holds {held} but excludes {required}, which {held} requires"
+            )
+        );
+        let read =
+            CadIr::from_json(&with_scope(&ir, serde_json::to_value(scope).unwrap())).unwrap();
+        assert_eq!(read.scope(), scope);
+        assert_eq!(read.scope_violations(), [violation]);
+        assert_eq!(
+            serde_json::to_value(&read).unwrap()["scope"],
+            serde_json::to_value(scope).unwrap()
+        );
     }
 }
 
 #[test]
-fn set_scope_refuses_a_scope_missing_a_required_class() {
-    let mut ir = CadIr::empty();
-    let design_without_model = ContentScope {
-        model: false,
-        design: true,
-        process: false,
-    };
-    assert_eq!(
-        ir.set_scope(design_without_model),
-        Err(ScopeViolation {
-            class: ArenaClass::Model,
-            arena: None,
-        })
-    );
-    let process_without_design = ContentScope {
-        model: true,
-        design: false,
-        process: true,
-    };
-    assert_eq!(
-        ir.set_scope(process_without_design),
-        Err(ScopeViolation {
-            class: ArenaClass::Design,
-            arena: None,
-        })
-    );
-    assert_eq!(ir.scope(), ContentScope::full());
-}
-
-#[test]
-fn a_document_with_records_of_an_excluded_class_fails_to_parse() {
+fn a_document_with_records_of_an_excluded_class_reads_and_names_each_arena() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model
-        .parameters
-        .push(parameter("synthetic:test:parameter#depth"));
+    ir.design.scopes.push(crate::design::scope::DesignScope {
+        definition: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
+            .unwrap(),
+        roots: Vec::new(),
+        active_configuration: None,
+        active_arrangements: std::collections::BTreeSet::new(),
+        occurrences: std::collections::BTreeMap::new(),
+        current: Vec::new(),
+        unproduced: std::collections::BTreeSet::new(),
+    });
     assert_eq!(
         ir.populated_arena(ArenaClass::Design)
             .map(ArenaName::as_str),
-        Some("parameters")
+        Some("design.scopes")
+    );
+    let bodies = ScopeViolation::Populated {
+        arena: ArenaName::parse("bodies").unwrap(),
+    };
+    let scopes = ScopeViolation::Populated {
+        arena: ArenaName::parse("design.scopes").unwrap(),
+    };
+    assert_eq!(
+        bodies.to_string(),
+        "the document's scope excludes model but model arena `bodies` holds records"
+    );
+    assert_eq!(
+        scopes.to_string(),
+        "the document's scope excludes design but design arena `design.scopes` holds records"
     );
     for (scope, expected) in [
-        (
-            serde_json::json!({"model": false, "design": false, "process": false}),
-            "the document's scope excludes model but model arena `bodies` holds records",
-        ),
-        (
-            serde_json::json!({"model": true, "design": false, "process": false}),
-            "the document's scope excludes design but design arena `parameters` holds records",
-        ),
+        (ContentScope::container(), vec![bodies, scopes]),
+        (ContentScope::geometry(), vec![scopes]),
+        (ContentScope::design(), vec![]),
     ] {
-        let json = with_scope(&ir, scope);
-        let error = CadIr::from_json(&json).unwrap_err();
-        assert!(error.to_string().contains(expected), "{error}");
-        let direct = serde_json::from_str::<CadIr>(&json).unwrap_err();
-        assert!(direct.to_string().contains(expected), "{direct}");
+        let json = with_scope(&ir, serde_json::to_value(scope).unwrap());
+        let read = CadIr::from_json(&json).unwrap();
+        assert_eq!(read.scope(), scope);
+        assert_eq!(serde_json::from_str::<CadIr>(&json).unwrap(), read);
+        let violations = read.scope_violations();
+        for violation in &expected {
+            assert!(violations.contains(violation), "{violations:?}");
+        }
+        assert_eq!(violations.is_empty(), expected.is_empty(), "{violations:?}");
     }
-    assert!(CadIr::from_json(&with_scope(
-        &ir,
-        serde_json::json!({"model": true, "design": true, "process": false})
-    ))
-    .is_ok());
 }
 
 #[test]
-fn a_design_record_outside_the_scope_is_refused_on_set_and_on_write() {
+fn a_design_record_outside_the_scope_is_kept_on_set_and_on_write() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_scope(ContentScope::geometry()).unwrap();
+    ir.set_scope(ContentScope::geometry());
     ir.model
         .parameters
         .push(parameter("synthetic:test:parameter#depth"));
-    let parameters = ArenaName::ALL
-        .iter()
-        .copied()
-        .find(|arena| arena.as_str() == "parameters");
-    let violation = ScopeViolation {
-        class: ArenaClass::Design,
-        arena: parameters,
+    let violation = ScopeViolation::Populated {
+        arena: ArenaName::parse("parameters").unwrap(),
     };
-    assert_eq!(ir.check_scope(), Err(violation));
-    assert_eq!(ir.set_scope(ContentScope::geometry()), Err(violation));
-    let error = serde_json::to_string(&ir).unwrap_err();
-    assert!(
-        error.to_string().contains(&violation.to_string()),
-        "{error}"
+    assert_eq!(ir.scope_violations(), [violation]);
+    ir.set_scope(ContentScope::geometry());
+    assert_eq!(ir.scope(), ContentScope::geometry());
+    assert_eq!(
+        serde_json::to_value(&ir).unwrap()["scope"],
+        serde_json::to_value(ContentScope::geometry()).unwrap()
     );
-    ir.set_scope(ContentScope::design()).unwrap();
-    assert!(serde_json::to_string(&ir).is_ok());
+    ir.set_scope(ContentScope::design());
+    assert!(ir.scope_violations().is_empty());
 }
 
 #[test]
@@ -1132,7 +1024,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         .unwrap();
     assert_eq!(model.feature_tree_parent(&child_id), None);
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
-    let wire = serde_json::to_value(&model).unwrap();
+    let wire = serde_json::to_value(model.sorted_omitted()).unwrap();
     assert_eq!(
         wire["features"][0]["definition"]["value"]["value"]["children"],
         serde_json::json!({"children": []})
@@ -1142,19 +1034,6 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         parent_id.as_str()
     );
     assert!(wire["features"][1].get("parent").is_none());
-    assert_eq!(
-        serde_json::from_value::<Model>(wire.clone()).unwrap(),
-        model
-    );
-
-    // The structural edge is stated once, by the owning tree node's children.
-    let mut owned = wire;
-    owned["features"][0]["definition"]["value"]["value"]["children"]["children"] =
-        serde_json::json!([child_id.as_str()]);
-    let error = serde_json::from_value::<Model>(owned)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("states no regeneration parent"), "{error}");
 }
 
 /// Every optional feature key is left out when it holds no value, so a stated
@@ -1180,25 +1059,24 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
         ),
         native_ref: None,
     });
-    let canonical = ir.to_canonical_json().unwrap();
-    let document: serde_json::Value = serde_json::from_str(&canonical).unwrap();
+    let feature = serde_json::to_value(&ir.model.features[0]).unwrap();
 
     for key in [
         "product_definition",
         "name",
         "suppressed",
-        "regeneration_parent",
         "source_tag",
         "source_text",
         "native_ref",
     ] {
-        let mut value = document.clone();
-        value["model"]["features"][0]
+        let mut value = feature.clone();
+        value
             .as_object_mut()
             .unwrap()
             .insert(key.to_owned(), serde_json::Value::Null);
-        let json = serde_json::to_string(&value).unwrap();
-        let error = CadIr::from_json(&json).unwrap_err().to_string();
+        let error = serde_json::from_value::<Feature>(value)
+            .unwrap_err()
+            .to_string();
         assert!(
             error.contains("this key states a value or is left out; it does not state null"),
             "feature.{key}: {error}"
@@ -1277,7 +1155,7 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
             crate::features::FeatureId::mint("synthetic:test:feature#cut").unwrap(),
         ),
     };
-    let attributes = ArenaName::parse("attributes");
+    let attributes = ArenaName::parse("attributes").unwrap();
     for record in [
         attribute(
             AttributeTarget::Configuration(configuration).into(),
@@ -1299,33 +1177,27 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         ),
     ] {
         let mut ir = unit_cube().expect("valid unit cube fixture");
-        ir.set_scope(ContentScope::geometry()).unwrap();
+        ir.set_scope(ContentScope::geometry());
         ir.model.attributes.push(record);
-        let violation = ScopeViolation {
+        let violation = ScopeViolation::Referenced {
             class: ArenaClass::Design,
             arena: attributes,
         };
-        assert_eq!(ir.check_scope(), Err(violation));
+        assert_eq!(ir.scope_violations(), [violation]);
         assert_eq!(
             violation.to_string(),
             "the document's scope excludes design but model arena `attributes` holds a reference into it"
         );
-        assert!(serde_json::to_string(&ir).is_err());
-        ir.set_scope(ContentScope::design()).unwrap();
         let json = serde_json::to_string(&ir).unwrap();
-        let error = CadIr::from_json(&with_scope(
-            &CadIr::from_json(&json).unwrap(),
-            serde_json::json!({"model": true, "design": false, "process": false}),
-        ))
-        .unwrap_err();
-        assert!(
-            error.to_string().contains(&violation.to_string()),
-            "{error}"
-        );
+        let read = CadIr::from_json(&json).unwrap();
+        assert_eq!(read.scope(), ContentScope::geometry());
+        assert_eq!(read.scope_violations(), [violation]);
+        ir.set_scope(ContentScope::design());
+        assert!(ir.scope_violations().is_empty());
     }
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_scope(ContentScope::geometry()).unwrap();
+    ir.set_scope(ContentScope::geometry());
     ir.model
         .declared_measures
         .push(crate::declared_measures::DeclaredMeasure::new(
@@ -1336,16 +1208,44 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
             },
         ));
     assert_eq!(
-        ir.check_scope(),
-        Err(ScopeViolation {
+        ir.scope_violations(),
+        [ScopeViolation::Referenced {
             class: ArenaClass::Design,
-            arena: ArenaName::parse("declared_measures"),
-        })
+            arena: ArenaName::parse("declared_measures").unwrap(),
+        }]
     );
 }
 
 #[test]
-fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
+fn a_solver_setting_of_a_joint_reads_the_design() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.set_scope(ContentScope::geometry());
+    ir.model
+        .solver_settings
+        .push(crate::physics::solver::SolverSettings {
+            id: crate::ids::SolverSettingsId::mint("synthetic:test:solver#joint").unwrap(),
+            solver: "physx".to_owned(),
+            schema: "PhysxJointAPI".to_owned(),
+            target: crate::physics::solver::SolverTarget::Joint {
+                joint: crate::features::FeatureId::mint("synthetic:test:feature#hinge").unwrap(),
+            }
+            .into(),
+            values: std::collections::BTreeMap::new(),
+            native_ref: None,
+        });
+    assert_eq!(
+        ir.scope_violations(),
+        [ScopeViolation::Referenced {
+            class: ArenaClass::Design,
+            arena: ArenaName::parse("solver_settings").unwrap(),
+        }]
+    );
+    ir.set_scope(ContentScope::design());
+    assert!(ir.scope_violations().is_empty());
+}
+
+#[test]
+fn an_arena_out_of_order_is_written_sorted_and_the_strict_reader_refuses_it() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let sorted = serde_json::to_value(&ir).expect("a sorted document writes");
     assert!(ir.geometry.points.len() >= 2);
@@ -1372,14 +1272,47 @@ fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
     assert_eq!(points.len(), ir.geometry.points.len() + 1);
     assert_eq!(points[0]["native_ref"], "the later copy");
 
-    // Reading adds no refusal and no repair of its own (item Q).
+    // The strict reader refuses an arena out of order and a repeated id.
     let mut swapped = sorted;
     swapped["geometry"]["points"]
         .as_array_mut()
         .unwrap()
         .swap(0, 1);
-    let read = CadIr::from_json(&swapped.to_string()).expect("an arena out of order reads");
-    assert_eq!(read.geometry.points, unsorted.geometry.points);
-    let read = CadIr::from_json(&wire.to_string()).expect("a repeated id reads");
-    assert_eq!(read.geometry.points.len(), ir.geometry.points.len() + 1);
+    assert!(CadIr::from_json(&swapped.to_string()).is_err());
+    assert!(CadIr::from_json(&wire.to_string()).is_err());
+}
+
+/// The wire writes every `model` arena but those the registry marks omitted,
+/// and the reader refuses those.
+#[test]
+fn model_wire_omits_exactly_the_marked_arenas() {
+    let value = serde_json::to_value(super::Model::default()).unwrap();
+    let written: std::collections::BTreeSet<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let expected: std::collections::BTreeSet<&str> = super::ArenaName::ALL
+        .iter()
+        .filter(|arena| arena.home() == super::ArenaHome::Model)
+        .filter(|arena| !super::ArenaName::WIRE_OMITTED.contains(arena))
+        .map(|arena| arena.key())
+        .collect();
+    assert_eq!(written, expected);
+    assert!(super::ArenaName::WIRE_OMITTED
+        .iter()
+        .all(|arena| arena.home() == super::ArenaHome::Model));
+    assert_eq!(super::ArenaName::WIRE_OMITTED.len(), 14);
+}
+
+/// A model read from CADIR JSON says it does not hold the omitted arenas, and
+/// equality compares records only.
+#[test]
+fn cadir_read_marks_omitted_arenas_not_read() {
+    let ir = crate::examples::unit_cube().unwrap();
+    let read = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
+    assert!(ir.model.omitted_arenas_held());
+    assert!(!read.model.omitted_arenas_held());
+    assert_eq!(read, ir);
 }

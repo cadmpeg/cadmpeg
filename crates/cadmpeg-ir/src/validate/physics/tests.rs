@@ -43,3 +43,39 @@ fn a_collider_names_an_existing_body_and_material() {
         .any(|message| message.contains("physical material")));
     assert!(findings.iter().any(|message| message.contains("body")));
 }
+
+#[test]
+fn a_solver_setting_names_a_joint_feature() {
+    use crate::design::feature::OperationFamily;
+    use crate::physics::solver::{SolverSettings, SolverTarget};
+    use crate::validate::design::fixture::{feature, unresolved};
+
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.design.features = vec![
+        unresolved("hinge", OperationFamily::Joint),
+        unresolved("sketch", OperationFamily::Sketch),
+    ];
+    let settings = |key: &str| SolverSettings {
+        id: crate::ids::SolverSettingsId::mint(format!("test:model:solver#{key}")).unwrap(),
+        solver: "physx".to_owned(),
+        schema: "PhysxJointAPI".to_owned(),
+        target: SolverTarget::Joint {
+            joint: feature(key),
+        }
+        .into(),
+        values: std::collections::BTreeMap::new(),
+        native_ref: None,
+    };
+    ir.model.solver_settings = vec![settings("hinge"), settings("missing"), settings("sketch")];
+    let findings: Vec<String> = referential_findings(&ir)
+        .into_iter()
+        .filter(|message| message.contains("joint feature"))
+        .collect();
+    assert_eq!(
+        findings,
+        [
+            "references missing joint feature `test:design:feature#missing`",
+            "references missing joint feature `test:design:feature#sketch`",
+        ],
+    );
+}

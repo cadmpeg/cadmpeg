@@ -654,6 +654,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
             .added,
         ["sldprt:test:configuration#0"]
     );
+    crate::examples::add_document_root(&mut right);
     let report = validate_neutral(&right, Vec::new()).expect("validate the neutral model");
     assert_eq!(report.entity_counts["native.f3d.act_guids"], 1);
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);
@@ -963,10 +964,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
 
     struct FieldOwner;
     impl RewriteIdentities for FieldOwner {
-        fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_native_value(
             ctx: &DecodeContext<'_>,
             value: &mut serde_json::Value,
-            map: &mut IdentityMap<'_, F>,
+            map: &mut IdentityMap<'_>,
         ) -> Result<(), CodecError> {
             Face::rewrite_native_value(ctx, value, map)
         }
@@ -977,10 +978,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         ) -> Result<(), CodecError> {
             Ok(())
         }
-        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_identities(
             self,
             _ctx: &DecodeContext<'_>,
-            _map: &mut IdentityMap<'_, F>,
+            _map: &mut IdentityMap<'_>,
         ) -> Result<Self, CodecError> {
             Ok(self)
         }

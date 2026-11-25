@@ -40,6 +40,31 @@ fn collect_law_curves<'a, R, V, P>(
     Ok(())
 }
 
+/// The surfaces, curves, pcurves, and points of `ir`'s geometry that no
+/// record reaches, as [`check_carrier_reachability`] reaches them. A
+/// fragment states none, since its carriers may be reached from outside it.
+pub(crate) fn unreached_carriers(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<std::collections::BTreeSet<String>, CodecError> {
+    if ir.fragment {
+        return Ok(std::collections::BTreeSet::new());
+    }
+    let mut findings = Vec::new();
+    check_carrier_reachability(
+        ctx,
+        crate::native::view::NativeView::new(ir, None),
+        &ir.geometry,
+        &mut findings,
+    )?;
+    let orphan = crate::rule_name!("carriers_parameterization.orphan-carrier");
+    Ok(findings
+        .into_iter()
+        .filter(|finding| finding.rule == orphan)
+        .filter_map(|finding| finding.entity)
+        .collect())
+}
+
 /// Every surface, curve, pcurve, and point carrier of `geometry` is reached:
 /// by a record of `geometry`, or by an appearance binding, a presentation
 /// layer item, or a native link of `view`'s document.
@@ -906,7 +931,11 @@ pub(super) fn check_carrier_reachability(
                         Check::CarrierReachability,
                         Severity::Error,
                         Some(id),
-                        format_args!("orphan {} carrier", $kind),
+                        crate::rule!(
+                            "carriers_parameterization.orphan-carrier",
+                            "orphan {} carrier",
+                            $kind
+                        ),
                     );
                 }
             }
@@ -961,7 +990,8 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(edge.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "carriers_parameterization.edge-parameter-range-outside-local-domain",
                         "edge parameter range [{start}, {end}] is outside the local domain \
                          [0, {span}] of its subset curve"
                     ),
@@ -1010,7 +1040,10 @@ pub(super) fn check_parameter_domains(
                 Check::ParameterDomain,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!("edge parameter range is outside its canonical carrier domain"),
+                crate::rule!(
+                    "carriers_parameterization.edge-parameter-range-outside-canonical-carrier",
+                    "edge parameter range is outside its canonical carrier domain"
+                ),
             );
         }
     }
@@ -1028,7 +1061,10 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
-                    format_args!("coedge use-curve names no curve carrier"),
+                    crate::rule!(
+                        "carriers_parameterization.coedge-use-curve-names-no-curve",
+                        "coedge use-curve names no curve carrier"
+                    ),
                 ),
                 Some(curve)
                     if !curve_range_in_domain(
@@ -1043,7 +1079,8 @@ pub(super) fn check_parameter_domains(
                         Check::ParameterDomain,
                         Severity::Error,
                         Some(coedge.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "carriers_parameterization.coedge-use-curve-range-outside-carrier",
                             "coedge use-curve range [{start}, {end}] is outside its carrier domain"
                         ),
                     );
@@ -1085,7 +1122,10 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
-                    format_args!("coedge pcurve range is outside its carrier domain"),
+                    crate::rule!(
+                        "carriers_parameterization.coedge-pcurve-range-outside-carrier-domain",
+                        "coedge pcurve range is outside its carrier domain"
+                    ),
                 );
             }
         }
