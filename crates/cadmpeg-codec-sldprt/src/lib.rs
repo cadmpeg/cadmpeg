@@ -318,14 +318,14 @@ impl SldprtCodec {
                 &source.source_fidelity.codec_digests
             };
             let result = writer::write_semantic_with_records_cached(
-                writer::SemanticSource {
-                    ir: &source.ir,
-                    annotations: &source.source_fidelity.annotations,
-                    digests: source_digests,
-                },
+                &source.ir,
+                &source.source_fidelity.annotations,
+                source_digests,
                 records,
-                &[],
-                &[],
+                writer::SemanticWriteControls {
+                    withheld: &[],
+                    shaped: &[],
+                },
                 &mut cache,
                 &mut bytes,
             )
@@ -345,14 +345,11 @@ impl SldprtCodec {
                 let mut bytes = Vec::new();
                 let mut cache = shared_cache.borrow_mut();
                 let output = writer::write_semantic_with_records_cached(
-                    writer::SemanticSource {
-                        ir,
-                        annotations,
-                        digests,
-                    },
+                    ir,
+                    annotations,
+                    digests,
                     records,
-                    withheld,
-                    shaped,
+                    writer::SemanticWriteControls { withheld, shaped },
                     &mut cache,
                     &mut bytes,
                 )?;
