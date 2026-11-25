@@ -1078,7 +1078,7 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<Option<LossNote>, Unw
             is_analytic_surface(surface) && !unbounded.contains(surface.id.as_str())
         }) {
             return Err(naming(surface.id.as_str())(CodecError::NotImplemented(format!(
-                "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; the writer restates it as a rational Type 128 only where each parameter curve of its faces is isoparametric",
+                "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; the writer restates it as a rational Type 128 only over a finite domain of at most one turn that holds its faces, and a cylinder or cone face that states no loop has no finite domain",
                 surface.id
             ))));
         }

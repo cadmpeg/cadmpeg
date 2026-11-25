@@ -3,31 +3,33 @@
 //! the writer computes their parameter curves, closes each parameter loop at
 //! a pole or apex, and writes the support as the exact rational Type 128.
 
-use std::f64::consts::PI;
+use std::f64::consts::{PI, TAU};
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
+use cadmpeg_ir::eval::decode::{curve_point_solved, pcurve_uv, surface_point_solved};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
-    CircleCurve, ConeSurface, LineCurve, SphereSurface, TorusSurface,
+    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, SphereSurface, TorusSurface,
 };
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-    VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary,
-    LoopRing, Point, Region, Sense, Shell, Vertex,
+    LoopRing, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
 use crate::{IgesCodec, IgesVersion};
@@ -40,8 +42,14 @@ const CONE_RADIUS: f64 = 10.0;
 const CONE_SLOPE: f64 = 0.5;
 const TORUS_MAJOR: f64 = 20.0;
 const TORUS_MINOR: f64 = 5.0;
+const CYLINDER_RADIUS: f64 = 10.0;
+/// The plane `z = CUT_HEIGHT + CUT_SLOPE x` cuts the cylinder sector.
+const CUT_HEIGHT: f64 = 8.0;
+const CUT_SLOPE: f64 = 0.5;
 /// Bound on the distance of a read-back point from the exact image.
 const ON_SURFACE: f64 = 1.0e-7;
+/// Bound on the angle between consecutive support samples around a turn.
+const TURN_GAP: f64 = 0.5;
 /// Bound on the gap between two parameter curve ends that meet.
 const JOINED: f64 = 1.0e-9;
 
@@ -105,6 +113,11 @@ impl Sheet {
         });
     }
 
+    /// The sheet body whose one forward face states no loop.
+    fn loopless(self) -> CadIr {
+        self.faced(FaceLoops::unspecified(Vec::new()))
+    }
+
     /// The sheet body whose one forward face is bounded by `ring`, each edge
     /// used in the given sense.
     fn finished(mut self, ring: &[(&str, Sense)]) -> CadIr {
@@ -135,12 +148,21 @@ impl Sheet {
             ),
             native_ref: None,
         });
+        self.faced(FaceLoops::classified(
+            id(LoopId::mint, "loop", "face"),
+            Vec::new(),
+        ))
+    }
+
+    /// The sheet body whose one forward face has `loops`.
+    fn faced(mut self, loops: FaceLoops) -> CadIr {
+        let geometry = &mut self.ir.geometry;
         geometry.faces.push(Face {
             id: id(FaceId::mint, "face", "face"),
             shell: id(ShellId::mint, "shell", "sheet"),
             surface: id(SurfaceId::mint, "surface", "face"),
             sense: Sense::Forward,
-            loops: FaceLoops::classified(id(LoopId::mint, "loop", "face"), Vec::new()),
+            loops,
             name: None,
             color: None,
             tolerance: None,
@@ -558,4 +580,379 @@ fn a_torus_patch_under_a_non_uniform_map_writes_its_computed_parameter_curves() 
             );
         }
     }
+}
+
+/// The point of the cylinder of radius [`CYLINDER_RADIUS`] about `+z` at
+/// azimuth `angle` on the plane cut `z = CUT_HEIGHT + CUT_SLOPE x`.
+fn cut_point(angle: f64) -> Point3 {
+    let (sin, cos) = angle.sin_cos();
+    Point3::new(
+        CYLINDER_RADIUS * cos,
+        CYLINDER_RADIUS * sin,
+        (CUT_SLOPE * CYLINDER_RADIUS).mul_add(cos, CUT_HEIGHT),
+    )
+}
+
+/// A sector of the cylinder about `+z` between the generators at azimuth 0
+/// and `sweep`, from `z = 0` to the ellipse where the plane
+/// `z = CUT_HEIGHT + CUT_SLOPE x` cuts the cylinder. With `bottom_pcurve`,
+/// the bottom coedge carries its parameter curve and the others carry none.
+fn cut_cylinder_sector(sweep: f64, bottom_pcurve: bool) -> CadIr {
+    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            CYLINDER_RADIUS,
+        )
+        .expect("a cylinder"),
+    ));
+    for (key, angle) in [("start", 0.0), ("end", sweep)] {
+        let base = azimuth(angle).scale(CYLINDER_RADIUS);
+        let top = cut_point(angle);
+        sheet.vertex(&format!("base-{key}"), Point3::new(base.x, base.y, 0.0));
+        sheet.vertex(&format!("top-{key}"), top);
+        sheet.edge(
+            key,
+            SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(base.x, base.y, 0.0), z_axis())
+                    .expect("a generator"),
+            ),
+            [0.0, top.z],
+            [&format!("base-{key}"), &format!("top-{key}")],
+        );
+    }
+    sheet.edge(
+        "bottom",
+        SolvedCurveGeometry::Circle(
+            CircleCurve::try_new(
+                origin(),
+                z_axis(),
+                Vector3::new(1.0, 0.0, 0.0),
+                CYLINDER_RADIUS,
+            )
+            .expect("a base circle"),
+        ),
+        [0.0, sweep],
+        ["base-start", "base-end"],
+    );
+    let stretch = CUT_SLOPE.hypot(1.0);
+    sheet.edge(
+        "cut",
+        SolvedCurveGeometry::Ellipse(
+            EllipseCurve::try_new(
+                Point3::new(0.0, 0.0, CUT_HEIGHT),
+                Vector3::new(-CUT_SLOPE / stretch, 0.0, 1.0 / stretch),
+                Vector3::new(1.0 / stretch, 0.0, CUT_SLOPE / stretch),
+                CYLINDER_RADIUS * stretch,
+                CYLINDER_RADIUS,
+            )
+            .expect("the cut ellipse"),
+        ),
+        [0.0, sweep],
+        ["top-start", "top-end"],
+    );
+    let mut ir = sheet.finished(&[
+        ("bottom", Sense::Forward),
+        ("end", Sense::Forward),
+        ("cut", Sense::Reversed),
+        ("start", Sense::Reversed),
+    ]);
+    if bottom_pcurve {
+        let pcurve = id(PcurveId::mint, "pcurve", "bottom");
+        ir.geometry.pcurves.push(Pcurve {
+            id: pcurve.clone(),
+            geometry: PcurveGeometry::Line(
+                LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                    .expect("a unit direction"),
+            ),
+            metadata: PcurveMetadata::general(None, FiniteVector::new([0.0, sweep]), None),
+            native_ref: None,
+        });
+        ir.geometry
+            .coedges
+            .iter_mut()
+            .find(|coedge| coedge.id == id(CoedgeId::mint, "coedge", "bottom"))
+            .expect("the bottom coedge")
+            .pcurves = vec![PcurveUse {
+            pcurve,
+            isoparametric: Some(true),
+            parameter_range: None,
+        }];
+        ir.finalize();
+    }
+    ir
+}
+
+/// `ir` with its body under `stretch`, written, with the losses of the
+/// write and the document that reads back.
+fn written_under(mut ir: CadIr, stretch: Stretch) -> (Vec<LossNote>, CadIr) {
+    for body in &mut ir.geometry.bodies {
+        body.transform = stretch.transform();
+    }
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("the document is written");
+    let losses = plan.report().losses.clone();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("the file is written");
+    let read = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written file decodes")
+        .ir()
+        .clone();
+    (losses, read)
+}
+
+/// Points at 32 equal steps of each edge curve of `read` over its range.
+fn edge_points(read: &CadIr) -> Vec<Point3> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    let mut points = Vec::new();
+    for edge in &read.geometry.edges {
+        let curve = read
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| Some(&curve.id) == edge.carrier.curve())
+            .expect("the edge curve reads back");
+        let geometry = match &curve.geometry {
+            CurveGeometry::Solved(solved) => solved,
+            CurveGeometry::Procedural { cache, .. } => {
+                cache.as_ref().expect("the edge curve reads back solved")
+            }
+        };
+        let [start, end] = edge
+            .param_range()
+            .map(FiniteVector::get)
+            .expect("a bounded edge");
+        for step in 0..=32 {
+            let parameter = (f64::from(step) / 32.0).mul_add(end - start, start);
+            points.push(
+                curve_point_solved(&ctx, geometry, parameter)
+                    .expect("a point on the edge")
+                    .get(),
+            );
+        }
+    }
+    points
+}
+
+#[test]
+fn a_cylinder_face_whose_parameter_curves_have_no_exact_form_keeps_its_model_space_boundary() {
+    let sweep = PI / 3.0;
+    for (stretch, bottom_pcurve) in [(STRETCH, false), (MIRROR_STRETCH, false), (STRETCH, true)] {
+        let (losses, read) = written_under(cut_cylinder_sector(sweep, bottom_pcurve), stretch);
+        for code in ["iges/writer.body-omitted", "iges/writer.face-omitted"] {
+            assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+        }
+        let omitted = charged(&losses, "iges/writer.pcurve-omitted");
+        assert_eq!(omitted.len(), usize::from(bottom_pcurve), "{losses:#?}");
+        assert_eq!(read.geometry.faces.len(), 1);
+        let support = read
+            .geometry
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == read.geometry.faces[0].surface)
+            .expect("the face support reads back");
+        assert!(
+            matches!(
+                &support.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                    | SurfaceGeometry::Procedural {
+                        cache: Some(SolvedSurfaceGeometry::Nurbs(_)),
+                        ..
+                    }
+            ),
+            "the support reads back as {:?}",
+            support.geometry
+        );
+        assert!(read
+            .geometry
+            .coedges
+            .iter()
+            .all(|coedge| coedge.pcurves.is_empty()));
+        let points = edge_points(&read);
+        assert!(!points.is_empty());
+        for point in points.into_iter().map(|point| stretch.source(point)) {
+            assert!(
+                (point.x.hypot(point.y) - CYLINDER_RADIUS).abs() <= ON_SURFACE,
+                "{point:?} lies off the cylinder"
+            );
+            assert!(
+                within_sector(point, sweep),
+                "{point:?} lies outside the sector"
+            );
+            let top = (CUT_SLOPE * point.x) + CUT_HEIGHT;
+            assert!(
+                (-ON_SURFACE..=top + ON_SURFACE).contains(&point.z),
+                "{point:?} lies outside the cut sector"
+            );
+        }
+    }
+}
+
+/// Points of the support of the one face of `read` at a 24 × 24 grid of its
+/// knot domain.
+fn support_points(read: &CadIr) -> Vec<Point3> {
+    let face = &read.geometry.faces[0];
+    let surface = read
+        .geometry
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .expect("the face support reads back");
+    let support = match &surface.geometry {
+        SurfaceGeometry::Solved(solved) => solved,
+        SurfaceGeometry::Procedural { cache, .. } => {
+            cache.as_ref().expect("the support reads back solved")
+        }
+    };
+    let SolvedSurfaceGeometry::Nurbs(nurbs) = support else {
+        panic!("the support reads back as {support:?}");
+    };
+    let domain = |knots: &[f64]| [knots[0], knots[knots.len() - 1]];
+    let [u_domain, v_domain] = [
+        domain(nurbs.u_knots().as_slice()),
+        domain(nurbs.v_knots().as_slice()),
+    ];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    let at =
+        |[start, end]: [f64; 2], step: u32| (f64::from(step) / 24.0).mul_add(end - start, start);
+    let mut points = Vec::new();
+    for u in 0..=24 {
+        for v in 0..=24 {
+            points.push(
+                surface_point_solved(&ctx, support, at(u_domain, u), at(v_domain, v))
+                    .expect("a point on the support")
+                    .get(),
+            );
+        }
+    }
+    points
+}
+
+/// The largest gap between consecutive angles of `angles` around the turn.
+fn largest_gap(mut angles: Vec<f64>) -> f64 {
+    angles.sort_by(f64::total_cmp);
+    let wrap = angles.first().map_or(TAU, |first| first + TAU);
+    angles
+        .windows(2)
+        .map(|pair| pair[1] - pair[0])
+        .chain(angles.last().map(|last| wrap - last))
+        .fold(0.0, f64::max)
+}
+
+#[test]
+fn a_sphere_or_torus_face_that_states_no_loop_covers_its_whole_support() {
+    let sphere = Sheet::new(SolvedSurfaceGeometry::Sphere(
+        SphereSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            SPHERE_RADIUS,
+        )
+        .expect("a sphere"),
+    ))
+    .loopless();
+    let torus = Sheet::new(SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            TORUS_MAJOR,
+            TORUS_MINOR,
+        )
+        .expect("a torus"),
+    ))
+    .loopless();
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        for (ir, circular) in [(sphere.clone(), false), (torus.clone(), true)] {
+            let (losses, read) = written_under(ir, stretch);
+            for code in [
+                "iges/writer.body-omitted",
+                "iges/writer.face-omitted",
+                "iges/writer.free-geometry-omitted",
+            ] {
+                assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+            }
+            assert_eq!(read.geometry.faces.len(), 1);
+            assert!(read.geometry.faces[0].loops.stated().next().is_none());
+            let points = support_points(&read)
+                .into_iter()
+                .map(|point| stretch.source(point))
+                .collect::<Vec<_>>();
+            let azimuths = points.iter().map(|point| point.y.atan2(point.x)).collect();
+            assert!(
+                largest_gap(azimuths) <= TURN_GAP,
+                "the face misses azimuths"
+            );
+            if circular {
+                for point in &points {
+                    let tube = (point.x.hypot(point.y) - TORUS_MAJOR).hypot(point.z);
+                    assert!(
+                        (tube - TORUS_MINOR).abs() <= ON_SURFACE,
+                        "{point:?} lies off the torus"
+                    );
+                }
+                let minor = points
+                    .iter()
+                    .map(|point| point.z.atan2(point.x.hypot(point.y) - TORUS_MAJOR))
+                    .collect();
+                assert!(
+                    largest_gap(minor) <= TURN_GAP,
+                    "the face misses tube angles"
+                );
+            } else {
+                for point in &points {
+                    let radius = point.x.hypot(point.y).hypot(point.z);
+                    assert!(
+                        (radius - SPHERE_RADIUS).abs() <= ON_SURFACE,
+                        "{point:?} lies off the sphere"
+                    );
+                }
+                for pole in [SPHERE_RADIUS, -SPHERE_RADIUS] {
+                    assert!(
+                        points
+                            .iter()
+                            .any(|point| (point.z - pole).abs() <= ON_SURFACE),
+                        "the face misses the pole at z = {pole}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_cylinder_face_that_states_no_loop_is_dropped_for_its_unbounded_domain() {
+    let ir = Sheet::new(SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            CYLINDER_RADIUS,
+        )
+        .expect("a cylinder"),
+    ))
+    .loopless();
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("the document is written");
+    let omitted = charged(&plan.report().losses, "iges/writer.face-omitted");
+    assert_eq!(omitted.len(), 1, "{omitted:#?}");
+    assert!(
+        omitted[0].contains("test:model:face#face")
+            && omitted[0].contains("states no loop has no finite domain"),
+        "{omitted:#?}"
+    );
 }

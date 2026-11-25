@@ -497,6 +497,9 @@ fn whole_slope(delta: Point2) -> Option<Slope> {
     })
 }
 
+/// The rational form of the revolved support `surface` over a domain that
+/// holds its faces, with the exact image of each parameter curve on it. A
+/// face that states no loop on a sphere or torus covers the whole support.
 fn restated_support(
     ends: &BTreeMap<&str, [Point2; 2]>,
     index: &TopologyIndex<'_>,
@@ -520,8 +523,15 @@ fn restated_support(
     let mut model_space = Vec::new();
     let mut heights = Extent::default();
     let mut seen = BTreeSet::new();
+    let mut whole = false;
     for face in faces {
-        face.loops.stated().next()?;
+        if face.loops.stated().next().is_none() {
+            if !circular {
+                return None;
+            }
+            whole = true;
+            continue;
+        }
         match face_images(ends, index, face, circular)? {
             Ok(images) => {
                 for image in images {
@@ -572,13 +582,14 @@ fn restated_support(
         }
         Some([low, low + TAU])
     };
-    let [u_start, u_end] = if model_space.is_empty() {
-        u_extent.bounds()?
-    } else {
+    let whole = whole || !model_space.is_empty();
+    let [u_start, u_end] = if whole {
         full(&u_extent)?
+    } else {
+        u_extent.bounds()?
     };
     let [v_start, v_end] = match form.profile {
-        Profile::Circular { offset, .. } if !model_space.is_empty() => {
+        Profile::Circular { offset, .. } if whole => {
             if offset == 0.0 {
                 [-FRAC_PI_2, FRAC_PI_2]
             } else {
