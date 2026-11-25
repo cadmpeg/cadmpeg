@@ -796,7 +796,7 @@ macro_rules! declare_topology {
                 $(self.$field.visit_identity_references(ctx, &mut |id| if local.contains(id) {Ok(())} else {visitor(id)})?;)*
                 Ok(())
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_,F>) -> Result<Self,cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self,cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("nested topology identities")?;
                 Ok(Self {$($field: self.$field.rewrite_identities(ctx,map)?,)*})
             }
@@ -844,31 +844,11 @@ macro_rules! declare_topology {
             )*
         }
 
-        impl Serialize for Topology {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                if !self.is_finalized() {
-                    let mut sorted = self.clone();
-                    sorted.finalize();
-                    return sorted.serialize(serializer);
-                }
-                TopologyWriteWire {
-                    $($field: model_write_value!(self, $field),)*
-                }
-                .serialize(serializer)
-            }
-        }
-
-        impl<'de> Deserialize<'de> for Topology {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                let wire = TopologyReadWire::deserialize(deserializer)?;
-                Self::from_read_wire(wire, &mut |_, _, error| Err(error))
-                    .map_err(serde::de::Error::custom)
+        impl TopologyReadWire {
+            fn deserialize_erased(
+                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
+                Self::deserialize(deserializer)
             }
         }
 
@@ -944,6 +924,55 @@ macro_rules! declare_topology {
                     }
                 }
                 Ok(topology)
+            }
+        }
+
+        impl Topology {
+            fn serialize_direct<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                if !self.is_finalized() {
+                    let mut sorted = self.clone();
+                    sorted.finalize();
+                    return sorted.serialize_direct(serializer);
+                }
+                TopologyWriteWire {
+                    $($field: model_write_value!(self, $field),)*
+                }
+                .serialize(serializer)
+            }
+
+            fn serialize_erased(
+                &self,
+                serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+            ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+                self.serialize_direct(serializer)
+            }
+        }
+
+        impl Serialize for Topology {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+                    self.serialize_erased(adapter)
+                })
+            }
+        }
+
+        impl<'de> Deserialize<'de> for Topology {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let wire = cadmpeg_core::serde_erase::deserialize_with(
+                    deserializer,
+                    TopologyReadWire::deserialize_erased,
+                )?;
+                Topology::from_read_wire(wire, &mut |_, _, error| Err(error))
+                    .map_err(serde::de::Error::custom)
             }
         }
 
@@ -1678,8 +1707,24 @@ macro_rules! declare_model_wire {
             )*
         }
 
-        impl Serialize for Model {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        impl ModelReadWire {
+            fn deserialize_erased(
+                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
+                Self::deserialize(deserializer)
+            }
+
+            fn into_model(mut self) -> Model {
+                Model {
+                    $($field: model_read_value!(self, $field),)*
+                    omitted: OmittedArenas::NotRead,
+                    ..Model::default()
+                }
+            }
+        }
+
+        impl Model {
+            fn serialize_direct<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
@@ -1687,12 +1732,30 @@ macro_rules! declare_model_wire {
                 if !self.is_finalized() {
                     let mut sorted = self.clone();
                     sorted.finalize();
-                    return sorted.serialize(serializer);
+                    return sorted.serialize_direct(serializer);
                 }
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
                 .serialize(serializer)
+            }
+
+            fn serialize_erased(
+                &self,
+                serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+            ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+                self.serialize_direct(serializer)
+            }
+        }
+
+        impl Serialize for Model {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+                    self.serialize_erased(adapter)
+                })
             }
         }
 
@@ -1701,12 +1764,11 @@ macro_rules! declare_model_wire {
             where
                 D: Deserializer<'de>,
             {
-                let mut wire = ModelReadWire::deserialize(deserializer)?;
-                Ok(Self {
-                    $($field: model_read_value!(wire, $field),)*
-                    omitted: OmittedArenas::NotRead,
-                    ..Self::default()
-                })
+                let wire = cadmpeg_core::serde_erase::deserialize_with(
+                    deserializer,
+                    ModelReadWire::deserialize_erased,
+                )?;
+                Ok(wire.into_model())
             }
         }
 
@@ -1857,8 +1919,10 @@ impl Model {
     /// The arenas the wire omits as one JSON object keyed by arena, each
     /// record in its own JSON form and the arenas in canonical identity order,
     /// for a caller that compares two documents in one process.
+    /// Serialize every arena the CADIR wire omits into a JSON value.
     pub fn omitted_arenas_value(&self) -> Result<serde_json::Value, serde_json::Error> {
-        serde_json::to_value(self.sorted_omitted())
+        let sorted = self.sorted_omitted();
+        cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| sorted.serialize(adapter))
     }
 
     /// Record `digest` as the baseline of the arenas the wire omits.
@@ -2697,7 +2761,9 @@ struct CadIrWriteWire<'a> {
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
+    #[serde(serialize_with = "Topology::serialize_direct")]
     geometry: &'a Topology,
+    #[serde(serialize_with = "Model::serialize_direct")]
     model: &'a Model,
     design: &'a Design,
     process: &'a Process,
@@ -2729,8 +2795,19 @@ struct CadIrReadWire {
     native: Native,
 }
 
-impl Serialize for CadIr {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+impl CadIrReadWire {
+    fn deserialize_erased(
+        deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+    ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
+        Self::deserialize(deserializer)
+    }
+}
+
+impl CadIr {
+    pub(crate) fn serialize_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
         self.check_scope().map_err(serde::ser::Error::custom)?;
         if !(self.design.is_finalized()
             && self.process.is_finalized()
@@ -2738,7 +2815,7 @@ impl Serialize for CadIr {
         {
             let mut sorted = self.clone();
             sorted.finalize();
-            return sorted.serialize(serializer);
+            return sorted.serialize_erased(serializer);
         }
         CadIrWriteWire {
             ir_version: IrVersion,
@@ -2756,11 +2833,77 @@ impl Serialize for CadIr {
         }
         .serialize(serializer)
     }
+
+    fn serialize_neutral_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        self.check_scope().map_err(serde::ser::Error::custom)?;
+        let sorted_design;
+        let design = if self.design.is_finalized() {
+            &self.design
+        } else {
+            sorted_design = {
+                let mut design = self.design.clone();
+                design.finalize();
+                design
+            };
+            &sorted_design
+        };
+        let sorted_process;
+        let process = if self.process.is_finalized() {
+            &self.process
+        } else {
+            sorted_process = {
+                let mut process = self.process.clone();
+                process.finalize();
+                process
+            };
+            &sorted_process
+        };
+        let empty_native = Native::default();
+        CadIrWriteWire {
+            ir_version: IrVersion,
+            fragment: self.fragment,
+            repro: self.repro.as_deref(),
+            scope: self.scope,
+            source: self.source.as_ref(),
+            units: CanonicalUnitsWire::default(),
+            tolerances: &self.tolerances,
+            geometry: &self.geometry,
+            model: &self.model,
+            design,
+            process,
+            native: &empty_native,
+        }
+        .serialize(serializer)
+    }
+
+    /// Serialize the neutral wire form (`geometry`, `model`, `design`,
+    /// `process`, `units`, `tolerances`, and `source`) into a JSON value
+    /// with an empty `native` namespace, avoiding native serialization work
+    /// for callers that compare neutral records alone.
+    pub fn to_neutral_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+            self.serialize_neutral_erased(adapter)
+        })
+    }
+}
+
+impl Serialize for CadIr {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+            self.serialize_erased(adapter)
+        })
+    }
 }
 
 impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = CadIrReadWire::deserialize(deserializer)?;
+        let wire = cadmpeg_core::serde_erase::deserialize_with(
+            deserializer,
+            CadIrReadWire::deserialize_erased,
+        )?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.check_arena_order().map_err(serde::de::Error::custom)?;
         wire.admit()
@@ -3155,7 +3298,9 @@ impl CadIr {
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         canonical.finalize();
-        crate::hash::finite_json::to_canonical_json_string(&canonical)
+        crate::hash::finite_json::to_canonical_json_string_erased(&|serializer| {
+            canonical.serialize_erased(serializer)
+        })
     }
 
     /// Parse canonical JSON and reject any unsupported `ir_version`, any

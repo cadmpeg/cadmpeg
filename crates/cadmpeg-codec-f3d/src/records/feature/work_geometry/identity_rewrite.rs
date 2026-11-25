@@ -35,10 +35,10 @@ rewrite_native_enum!(DesignWorkPointRuleForm, []; {
 rewrite_native_scalar!(DesignWorkPointSketchPointIdentityForm);
 rewrite_native_record!(DesignWorkPointSketchPointSelection, []; {class_tag, asset_id, asset_id_offset, context_id, context_id_offset, identity_record_offset, identity_form, sketch_record_index, point_persistent_id, point_native_id});
 
-fn work_point_form_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+fn work_point_form_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &mut serde_json::Value,
-    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
         ctx,
@@ -64,10 +64,10 @@ fn work_point_form_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecEr
     )
 }
 
-fn work_point_carrier_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+fn work_point_carrier_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &mut serde_json::Value,
-    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
         ctx,

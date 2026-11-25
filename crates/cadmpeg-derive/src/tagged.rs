@@ -661,6 +661,124 @@ fn expand(enumeration: &Enumeration) -> String {
     let items = items.concat();
     let arms = arms.concat();
     let read_tag = "__name.read::<__Tag>()?";
+    if params.is_empty() {
+        return match content {
+            None => {
+                let enum_expecting = expecting
+                    .clone()
+                    .unwrap_or_else(|| format!("internally tagged enum {name}"));
+                format!(
+                    r"
+const _: () = {{
+    {items}
+
+    fn __read_tag(
+        __slot: &mut ::core::option::Option<__Tag>,
+        __name: ::cadmpeg_core::tagged::Tag<'_>,
+    ) -> ::core::result::Result<(), ::std::string::String> {{
+        *__slot = ::core::option::Option::Some({read_tag});
+        ::core::result::Result::Ok(())
+    }}
+
+    fn __payload(__tag: __Tag, __text: &str) -> ::core::result::Result<{this}, ::std::string::String> {{
+        match __tag {{
+            {arms}
+        }}
+    }}
+
+    #[automatically_derived]
+    impl<'de> ::serde::Deserialize<'de> for {this} {{
+        fn deserialize<__D>(__deserializer: __D) -> ::core::result::Result<Self, __D::Error>
+        where
+            __D: ::serde::Deserializer<'de>,
+        {{
+            let mut __tag: ::core::option::Option<__Tag> = ::core::option::Option::None;
+            let __rest = ::cadmpeg_core::tagged::internally(
+                __deserializer,
+                {tag:?},
+                {enum_expecting:?},
+                &mut |__name| __read_tag(&mut __tag, __name),
+            )?;
+            match __tag {{
+                ::core::option::Option::Some(__read) => __payload(__read, &__rest)
+                    .map_err(<__D::Error as ::serde::de::Error>::custom),
+                ::core::option::Option::None => ::core::result::Result::Err(
+                    <__D::Error as ::serde::de::Error>::missing_field({tag:?}),
+                ),
+            }}
+        }}
+    }}
+}};
+"
+                )
+            }
+            Some(content) => {
+                let enum_expecting = expecting
+                    .clone()
+                    .unwrap_or_else(|| format!("adjacently tagged enum {name}"));
+                let struct_name = deserialize_name.clone().unwrap_or_else(|| name.clone());
+                format!(
+                    r"
+const _: () = {{
+    {items}
+
+    fn __payload(__tag: __Tag, __content: ::core::option::Option<&str>) -> ::core::result::Result<{this}, ::std::string::String> {{
+        match (__tag, __content) {{
+            {arms}
+        }}
+    }}
+
+    fn __step(
+        __tag: &mut ::core::option::Option<__Tag>,
+        __value: &mut ::core::option::Option<{this}>,
+        __event: ::cadmpeg_core::tagged::Event<'_>,
+    ) -> ::core::result::Result<(), ::std::string::String> {{
+        match __event {{
+            ::cadmpeg_core::tagged::Event::Tag(__name) => {{
+                *__tag = ::core::option::Option::Some({read_tag});
+            }}
+            ::cadmpeg_core::tagged::Event::Content(__content) => {{
+                let ::core::option::Option::Some(__read) = __tag.take() else {{
+                    return ::core::result::Result::Err(
+                        ::cadmpeg_core::tagged::missing_field({tag:?}),
+                    );
+                }};
+                *__value = ::core::option::Option::Some(__payload(__read, __content)?);
+            }}
+        }}
+        ::core::result::Result::Ok(())
+    }}
+
+    #[automatically_derived]
+    impl<'de> ::serde::Deserialize<'de> for {this} {{
+        fn deserialize<__D>(__deserializer: __D) -> ::core::result::Result<Self, __D::Error>
+        where
+            __D: ::serde::Deserializer<'de>,
+        {{
+            let mut __tag: ::core::option::Option<__Tag> = ::core::option::Option::None;
+            let mut __value: ::core::option::Option<Self> = ::core::option::Option::None;
+            ::cadmpeg_core::tagged::adjacently(
+                __deserializer,
+                &::cadmpeg_core::tagged::Adjacent {{
+                    rust_name: {name:?},
+                    name: {struct_name:?},
+                    tag: {tag:?},
+                    content: {content:?},
+                    fields: &[{tag:?}, {content:?}],
+                    deny_unknown_fields: {deny_unknown_fields},
+                    expecting: {enum_expecting:?},
+                }},
+                &mut |__event| __step(&mut __tag, &mut __value, __event),
+            )?;
+            __value.ok_or_else(|| <__D::Error as ::serde::de::Error>::missing_field({tag:?}))
+        }}
+    }}
+}};
+"
+                )
+            }
+        };
+    }
     let body = match content {
         None => {
             let enum_expecting = expecting

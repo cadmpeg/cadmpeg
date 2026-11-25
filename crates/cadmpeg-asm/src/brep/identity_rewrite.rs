@@ -15,7 +15,7 @@ macro_rules! graph {
                 $(self.$field.visit_identity_references(ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(mut self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+            fn rewrite_identities(mut self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_>) -> Result<Self, CodecError> {
                 let _depth = ctx.enter_nested("rewrite ASM graph fields")?;
                 $(self.$field = self.$field.rewrite_identities(ctx, map)?;)*
                 Ok(self)
@@ -34,10 +34,10 @@ impl RewriteIdentities for UnboundedFace {
     ) -> Result<(), CodecError> {
         self.face.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         self.face = self.face.rewrite_identities(ctx, map)?;
         Ok(self)
@@ -52,10 +52,10 @@ impl RewriteIdentities for AnnotationRecord {
     ) -> Result<(), CodecError> {
         visitor(&self.id)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         _ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         self.id = map.identity(&self.id)?;
         Ok(self)

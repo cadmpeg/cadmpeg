@@ -8,6 +8,11 @@ use crate::container::MARKER;
 
 use super::parasolid::{owned_triangle, parasolid_payload, parasolid_with_body};
 
+/// Whether `image` is a compound-file part rather than a block container.
+pub(crate) fn is_compound_file(image: &[u8]) -> bool {
+    image.starts_with(&crate::container::COMPOUND_FILE_MAGIC)
+}
+
 /// Nibble-swap a section name into its stored form (the swap is its own inverse,
 /// so the decoder recovers the original).
 fn swap_name(name: &str) -> Vec<u8> {
