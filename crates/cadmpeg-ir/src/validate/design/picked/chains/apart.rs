@@ -224,7 +224,7 @@ impl Sheet {
                     origin: point(cone.origin().get())?,
                     axis: vector(*cone.frame().axis().as_raw())?,
                     radius: cone.radius().get(),
-                    slope: cone.half_angle().get().tan(),
+                    slope: cone.half_angle().get().portable_tan(),
                     inner: ratio.min(1.0),
                     outer: ratio.max(1.0),
                 }
