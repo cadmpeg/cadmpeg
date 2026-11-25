@@ -366,7 +366,14 @@ impl<'r> Reader<'r, '_> {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        let work = WorkBudget::new(stored_states::MAX_STATE_WORK);
+        let bytes = histories
+            .iter()
+            .map(|history| history.blob.bytes.len())
+            .fold(0_usize, usize::saturating_add);
+        let work = WorkBudget::new(
+            stored_states::MAX_STATE_WORK
+                .max(stored_states::STATE_WORK_PER_BYTE.saturating_mul(bytes)),
+        );
         let mut reads = Vec::with_capacity(histories.len());
         for ((history, bodies), wanted) in histories.iter().zip(&held).zip(&targets) {
             let wanted = wanted.iter().flatten().copied().collect();

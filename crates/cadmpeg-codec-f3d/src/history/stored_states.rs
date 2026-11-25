@@ -19,9 +19,13 @@ use cadmpeg_ir::units::Tolerances;
 
 use crate::brep::Brep;
 
-/// The record work, in table entries, that the stored states of one decode
-/// may spend.
+/// The least record work, in table entries, that the stored states of one
+/// decode may spend.
 pub(crate) const MAX_STATE_WORK: usize = 1 << 22;
+
+/// The record work, in table entries, that each byte of the model blobs
+/// with a history adds to [`MAX_STATE_WORK`].
+pub(crate) const STATE_WORK_PER_BYTE: usize = 4;
 
 /// The model blob of one ASM history.
 pub(crate) struct Blob<'a> {
