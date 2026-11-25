@@ -47,7 +47,7 @@ impl References<'_, '_, '_> {
             super::error(
                 self.findings,
                 self.owner,
-                &format!("datum-axis {description}: {id}"),
+                crate::rule!("topology.datum-axis", "datum-axis {description}: {id}"),
             );
         }
     }
@@ -55,7 +55,10 @@ impl References<'_, '_, '_> {
         super::error(
             self.findings,
             self.owner,
-            &format!("datum-axis {kind} target has no declared {kind} arena: {id}"),
+            crate::rule!(
+                "topology.datum-axis-target-no-declared-arena",
+                "datum-axis {kind} target has no declared {kind} arena: {id}"
+            ),
         );
     }
     fn configuration(&mut self, value: &ConfigurationRef) {
@@ -286,7 +289,10 @@ impl References<'_, '_, '_> {
                         super::error(
                             self.findings,
                             self.owner,
-                            "datum-axis datum selection must target a datum feature",
+                            crate::rule!(
+                                "topology.datum-axis-datum-selection-must-target",
+                                "datum-axis datum selection must target a datum feature"
+                            ),
                         );
                     } else if let Some(part) = part {
                         let valid = match (part, operation) {
@@ -310,10 +316,10 @@ impl References<'_, '_, '_> {
                         };
                         match valid {
                             Some(true) => {}
-                            Some(false) => super::error(self.findings, self.owner, "datum-axis datum part is incompatible with its selected datum family"),
+                            Some(false) => super::error(self.findings, self.owner, crate::rule!("topology.datum-axis-datum-part-incompatible-selected", "datum-axis datum part is incompatible with its selected datum family")),
                             None => crate::validate::record_finding(
                                 self.findings, Check::ReferentialIntegrity, Severity::Warning, Some(self.owner.id.as_str()),
-                                format_args!("datum-axis datum point part remains unresolved because the target's point count is unknown"),
+                                crate::rule!("topology.datum-axis-datum-point-part-remains", "datum-axis datum point part remains unresolved because the target's point count is unknown"),
                             ),
                         }
                     }
@@ -344,7 +350,10 @@ impl References<'_, '_, '_> {
                         super::error(
                             self.findings,
                             self.owner,
-                            "datum-axis region boundary must belong to its selected sketch",
+                            crate::rule!(
+                                "topology.datum-axis-region-boundary-must-belong",
+                                "datum-axis region boundary must belong to its selected sketch"
+                            ),
                         );
                     }
                 }

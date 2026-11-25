@@ -399,11 +399,7 @@ fn inspect_garbage_reports_rhino_among_supported_formats() {
 #[test]
 fn cadir_override_bypasses_native_detection() {
     let dir = tempdir().unwrap();
-    let input = fixture(
-        dir.path(),
-        "no-extension",
-        &unit_cube().expect("unit cube fixture is admitted"),
-    );
+    let input = fixture(dir.path(), "no-extension", &crate::support::rooted_cube());
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["check", input.to_str().unwrap(), "--input-format", "cadir"])

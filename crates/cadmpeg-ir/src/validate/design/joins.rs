@@ -92,7 +92,11 @@ pub(super) fn check<'a>(
             }
         }
         for message in messages {
-            super::error(findings, id, format_args!("{message}"));
+            super::error(
+                findings,
+                id,
+                crate::rule!("design.fold-straight-edge-picks", "{message}"),
+            );
         }
     }
 }

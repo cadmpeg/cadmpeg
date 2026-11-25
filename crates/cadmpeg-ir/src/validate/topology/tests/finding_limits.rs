@@ -12,7 +12,7 @@ fn topology_findings_keep_message_entity_check_and_order() {
     super::super::geometry_error(
         &mut findings,
         "test:model:feature#owner",
-        "invalid geometry",
+        crate::rule!("test.invalid-geometry", "invalid geometry"),
     );
     assert_eq!(findings.len(), 2);
     assert_eq!(

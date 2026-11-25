@@ -76,7 +76,8 @@ fn check_parameter(
                 super::warning(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.integer-parameter-expression-evaluates-not-whole",
                         "integer parameter's expression evaluates to {value}, not a whole number"
                     ),
                 );
@@ -96,7 +97,7 @@ fn check_parameter(
         super::warning(
             findings,
             id,
-            format_args!("parameter's cached value {cached:?} disagrees with its expression's value {evaluated:?}"),
+            crate::rule!("design.parameter-cached-value-disagrees-expression-value", "parameter's cached value {cached:?} disagrees with its expression's value {evaluated:?}"),
         );
     }
 }
@@ -236,7 +237,8 @@ fn check_coupling(feature: &str, coupling: &Coupling, findings: &mut Vec<Finding
         super::warning(
             findings,
             feature,
-            format_args!(
+            crate::rule!(
+                "design.coupling-ratio-disagrees-radii-ratio",
                 "coupling's ratio {ratio} disagrees with its radii, whose ratio is {expected}"
             ),
         );

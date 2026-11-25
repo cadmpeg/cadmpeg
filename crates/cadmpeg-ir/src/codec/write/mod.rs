@@ -38,6 +38,7 @@ pub use loss::{
     solid_partial, value_unwritable,
 };
 mod partial;
+pub mod saved;
 pub use partial::without_partial_topology;
 mod scene;
 pub mod subset_lowering;

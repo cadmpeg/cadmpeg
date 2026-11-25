@@ -14,6 +14,7 @@ fn finding(entity: Option<&str>, related: &[&str], message: &str) -> Finding {
     Finding {
         related: related.iter().map(|id| (*id).to_owned()).collect(),
         check: Check::ReferentialIntegrity,
+        rule: crate::rule_name!("test.fixture-reference"),
         severity: Severity::Error,
         entity: entity.map(str::to_owned),
         message: message.into(),
