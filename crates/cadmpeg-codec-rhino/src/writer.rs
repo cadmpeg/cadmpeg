@@ -2981,8 +2981,8 @@ struct MeshAdmission {
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<MeshAdmission, CodecError> {
     let vertex_count = mesh.vertices().len();
     if vertex_count == 0
-        || vertex_count > crate::mesh::MESH_COUNT_LIMIT
-        || mesh.triangles().len() > crate::mesh::MESH_COUNT_LIMIT
+        || vertex_count > crate::mesh::MAX_MESH_COUNT
+        || mesh.triangles().len() > crate::mesh::MAX_MESH_COUNT
     {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} counts are outside Rhino's native range",

@@ -100,7 +100,7 @@ const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 /// Codec-owned curvature channel kind.
 const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 /// The most vertices, and the most faces, one mesh declares.
-pub(crate) const MESH_COUNT_LIMIT: usize = 1 << 24;
+pub(crate) const MAX_MESH_COUNT: usize = 1 << 24;
 /// Maximum number of legacy n-gon records accepted by the bounded reader.
 const MAX_MESH_NGONS: usize = 1 << 20;
 /// Maximum corners in one legacy n-gon record.
@@ -252,8 +252,8 @@ pub(crate) fn decode(
             "mesh minor is newer than the V5 writer band",
         ));
     }
-    let vertex_count = count(&mut reader, MESH_COUNT_LIMIT)?;
-    let face_count = count(&mut reader, MESH_COUNT_LIMIT)?;
+    let vertex_count = count(&mut reader, MAX_MESH_COUNT)?;
+    let face_count = count(&mut reader, MAX_MESH_COUNT)?;
     for _ in 0..4 {
         interval(&mut reader)?;
     }
@@ -1239,7 +1239,7 @@ fn read_double_chunk<'a>(
             "unsupported double-vertex version",
         ));
     }
-    let count = checked_u32(&mut child, MESH_COUNT_LIMIT)?;
+    let count = checked_u32(&mut child, MAX_MESH_COUNT)?;
     let expected = count
         .checked_mul(24)
         .ok_or_else(|| error(child.position(), "double-vertex size overflow"))?;
@@ -1326,7 +1326,7 @@ fn read_v5_double_vertices(
     let _double_count = reader.i32()?;
     let _float_crc = reader.u32()?;
     let _double_crc = reader.u32()?;
-    let array_count = checked_u32(&mut reader, MESH_COUNT_LIMIT)?;
+    let array_count = checked_u32(&mut reader, MAX_MESH_COUNT)?;
     let coordinate_bytes = array_count
         .checked_mul(24)
         .ok_or_else(|| error(reader.position(), "V5 double-vertex byte count overflow"))?;

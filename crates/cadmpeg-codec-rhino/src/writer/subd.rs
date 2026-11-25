@@ -124,7 +124,7 @@ pub(super) fn control_mesh(cage: &SubdCage) -> Result<ControlMesh, CodecError> {
         .iter()
         .map(cadmpeg_ir::subd::SubdVertex::point)
         .collect::<Vec<_>>();
-    let limit = crate::mesh::MESH_COUNT_LIMIT;
+    let limit = crate::mesh::MAX_MESH_COUNT;
     if vertices.len() > limit || faces.len() > limit {
         return Err(CodecError::NotImplemented(
             "the cage's control net has more faces or vertices than the 2^24 a 3DM mesh holds"
