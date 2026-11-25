@@ -269,6 +269,11 @@ fn picked_shape(index: &DesignRecords<'_>, target: &PickTarget) -> Option<Shape>
     }
 }
 
+/// Whether a pick targets a sketch entity whose stated curve is a point.
+pub(super) fn picks_point(index: &DesignRecords<'_>, target: &PickTarget) -> bool {
+    picked_shape(index, target) == Some(Shape::Point)
+}
+
 /// Whether a pick targets a sketch entity whose stated curve is no point.
 pub(super) fn picks_no_point(index: &DesignRecords<'_>, target: &PickTarget) -> bool {
     picked_shape(index, target).is_some_and(|shape| shape != Shape::Point)

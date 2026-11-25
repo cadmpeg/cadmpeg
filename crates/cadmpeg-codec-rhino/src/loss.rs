@@ -231,6 +231,30 @@ pub(crate) enum RhinoLossCode {
     WriterMeshDataOmitted,
     /// One body is written as several Brep objects.
     WriterBodySplit,
+    /// An edge whose uses are not one pair that runs opposite ways, each the
+    /// other's radial next, is written as one edge for each use.
+    WriterEdgeUnjoined,
+    /// A joined curve is written as a curve object for each of its pieces.
+    WriterCurveSplit,
+    /// The curve pieces of an edge are joined at the midpoint of ends that
+    /// meet within the edge tolerance.
+    WriterEdgeGapJoined,
+    /// An edge whose curve pieces meet farther apart than the edge tolerance
+    /// is written as one edge for each run of pieces that meet within it.
+    WriterEdgeSplit,
+    /// A subdivision cage is written as a mesh of its control net, without
+    /// the subdivision rule.
+    WriterSubdControlMesh,
+    /// A T-spline cage is written as a Catmull-Clark `ON_SubD`, without its
+    /// knot intervals.
+    WriterTsplineReduced,
+    /// A written cage is written without content its `ON_SubD` does not hold.
+    WriterSubdContentOmitted,
+    /// A written record is written without a value 3DM has no place for.
+    WriterValueOmitted,
+    /// A written record is written without a name or color 3DM has no place
+    /// for, or with its name cut.
+    WriterAttributesOmitted,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -313,6 +337,15 @@ impl RhinoLossCode {
         Self::WriterRecordOmitted,
         Self::WriterMeshDataOmitted,
         Self::WriterBodySplit,
+        Self::WriterEdgeUnjoined,
+        Self::WriterCurveSplit,
+        Self::WriterEdgeGapJoined,
+        Self::WriterEdgeSplit,
+        Self::WriterSubdControlMesh,
+        Self::WriterTsplineReduced,
+        Self::WriterSubdContentOmitted,
+        Self::WriterValueOmitted,
+        Self::WriterAttributesOmitted,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
@@ -371,6 +404,15 @@ impl RhinoLossCode {
             Self::WriterRecordOmitted => "writer.record-omitted",
             Self::WriterMeshDataOmitted => "writer.mesh-data-omitted",
             Self::WriterBodySplit => "writer.body-split",
+            Self::WriterEdgeUnjoined => "writer.edge-unjoined",
+            Self::WriterCurveSplit => "writer.curve-split",
+            Self::WriterEdgeGapJoined => "writer.edge-gap-joined",
+            Self::WriterEdgeSplit => "writer.edge-split",
+            Self::WriterSubdControlMesh => "writer.subd-control-mesh",
+            Self::WriterTsplineReduced => "writer.tspline-reduced",
+            Self::WriterSubdContentOmitted => "writer.subd-content-omitted",
+            Self::WriterValueOmitted => "writer.value-omitted",
+            Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
@@ -385,7 +427,7 @@ impl RhinoLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::ObjectRecordCensus | Self::WriterBodySplit => Severity::Info,
+            Self::ObjectRecordCensus => Severity::Info,
             Self::ObjectFramingUndecodable | Self::IntegrityFailure | Self::WriterRecordOmitted => {
                 Severity::Error
             }
@@ -446,9 +488,19 @@ impl RhinoLossCode {
             Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
             Self::WriterBodyMeshWithheld => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
-            Self::WriterRecordOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterRecordOmitted | Self::WriterEdgeGapJoined => {
+                LossTaxonomy::GeometryNotTransferred
+            }
             Self::WriterMeshDataOmitted => LossTaxonomy::TessellationOmitted,
-            Self::WriterBodySplit => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterSubdControlMesh
+            | Self::WriterTsplineReduced
+            | Self::WriterSubdContentOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterValueOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterBodySplit
+            | Self::WriterEdgeUnjoined
+            | Self::WriterCurveSplit
+            | Self::WriterEdgeSplit => LossTaxonomy::TopologyNotTransferred,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -461,11 +513,23 @@ impl RhinoLossCode {
     ///
     /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
     /// silently change rejection. `ObjectFramingUndecodable` pins Warning above
-    /// its `DecodeDiagnostic` taxonomy (which is otherwise tolerable).
+    /// its `DecodeDiagnostic` taxonomy (which is otherwise tolerable). The
+    /// writer codes pin none, as the format specification states none.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::IntegrityFailure | Self::ObjectFramingUndecodable => Some(Severity::Warning),
-            Self::SourceWriterStampUnverified => None,
+            Self::SourceWriterStampUnverified
+            | Self::WriterRecordOmitted
+            | Self::WriterBodySplit
+            | Self::WriterEdgeUnjoined
+            | Self::WriterCurveSplit
+            | Self::WriterEdgeGapJoined
+            | Self::WriterEdgeSplit
+            | Self::WriterSubdControlMesh
+            | Self::WriterTsplineReduced
+            | Self::WriterSubdContentOmitted
+            | Self::WriterValueOmitted
+            | Self::WriterAttributesOmitted => None,
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -494,6 +558,26 @@ impl RhinoLossCode {
     #[must_use]
     pub(crate) fn note(self, message: impl std::fmt::Display) -> LossNote {
         LossNote::new(self.kind(), message.to_string()).with_severity(self.severity())
+    }
+
+    /// One note that states what the writer does, `reason`, for each entry of
+    /// `ids`, listed sorted after their count; none where `ids` is empty.
+    pub(crate) fn listed<I, S>(self, reason: &str, ids: I) -> Option<LossNote>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut ids = ids.into_iter().map(Into::into).collect::<Vec<String>>();
+        if ids.is_empty() {
+            return None;
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        Some(self.note(format!(
+            "the Rhino write {reason} ({}): {}",
+            ids.len(),
+            ids.join(", ")
+        )))
     }
 }
 
@@ -553,6 +637,15 @@ mod tests {
                 "writer.record-omitted",
                 "writer.mesh-data-omitted",
                 "writer.body-split",
+                "writer.edge-unjoined",
+                "writer.curve-split",
+                "writer.edge-gap-joined",
+                "writer.edge-split",
+                "writer.subd-control-mesh",
+                "writer.tspline-reduced",
+                "writer.subd-content-omitted",
+                "writer.value-omitted",
+                "writer.attributes-omitted",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",
@@ -591,6 +684,31 @@ mod tests {
             assert_eq!(note.code.local_code(), code.code());
             assert!(note.provenance.is_none());
         }
+    }
+
+    /// A writer loss that keeps the written geometry is a Warning with no
+    /// strict floor.
+    #[test]
+    fn writer_split_and_join_codes_are_warnings_without_a_strict_floor() {
+        for code in [
+            RhinoLossCode::WriterBodySplit,
+            RhinoLossCode::WriterEdgeUnjoined,
+            RhinoLossCode::WriterCurveSplit,
+            RhinoLossCode::WriterEdgeGapJoined,
+            RhinoLossCode::WriterEdgeSplit,
+            RhinoLossCode::WriterSubdControlMesh,
+            RhinoLossCode::WriterTsplineReduced,
+            RhinoLossCode::WriterSubdContentOmitted,
+            RhinoLossCode::WriterValueOmitted,
+            RhinoLossCode::WriterAttributesOmitted,
+        ] {
+            assert_eq!(code.severity(), cadmpeg_ir::report::Severity::Warning);
+            assert_eq!(code.kind().strict_floor(), None);
+        }
+        assert_eq!(
+            RhinoLossCode::WriterRecordOmitted.kind().strict_floor(),
+            None
+        );
     }
 
     #[test]

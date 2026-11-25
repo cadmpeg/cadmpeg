@@ -23,9 +23,9 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod appearance_attributes;
-mod carriers_parameterization;
+pub(crate) mod carriers_parameterization;
 mod cycles;
-mod design;
+pub(crate) mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
@@ -154,7 +154,7 @@ fn validate_model_with_index<'ir>(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ids, &mut findings)?;
+    check_identity_and_order(ids, &products::decode_set::file_keys(ir), &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_procedural_owners(ir, &mut findings);

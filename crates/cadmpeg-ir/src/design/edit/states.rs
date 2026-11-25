@@ -32,7 +32,7 @@ macro_rules! topology_arenas {
 }
 
 /// The id a record reference names.
-pub(super) fn record_ref_id(record: &RecordRef) -> &str {
+pub(crate) fn record_ref_id(record: &RecordRef) -> &str {
     macro_rules! arms {
         ($($field:ident $arm:ident),*) => {
             match record { $(RecordRef::$arm(id) => id.as_str(),)* }
@@ -41,8 +41,20 @@ pub(super) fn record_ref_id(record: &RecordRef) -> &str {
     topology_arenas!(arms)
 }
 
+/// A reference to each record of a topology.
+pub(crate) fn record_refs(topology: &Topology) -> Vec<RecordRef> {
+    let mut found = Vec::new();
+    macro_rules! refer {
+        ($($field:ident $arm:ident),*) => {
+            $(found.extend(topology.$field.iter().map(|record| RecordRef::$arm(record.id.clone())));)*
+        };
+    }
+    topology_arenas!(refer);
+    found
+}
+
 /// Every record id of a topology.
-pub(super) fn ids(topology: &Topology) -> BTreeSet<String> {
+pub(crate) fn ids(topology: &Topology) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     macro_rules! collect {
         ($($field:ident $arm:ident),*) => {
@@ -54,7 +66,7 @@ pub(super) fn ids(topology: &Topology) -> BTreeSet<String> {
 }
 
 /// The records of a topology whose ids `keep` holds.
-pub(super) fn select(topology: &Topology, keep: &BTreeSet<String>) -> Topology {
+pub(crate) fn select(topology: &Topology, keep: &BTreeSet<String>) -> Topology {
     let mut selected = Topology::default();
     macro_rules! copy {
         ($($field:ident $arm:ident),*) => {
@@ -79,7 +91,7 @@ pub(super) fn remove(topology: &mut Topology, drop: &BTreeSet<String>) {
 }
 
 /// Inserts each record of `records`, or replaces the record of the same id.
-pub(super) fn upsert(topology: &mut Topology, records: Topology) {
+pub(crate) fn upsert(topology: &mut Topology, records: Topology) {
     macro_rules! merge {
         ($($field:ident $arm:ident),*) => {
             $(
@@ -105,7 +117,7 @@ pub(super) fn upsert(topology: &mut Topology, records: Topology) {
 /// parent pointer names a reached record (a region's body, a shell's region,
 /// a face's shell, a loop's face, a coedge's loop), and every record a
 /// reached record names in any other field.
-pub(super) fn reached(
+pub(crate) fn reached(
     topology: &Topology,
     bodies: &[BodyId],
 ) -> Result<BTreeSet<String>, EditError> {

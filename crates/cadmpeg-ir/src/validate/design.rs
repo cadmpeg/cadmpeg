@@ -21,13 +21,14 @@ pub(super) mod evaluations;
 pub(super) mod expressions;
 mod fit;
 #[cfg(test)]
-pub(super) mod fixture;
+pub(crate) mod fixture;
 mod folds;
 mod index;
 mod joins;
 mod linkage;
 mod matching;
 mod materials;
+mod membership;
 mod names;
 pub(super) mod ops;
 mod overrides;
@@ -40,6 +41,7 @@ mod programs;
 pub(super) mod records;
 pub(super) mod resolved;
 pub(super) mod selections;
+mod sheets;
 mod states;
 mod target_states;
 mod tolerances;
@@ -152,13 +154,16 @@ pub(super) fn check_design(
     dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    membership::check(&index, &states, findings);
     joins::check(&index, &states, findings);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
     selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
+    selections::check_template_inputs(&index.records, &held, findings);
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
     picked::check(&index, &matchers, findings);
+    sheets::check(&index, findings);
     materials::check(&index, &matchers, findings);
     Ok(())
 }

@@ -39,8 +39,8 @@ fn three_dimensional_operator_has_all_inherited_attributes_in_schema_order() {
     ])
     .expect("reflected similarity");
     let mut emitter = Emitter::new();
-    super::transformation_operator(&mut emitter, transform);
-    let lines = emitter.into_lines().expect("finite operator");
+    super::transformation_operator(&mut emitter, transform).expect("a similarity");
+    let lines = emitter.into_lines();
     let attributes = operator_attributes(&lines, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 8);
     assert_eq!(
         referenced_record(&lines, attributes[3]),
@@ -84,7 +84,7 @@ fn reflected_conic_pcurves_keep_schema_complete_replica_operators() {
             );
             let replica =
                 super::pcurve(&mut emitter, &reflected).expect("writable reflected conic");
-            let lines = emitter.into_lines().expect("finite reflected conic");
+            let lines = emitter.into_lines();
             let entity = match schema {
                 StepSchema::Ap203Edition1 => {
                     assert!(!lines

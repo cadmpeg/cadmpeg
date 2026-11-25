@@ -150,9 +150,10 @@ fn project_design(
         .iter()
         .map(|(prefix, _)| prefix.clone())
         .collect::<BTreeSet<_>>();
+    let placers = Placers::new(&ir.model.product_definitions);
     let mut definitions = BTreeMap::new();
     for (prefix, projected) in hosted {
-        let enclosing = host(&scopes, &prefix);
+        let enclosing = host(&scopes, &placers, &prefix);
         let (definition, into) = scopes.entry(enclosing).or_insert_with(|| {
             (
                 root_definition(&ir.model.product_definitions),
@@ -192,7 +193,7 @@ fn project_design(
             losses,
         );
     }
-    let mut spans = span(&ir.model.product_definitions, &scopes);
+    let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
     let owners = ir
         .model
         .features
@@ -286,16 +287,45 @@ fn rollback_position(
         .map_or_else(|| Position::Start(id.clone()), Position::After)
 }
 
+/// The document prefix of the archive member that places each archive
+/// member, keyed by the member's document prefix; empty for a member that the
+/// root document places.
+struct Placers(BTreeMap<String, String>);
+
+impl Placers {
+    fn new(definitions: &[ProductDefinition]) -> Self {
+        Self(
+            definitions
+                .iter()
+                .filter_map(|definition| {
+                    let id = definition.id.as_str();
+                    let key = crate::ids::member_definition_key(id)?;
+                    let placer = crate::ids::member_key(id)
+                        .map_or_else(String::new, |key| format!("{key}@"));
+                    Some((format!("{key}@"), placer))
+                })
+                .collect(),
+        )
+    }
+
+    /// The nearest document with a scope that holds the records of the
+    /// document at `prefix`: that document, else the nearest member that
+    /// places it, else the root document.
+    fn nearest<T>(&self, prefix: &str, scopes: &BTreeMap<String, T>) -> Option<String> {
+        std::iter::successors(Some(prefix), |at| {
+            (!at.is_empty()).then(|| self.0.get(*at).map_or("", String::as_str))
+        })
+        .take(self.0.len() + 2)
+        .find(|at| scopes.contains_key(*at))
+        .map(str::to_owned)
+    }
+}
+
 /// The scope that holds the timelines of the document at `prefix`, which has
-/// no definition of its own: the scope of the longest document prefix that
-/// begins it, else the root scope.
-fn host<T>(scopes: &BTreeMap<String, T>, prefix: &str) -> String {
-    scopes
-        .keys()
-        .filter(|scoped| prefix.starts_with(scoped.as_str()))
-        .max_by_key(|scoped| scoped.len())
-        .cloned()
-        .unwrap_or_default()
+/// no definition of its own: the scope of the nearest member that places it,
+/// else the root scope.
+fn host<T>(scopes: &BTreeMap<String, T>, placers: &Placers, prefix: &str) -> String {
+    placers.nearest(prefix, scopes).unwrap_or_default()
 }
 
 /// The definition whose design the document at `prefix` holds: the root
@@ -308,11 +338,10 @@ fn scope_definition(
     if prefix.is_empty() {
         return Some(root_definition(definitions));
     }
-    let member = crate::ids::archive_product_definition_id();
-    let id = format!("f3d:{prefix}{}", member.as_str().strip_prefix("f3d:")?);
+    let key = prefix.strip_suffix('@')?;
     definitions
         .iter()
-        .find(|definition| definition.id.as_str() == id)
+        .find(|definition| crate::ids::member_definition_key(definition.id.as_str()) == Some(key))
         .map(|definition| definition.id.clone())
 }
 
@@ -335,12 +364,13 @@ struct Span {
 }
 
 /// What each scope spans, keyed by document prefix: its own definition and
-/// every `Embedded` definition without a scope whose id the scope's document
-/// prefix begins, the longest such prefix winning (§5.1). A definition stored
-/// as a file of its own, or held outside the document, is spanned by no scope
-/// here.
+/// every `Embedded` definition without a scope that its document stores, or
+/// the nearest scope that holds the records of that document (§5.1). A
+/// definition stored as a file of its own, or held outside the document, is
+/// spanned by no scope here.
 fn span<T>(
     definitions: &[ProductDefinition],
+    placers: &Placers,
     scopes: &BTreeMap<String, (ProductDefinitionId, T)>,
 ) -> BTreeMap<String, Span> {
     let mut out = BTreeMap::<String, Span>::new();
@@ -348,22 +378,16 @@ fn span<T>(
         let own = scopes
             .iter()
             .find(|(_, (scoped, _))| scoped == &definition.id)
-            .map(|(prefix, _)| prefix);
-        let spanning = || {
-            let id = definition.id.as_str();
-            let local = id.strip_prefix("f3d:").unwrap_or(id);
-            scopes
-                .keys()
-                .filter(|prefix| local.starts_with(prefix.as_str()))
-                .max_by_key(|prefix| prefix.len())
-        };
+            .map(|(prefix, _)| prefix.clone());
         let prefix = match &definition.storage {
             _ if own.is_some() => own,
-            Storage::Embedded => spanning(),
+            Storage::Embedded => {
+                placers.nearest(timeline::document_prefix(definition.id.as_str()), scopes)
+            }
             Storage::File { .. } | Storage::External(_) => None,
         };
         if let Some(prefix) = prefix {
-            let span = out.entry(prefix.clone()).or_default();
+            let span = out.entry(prefix).or_default();
             span.definitions.insert(definition.id.clone());
             span.bodies.extend(definition.bodies.iter().cloned());
         }

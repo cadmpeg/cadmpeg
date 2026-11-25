@@ -33,10 +33,10 @@ rewrite_native_record!(DesignMeshFeature, []; {id, scopes, collection, texture_t
 impl<const LENGTH: u64> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities
     for DesignMeshFixedRecord<LENGTH>
 {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_native_value(
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _value: &mut serde_json::Value,
-        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
@@ -48,10 +48,10 @@ impl<const LENGTH: u64> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities
     ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
-    fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(self)
     }

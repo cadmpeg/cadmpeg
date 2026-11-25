@@ -35,7 +35,7 @@
 //! function body, and another crate's use of a wire reader.
 
 use std::cell::{OnceCell, RefCell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -45,7 +45,7 @@ use syn::spanned::Spanned;
 use crate::reader_routes::DeclarationResolver;
 use crate::{
     collect_rust_sources, derive_list_names_deserialize, is_option_type, is_test_module,
-    is_test_path, read_source,
+    is_test_path, parse_source, read_source,
 };
 use tokens::{binding_macro, position, spelled_uses, FileTokens, MacroTree, Position, TreeKind};
 
@@ -200,12 +200,21 @@ struct GenericUse {
 /// The declarations of the wire crates, their traits, and every trait impl.
 ///
 /// Each index is read from the source on first use.
+type ParameterFillCache = BTreeMap<(Declaration, usize), Result<(bool, bool), String>>;
+
 pub(crate) struct Declarations {
     root: PathBuf,
     resolver: OnceCell<DeclarationResolver>,
     traits: OnceCell<TraitIndex>,
+    foreign_sources: OnceCell<Vec<(String, String)>>,
+    /// Cached token scans of foreign files, keyed by repository-relative path.
+    foreign_scanned: RefCell<HashMap<String, std::rc::Rc<Option<FileTokens>>>>,
     /// Per trait name, why an impl of it outside the wire crates is unread.
     foreign: RefCell<BTreeMap<String, Option<String>>>,
+    /// Memoized top-level parameter-fill results keyed by `(owner, position)`.
+    parameter_cache: RefCell<ParameterFillCache>,
+    /// Memoized associated-type `Ok(optional)` results keyed by `(trait, associated_name)`.
+    associated_cache: RefCell<BTreeMap<(Declaration, String), bool>>,
     /// Each parameter position whose instantiations are being read, so a
     /// declaration that instantiates itself states no new type.
     enumerating: RefCell<BTreeSet<(Declaration, usize)>>,
@@ -226,8 +235,12 @@ struct TraitIndex {
     hand_read: BTreeSet<String>,
     sites: Vec<UseSite>,
     uses: Vec<GenericUse>,
+    /// Indices into `uses`, keyed by `GenericUse::name`.
+    uses_by_name: HashMap<String, Vec<usize>>,
     /// What each wire source states in tokens, by repository-relative path.
     tokens: Vec<(String, FileTokens)>,
+    /// `(file_index, tree_index)` into `tokens` for each token spelled inside a `MacroTree`.
+    trees_by_token: HashMap<String, Vec<(usize, usize)>>,
     /// The tokens of every const and static initializer, with the file and
     /// module it is written in; the census reads the uses they spell in place.
     initializers: Vec<(String, Vec<String>, TokenStream)>,
@@ -241,9 +254,31 @@ impl Declarations {
             root: root.to_owned(),
             resolver: OnceCell::new(),
             traits: OnceCell::new(),
+            foreign_sources: OnceCell::new(),
+            foreign_scanned: RefCell::new(HashMap::new()),
             foreign: RefCell::new(BTreeMap::new()),
+            parameter_cache: RefCell::new(BTreeMap::new()),
+            associated_cache: RefCell::new(BTreeMap::new()),
             enumerating: RefCell::new(BTreeSet::new()),
         }
+    }
+
+    fn foreign_sources(&self) -> &[(String, String)] {
+        self.foreign_sources.get_or_init(|| {
+            workspace_sources(&self.root)
+                .into_iter()
+                .map(|file| (relative_path(&self.root, &file), file))
+                // The leading separator makes a test tree at the workspace root
+                // one too.
+                .filter(|(relative, _)| {
+                    !is_test_path(&format!("/{relative}"))
+                        && !WIRE_ROOTS
+                            .iter()
+                            .any(|root| relative.starts_with(&format!("{root}/")))
+                })
+                .map(|(relative, file)| (relative, read_source(&file)))
+                .collect()
+        })
     }
 
     fn resolver(&self) -> &DeclarationResolver {
@@ -269,12 +304,10 @@ impl TraitIndex {
                 if is_test_path(&relative) {
                     continue;
                 }
-                let text = read_source(&file);
-                let parsed = syn::parse_file(&text)
-                    .map_err(|error| format!("{relative} does not parse: {error}"))
-                    .expect("every source file in the wire crates parses");
+                let parsed_file = parse_source(&file, &relative);
+                let (text, parsed) = (&parsed_file.0, &parsed_file.1);
                 index.collect(&parsed.items, &relative, &module_scope(&relative));
-                let found = tokens::scan(&text, &test_module_spans(&parsed.items))
+                let found = tokens::scan(text, &test_module_spans(&parsed.items))
                     .expect("every source file in the wire crates parses, so it lexes");
                 // A `macro_rules!` body that spells only items, no fragment,
                 // is read where it is written.
@@ -286,7 +319,7 @@ impl TraitIndex {
                     }
                 }
                 for (scope, span) in std::mem::take(&mut index.pending_initializers) {
-                    let stream = span_text(&text, span)
+                    let stream = span_text(text, span)
                         .and_then(|written| written.parse::<TokenStream>().ok())
                         .expect("an initializer the parser read lexes again");
                     index.initializers.push((relative.clone(), scope, stream));
@@ -300,6 +333,27 @@ impl TraitIndex {
             .flat_map(|declared| index.renamed(&declared.name))
             .collect();
         index.alias_names = alias_names;
+        for (use_index, usage) in index.uses.iter().enumerate() {
+            index
+                .uses_by_name
+                .entry(usage.name.clone())
+                .or_default()
+                .push(use_index);
+        }
+        for (file_index, (_, found)) in index.tokens.iter().enumerate() {
+            for (tree_index, tree) in found.trees.iter().enumerate() {
+                let mut seen = HashSet::new();
+                for token in &tree.tokens {
+                    if seen.insert(token.as_str()) {
+                        index
+                            .trees_by_token
+                            .entry(token.clone())
+                            .or_default()
+                            .push((file_index, tree_index));
+                    }
+                }
+            }
+        }
         index
     }
 
@@ -814,11 +868,20 @@ impl Declarations {
             return Err(format!("{parameter} is no type parameter of {owner}"));
         };
         let key = (owner.clone(), position);
+        let top_level = self.enumerating.borrow().is_empty();
+        if top_level {
+            if let Some(cached) = self.parameter_cache.borrow().get(&key) {
+                return cached.clone();
+            }
+        }
         if !self.enumerating.borrow_mut().insert(key.clone()) {
             return Ok((false, false));
         }
         let read = self.instantiations_hold_option(site, owner, parameters[position], depth);
         self.enumerating.borrow_mut().remove(&key);
+        if top_level {
+            self.parameter_cache.borrow_mut().insert(key, read.clone());
+        }
         read
     }
 
@@ -846,36 +909,44 @@ impl Declarations {
             return Err(format!("{label} is no type parameter of {owner}"));
         };
         let definitions = index.definitions();
-        for (relative, found) in &index.tokens {
-            for tree in &found.trees {
-                let Some(name) = tree.names(&names) else {
-                    continue;
-                };
-                let unread = match tree.kind {
-                    TreeKind::Attribute => true,
-                    TreeKind::Definition => transcribed_items(&tree.stream).is_none(),
-                    TreeKind::Call => binding_macro(&tree.name, &definitions, &mut Vec::new()),
-                };
-                if unread {
-                    return Err(format!(
-                        "{} names {name}, and the census does not expand it, so its argument for {label} is unread",
-                        tree.describe(relative)
-                    ));
-                }
+        let mut candidate_trees = BTreeSet::new();
+        for name in &names {
+            if let Some(hits) = index.trees_by_token.get(name) {
+                candidate_trees.extend(hits.iter().copied());
+            }
+        }
+        for &(file_index, tree_index) in &candidate_trees {
+            let (relative, found) = &index.tokens[file_index];
+            let tree = &found.trees[tree_index];
+            let Some(name) = tree.names(&names) else {
+                continue;
+            };
+            let unread = match tree.kind {
+                TreeKind::Attribute => true,
+                TreeKind::Definition => transcribed_items(&tree.stream).is_none(),
+                TreeKind::Call => binding_macro(&tree.name, &definitions, &mut Vec::new()),
+            };
+            if unread {
+                return Err(format!(
+                    "{} names {name}, and the census does not expand it, so its argument for {label} is unread",
+                    tree.describe(relative)
+                ));
             }
         }
         let (mut stated, mut optional, mut concrete) =
-            self.in_place_fills(owner, &names, slot, label, depth)?;
+            self.in_place_fills(owner, &names, &candidate_trees, slot, label, depth)?;
         if let Some((_, default)) = &parameter.default {
             stated = true;
             concrete = true;
             optional |= self.holds_option(site, default, depth + 1)?;
         }
-        for usage in index
-            .uses
-            .iter()
-            .filter(|usage| names.contains(&usage.name))
-        {
+        let mut use_indices = BTreeSet::new();
+        for name in &names {
+            if let Some(hits) = index.uses_by_name.get(name) {
+                use_indices.extend(hits.iter().copied());
+            }
+        }
+        for usage in use_indices.into_iter().map(|idx| &index.uses[idx]) {
             let written = &index.sites[usage.site];
             let resolved = self
                 .resolver()
@@ -965,6 +1036,7 @@ impl Declarations {
         &self,
         owner: &Declaration,
         names: &[String],
+        candidate_trees: &BTreeSet<(usize, usize)>,
         slot: usize,
         label: &syn::Ident,
         depth: usize,
@@ -972,12 +1044,12 @@ impl Declarations {
         let index = self.trait_index();
         let resolver = self.resolver();
         let no_generics = syn::Generics::default();
-        let calls = index.tokens.iter().flat_map(|(relative, found)| {
-            found
-                .trees
-                .iter()
-                .filter(|tree| tree.kind == TreeKind::Call && !tree.in_function)
-                .map(move |tree| {
+        let calls = candidate_trees
+            .iter()
+            .filter_map(|&(file_index, tree_index)| {
+                let (relative, found) = &index.tokens[file_index];
+                let tree = &found.trees[tree_index];
+                (tree.kind == TreeKind::Call && !tree.in_function).then(|| {
                     (
                         relative.clone(),
                         module_scope(relative),
@@ -985,7 +1057,7 @@ impl Declarations {
                         Some(tree),
                     )
                 })
-        });
+            });
         let initializers = index
             .initializers
             .iter()
@@ -1289,6 +1361,10 @@ impl Declarations {
                 declaring.len()
             ));
         };
+        let assoc_key = (trait_declaration.clone(), name.to_owned());
+        if let Some(&optional) = self.associated_cache.borrow().get(&assoc_key) {
+            return Ok(optional);
+        }
         if let Some(location) = self.foreign_impl(&trait_declaration.name) {
             return Err(format!(
                 "{location} is outside the wire crates, so its {name} is unread"
@@ -1357,6 +1433,9 @@ impl Declarations {
                 "{trait_declaration} has no impl in the wire crates, so {label} is unread"
             ));
         }
+        self.associated_cache
+            .borrow_mut()
+            .insert(assoc_key, optional);
         Ok(optional)
     }
 
@@ -1376,47 +1455,48 @@ impl Declarations {
         let index = self.trait_index();
         let definitions = index.definitions();
         let mut names = index.renamed(name);
-        let mut scanned: BTreeMap<String, FileTokens> = BTreeMap::new();
+        let mut scanned: BTreeMap<String, std::rc::Rc<Option<FileTokens>>> = BTreeMap::new();
         let mut found = None;
-        let foreign: Vec<(String, PathBuf)> = workspace_sources(&self.root)
-            .into_iter()
-            .map(|file| (relative_path(&self.root, &file), file))
-            // The leading separator makes a test tree at the workspace root
-            // one too.
-            .filter(|(relative, _)| {
-                !is_test_path(&format!("/{relative}"))
-                    && !WIRE_ROOTS
-                        .iter()
-                        .any(|root| relative.starts_with(&format!("{root}/")))
-            })
-            .collect();
+        let foreign = self.foreign_sources();
         'renames: loop {
-            for (relative, file) in &foreign {
+            for (relative, text) in foreign {
                 if scanned.contains_key(relative) {
                     continue;
                 }
-                let text = read_source(file);
                 let Some(named) = names.iter().find(|named| text.contains(named.as_str())) else {
                     continue;
                 };
-                let tokens = syn::parse_file(&text)
-                    .ok()
-                    .and_then(|parsed| tokens::scan(&text, &test_module_spans(&parsed.items)));
-                let Some(tokens) = tokens else {
+                let entry = {
+                    let existing = self.foreign_scanned.borrow().get(relative).cloned();
+                    match existing {
+                        Some(cached) => cached,
+                        None => {
+                            let parsed = syn::parse_file(text).ok().and_then(|parsed| {
+                                tokens::scan(text, &test_module_spans(&parsed.items))
+                            });
+                            let rc = std::rc::Rc::new(parsed);
+                            self.foreign_scanned
+                                .borrow_mut()
+                                .insert(relative.clone(), std::rc::Rc::clone(&rc));
+                            rc
+                        }
+                    }
+                };
+                if entry.is_none() {
                     found = Some(format!(
                         "{relative}, which names {named} and does not parse,"
                     ));
                     break 'renames;
-                };
+                }
                 let before = names.len();
-                scanned.insert(relative.clone(), tokens);
+                scanned.insert(relative.clone(), entry);
                 names = renamed(
                     name,
                     index
                         .tokens
                         .iter()
                         .map(|(_, wire)| wire)
-                        .chain(scanned.values())
+                        .chain(scanned.values().filter_map(|rc| rc.as_ref().as_ref()))
                         .flat_map(|scan| &scan.renames),
                 );
                 if names.len() != before {
@@ -1426,7 +1506,8 @@ impl Declarations {
             break;
         }
         if found.is_none() {
-            found = scanned.iter().find_map(|(relative, tokens)| {
+            found = scanned.iter().find_map(|(relative, entry)| {
+                let tokens = entry.as_ref().as_ref()?;
                 if let Some((named, header)) = tokens
                     .impl_headers
                     .iter()
@@ -1443,7 +1524,12 @@ impl Declarations {
                     && definitions
                         .iter()
                         .copied()
-                        .chain(scanned.values().flat_map(|scan| &scan.trees))
+                        .chain(
+                            scanned
+                                .values()
+                                .filter_map(|rc| rc.as_ref().as_ref())
+                                .flat_map(|scan| &scan.trees),
+                        )
                         .any(|defined| {
                             defined.kind == TreeKind::Definition
                                 && defined.name == tree.name

@@ -66,12 +66,23 @@ impl<'a> FeatureWriteWire<'a> {
     }
 }
 
+impl Feature {
+    fn serialize_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        FeatureWriteWire::standalone(self).serialize(serializer)
+    }
+}
+
 impl Serialize for Feature {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        FeatureWriteWire::standalone(self).serialize(serializer)
+        cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+            self.serialize_erased(adapter)
+        })
     }
 }
 

@@ -520,6 +520,13 @@ where
     listed(ExportLossCode::EditDropped(kind), format, reason, ids)
 }
 
+/// `export:edit.dropped` for one record, or the file, with a message that
+/// names it and why its edit is not written (§3.4, Paths item 4).
+#[must_use]
+pub fn edit_dropped_note(kind: EntityKind, message: impl Into<String>) -> LossNote {
+    ExportLossCode::EditDropped(kind).note(message)
+}
+
 /// `export:output.empty`: the written file holds no geometry (§3.5).
 #[must_use]
 pub fn output_empty(message: impl Into<String>) -> LossNote {
