@@ -145,6 +145,13 @@ pub(super) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
             _ => None,
         }
     }
+    fn generated(selection: &BodySelection) -> Option<BodyRows<'_, GeneratedBodyRef>> {
+        match selection {
+            BodySelection::Generated { bodies, .. } => Some(BodyRows::Flat(bodies.as_slice())),
+            BodySelection::GeneratedSet { members } => Some(BodyRows::Paired(members)),
+            _ => None,
+        }
+    }
     if let Some(first) = direct(first) {
         let Some(second) = direct(second) else {
             return false;
@@ -162,13 +169,6 @@ pub(super) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
         return any_overlap(first.iter(), &second.iter(), |first, second| {
             first.as_str() == second.as_str()
         });
-    }
-    fn generated(selection: &BodySelection) -> Option<BodyRows<'_, GeneratedBodyRef>> {
-        match selection {
-            BodySelection::Generated { bodies, .. } => Some(BodyRows::Flat(bodies.as_slice())),
-            BodySelection::GeneratedSet { members } => Some(BodyRows::Paired(members)),
-            _ => None,
-        }
     }
     if let Some((first, second)) = generated(first).zip(generated(second)) {
         return any_overlap(
