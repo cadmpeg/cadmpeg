@@ -50,5 +50,6 @@ rewrite_scalar!(Unstated);
 rewrite_enum!(ShellMember, []; {
     WireEdge {id},
     FreeVertex {id},
+    Subd {id},
 });
 rewrite_record!(Vertex, []; {id, point, tolerance, native_ref});

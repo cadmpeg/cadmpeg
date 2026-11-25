@@ -121,12 +121,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 let stream = u32::try_from(ordinal)
                     .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
                 let mut candidate = brep::project(ctx, &records, stream, &mut partition_losses)?;
-                // One partition is a fragment of the document: the document
-                // states its root definition, not the partition.
-                candidate.fragment = true;
                 candidate.finalize();
+                candidate.state_root_definition(
+                    ctx,
+                    root_definition(),
+                    ExternalDocument::default(),
+                )?;
                 let report =
                     cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &candidate, Vec::new())?;
+                candidate
+                    .model
+                    .product_definitions
+                    .retain(|definition| !definition.is_root());
                 if !report.is_ok() {
                     return Err(CodecError::Malformed(
                         report
@@ -171,20 +177,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 }
             }
         }
-        // The document is one product definition that owns every body.
-        if let Some(root) = ir
-            .model
-            .product_definitions
-            .iter_mut()
-            .find(|candidate| candidate.id == definition)
-        {
-            root.bodies = ir
-                .geometry
-                .bodies
-                .iter()
-                .map(|body| body.id.clone())
-                .collect();
-        }
         if !found {
             body.losses.push(
                 SolidEdgeLossCode::BodiesPending.note("document has no primary partition stream"),
@@ -208,6 +200,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             layers,
             std::collections::BTreeMap::default(),
         ));
+        ir.state_root_definition(ctx, root_definition(), ExternalDocument::default())?;
         body.losses.push(
             SolidEdgeLossCode::AttributesPending
                 .note("body names, colours, and visibility remain undecoded"),
