@@ -187,14 +187,7 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let removed = entries.remove(index);
     let naming = properties_naming(&ir, removed.name());
     replace_arena(&mut ir, "entries", &entries);
-    let payload_spans = native_arena::<crate::native::ArchiveSpan>(&ir, "physical_ledger")
-        .into_iter()
-        .filter(|span| {
-            matches!(&span.role, crate::native::ArchiveSpanRole::CompressedPayload(name)
-                if name == removed.name())
-        })
-        .map(|span| span.id)
-        .collect::<Vec<_>>();
+    let payload_spans = payload_spans(&ir, removed.name());
     assert!(!payload_spans.is_empty());
 
     let (report, bytes, round_trip) = write_and_read_back(&ir);
@@ -207,6 +200,19 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
         );
     }
     assert_unheld_entry_reported(&report, round_trip.ir(), &naming, removed.name());
+}
+
+/// The ids of the ledger spans that hold the compressed payload of member
+/// `name`.
+pub(super) fn payload_spans(ir: &cadmpeg_ir::CadIr, name: &str) -> Vec<String> {
+    native_arena::<crate::native::ArchiveSpan>(ir, "physical_ledger")
+        .into_iter()
+        .filter(|span| {
+            matches!(&span.role, crate::native::ArchiveSpanRole::CompressedPayload(member)
+                if member == name)
+        })
+        .map(|span| span.id)
+        .collect()
 }
 
 /// The properties of `ir` that name the archive entry `name`.
@@ -562,13 +568,9 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .and_then(cadmpeg_ir::SourceMeta::dialect)
         .expect("decoded FCStd source is classified")
         .dialect();
-    let resolution = retained_baseline(
-        decoded.ir(),
-        source_dialect,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("the retained Document.xml reads")
-    .expect("the decoded schema-4 baseline is preserved");
+    let resolution = retained_baseline(decoded.ir(), source_dialect)
+        .expect("the retained Document.xml reads")
+        .expect("the decoded schema-4 baseline is preserved");
     crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);

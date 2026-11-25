@@ -236,9 +236,9 @@ impl<'a> ResolvedWrite<'a> {
     /// row the writer states it wrote instead, if any. A named row that the
     /// file is not charges `target.request-displaced`; a recorded same-format
     /// dialect that the file is not, a same-format source that records no
-    /// dialect, or a row the writer states in place of the row an `Inherit`
-    /// request resolved to, charges `target.source-dialect-displaced`. An
-    /// `Inherit` request names no row, so it charges only the source code.
+    /// dialect, and an `Inherit` request from a source of another format or
+    /// from none, charge `target.source-dialect-displaced`. An `Inherit`
+    /// request names no row, so it charges only the source code.
     fn written(
         &self,
         format: LossNamespace<'_>,
@@ -257,8 +257,12 @@ impl<'a> ResolvedWrite<'a> {
             Some(row) if row.target != planned => (row.target, Some(row.reason)),
             _ => (planned.clone(), None),
         };
-        let restated = written != planned;
         let because = reason.map_or_else(String::new, |reason| format!("; {reason}"));
+        let inherited = if written == planned {
+            format!("the file is written as {written}")
+        } else {
+            format!("Inherit resolved to {planned}, and the file is written as {written}{because}")
+        };
         let requested = match &self.target {
             ResolvedTarget::Explicit {
                 requested,
@@ -300,19 +304,15 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Default {
                 source: DefaultSource::ForeignFormat(other),
                 ..
-            } if restated => Some(format!(
-                "the document's source is {other}, which records no {} dialect; Inherit \
-                 resolved to {planned}, and the file is written as {written}{because}",
+            } => Some(format!(
+                "the document's source is {other}, which records no {} dialect; {inherited}",
                 format.as_str()
             )),
             ResolvedTarget::Default {
                 source: DefaultSource::NoSource,
                 ..
-            } if restated => Some(format!(
-                "the document records no source; Inherit resolved to {planned}, and the file \
-                 is written as {written}{because}"
-            )),
-            ResolvedTarget::Explicit { .. } | ResolvedTarget::Default { .. } => None,
+            } => Some(format!("the document records no source; {inherited}")),
+            ResolvedTarget::Explicit { .. } => None,
         };
         let losses = requested
             .map(|message| target_loss(format, REQUEST_DISPLACED, message))
@@ -360,15 +360,27 @@ impl<'a> ResolvedWrite<'a> {
     }
 
     /// Builds a typed refusal when codec-specific delivery cannot realize the
-    /// already-resolved request.
+    /// already-resolved request. An explicit refusal names the row the caller
+    /// requested, the replay row included.
     #[must_use]
     pub fn unavailable(&self, reason: impl Into<String>) -> CodecError {
         let reason = reason.into();
         let kind = match &self.target {
             ResolvedTarget::Explicit {
-                entry, requested, ..
+                entry,
+                requested,
+                displaced,
+                ..
             } => TargetRefusalKind::ExplicitUnavailable {
-                target: entry.id.clone(),
+                target: displaced
+                    .then(|| {
+                        self.replay_rows
+                            .iter()
+                            .find(|row| names_row(row, requested, self.available.namespace()))
+                    })
+                    .flatten()
+                    .unwrap_or(&entry.id)
+                    .clone(),
                 requested: TargetToken::new(*requested),
                 reason,
             },

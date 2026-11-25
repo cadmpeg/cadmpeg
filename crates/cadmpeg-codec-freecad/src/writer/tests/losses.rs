@@ -3,10 +3,10 @@
 //! one report line that names each omission.
 
 use super::patching::{
-    archive_payloads, assert_unheld_entry_reported, export_messages, native_arena,
+    archive_payloads, assert_unheld_entry_reported, export_messages, native_arena, payload_spans,
     properties_naming, replace_arena, write_and_read_back,
 };
-use crate::native::{ArchiveSpan, ArchiveSpanRole, EntryRecord, PropertyRecord, RetainedXml};
+use crate::native::{EntryRecord, PropertyRecord, RetainedXml};
 use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -50,12 +50,12 @@ fn displace_spans(ir: &mut cadmpeg_ir::CadIr, ids: &[String]) {
     replace_arena(ir, "properties", &properties);
 }
 
-/// A removed payload entry whose property the patch cannot write, because
-/// its span no longer holds its stored text, sends the write to the stored
-/// `Document.xml`. The property is written there with an empty file name, so
-/// the file reads back, and no edit is reported dropped.
+/// A removed payload entry whose property the patch cannot write from its
+/// record, because its span no longer holds its stored text, is written
+/// from the stored record with an empty file name, so the file reads back,
+/// and no edit is reported dropped.
 #[test]
-fn the_stored_document_empties_the_file_name_of_a_removed_entry() {
+fn a_stored_record_empties_the_file_name_of_a_removed_entry() {
     let mut ir = decode(CORE_DESIGN_PRODUCT);
     let (name, naming) = remove_shape_entry(&mut ir);
     let ids = naming
@@ -70,13 +70,14 @@ fn the_stored_document_empties_the_file_name_of_a_removed_entry() {
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
 }
 
-/// A removed optional entry whose property the patch cannot write, because
-/// its span no longer holds its stored text, leaves the property as stored.
-/// The patched document reads back with the entry unresolved, the property
-/// still names the entry, and the one `export:native.records-omitted` line
-/// names the property; no edit is reported dropped.
+/// A removed optional entry whose property the patch cannot write from its
+/// record, because its span no longer holds its stored text, is written from
+/// the stored record with an empty file name, and its object is marked
+/// `Touched`. The written file and the one `export:native.records-omitted`
+/// line agree that the property names no entry; no edit is reported
+/// dropped.
 #[test]
-fn a_property_left_as_stored_names_its_removed_optional_entry_as_omitted() {
+fn a_property_the_patch_cannot_write_names_no_removed_optional_entry() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"/></Property></Properties></Object></ObjectData></Document>"#;
     let mut ir = decode(&archive_entries(&[
         ("Document.xml", xml.as_bytes()),
@@ -85,22 +86,15 @@ fn a_property_left_as_stored_names_its_removed_optional_entry_as_omitted() {
     let mut entries = native_arena::<EntryRecord>(&ir, "entries");
     entries.retain(|entry| entry.name() != "Payload.bin");
     replace_arena(&mut ir, "entries", &entries);
-    let payload = properties_naming(&ir, "Payload.bin")
-        .pop()
-        .expect("Payload names its entry");
+    let naming = properties_naming(&ir, "Payload.bin");
+    let [payload] = naming.as_slice() else {
+        panic!("one property names Payload.bin, got {naming:?}");
+    };
     displace_spans(&mut ir, std::slice::from_ref(&payload.id));
 
     let (report, bytes, round_trip) = write_and_read_back(&ir);
-    assert_eq!(
-        round_trip
-            .ir()
-            .source
-            .as_ref()
-            .and_then(|source| source.dialect())
-            .map(|dialect| dialect.dialect().to_string()),
-        Some("fcstd:schema-4".to_owned())
-    );
     assert!(!archive_payloads(&bytes).contains_key("Payload.bin"));
+    assert_unheld_entry_reported(&report, round_trip.ir(), &naming, "Payload.bin");
     let written = native_arena::<PropertyRecord>(round_trip.ir(), "properties")
         .into_iter()
         .find(|property| property.id == payload.id)
@@ -110,32 +104,23 @@ fn a_property_left_as_stored_names_its_removed_optional_entry_as_omitted() {
             .attributes
             .get("file")
             .map(String::as_str),
-        Some("Payload.bin")
+        Some("")
     );
-    assert!(round_trip.report().losses.iter().any(|loss| {
-        loss.code.local_code() == "metadata.persistence-side-entry-unresolved"
-            && loss.message.contains(payload.id.as_str())
-    }));
+    assert!(!round_trip
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "metadata.persistence-side-entry-unresolved" }));
     let omitted = export_messages(&report, "native.records-omitted");
     let [message] = omitted.as_slice() else {
         panic!("expected one omitted line, naming the property, got {omitted:?}");
     };
     assert!(
-        message.contains("names its entry as the source stores it")
+        message.contains("each written property names no entry")
             && message.ends_with(payload.id.as_str()),
         "{message}"
     );
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
-}
-
-/// The ids of the ledger spans that hold the compressed payload of member
-/// `name`.
-fn payload_spans(ir: &cadmpeg_ir::CadIr, name: &str) -> Vec<String> {
-    native_arena::<ArchiveSpan>(ir, "physical_ledger")
-        .into_iter()
-        .filter(|span| matches!(&span.role, ArchiveSpanRole::CompressedPayload(member) if member == name))
-        .map(|span| span.id)
-        .collect()
 }
 
 /// Each member the output no longer holds is named on one
@@ -286,11 +271,7 @@ fn an_unreadable_entry_is_named_once() {
     let data = entry["data"].as_str().expect("entry hex bytes");
     entry["data"] = serde_json::json!(format!("{data}00"));
     replace_arena(&mut ir, "entries", &entries);
-    let spans = native_arena::<ArchiveSpan>(&ir, "physical_ledger")
-        .into_iter()
-        .filter(|span| matches!(&span.role, ArchiveSpanRole::CompressedPayload(name) if *name == stale_name))
-        .map(|span| span.id)
-        .collect::<Vec<_>>();
+    let spans = payload_spans(&ir, &stale_name);
     assert!(!spans.is_empty());
 
     let (report, bytes, _) = write_and_read_back(&ir);

@@ -69,8 +69,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Writing uses the FCStd native document graph on `CadIr`
-(`ir.native["fcstd"]`). `Encoder::plan` reads only the uncarried codec digest
-from `fidelity` and returns `NotConsumed`. The writer patches the retained
+(`ir.native["fcstd"]`). `Encoder::plan` reads two things from `fidelity`: the
+uncarried codec digest, which tells whether the document holds edits since
+decode, and the untyped retained records, which the patched file holds and
+`export:source.carried` and `export:source.unchecked` name. It returns
+`NotConsumed`. The writer patches the retained
 `Document.xml` and repacks the retained side entries; it preserves unedited XML
 records and named side entries and writes the band the retained `Document.xml`
 declares. Checked leaf property edits and side-entry replacements update the

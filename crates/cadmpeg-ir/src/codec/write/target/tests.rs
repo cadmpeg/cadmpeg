@@ -221,15 +221,22 @@ fn write_request_inherit_with_no_default_takes_the_newest_row() {
     ] {
         let resolved = resolve_write_request(&ir, TargetRequest::Inherit, catalog)
             .expect("a catalog without a default still resolves");
-        assert_eq!(charged(&resolved, true, None), ("test:new".into(), vec![]));
+        let (target, losses) = charged(&resolved, true, None);
+        assert_eq!(target, "test:new");
+        assert_eq!(
+            losses
+                .iter()
+                .map(|(code, _)| code.as_str())
+                .collect::<Vec<_>>(),
+            [SOURCE_DIALECT_DISPLACED]
+        );
     }
 }
 
-/// An `Inherit` request names no row, so a written row other than the one
-/// resolution chose charges only `target.source-dialect-displaced`: for a
-/// source that records no dialect, a source of another format, and no
-/// source, each naming the written row, and the resolved row where the
-/// source records none of this format.
+/// An `Inherit` request names no row, so it charges only
+/// `target.source-dialect-displaced`: for a source that records no dialect,
+/// a source of another format, and no source, each naming the written row,
+/// and the resolved row where the writer states another.
 #[test]
 fn an_inherit_write_of_another_row_charges_only_the_source_code() {
     let row = Some(WrittenRow {
@@ -286,8 +293,30 @@ fn an_inherit_write_of_another_row_charges_only_the_source_code() {
     );
     assert_eq!(
         charged(&resolved, true, None),
-        ("test:new".into(), vec![]),
-        "the resolved row written charges nothing"
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document records no source; the file is written as test:new".to_owned()
+            )]
+        ),
+        "an Inherit write with no source resolves to the catalog default and charges it"
+    );
+
+    let resolved =
+        resolve_write_request(&foreign, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(
+        charged(&resolved, true, None),
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document's source is other, which records no test dialect; the file is \
+                 written as test:new"
+                    .to_owned()
+            )]
+        ),
+        "an Inherit write from another format resolves to the catalog default and charges it"
     );
 }
 

@@ -22,7 +22,7 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::{Companions, DecodeDepth, ResourceLimit, ResourceLimits};
+use cadmpeg_core::decode::{Companions, DecodeDepth, ResourceLimit};
 use cadmpeg_core::target::{TargetCatalog, TargetRefusal};
 use cadmpeg_core::CodecError;
 
@@ -305,9 +305,6 @@ pub struct EncodeInput<'a> {
     pub ir: &'a CadIr,
     /// Decode-time fidelity state, when available.
     pub fidelity: Option<&'a SourceFidelity>,
-    /// The session ceilings of the write: a writer refuses with
-    /// [`EncodeError::ResourceLimit`] only where one of them runs out.
-    pub limits: ResourceLimits,
     /// The source of the files that external assets of the document name,
     /// for an encoder that writes their content into its output.
     pub assets: Option<&'a dyn Companions>,
@@ -346,20 +343,12 @@ impl<'a> EncodeInput<'a> {
         Self {
             ir,
             fidelity,
-            limits: ResourceLimits::desktop(),
             assets: None,
             scene: SceneOptions::DEFAULT,
             missing_states: MissingStateForm::GeometryTrue,
             strictness: &PERMISSIVE,
             validation: None,
         }
-    }
-
-    /// Selects the session ceilings of the export.
-    #[must_use]
-    pub const fn with_limits(mut self, limits: ResourceLimits) -> Self {
-        self.limits = limits;
-        self
     }
 
     /// Attaches the source of the files that external assets name.

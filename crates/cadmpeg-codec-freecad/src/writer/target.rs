@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
@@ -54,9 +54,6 @@ pub(super) struct Resolution<'a> {
     /// Names of the archive members `omitted` already names by their entry
     /// record.
     omitted_members: HashSet<String>,
-    /// The caller's session ceilings, which every parse of the write runs
-    /// under.
-    limits: ResourceLimits,
 }
 
 impl<'a> Resolution<'a> {
@@ -82,10 +79,6 @@ impl<'a> Resolution<'a> {
 
     pub(super) const fn target(&self) -> &DialectId {
         &self.target
-    }
-
-    pub(super) const fn limits(&self) -> ResourceLimits {
-        self.limits
     }
 
     pub(super) fn document_xml(&self) -> &str {
@@ -135,8 +128,8 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let (resolution, written_row) = resolve(input.ir, resolved, input.limits)?;
-    let baseline = admit_unedited(input.ir, input.fidelity, input.limits)?;
+    let (resolution, written_row) = resolve(input.ir, resolved)?;
+    let baseline = admit_unedited(input.ir, input.fidelity)?;
     let mut body = finish(&resolution, input.fidelity, baseline)?;
     body.written_row = written_row;
     Ok(body)
@@ -181,45 +174,44 @@ pub(crate) fn uncarried_digest(
 enum Baseline {
     /// The digest matches: nothing outside [`CARRIED_NATIVE_ARENAS`] changed.
     Unedited,
-    /// The digest differs: an edit outside [`CARRIED_NATIVE_ARENAS`] has no
-    /// serializer here and is left as the source stores it.
-    Edited,
+    /// The digest differs, or does not compute for the reason held, though
+    /// the decode that recorded it computed it: an edit outside
+    /// [`CARRIED_NATIVE_ARENAS`] has no serializer here and is left as the
+    /// source stores it.
+    Edited(Option<String>),
     /// The sidecar records no digest, so the document's edits are not known.
     Unrecorded,
-    /// The document's digest is not computable, for the reason held, so its
-    /// edits are not known.
-    Uncomputable(String),
 }
 
 /// Compare the document with the digest its decode recorded.
 ///
 /// A document whose sidecar records no digest (no sidecar, or every decode
-/// below `Full`) is [`Baseline::Unrecorded`], and one whose digest does not
-/// compute is [`Baseline::Uncomputable`].
-fn admit_unedited(
-    ir: &CadIr,
-    fidelity: Option<&SourceFidelity>,
-    limits: ResourceLimits,
-) -> Result<Baseline, CodecError> {
+/// below `Full`) is [`Baseline::Unrecorded`]. A held digest that does not
+/// compute, for a reason other than a resource ceiling, shows an edit.
+fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Baseline, CodecError> {
     let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
         return Ok(Baseline::Unrecorded);
     };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let current = match uncarried_digest(&ctx, ir) {
         Ok(current) => current,
         Err(error) => {
             let reason = error.to_string();
             recover(error)?;
-            return Ok(Baseline::Uncomputable(reason));
+            return Ok(Baseline::Edited(Some(reason)));
         }
     };
     ctx.finish_session()?;
     Ok(if current == *expected {
         Baseline::Unedited
     } else {
-        Baseline::Edited
+        Baseline::Edited(None)
     })
 }
 
@@ -227,10 +219,10 @@ fn admit_unedited(
 /// and the fidelity resolution; this writer patches the retained document and
 /// consumes no sidecar. Every write is a patch, so `untyped` retained records
 /// in `fidelity` charge both carried-source codes. A [`Baseline::Unrecorded`]
-/// or [`Baseline::Uncomputable`] document charges `export:edit.unverified`,
-/// and a [`Baseline::Edited`] one charges `export:edit.dropped` naming the
-/// document, because the digest does not isolate the edited record (§3.4,
-/// Paths item 4).
+/// document charges `export:edit.unverified`, and a [`Baseline::Edited`] one
+/// charges `export:edit.dropped` naming the document, because the digest does
+/// not isolate the edited record, and the record the digest error names
+/// (§3.4, Paths item 4).
 fn finish(
     resolution: &Resolution<'_>,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
@@ -249,17 +241,23 @@ fn finish(
              since decode are not known; the file patches the retained Document.xml with the \
              carried native records and holds no other edit"
         ))),
-        Baseline::Uncomputable(reason) => losses.push(edit_unverified(format!(
-            "the `{UNCARRIED_DIGEST}` codec digest of the document does not compute ({reason}), \
-             so edits since decode are not known; the file patches the retained Document.xml \
-             with the carried native records and holds no other edit"
-        ))),
-        Baseline::Edited => losses.extend(edit_dropped(
+        Baseline::Edited(None) => losses.extend(edit_dropped(
             EntityKind::Feature,
             "FCStd",
             "patches the retained Document.xml with the carried native records and holds \
              the other records as the source stores them; the uncarried digest names no \
              record, so the entry names the document",
+            [resolution.document().id.clone()],
+        )),
+        Baseline::Edited(Some(reason)) => losses.extend(edit_dropped(
+            EntityKind::Feature,
+            "FCStd",
+            &format!(
+                "patches the retained Document.xml with the carried native records and holds \
+                 the other records as the source stores them; the `{UNCARRIED_DIGEST}` codec \
+                 digest the sidecar holds does not compute ({reason}), so a record it covers \
+                 is edited, and the entry names the document"
+            ),
             [resolution.document().id.clone()],
         )),
     }
@@ -280,9 +278,8 @@ fn finish(
 fn resolve<'a>(
     ir: &'a CadIr,
     resolved: &ResolvedWrite<'_>,
-    limits: ResourceLimits,
 ) -> Result<(Resolution<'a>, Option<WrittenRow>), CodecError> {
-    let mut resolution = retained_baseline(ir, resolved.target_id(), limits)?
+    let mut resolution = retained_baseline(ir, resolved.target_id())?
         .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))?;
     let declared = FcstdDialect::from_schema_version(resolution.schema_version()).id();
     if declared == *resolved.target_id() {
@@ -307,22 +304,17 @@ fn resolve<'a>(
 /// document facts come from those bytes, which are what the output holds. A
 /// `Container` decode retains no entry. An entry record that does not read, or
 /// whose name an earlier entry already takes, is left out of the archive and
-/// reported. `target` is the dialect the resolution names, and every parse
-/// runs under `limits`.
+/// reported. `target` is the dialect the resolution names.
 pub(super) fn retained_baseline<'a>(
     ir: &'a CadIr,
     target: &DialectId,
-    limits: ResourceLimits,
 ) -> Result<Option<Resolution<'a>>, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(None);
     };
-    let policy = DecodePolicy { limits };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let mut omitted = Omissions::default();
-    let (records, unreadable) = super::read_arena::<EntryRecord>(&ctx, namespace, "entries")?;
-    let omitted_members = entry_names(&ctx, namespace, &unreadable);
+    let (records, unreadable) = super::read_arena::<EntryRecord>(namespace, "entries")?;
+    let omitted_members = entry_names(namespace, &unreadable);
     for id in unreadable {
         omitted.push(super::UNREADABLE_ENTRY, id);
     }
@@ -341,8 +333,7 @@ pub(super) fn retained_baseline<'a>(
     let Some(document_xml) = document_xml else {
         return Ok(None);
     };
-    let Some((document, schema_version, vocabulary)) =
-        read_declaration(document_xml.data(), &policy)?
+    let Some((document, schema_version, vocabulary)) = read_declaration(document_xml.data())?
     else {
         return Ok(None);
     };
@@ -360,17 +351,12 @@ pub(super) fn retained_baseline<'a>(
         entries,
         omitted,
         omitted_members,
-        limits,
     }))
 }
 
 /// The member names the entry records `ids` state, for each record whose
 /// name reads.
-fn entry_names(
-    ctx: &DecodeContext<'_>,
-    namespace: &cadmpeg_ir::native::NativeNamespace,
-    ids: &[String],
-) -> HashSet<String> {
+fn entry_names(namespace: &cadmpeg_ir::native::NativeNamespace, ids: &[String]) -> HashSet<String> {
     #[derive(serde::Deserialize)]
     struct Named {
         name: String,
@@ -382,7 +368,7 @@ fn entry_names(
         .into_iter()
         .flatten()
         .map(cadmpeg_ir::native::NativeRecord::id)
-        .zip(namespace.arena_iter_as_for_decode::<Named>(ctx, "entries"))
+        .zip(namespace.arena_iter_as::<Named>("entries"))
         .filter(|(id, _)| ids.contains(id))
         .filter_map(|(_, named)| named.ok().map(|named| named.name))
         .collect()
@@ -392,10 +378,10 @@ fn entry_names(
 /// or `None` where they do not read as a `Document.xml` the decoder admits.
 fn read_declaration(
     bytes: &[u8],
-    policy: &DecodePolicy,
 ) -> Result<Option<(DocumentFacts, String, Vocabulary)>, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, policy)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
     let declared = crate::container::admit_document(&ctx, bytes).and_then(|xml| {
         let (document, schema_version) = crate::container::parse_document(&xml, &mut Vec::new())?;
         let vocabulary = Vocabulary::from_declaration(&schema_version)?;

@@ -78,6 +78,31 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         })
     );
     assert_eq!(refusal.format(), "fcstd");
+
+    // An explicit replay row that the document cannot reach is refused
+    // naming that row.
+    let replay = FcstdCodec
+        .plan(
+            EncodeInput::new(&step_source, None),
+            TargetRequest::Explicit("fcstd:schema-2"),
+        )
+        .expect_err("a replay row with no retained Document.xml is refused");
+    let EncodeError::UnsupportedTarget(refusal) = &replay else {
+        panic!("expected a target refusal, got {replay}");
+    };
+    let wire = serde_json::to_value(refusal).expect("serialize refusal");
+    assert_eq!(
+        (
+            &wire["refusal"]["kind"],
+            &wire["refusal"]["target"],
+            &wire["refusal"]["requested"],
+        ),
+        (
+            &serde_json::json!("explicit_unavailable"),
+            &serde_json::json!("fcstd:schema-2"),
+            &serde_json::json!("fcstd:schema-2"),
+        )
+    );
 }
 
 /// A schema-2 `Document.xml`, in the `Features`/`FeatureData` vocabulary
@@ -869,11 +894,12 @@ fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
     );
 }
 
-/// A document whose uncarried digest does not compute cannot prove that it
-/// is unedited. It is patched, and `export:edit.unverified` names the record
-/// the digest does not read.
+/// A held uncarried digest that no longer computes shows an edit of a record
+/// it covers, which the writer has no serializer for. The document is
+/// patched, and `export:edit.dropped` at Error names the document and the
+/// record the digest does not read (§3.4, Paths item 4).
 #[test]
-fn a_document_whose_digest_does_not_compute_is_patched_and_reported_unverified() {
+fn a_document_whose_held_digest_does_not_compute_reports_the_edit_dropped() {
     let mut ir = CORE_DESIGN.ir().clone();
     let unknown = crate::native::native_id("unknown", "unread");
     ir.native
@@ -887,12 +913,21 @@ fn a_document_whose_digest_does_not_compute_is_patched_and_reported_unverified()
     let (report, bytes) = patched(&ir, Some(CORE_DESIGN.source_fidelity()));
     assert_eq!(
         export_losses(&report),
-        [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
+        [("edit.dropped", cadmpeg_ir::report::Severity::Error)]
     );
-    assert!(report
+    let dropped = report
         .losses
         .iter()
-        .any(|loss| loss.message.contains(unknown.as_str())));
+        .find(|loss| loss.code.local_code() == "edit.dropped")
+        .expect("edit.dropped");
+    assert!(
+        dropped.message.contains(unknown.as_str())
+            && dropped
+                .message
+                .contains(crate::native::native_id("document", "0").as_str()),
+        "{}",
+        dropped.message
+    );
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode output");
@@ -904,61 +939,6 @@ fn a_document_whose_digest_does_not_compute_is_patched_and_reported_unverified()
             .and_then(|source| source.dialect())
             .map(|dialect| dialect.dialect().to_string()),
         Some("fcstd:schema-4".to_owned())
-    );
-}
-
-/// The caller's limits reach every parse of the write. A native record nested
-/// past the default recursion ceiling stops the uncarried digest, so under
-/// the default limits the write is refused with `ResourceLimit`. Under a
-/// caller ceiling above the default the digest computes, and the record,
-/// which the writer has no serializer for, is reported with the document.
-#[test]
-fn a_caller_limit_above_the_default_is_honoured() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
-    limits.max_recursion_depth *= 4;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy { limits },
-    )
-    .expect("an empty root fits");
-    let mut nested = serde_json::json!("leaf");
-    for _ in 0..256 {
-        nested = serde_json::json!([nested]);
-    }
-    let mut ir = CORE_DESIGN.ir().clone();
-    ir.native
-        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
-        .set_arena(
-            &ctx,
-            "nested",
-            &[serde_json::json!({
-                "id": crate::native::native_id("nested", "deep"),
-                "value": nested,
-            })],
-        )
-        .expect("set the nested arena");
-    let fidelity = Some(CORE_DESIGN.source_fidelity());
-
-    let refused = inherit(&ir, fidelity).expect_err("the default ceiling runs out");
-    assert!(
-        matches!(refused, EncodeError::ResourceLimit(_)),
-        "{refused}"
-    );
-
-    let mut bytes = Vec::new();
-    let report = Encoder::plan(
-        &FcstdCodec,
-        EncodeInput::new(&ir, fidelity).with_limits(limits),
-        TargetRequest::Inherit,
-    )
-    .expect("the caller's ceiling admits the document")
-    .write_to(&mut bytes)
-    .expect("the patch writes");
-    assert_eq!(
-        export_losses(&report),
-        [("edit.dropped", cadmpeg_ir::report::Severity::Error)]
     );
 }
 
