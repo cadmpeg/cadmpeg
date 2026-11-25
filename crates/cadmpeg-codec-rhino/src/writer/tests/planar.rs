@@ -562,3 +562,183 @@ fn shared_edge_with_equal_uses_is_written_as_two_edges() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn shared_edge_whose_uses_are_not_each_others_radial_next_is_written_as_two_edges() {
+    let mut ir = adjacent_quad_sheet();
+    for index in [1, 7] {
+        let coedge = &mut ir.geometry.coedges[index];
+        coedge.radial_next = coedge.id.clone();
+    }
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 2, "{losses:?}");
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert_eq!(decoded.geometry.edges.len(), 8);
+    assert!(
+        losses.iter().any(|loss| loss
+            .contains(crate::loss::RhinoLossCode::WriterEdgeUnjoined.code())
+            && loss.contains("are not each other's radial next")
+            && loss.contains("cadir:model:edge#adjacent.1")),
+        "{losses:?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
+}
+
+/// `adjacent_quad_sheet` with a third face on the plane `x = 1` that uses
+/// the edge the two quads share.
+fn adjacent_sheet_with_fin() -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, FaceId, LoopId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Sense, Vertex};
+
+    let mut ir = adjacent_quad_sheet();
+    let shell = ir.geometry.shells[0].id.clone();
+    let face = FaceId::mint("cadir:model:face#adjacent.2").expect("identity grammar");
+    let loop_id = LoopId::mint("cadir:model:loop#adjacent.2").expect("identity grammar");
+    let surface = SurfaceId::mint("cadir:model:surface#adjacent.2").expect("identity grammar");
+    ir.geometry.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(1.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .expect("a plane frame"),
+        )),
+        source_object: None,
+        native_ref: None,
+    });
+    ir.geometry.faces.push(Face {
+        id: face.clone(),
+        shell,
+        surface,
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    });
+    let raised = [Point3::new(1.0, 1.0, 1.0), Point3::new(1.0, 0.0, 1.0)];
+    for (index, position) in raised.into_iter().enumerate() {
+        let point = PointId::mint(format!("cadir:model:point#adjacent.{}", 6 + index))
+            .expect("identity grammar");
+        ir.geometry.points.push(Point::new(
+            point.clone(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
+                .expect("a finite position is a point"),
+            None,
+        ));
+        ir.geometry.vertices.push(Vertex {
+            id: VertexId::mint(format!("cadir:model:vertex#adjacent.{}", 6 + index))
+                .expect("identity grammar"),
+            point,
+            tolerance: None,
+            native_ref: None,
+        });
+    }
+    let position = |vertex: usize| match vertex {
+        1 => Point3::new(1.0, 0.0, 0.0),
+        2 => Point3::new(1.0, 1.0, 0.0),
+        _ => raised[vertex - 6],
+    };
+    for (index, (start, end)) in [(2, 6), (6, 7), (7, 1)].into_iter().enumerate() {
+        let (from, to) = (position(start), position(end));
+        let delta = Vector3::new(to.x - from.x, to.y - from.y, to.z - from.z);
+        let curve = CurveId::mint(format!("cadir:model:curve#adjacent.{}", 7 + index))
+            .expect("identity grammar");
+        ir.geometry.curves.push(Curve {
+            parameter_range: None,
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(
+                        from.x - 2.0 * delta.x,
+                        from.y - 2.0 * delta.y,
+                        from.z - 2.0 * delta.z,
+                    ),
+                    delta,
+                )
+                .expect("a line"),
+            )),
+            source_object: None,
+            native_ref: None,
+        });
+        ir.geometry.edges.push(Edge {
+            id: EdgeId::mint(format!("cadir:model:edge#adjacent.{}", 7 + index))
+                .expect("identity grammar"),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([2.0, 3.0]))
+                .expect("an edge carrier"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint(format!("cadir:model:vertex#adjacent.{start}"))
+                    .expect("identity grammar"),
+                VertexId::mint(format!("cadir:model:vertex#adjacent.{end}"))
+                    .expect("identity grammar"),
+            )),
+            tolerance: None,
+            native_ref: None,
+        });
+    }
+    let coedges = (8..12)
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#adjacent.{index}"))
+                .expect("identity grammar")
+        })
+        .collect::<Vec<_>>();
+    for (index, edge) in [1, 7, 8, 9].into_iter().enumerate() {
+        ir.geometry.coedges.push(Coedge {
+            id: coedges[index].clone(),
+            owner_loop: loop_id.clone(),
+            edge: EdgeId::mint(format!("cadir:model:edge#adjacent.{edge}"))
+                .expect("identity grammar"),
+            radial_next: coedges[index].clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+            native_ref: None,
+        });
+    }
+    ir.geometry.coedges[7].radial_next = coedges[0].clone();
+    ir.geometry.coedges[8].radial_next = ir.geometry.coedges[1].id.clone();
+    ir.geometry.loops.push(Loop {
+        id: loop_id,
+        face,
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()).expect("valid loop ring"),
+        ),
+        native_ref: None,
+    });
+    ir.finalize();
+    ir
+}
+
+#[test]
+fn edge_with_three_uses_is_written_as_one_edge_for_each_use() {
+    let ir = adjacent_sheet_with_fin();
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 3, "{losses:?}");
+    assert_eq!(decoded.geometry.faces.len(), 3);
+    assert_eq!(decoded.geometry.edges.len(), 12);
+    assert!(
+        losses.iter().any(|loss| loss
+            .contains(crate::loss::RhinoLossCode::WriterEdgeUnjoined.code())
+            && loss.contains("three or more uses")
+            && loss.contains("cadir:model:edge#adjacent.1")),
+        "{losses:?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
+}

@@ -1191,12 +1191,16 @@ fn prepare_write(
     for scope in &breps {
         let (pieces, scope_findings) = brep_pieces(&ctx, &compounds, scope);
         records.omitted.extend(scope_findings.dropped);
-        if !scope_findings.unjoined.is_empty() {
+        let mut unjoined_edges = std::collections::BTreeMap::<_, Vec<&str>>::new();
+        for (reason, edge) in &scope_findings.unjoined {
+            unjoined_edges.entry(*reason).or_default().push(edge);
+        }
+        for (reason, edges) in unjoined_edges {
             losses.push(RhinoLossCode::WriterEdgeUnjoined.note(format!(
-                "{} is written with each use of these edges on its own edge, as their two uses \
-                 run the same way: {}",
+                "{} is written with each use of these edges on its own edge, as {}: {}",
                 scope.identity,
-                scope_findings.unjoined.join(", ")
+                reason.reason(),
+                edges.join(", ")
             )));
         }
         if pieces.is_empty() {

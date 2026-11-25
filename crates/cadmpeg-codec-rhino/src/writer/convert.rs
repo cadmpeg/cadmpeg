@@ -41,7 +41,7 @@ pub(super) struct ConvertedScope {
 /// several edges.
 pub(super) struct ScopeFindings {
     pub(super) dropped: Vec<(String, String)>,
-    pub(super) unjoined: Vec<String>,
+    pub(super) unjoined: Vec<(Unjoin, String)>,
     pub(super) rejoined: Vec<(String, f64)>,
     pub(super) split: Vec<EdgeSplit>,
 }
@@ -951,11 +951,34 @@ struct FacePlan {
     pcurves: Vec<(String, Option<CoedgePcurve>)>,
 }
 
-/// Gives each use of an edge whose two uses run the same way its own edge: a
-/// 3DM Brep joins two faces at an edge where their trims run opposite ways.
-/// The second use takes a copy of the edge, with the key of the use appended
-/// to its id. Returns the id of each edge it splits.
-fn unjoin_equal_uses(ir: &mut CadIr) -> Vec<String> {
+/// Why an edge is written as one edge for each of its uses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Unjoin {
+    /// Its two uses run the same way.
+    EqualSenses,
+    /// Its two uses are not each other's radial next.
+    UnpairedRing,
+    /// It has three or more uses.
+    ManyUses,
+}
+
+impl Unjoin {
+    /// The reason clause of the writer's loss.
+    pub(super) fn reason(self) -> &'static str {
+        match self {
+            Self::EqualSenses => "their two uses run the same way",
+            Self::UnpairedRing => "their two uses are not each other's radial next",
+            Self::ManyUses => "each has three or more uses, and a written edge joins two",
+        }
+    }
+}
+
+/// Gives each use of an edge its own edge unless the edge has one use, or two
+/// uses that run opposite ways and are each other's radial next: a 3DM Brep
+/// joins two faces at an edge where their trims run opposite ways. Each use
+/// after the first takes a copy of the edge, with the key of the use appended
+/// to its id. Returns the id of each edge it splits, with the reason.
+fn unjoin_unpaired_uses(ir: &mut CadIr) -> Vec<(Unjoin, String)> {
     let geometry = &mut ir.geometry;
     let mut uses = BTreeMap::<String, Vec<usize>>::new();
     for (index, coedge) in geometry.coedges.iter().enumerate() {
@@ -966,36 +989,53 @@ fn unjoin_equal_uses(ir: &mut CadIr) -> Vec<String> {
     let mut unjoined = Vec::new();
     let mut copies = Vec::new();
     for (edge, uses) in uses {
-        let [first, second] = uses[..] else {
+        let reason = match uses[..] {
+            [] | [_] => continue,
+            [first, second] => {
+                let (one, other) = (&geometry.coedges[first], &geometry.coedges[second]);
+                if one.radial_next != other.id || other.radial_next != one.id {
+                    Unjoin::UnpairedRing
+                } else if one.sense == other.sense {
+                    Unjoin::EqualSenses
+                } else {
+                    continue;
+                }
+            }
+            _ => Unjoin::ManyUses,
+        };
+        let Some(source) = geometry
+            .edges
+            .iter()
+            .find(|source| source.id.as_str() == edge)
+        else {
             continue;
         };
-        let (one, other) = (&geometry.coedges[first], &geometry.coedges[second]);
-        if one.sense != other.sense || one.radial_next != other.id || other.radial_next != one.id {
+        let Some(ids) = uses[1..]
+            .iter()
+            .map(|&index| {
+                geometry.coedges[index]
+                    .id
+                    .as_str()
+                    .split_once('#')
+                    .and_then(|(_, key)| {
+                        cadmpeg_ir::ids::EdgeId::mint(format!("{edge}.on-{key}")).ok()
+                    })
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
+        };
+        for (&index, id) in uses[1..].iter().zip(ids) {
+            let mut copy = source.clone();
+            copy.id = id.clone();
+            copies.push(copy);
+            geometry.coedges[index].edge = id;
         }
-        let copy = other
-            .id
-            .as_str()
-            .split_once('#')
-            .and_then(|(_, key)| cadmpeg_ir::ids::EdgeId::mint(format!("{edge}.on-{key}")).ok())
-            .zip(
-                geometry
-                    .edges
-                    .iter()
-                    .find(|source| source.id.as_str() == edge),
-            );
-        let Some((id, source)) = copy else {
-            continue;
-        };
-        let mut copy = source.clone();
-        copy.id = id.clone();
-        copies.push(copy);
-        let other = &mut geometry.coedges[second];
-        other.edge = id;
-        other.radial_next = other.id.clone();
-        let one = &mut geometry.coedges[first];
-        one.radial_next = one.id.clone();
-        unjoined.push(edge);
+        for &index in &uses {
+            let coedge = &mut geometry.coedges[index];
+            coedge.radial_next = coedge.id.clone();
+        }
+        unjoined.push((reason, edge));
     }
     geometry.edges.extend(copies);
     unjoined
@@ -1462,7 +1502,7 @@ pub(super) fn convert_scope(
     ir: &CadIr,
 ) -> ConvertedScope {
     let mut unshared = ir.clone();
-    let unjoined = unjoin_equal_uses(&mut unshared);
+    let unjoined = unjoin_unpaired_uses(&mut unshared);
     let origins = unshare_carriers(&mut unshared);
     let split = split_gapped_edges(ctx, compounds, &mut unshared);
     let ir = &unshared;

@@ -231,8 +231,8 @@ pub(crate) enum RhinoLossCode {
     WriterMeshDataOmitted,
     /// One body is written as several Brep objects.
     WriterBodySplit,
-    /// An edge whose two uses run the same way is written as two edges, one
-    /// for each use.
+    /// An edge whose uses are not one pair that runs opposite ways, each the
+    /// other's radial next, is written as one edge for each use.
     WriterEdgeUnjoined,
     /// A joined curve is written as a curve object for each of its pieces.
     WriterCurveSplit,
