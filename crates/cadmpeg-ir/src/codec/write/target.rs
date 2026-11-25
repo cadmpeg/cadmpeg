@@ -3,6 +3,8 @@
 
 use crate::codec::FormatId;
 use crate::document::CadIr;
+use crate::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind};
+use crate::report::Severity;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::{
     DefaultSource, TargetCatalog, TargetDescriptor, TargetRefusal, TargetRefusalKind, TargetToken,
@@ -25,6 +27,36 @@ pub enum TargetRequest<'a> {
     /// explicit target flag, or the catalog default for a cross-format
     /// conversion.
     Explicit(&'a str),
+}
+
+/// The code of the loss a write charges where the file is not the dialect its
+/// same-format source records (§3.2, §3.4).
+pub const SOURCE_DIALECT_DISPLACED: &str = "target.source-dialect-displaced";
+
+/// The code of the loss a write charges where the file is not the catalog row
+/// the request names (§3.2, §3.4).
+pub const REQUEST_DISPLACED: &str = "target.request-displaced";
+
+/// The kind of a `target.*` loss `code` that an encoder charges in its own
+/// `namespace`.
+#[must_use]
+pub fn target_loss_kind(namespace: LossNamespace<'_>, code: &str) -> LossKind {
+    NamespacedLossKind::new(namespace, code, LossTaxonomy::SourceDialectDisplaced).into()
+}
+
+fn target_loss(format: LossNamespace<'_>, code: &str, message: String) -> LossNote {
+    LossNote::new(target_loss_kind(format, code), message).with_severity(Severity::Warning)
+}
+
+/// The catalog row a writer wrote in place of the row its resolution names
+/// (§3.4, Refusals). The export report names this row as the target, and
+/// the wrapper charges the displacement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrittenRow {
+    /// The dialect the written payload is.
+    pub target: DialectId,
+    /// Why the writer wrote this row and not the resolved one.
+    pub reason: String,
 }
 
 /// The document's source identity relative to one encoder format.
@@ -82,7 +114,9 @@ pub enum ResolvedTarget<'a> {
         /// The recorded same-format source dialect this row preserves.
         source: DialectId,
     },
-    /// Inheritance from an absent or foreign source took the catalog default.
+    /// Inheritance with no recorded same-format dialect took the catalog
+    /// default, or the newest catalog row where the catalog declares no
+    /// default.
     Default {
         /// Position of `entry` in the encoder's declared catalog.
         index: usize,
@@ -107,9 +141,7 @@ pub enum ResolvedTarget<'a> {
 pub struct ResolvedWrite<'a> {
     target: ResolvedTarget<'a>,
     available: TargetCatalog,
-    /// The encoder writes a preserved off-catalog source only by replay, and
-    /// synthesizes it as the catalog default.
-    synthesizes_preserved_as_default: bool,
+    replay_rows: &'static [DialectId],
 }
 
 impl<'a> ResolvedWrite<'a> {
@@ -127,6 +159,20 @@ impl<'a> ResolvedWrite<'a> {
             | ResolvedTarget::Inherited { entry, .. }
             | ResolvedTarget::Default { entry, .. } => Some(entry),
             ResolvedTarget::Preserved { .. } => None,
+        }
+    }
+
+    /// The catalog row a synthesized write of this resolution writes, with
+    /// its position: the resolved row, or the catalog default for a preserved
+    /// off-catalog source (§3.4, Refusals, `Inherit`). `None` only for a
+    /// preserved source of a catalog that declares no default.
+    #[must_use]
+    pub fn synthesized_row(&self) -> Option<(usize, &'static TargetDescriptor)> {
+        match &self.target {
+            ResolvedTarget::Explicit { index, entry, .. }
+            | ResolvedTarget::Inherited { index, entry, .. }
+            | ResolvedTarget::Default { index, entry, .. } => Some((*index, entry)),
+            ResolvedTarget::Preserved { .. } => self.available.default(),
         }
     }
 
@@ -182,35 +228,92 @@ impl<'a> ResolvedWrite<'a> {
         }
     }
 
-    /// Describes the explicitly requested row written as another (§3.4,
-    /// `target.request-displaced`).
-    #[must_use]
-    pub fn request_displacement_message(&self) -> Option<String> {
-        match &self.target {
+    /// The dialect the report names for a write of this resolution, and the
+    /// `target.*` losses of that write, in `format`'s namespace (§3.4).
+    ///
+    /// `synthesized` says the payload was synthesized, so a preserved
+    /// off-catalog source was written as [`Self::synthesized_row`]. `row` is the
+    /// row the writer states it wrote instead, if any. A named row that the
+    /// file is not charges `target.request-displaced`; a recorded same-format
+    /// dialect that the file is not, or a same-format source that records no
+    /// dialect, charges `target.source-dialect-displaced`. An `Inherit` request
+    /// names no row, so it charges only the source code.
+    fn written(
+        &self,
+        format: LossNamespace<'_>,
+        synthesized: bool,
+        row: Option<WrittenRow>,
+    ) -> (DialectId, Vec<LossNote>) {
+        debug_assert!(
+            row.as_ref().is_none_or(|row| self.reaches(&row.target)),
+            "a writer states a row of its catalog, its replay rows, or its source"
+        );
+        let planned = match self.synthesized_row() {
+            Some((_, entry)) if synthesized => entry.id.clone(),
+            _ => self.target_id().clone(),
+        };
+        let (written, reason) = match row {
+            Some(row) if row.target != planned => (row.target, Some(row.reason)),
+            _ => (planned, None),
+        };
+        let because = reason.map_or_else(String::new, |reason| format!("; {reason}"));
+        let requested = match &self.target {
             ResolvedTarget::Explicit {
-                entry,
                 requested,
                 displaced: true,
                 ..
             } => Some(format!(
                 "requested target {requested} is a row the writer reaches only by replaying a \
-                 source of that dialect; the file is written as {}",
+                 source of that dialect; the file is written as {written}{because}"
+            )),
+            ResolvedTarget::Explicit {
+                entry, requested, ..
+            } if written != entry.id => Some(format!(
+                "requested target {requested} ({}) is a row the writer cannot reach from this \
+                 document; the file is written as {written}{because}",
                 entry.id
             )),
             _ => None,
-        }
+        };
+        let source = match &self.target {
+            ResolvedTarget::Explicit {
+                source: SourceIdentity::Recorded(source),
+                ..
+            } => (*source != written).then(|| source_displacement_message(source, &written)),
+            ResolvedTarget::Inherited { source, .. } | ResolvedTarget::Preserved { source } => {
+                (*source != written)
+                    .then(|| source_displacement_message(source, &written) + &because)
+            }
+            ResolvedTarget::Default {
+                source: DefaultSource::UnrecordedDialect,
+                ..
+            } => Some(format!(
+                "the {} source records no dialect; the file is written as \
+                 {written}{because}",
+                format.as_str()
+            )),
+            ResolvedTarget::Explicit { .. } | ResolvedTarget::Default { .. } => None,
+        };
+        let losses = requested
+            .map(|message| target_loss(format, REQUEST_DISPLACED, message))
+            .into_iter()
+            .chain(source.map(|message| target_loss(format, SOURCE_DIALECT_DISPLACED, message)))
+            .collect();
+        (written, losses)
     }
 
-    /// Describes the source-dialect displacement selected by this resolution.
-    #[must_use]
-    pub fn displacement_message(&self) -> Option<String> {
-        self.displaced_source().map(|displaced| {
-            format!(
-                "source dialect {displaced} was displaced by target dialect {}; the source \
-                 dialect identity is not preserved",
-                self.target_id()
-            )
-        })
+    /// Whether `row` is a row this encoder writes from this document: a
+    /// catalog row, a replay row, or the recorded same-format source.
+    fn reaches(&self, row: &DialectId) -> bool {
+        self.available.find(row.as_str()).is_some()
+            || self.replay_rows.contains(row)
+            || match &self.target {
+                ResolvedTarget::Explicit { source, .. } => source.recorded() == Some(row),
+                ResolvedTarget::Inherited { source, .. } | ResolvedTarget::Preserved { source } => {
+                    source == row
+                }
+                ResolvedTarget::Default { .. } => false,
+            }
     }
 
     /// Whether the document records source metadata for this encoder format.
@@ -267,6 +370,13 @@ impl<'a> ResolvedWrite<'a> {
     }
 }
 
+fn source_displacement_message(source: &DialectId, written: &DialectId) -> String {
+    format!(
+        "source dialect {source} was displaced by target dialect {written}; the source dialect \
+         identity is not preserved"
+    )
+}
+
 mod domain_sealed {
     pub trait Sealed {}
     impl Sealed for super::DialectFree {}
@@ -280,40 +390,41 @@ mod resolution_sealed {
 }
 
 /// A target-domain resolution that states the export identity it proves.
-pub trait TargetResolution: resolution_sealed::Sealed {
-    /// The native target identity, or `None` for the neutral document.
-    fn export_target(&self) -> Option<&DialectId>;
-
-    /// The identity of a synthesized write: [`Self::export_target`], except
-    /// that an encoder that synthesizes a preserved off-catalog source as the
-    /// catalog default writes that row (§3.4, Refusals, `Inherit`).
-    fn synthesized_target(&self) -> Option<&DialectId>;
+pub trait TargetResolution: resolution_sealed::Sealed + Clone {
+    /// The native target the report names for a write of this resolution,
+    /// or `None` for the neutral document, and the `target.*` losses of that
+    /// write in `format`'s namespace (§3.4). `synthesized` says the payload
+    /// was synthesized; `row` is the row the writer states it wrote instead.
+    #[doc(hidden)]
+    fn report_target(
+        &self,
+        format: LossNamespace<'_>,
+        synthesized: bool,
+        row: Option<WrittenRow>,
+    ) -> (Option<DialectId>, Vec<LossNote>);
 }
 
 impl TargetResolution for () {
-    fn export_target(&self) -> Option<&DialectId> {
-        None
-    }
-
-    fn synthesized_target(&self) -> Option<&DialectId> {
-        None
+    fn report_target(
+        &self,
+        _format: LossNamespace<'_>,
+        _synthesized: bool,
+        row: Option<WrittenRow>,
+    ) -> (Option<DialectId>, Vec<LossNote>) {
+        debug_assert!(row.is_none(), "a dialect-free write states no row");
+        (None, Vec::new())
     }
 }
 
 impl TargetResolution for ResolvedWrite<'_> {
-    fn export_target(&self) -> Option<&DialectId> {
-        Some(self.target_id())
-    }
-
-    fn synthesized_target(&self) -> Option<&DialectId> {
-        match (&self.target, self.available.default()) {
-            (ResolvedTarget::Preserved { .. }, Some((_, entry)))
-                if self.synthesizes_preserved_as_default =>
-            {
-                Some(&entry.id)
-            }
-            _ => self.export_target(),
-        }
+    fn report_target(
+        &self,
+        format: LossNamespace<'_>,
+        synthesized: bool,
+        row: Option<WrittenRow>,
+    ) -> (Option<DialectId>, Vec<LossNote>) {
+        let (target, losses) = self.written(format, synthesized, row);
+        (Some(target), losses)
     }
 }
 
@@ -375,22 +486,25 @@ impl TargetDomain for DialectFree {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Catalog {
     rows: TargetCatalog,
+    fallback: (usize, &'static TargetDescriptor),
     replay_rows: &'static [DialectId],
-    synthesizes_preserved_as_default: bool,
 }
 
 impl Catalog {
     /// Builds a native target domain whose optional default indexes one of
-    /// `targets`.
+    /// `targets`. An `Inherit` request that inherits no row resolves to the
+    /// default, or to the newest (last) row when there is none.
     #[must_use]
-    pub const fn new(
-        targets: &'static [cadmpeg_core::target::TargetDescriptor],
-        default: Option<usize>,
-    ) -> Self {
+    pub const fn new(targets: &'static [TargetDescriptor], default: Option<usize>) -> Self {
+        let rows = TargetCatalog::new(targets, default);
+        let index = match default {
+            Some(index) => index,
+            None => targets.len() - 1,
+        };
         Self {
-            rows: TargetCatalog::new(targets, default),
+            rows,
+            fallback: (index, &targets[index]),
             replay_rows: &[],
-            synthesizes_preserved_as_default: false,
         }
     }
 
@@ -400,15 +514,6 @@ impl Catalog {
     #[must_use]
     pub const fn with_replay_rows(mut self, rows: &'static [DialectId]) -> Self {
         self.replay_rows = rows;
-        self
-    }
-
-    /// Declares that the encoder reaches an off-catalog source dialect only by
-    /// replay, and writes the catalog default when it synthesizes that
-    /// source. The report of such a synthesized write names the default.
-    #[must_use]
-    pub const fn synthesizing_preserved_as_default(mut self) -> Self {
-        self.synthesizes_preserved_as_default = true;
         self
     }
 }
@@ -426,9 +531,7 @@ impl TargetDomain for Catalog {
         request: TargetRequest<'a>,
         _format: FormatId,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
-        let mut resolved = resolve_write_request(ir, request, self.rows, self.replay_rows)?;
-        resolved.synthesizes_preserved_as_default = self.synthesizes_preserved_as_default;
-        Ok(resolved)
+        resolve_write_request(ir, request, *self)
     }
 }
 
@@ -453,12 +556,21 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
 fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
-    catalog: TargetCatalog,
-    replay_rows: &[DialectId],
+    domain: Catalog,
 ) -> Result<ResolvedWrite<'a>, CodecError> {
+    let Catalog {
+        rows: catalog,
+        fallback: (index, entry),
+        replay_rows,
+    } = domain;
     let format = catalog.namespace();
     let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
     let source = source_identity(ir, format);
+    let default = |source: DefaultSource| ResolvedTarget::Default {
+        index,
+        entry,
+        source,
+    };
     let target = match request {
         TargetRequest::Explicit(requested) => {
             let replay_row = || {
@@ -491,19 +603,8 @@ fn resolve_write_request<'a>(
             }
         }
         TargetRequest::Inherit => match source {
-            SourceIdentity::Other(source) => {
-                let (index, entry) = catalog.default().ok_or_else(|| {
-                    refuse(TargetRefusalKind::NoDefault {
-                        source: source.clone(),
-                    })
-                })?;
-                ResolvedTarget::Default {
-                    index,
-                    entry,
-                    source,
-                }
-            }
-            SourceIdentity::Unrecorded => return Err(refuse(TargetRefusalKind::UnrecordedSource)),
+            SourceIdentity::Other(source) => default(source),
+            SourceIdentity::Unrecorded => default(DefaultSource::UnrecordedDialect),
             SourceIdentity::Recorded(source) => match catalog.find(source.as_str()) {
                 Some((index, entry)) => ResolvedTarget::Inherited {
                     index,
@@ -517,7 +618,7 @@ fn resolve_write_request<'a>(
     Ok(ResolvedWrite {
         target,
         available: catalog,
-        synthesizes_preserved_as_default: false,
+        replay_rows,
     })
 }
 #[cfg(test)]

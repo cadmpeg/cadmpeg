@@ -127,8 +127,6 @@ loss_codes! {
     GlobalNoncanonicalFraming => "global.noncanonical-framing",
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified => "source.dialect-unverified",
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced => "target.source-dialect-displaced",
     /// Preserved source image required for a byte-exact write was unavailable.
     PreservedSourceUnavailable => "source.preserved-image-unavailable",
     /// Procedural definitions were reduced to writable solved carriers.
@@ -231,7 +229,6 @@ impl IgesLossCode {
             | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted
             | Self::WriterSupportGeometryNotRepresented
@@ -308,7 +305,6 @@ impl IgesLossCode {
             | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
@@ -425,7 +421,6 @@ mod tests {
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "geometry.edge-pcurve-agreement-sampled",

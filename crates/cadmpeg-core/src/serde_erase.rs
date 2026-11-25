@@ -1031,6 +1031,31 @@ pub fn serialize_to_json_value(
     serialize_with(serde_json::value::Serializer, body)
 }
 
+/// Serializes `value` into a [`serde_json::Value`] through [`SerAdapter`],
+/// keeping `serde_json::value::Serializer` compiled once in `cadmpeg-core`.
+pub fn to_json_value<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<serde_json::Value, serde_json::Error> {
+    serialize_to_json_value(&|adapter| value.serialize(adapter))
+}
+
+/// Serializes an erased value directly into a compact JSON string inside
+/// `cadmpeg-core`, keeping `serde_json::Serializer` compiled once.
+pub fn serialize_to_json_string(
+    body: &dyn Fn(SerAdapter<'_>) -> Result<(), SerError>,
+) -> Result<String, serde_json::Error> {
+    let mut bytes = Vec::new();
+    let mut serializer = serde_json::Serializer::new(&mut bytes);
+    serialize_with(&mut serializer, body)?;
+    String::from_utf8(bytes).map_err(ser::Error::custom)
+}
+
+/// Serializes `value` into a compact JSON string through [`SerAdapter`],
+/// keeping `serde_json::Serializer` compiled once in `cadmpeg-core`.
+pub fn to_json_string<T: Serialize + ?Sized>(value: &T) -> Result<String, serde_json::Error> {
+    serialize_to_json_string(&|adapter| value.serialize(adapter))
+}
+
 /// Error produced while driving an erased [`Deserializer`].
 #[derive(Debug)]
 pub struct DeError {
@@ -2244,4 +2269,36 @@ pub fn deserialize_with<'de, T, D: Deserializer<'de>>(
     let mut guard = DeGuard::new(deserializer);
     let value = read(guard.adapter());
     guard.finish(value)
+}
+
+/// Drives `read` with a [`DeAdapter`] backed by `deserializer`.
+pub fn deserialize_erased<'de, D: Deserializer<'de>>(
+    deserializer: D,
+    read: &mut dyn FnMut(DeAdapter<'_, 'de>) -> Result<(), DeError>,
+) -> Result<(), D::Error> {
+    let mut guard = DeGuard::new(deserializer);
+    let outcome = read(guard.adapter());
+    guard.finish(outcome)
+}
+
+/// Drives `read` with a [`DeAdapter`] backed by `value`, keeping
+/// `serde_json::Value`'s erased deserializer compiled once in `cadmpeg-core`.
+pub fn with_json_value_deserializer<'de>(
+    value: &'de serde_json::Value,
+    read: &mut dyn FnMut(DeAdapter<'_, 'de>) -> Result<(), DeError>,
+) -> Result<(), serde_json::Error> {
+    deserialize_erased(value, read)
+}
+
+/// Deserializes `T` from a [`serde_json::Value`] through [`DeAdapter`],
+/// keeping `serde_json::Value`'s erased deserializer compiled once in `cadmpeg-core`.
+pub fn from_json_value<T: de::DeserializeOwned>(
+    value: &serde_json::Value,
+) -> Result<T, serde_json::Error> {
+    let mut slot = None;
+    with_json_value_deserializer(value, &mut |adapter| {
+        slot = Some(T::deserialize(adapter)?);
+        Ok(())
+    })?;
+    slot.ok_or_else(|| de::Error::custom("erased deserializer produced no value"))
 }
