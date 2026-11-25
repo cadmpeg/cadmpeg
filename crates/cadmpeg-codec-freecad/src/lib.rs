@@ -903,7 +903,6 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
-        let mut intermediate_bodies = HashSet::new();
         let mut transfer_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes. A
         // given-up `Document.xml` declares no dialect, so the source is not
@@ -1063,6 +1062,8 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
+            let intermediate =
+                design::intermediate_payloads(&graph.objects, &graph.properties, &shape_payloads);
             if ctx.depth() >= DecodeDepth::Design {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,
@@ -1085,6 +1086,10 @@ impl CodecBackend for FcstdCodec {
                     &entry_records,
                     &topology_occurrences,
                     &cycle_affected_design_objects,
+                    &intermediate
+                        .iter()
+                        .map(|intermediate| crate::native::id_key(&intermediate.payload.id))
+                        .collect(),
                 )?;
             }
             transfer_losses.extend(drawing_content::transfer(
@@ -1145,7 +1150,6 @@ impl CodecBackend for FcstdCodec {
                     .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                     .set_arena(ctx, "design_census", &design_census)?;
             }
-            element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let mut gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     ctx,
@@ -1165,12 +1169,7 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
-            intermediate_bodies = design::hide_intermediate_bodies(
-                &mut ir,
-                &graph.objects,
-                &graph.properties,
-                &shape_payloads,
-            );
+            design::hide_intermediate_bodies(&mut ir, &intermediate);
             if ctx.depth() >= DecodeDepth::Design {
                 design::v11::project(
                     &mut ir,
@@ -1180,6 +1179,25 @@ impl CodecBackend for FcstdCodec {
                     &mut transfer_losses,
                 );
             }
+            design::v11::states::state(
+                ctx,
+                &mut ir,
+                &intermediate,
+                &graph.objects,
+                &graph.properties,
+                &mut transfer_losses,
+            )?;
+            // A persistent name binds the record of the current model it names;
+            // the records of other states are not bound.
+            let stated = design::v11::states::record_ids(&ir.geometry)
+                .into_iter()
+                .collect::<HashSet<_>>();
+            element_map::bind_topology(
+                &mut element_maps,
+                topology_occurrences
+                    .iter()
+                    .filter(|occurrence| stated.contains(&occurrence.topology_id)),
+            );
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count()),
@@ -1295,14 +1313,11 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        if let Some(root) = ir.state_root_definition(
+        ir.state_root_definition(
             ctx,
             product::document_definition_id()?,
             cadmpeg_ir::products::ExternalDocument::default(),
-        )? {
-            root.bodies
-                .retain(|body| product::is_shape_body(body) && !intermediate_bodies.contains(body));
-        }
+        )?;
         design::v11::state_unproduced(&mut ir);
         // Only the FCStd writer reads this digest. Below `Full` it patches
         // without one and reports the edits unverified, so the serialization and

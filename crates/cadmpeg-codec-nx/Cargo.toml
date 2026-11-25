@@ -31,7 +31,6 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 cadmpeg-parasolid = { workspace = true, features = ["test-support"] }
 
 # Test-only golden harness and round-trip helpers.
