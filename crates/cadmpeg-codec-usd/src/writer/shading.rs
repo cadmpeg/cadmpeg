@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::appearance::Appearance;
 
-use super::text::{asset, quoted, real32, tuple32};
+use super::text::{asset, float, floats, quoted};
 use super::Writer;
 
 const PREVIEW: &str = "UsdPreviewSurface";
@@ -104,7 +104,7 @@ fn scalar_text(kind: &str, value: f64) -> String {
     match kind {
         "bool" => if value == 0.0 { "0" } else { "1" }.to_owned(),
         "int" => format!("{}", value.round()),
-        _ => real32(crate::text::value::round_f32(value)),
+        _ => float(value),
     }
 }
 
@@ -159,11 +159,7 @@ fn inputs(
                     } else {
                         "color3f"
                     };
-                    out.push((
-                        kind.to_owned(),
-                        input.clone(),
-                        tuple32(&[r, g, b].map(crate::text::value::round_f32)),
-                    ));
+                    out.push((kind.to_owned(), input.clone(), floats(&[r, g, b])));
                     for channel in ["r", "g", "b"] {
                         written.insert(format!("{prefix}{input}.{channel}"));
                     }
@@ -194,19 +190,11 @@ fn inputs(
         if shared.color {
             let channels = ["r", "g", "b"].map(|channel| property(&format!("{source}.{channel}")));
             if let [Some(r), Some(g), Some(b)] = channels {
-                out.push((
-                    "color3f".to_owned(),
-                    target.to_owned(),
-                    tuple32(&[r, g, b].map(crate::text::value::round_f32)),
-                ));
+                out.push(("color3f".to_owned(), target.to_owned(), floats(&[r, g, b])));
                 names.insert(target.to_owned());
             }
         } else if let Some(value) = property(source) {
-            out.push((
-                "float".to_owned(),
-                target.to_owned(),
-                real32(crate::text::value::round_f32(value)),
-            ));
+            out.push(("float".to_owned(), target.to_owned(), float(value)));
             names.insert(target.to_owned());
         }
     }
@@ -216,16 +204,12 @@ fn inputs(
             out.push((
                 "color3f".to_owned(),
                 base.to_owned(),
-                tuple32(&[color.r(), color.g(), color.b()].map(crate::text::value::round_f32)),
+                floats(&[color.r(), color.g(), color.b()]),
             ));
             names.insert(base.to_owned());
         }
         if color.a() < 1.0 && !names.contains(opacity) {
-            out.push((
-                "float".to_owned(),
-                opacity.to_owned(),
-                real32(crate::text::value::round_f32(color.a())),
-            ));
+            out.push(("float".to_owned(), opacity.to_owned(), float(color.a())));
             if column == 3 {
                 out.push((
                     "bool".to_owned(),
