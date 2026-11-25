@@ -474,6 +474,16 @@ class PatternFilters(unittest.TestCase):
                     text = f"fn make() ->{gap}{name}\n{{ code.note(message) }}"
                     self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
 
+    def test_loss_note_reference_returns_are_types(self) -> None:
+        for reference in ["&", "& ", "&'a ", "&mut ", "&'a mut "]:
+            for name in ["LossNote", "cadmpeg_ir::LossNote"]:
+                with self.subTest(reference=reference, name=name):
+                    text = f"fn loss(&self) -> {reference}{name} {{ &self.losses[0] }}"
+                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+                    text = f"fn loss(&self) -> {reference}{name} {{ LossNote {{ message }} }}"
+                    hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
+                    self.assertEqual([hit.rule for hit in hits], ["loss_note_literal"])
+
     def test_loss_note_type_occurrence_does_not_hide_inline_literals(self) -> None:
         for text, expected in [
             ("fn make() -> LossNote { LossNote { message } }", [1]),
