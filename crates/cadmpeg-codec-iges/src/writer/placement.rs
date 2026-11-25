@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body transforms stated in the geometry that each body owns. The decoder
 //! reads a Directory transformation back onto a body only from a Type 186, so
-//! the writer places every other transformed body into its points, curves and
-//! surfaces (CADIR §3.4).
+//! the writer places every other transformed body into its points, curves,
+//! parameter curves and surfaces (CADIR §3.4).
 
 use super::degrade::{face_users, naming, Unwritten};
 use super::{
@@ -23,7 +23,7 @@ use cadmpeg_ir::geometry::sampled::GeometryLayoutError;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -63,6 +63,7 @@ struct Owned<'ir> {
     points: BTreeSet<&'ir str>,
     curves: BTreeSet<&'ir str>,
     surfaces: BTreeSet<&'ir str>,
+    pcurves: BTreeSet<&'ir str>,
     faces: BTreeSet<&'ir str>,
     edges: BTreeSet<&'ir str>,
     vertices: BTreeSet<&'ir str>,
@@ -76,6 +77,7 @@ impl<'ir> Owned<'ir> {
         match arena {
             Arena::Point => &self.points,
             Arena::Surface => &self.surfaces,
+            Arena::Pcurve => &self.pcurves,
             Arena::Curve => &self.curves,
             Arena::Vertex => &self.vertices,
             Arena::Edge => &self.edges,
@@ -92,6 +94,7 @@ impl<'ir> Owned<'ir> {
 enum Arena {
     Point,
     Surface,
+    Pcurve,
     Curve,
     Vertex,
     Edge,
@@ -104,9 +107,10 @@ enum Arena {
 impl Arena {
     /// The arenas whose records bodies under different transforms can
     /// share, each after the arenas whose records it references.
-    const SHAREABLE: [Self; 5] = [
+    const SHAREABLE: [Self; 6] = [
         Self::Point,
         Self::Surface,
+        Self::Pcurve,
         Self::Curve,
         Self::Vertex,
         Self::Edge,
@@ -116,6 +120,7 @@ impl Arena {
         match self {
             Self::Point => "point",
             Self::Surface => "surface",
+            Self::Pcurve => "pcurve",
             Self::Curve => "curve",
             Self::Vertex => "vertex",
             Self::Edge => "edge",
@@ -155,6 +160,7 @@ fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
                     .filter_map(|id| geometry.loops.iter().find(|loop_| loop_.id == *id))
                 {
                     owned.loops.insert(loop_.id.as_str());
+                    owned.pcurves.extend(loop_pcurves(ir, loop_));
                     owned
                         .vertices
                         .extend(loop_.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
@@ -275,14 +281,14 @@ impl<'ir> Placements<'ir> {
     }
 }
 
-/// The document with a copy, for each body, of each point, surface, curve,
-/// vertex and edge that the body shares with a body under another transform,
+/// The document with a copy, for each body, of each point, surface,
+/// parameter curve, curve, vertex and edge that the body shares with a body under another transform,
 /// and of each shared record that references such a copy, with the body's
 /// references moved to its copies. The first body that owns a record keeps
 /// it. Each copy is keyed by its body, so a copy that has no placed image
 /// names only the faces of that body. Fails naming a coedge, loop, face or
 /// shell that two bodies share and whose references move.
-fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
+pub(super) fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
     let bodies = ir
         .geometry
         .bodies
@@ -318,8 +324,22 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<BTreeMap<_, _>>();
+    let pcurves = ir
+        .geometry
+        .pcurves
+        .iter()
+        .map(|pcurve| (pcurve.id.as_str(), pcurve))
+        .collect::<BTreeMap<_, _>>();
     // The shareable records that a shareable record references.
     let references = |arena: Arena, id: &str| match arena {
+        Arena::Pcurve => pcurves
+            .get(id)
+            .and_then(|pcurve| match &pcurve.metadata {
+                PcurveMetadata::General { form } => form.support_surface.as_ref(),
+                PcurveMetadata::AsmInline { .. } => None,
+            })
+            .map(|surface| vec![(Arena::Surface, surface.as_str())])
+            .unwrap_or_default(),
         Arena::Curve => match curves.get(id).and_then(|curve| curve.geometry.solved()) {
             Some(SolvedCurveGeometry::Composite { segments, .. }) => segments
                 .iter()
@@ -429,6 +449,13 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
                 geometry.surfaces.push(surface);
             }
         }
+        for pcurve in &ir.geometry.pcurves {
+            if let Some(copy) = copies.of(Arena::Pcurve, pcurve.id.as_str()) {
+                let mut pcurve = pcurve.clone();
+                pcurve.id = PcurveId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
+                geometry.pcurves.push(pcurve);
+            }
+        }
         for curve in &ir.geometry.curves {
             if let Some(copy) = copies.of(Arena::Curve, curve.id.as_str()) {
                 let mut curve = curve.clone();
@@ -456,6 +483,25 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
                 .map(|copy| PointId::try_from(copy.to_owned()).map_err(|_| invalid(copy)))
                 .transpose()
         };
+        let pcurve_copy = |id: &PcurveId| {
+            copies
+                .of(Arena::Pcurve, id.as_str())
+                .map(|copy| PcurveId::try_from(copy.to_owned()).map_err(|_| invalid(copy)))
+                .transpose()
+        };
+        // The uses `uses` with each use of a copied parameter curve moved to
+        // the copy, or none where no use moves.
+        let moved_uses = |uses: &[PcurveUse]| -> Result<Option<Vec<PcurveUse>>, Unwritten> {
+            let mut moved = uses.to_vec();
+            let mut changed = false;
+            for use_ in &mut moved {
+                if let Some(copy) = pcurve_copy(&use_.pcurve)? {
+                    use_.pcurve = copy;
+                    changed = true;
+                }
+            }
+            Ok(changed.then_some(moved))
+        };
         let curve_copy = |id: &CurveId| {
             copies
                 .of(Arena::Curve, id.as_str())
@@ -474,6 +520,19 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
                 .map(|copy| EdgeId::try_from(copy.to_owned()).map_err(|_| invalid(copy)))
                 .transpose()
         };
+        for pcurve in &mut geometry.pcurves {
+            if !moves(Arena::Pcurve, pcurve.id.as_str()) {
+                continue;
+            }
+            if let PcurveMetadata::General { form } = &mut pcurve.metadata {
+                if let Some(surface) = &mut form.support_surface {
+                    if let Some(copy) = copies.of(Arena::Surface, surface.as_str()) {
+                        *surface =
+                            SurfaceId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
+                    }
+                }
+            }
+        }
         for vertex in &mut geometry.vertices {
             if !moves(Arena::Vertex, vertex.id.as_str()) {
                 continue;
@@ -536,7 +595,8 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
                 .map(|use_curve| curve_copy(&use_curve.curve))
                 .transpose()?
                 .flatten();
-            if edge.is_none() && use_curve.is_none() {
+            let uses = moved_uses(&coedge.pcurves)?;
+            if edge.is_none() && use_curve.is_none() && uses.is_none() {
                 continue;
             }
             if !exclusive(Arena::Coedge, coedge.id.as_str()) {
@@ -544,6 +604,9 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
             }
             if let Some(edge) = edge {
                 coedge.edge = edge;
+            }
+            if let Some(uses) = uses {
+                coedge.pcurves = uses;
             }
             if let (Some(copy), Some(use_curve)) = (use_curve, &mut coedge.use_curve) {
                 use_curve.curve = copy;
@@ -569,6 +632,9 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
             if loop_
                 .vertices()
                 .all(|vertex| copies.of(Arena::Vertex, vertex.as_str()).is_none())
+                && loop_
+                    .vertex_pcurves()
+                    .all(|use_| copies.of(Arena::Pcurve, use_.pcurve.as_str()).is_none())
             {
                 continue;
             }
@@ -577,9 +643,12 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
             }
             let id = loop_.id.as_str().to_owned();
             match &mut loop_.boundary {
-                LoopBoundary::Vertex { vertex, .. } => {
+                LoopBoundary::Vertex { vertex, pcurves } => {
                     if let Some(copy) = vertex_copy(vertex)? {
                         *vertex = copy;
+                    }
+                    if let Some(uses) = moved_uses(pcurves)? {
+                        *pcurves = uses;
                     }
                 }
                 LoopBoundary::Ring(ring) => {
@@ -587,6 +656,9 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
                     for vertex_use in &mut vertex_uses {
                         if let Some(copy) = vertex_copy(&vertex_use.vertex)? {
                             vertex_use.vertex = copy;
+                        }
+                        if let Some(uses) = moved_uses(&vertex_use.pcurves)? {
+                            vertex_use.pcurves = uses;
                         }
                     }
                     *ring = LoopRing::new(ring.coedges().to_vec(), vertex_uses)

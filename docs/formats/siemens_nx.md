@@ -3344,3 +3344,7 @@ handle:u8  04  length:u8  "(Number [units]) name: expression; "  00
 ```
 
 `length - 2` is the ASCII text length. `units` is `mm` or `degrees`; `name` contains ASCII alphanumerics and underscores. `expression` is a finite decimal scalar or formula. Context-free arithmetic uses parentheses, unary signs, `^`, `*`, `/`, `+`, and `-`. Formula parameter references use `p<decimal-index>` tokens. The nearest preceding `hostglobalvariables` marker supplies table identity. The record framing is independent of the OM entity-index and object-ID arrays. An enclosing indexed entity supplies persistent object identity when present; otherwise the record's entry-relative byte offset supplies identity.
+
+## 10. Strict floors
+
+`nx/native.attachment-failed` records a native object model whose records the decoder gave up (CADIR §3.3), and carries strict floor Error (CADIR §3.2).

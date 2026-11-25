@@ -3,7 +3,9 @@
 //! a trimmed surface (Type 144 over Type 128) can bound.
 
 use super::covered_uses::visit_pole_uses;
+use super::degrade::{naming, Unwritten};
 use super::exact::nurbs_form;
+use super::same_range;
 use super::{edge_span, flatten_curve, solved_curve, TopologyIndex};
 use crate::entities::curve_conversion::{elliptical_arc_nurbs, ANGULAR_TOLERANCE};
 use crate::loss::IgesLossCode;
@@ -39,11 +41,12 @@ const RATIONAL_PIECE_SPLITS: u32 = 8;
 /// on it. A face whose parameter curves are not all exact on the restated
 /// support keeps its model-space boundary: its parameter curves are removed
 /// and each is charged `writer.pcurve-omitted`. Only the supports that
-/// `admit` names are restated.
+/// `admit` names are restated. Fails naming a face that no restated domain
+/// holds.
 pub(super) fn rational_analytic_supports(
     ir: &CadIr,
     admit: impl Fn(&str) -> bool,
-) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), CodecError> {
+) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), Unwritten> {
     let forms = ir
         .geometry
         .surfaces
@@ -69,6 +72,7 @@ pub(super) fn rational_analytic_supports(
         let Some(restated) = restated_support(&ends, &index, surface, &form) else {
             continue;
         };
+        let restated = restated?;
         if restated
             .pcurves
             .keys()
@@ -507,11 +511,11 @@ impl LoopImages {
         }
     }
 
-    /// The middle of the azimuths of the loop, absent for a loop of no curve.
-    fn azimuth_centre(&self) -> Option<f64> {
-        let [low, high] = self.span().extent[0];
-        let centre = 0.5 * (low + high);
-        centre.is_finite().then_some(centre)
+    /// The least and greatest value of the parameter `axis` on the loop,
+    /// absent for a loop of no curve.
+    fn extent(&self, axis: usize) -> Option<[f64; 2]> {
+        let [low, high] = self.span().extent[axis];
+        (low.is_finite() && high.is_finite()).then_some([low, high])
     }
 
     fn span(&self) -> LoopSpan {
@@ -607,7 +611,7 @@ fn exact_image(
     };
     if let Some(used) = pcurve_use.parameter_range {
         let used = used.endpoints();
-        if used != range && used != [range[1], range[0]] {
+        if !same_range(used, range) && !same_range(used, [range[1], range[0]]) {
             return Some(Err(format!(
                 "a use of parameter curve {id} restricts its range"
             )));
@@ -694,12 +698,14 @@ fn whole_slope(delta: Point2) -> Option<Slope> {
 /// The rational form of the revolved support `surface` over a domain that
 /// holds its faces, with the exact image of each parameter curve on it. A
 /// face that states no loop on a sphere or torus covers the whole support.
+/// None where no such domain holds the faces together; an error naming the
+/// face where no domain holds one face.
 fn restated_support(
     ends: &BTreeMap<&str, [Point2; 2]>,
     index: &TopologyIndex<'_>,
     surface: &str,
     form: &Revolved,
-) -> Option<Restated> {
+) -> Option<Result<Restated, Unwritten>> {
     let geometry = &index.ir.geometry;
     let faces = geometry
         .faces
@@ -721,35 +727,57 @@ fn restated_support(
     for face in faces {
         if face.loops.stated().next().is_none() {
             if !circular {
-                return None;
+                return Some(Err(naming(face.id.as_str())(CodecError::NotImplemented(
+                    format!(
+                        "IGES restated support {surface}: a cylinder or cone face that states no loop has no finite domain"
+                    ),
+                ))));
             }
             whole = true;
             continue;
         }
         match face_images(ends, index, face, circular)? {
             Ok(mut loops) => {
-                // Each loop moves by whole turns of azimuth to the period of
-                // the first loop of the face.
-                if let Some(reference) = loops.iter().find_map(LoopImages::azimuth_centre) {
-                    for images in &mut loops {
-                        if let Some(centre) = images.azimuth_centre() {
-                            let turns = ((reference - centre) / TAU).round();
-                            images.shift(Point2::new(turns * TAU, 0.0));
-                        }
-                    }
-                }
                 let spans = loops.iter().map(LoopImages::span).collect::<Vec<_>>();
                 let (shifts, reach) = form.face_sides(face.sense, &spans).unwrap_or_else(|| {
                     (vec![Point2::new(0.0, 0.0); loops.len()], Default::default())
                 });
+                for (images, shift) in loops.iter_mut().zip(shifts) {
+                    images.shift(shift);
+                }
+                for (axis, parameter) in [(0, "azimuth"), (1, "tube angle")] {
+                    if axis == 1 && !form.v_periodic() {
+                        continue;
+                    }
+                    windowed(&mut loops, axis, &reach[axis]);
+                    let mut extent = Extent::default();
+                    for value in loops
+                        .iter()
+                        .filter_map(|images| images.extent(axis))
+                        .flatten()
+                        .chain(reach[axis].iter().copied())
+                    {
+                        extent.include(value);
+                    }
+                    if extent
+                        .bounds()
+                        .is_some_and(|[low, high]| high - low > TAU + ANGULAR_TOLERANCE)
+                    {
+                        return Some(Err(naming(face.id.as_str())(CodecError::NotImplemented(
+                            format!(
+                                "IGES restated support {surface}: no one turn of the {parameter} holds the loops of face {}",
+                                face.id
+                            ),
+                        ))));
+                    }
+                }
                 let mut own = BTreeSet::new();
-                for (loop_images, shift) in loops.into_iter().zip(shifts) {
+                for loop_images in loops {
                     for mut image in loop_images.images {
                         if !own.insert(image.id.clone()) {
                             continue;
                         }
-                        for point in [&mut image.start, &mut image.end] {
-                            *point = Point2::new(point.u + shift.u, point.v + shift.v);
+                        for point in [&image.start, &image.end] {
                             u_extent.include(point.u);
                             v_extent.include(point.v);
                         }
@@ -952,12 +980,61 @@ fn restated_support(
         };
         pcurves.insert(curve.id, nurbs);
     }
-    Some(Restated {
+    Some(Ok(Restated {
         surface,
         pcurves,
         model_space,
         copies,
-    })
+    }))
+}
+
+/// Moves each loop of a face that does not turn around the other parameter
+/// by whole turns of the periodic parameter `axis` into one window of a
+/// turn. The loops that turn around the other parameter bound the face in
+/// `axis` and keep their places: the window starts at the least value of
+/// these loops and of `reach`, the bounds their face sides set. Without such
+/// loops, the window is the narrowest that holds every loop.
+fn windowed(loops: &mut [LoopImages], axis: usize, reach: &[f64]) {
+    let other = 1 - axis;
+    // The whole turns that move the value `low` to at least `start`.
+    let turns = |start: f64, low: f64| ((start - low - ANGULAR_TOLERANCE) / TAU).ceil() * TAU;
+    let free = loops
+        .iter()
+        .filter(|images| images.winding[other] == 0)
+        .filter_map(|images| images.extent(axis))
+        .collect::<Vec<_>>();
+    let start = loops
+        .iter()
+        .filter(|images| images.winding[other] != 0)
+        .filter_map(|images| images.extent(axis))
+        .map(|[low, _]| low)
+        .chain(reach.iter().copied())
+        .min_by(f64::total_cmp)
+        .or_else(|| {
+            free.iter()
+                .map(|[start, _]| {
+                    let end = free
+                        .iter()
+                        .map(|[low, high]| high + turns(*start, *low))
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    (*start, end - start)
+                })
+                .min_by(|first, second| first.1.total_cmp(&second.1))
+                .map(|(start, _)| start)
+        });
+    let Some(start) = start else {
+        return;
+    };
+    for images in loops.iter_mut().filter(|images| images.winding[other] == 0) {
+        if let Some([low, _]) = images.extent(axis) {
+            let turns = turns(start, low);
+            images.shift(if axis == 0 {
+                Point2::new(turns, 0.0)
+            } else {
+                Point2::new(0.0, turns)
+            });
+        }
+    }
 }
 
 /// Whether two parameter curve images start and end at the same points.

@@ -38,13 +38,10 @@ pub const SOURCE_DIALECT_DISPLACED: &str = "target.source-dialect-displaced";
 pub const REQUEST_DISPLACED: &str = "target.request-displaced";
 
 /// The kind of a `target.*` loss `code` that an encoder charges in its own
-/// `namespace`. §3.2 states no strict floor for either code, so a strict
-/// write does not refuse on one.
+/// `namespace`.
 #[must_use]
 pub fn target_loss_kind(namespace: LossNamespace<'_>, code: &str) -> LossKind {
-    NamespacedLossKind::new(namespace, code, LossTaxonomy::SourceDialectDisplaced)
-        .with_strict_floor(None)
-        .into()
+    NamespacedLossKind::new(namespace, code, LossTaxonomy::SourceDialectDisplaced).into()
 }
 
 fn target_loss(format: LossNamespace<'_>, code: &str, message: String) -> LossNote {

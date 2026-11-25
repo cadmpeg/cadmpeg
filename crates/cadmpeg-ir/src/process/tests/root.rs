@@ -197,23 +197,20 @@ fn finalize_sorts_the_process_arenas() {
 }
 
 /// A process record under a scope that excludes the process class is
-/// refused, naming the arena by its home.
+/// kept, written, and read back, and the breach names the arena by its home.
 #[test]
-fn a_process_record_outside_the_scope_is_refused() {
+fn a_process_record_outside_the_scope_is_kept_and_named() {
     let mut ir = CadIr::empty();
     ir.process.toolpaths = root::toolpaths();
-    let violation = ScopeViolation {
-        class: ArenaClass::Process,
-        arena: ArenaName::parse("process.toolpaths"),
-    };
-    assert!(violation.arena.is_some());
-    assert_eq!(ir.set_scope(ContentScope::design()), Err(violation));
-    ir.process.toolpaths.clear();
-    ir.set_scope(ContentScope::design()).unwrap();
-    let mut value = to_value(&ir);
-    value["process"]["toolpaths"] = to_value(&root::toolpaths());
-    let error = CadIr::from_json(&value.to_string()).unwrap_err();
-    assert!(error.to_string().contains("process.toolpaths"), "{error}");
+    ir.set_scope(ContentScope::design());
+    assert_eq!(ir.scope(), ContentScope::design());
+    let breach = [ScopeViolation::Populated {
+        arena: ArenaName::parse("process.toolpaths").unwrap(),
+    }];
+    assert_eq!(ir.scope_violations(), breach);
+    let back = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(back.scope(), ContentScope::design());
+    assert_eq!(back.scope_violations(), breach);
 }
 
 #[test]

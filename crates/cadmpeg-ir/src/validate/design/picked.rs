@@ -349,7 +349,7 @@ impl<'a> Probe<'_, 'a> {
             .filter_map(|state| {
                 let configuration = state.configuration(records);
                 let applies = std::ptr::eq(
-                    records.definition_in(self.feature, configuration),
+                    records.definition_in(self.feature, configuration, None),
                     self.definition,
                 );
                 applies.then_some(())?;

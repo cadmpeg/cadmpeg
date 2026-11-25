@@ -184,6 +184,7 @@ pub(super) fn check_implicit_sweep(
     if let Some(spine) = &sweep.spine {
         options::check_path(site, "ImplicitSweep.spine", spine, findings);
     }
+    swept::check_spine_limits(site, "ImplicitSweep.limits", &sweep.limits, findings);
     match &sweep.section {
         ImplicitSection::Line { mode, lengths } => {
             let angled = match mode {

@@ -516,8 +516,7 @@ fn a_pinned_strictness_writes_a_displaced_target() {
 
 fn recorded_at(depth: DecodeDepth) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.set_scope(depth.scope())
-        .expect("an empty document admits every scope");
+    ir.set_scope(depth.scope());
     ir
 }
 
@@ -1191,8 +1190,7 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
 #[test]
 fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_scope(cadmpeg_core::decode::ContentScope::full())
-        .unwrap();
+    ir.set_scope(cadmpeg_core::decode::ContentScope::full());
     let face = |at: usize| ir.geometry.faces[at].id.as_str().to_owned();
     let (named, unnamed) = (face(0), face(1));
     let deep = (0..crate::bounds::MAX_DOCUMENT_DEPTH / 2).fold(
@@ -1370,9 +1368,13 @@ fn a_refused_code_refuses_the_write_and_another_code_admits_it() {
 #[test]
 fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
     let ir = CadIr::empty();
-    let kind = crate::report::loss::LossKind::shared(
+    let kind: crate::report::loss::LossKind = crate::report::loss::NamespacedLossKind::new(
+        crate::loss_namespace!("test"),
+        "synthetic.reject-floor",
         crate::report::loss::LossTaxonomy::TopologyNotTransferred,
-    );
+    )
+    .with_strict_floor(Some(crate::report::Severity::Warning))
+    .into();
     let encoder = LossyEncoder(vec![crate::report::loss::LossNote::new(
         kind.clone(),
         "synthetic reject floor",
