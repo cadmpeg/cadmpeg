@@ -139,7 +139,7 @@ impl CodecBackend for GeometryOnlyCodec {
 }
 
 #[test]
-fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
+fn the_sealed_decode_flags_a_shallower_delivery_that_a_strict_decode_admits() {
     let options = DecodeOptions {
         depth: DecodeDepth::Full,
         ..DecodeOptions::default()
@@ -150,19 +150,18 @@ fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
     assert_eq!(result.ir().scope(), ContentScope::geometry());
     assert_eq!(depth_losses(&result).len(), 2);
 
-    let error = GeometryOnlyCodec
+    let strict = GeometryOnlyCodec
         .decode(
             &mut Cursor::new(vec![1u8, 2, 3, 4]),
             &strict_options(DecodeDepth::Full),
         )
-        .unwrap_err();
-    let DecodeFailure::StrictRejected { rejection } = error else {
-        panic!("expected a strict refusal, got {error:?}")
-    };
-    assert_eq!(
-        rejection.loss().code.to_string(),
-        "decode/depth.not-delivered"
-    );
+        .unwrap();
+    let losses = depth_losses(&strict);
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.severity == crate::report::Severity::Error
+            && loss.code.strict_floor().is_none()));
 
     let admitted = GeometryOnlyCodec
         .decode(
@@ -641,7 +640,7 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
             assert_eq!(loss.severity, crate::report::Severity::Error);
             assert_eq!(
                 loss.strict_consequence(),
-                crate::report::loss::StrictConsequence::Reject
+                crate::report::loss::StrictConsequence::Tolerate
             );
             assert!(loss
                 .message

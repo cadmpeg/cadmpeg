@@ -260,6 +260,23 @@ fn integrity_failure_is_a_strict_rejectable_error() {
     );
 }
 
+/// §3.2 states no strict floor for `target.source-dialect-displaced` or
+/// `target.request-displaced`, whichever codec charges them.
+#[test]
+fn a_displaced_target_dialect_pins_no_strict_floor() {
+    for code in [
+        "target.source-dialect-displaced",
+        "target.request-displaced",
+    ] {
+        let kind = NamespacedLossKind::new(
+            LossNamespace::new("rhino").unwrap(),
+            code,
+            LossTaxonomy::SourceDialectDisplaced,
+        );
+        assert_eq!(LossKind::from(kind).strict_floor(), None, "{code}");
+    }
+}
+
 #[test]
 fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
     let kind: LossKind = NamespacedLossKind::new(

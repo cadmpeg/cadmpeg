@@ -108,8 +108,7 @@
           "value": {
             "code": "arena.omitted",
             "kind": "subd_omitted",
-            "namespace": "export",
-            "strict_floor": "warning"
+            "namespace": "export"
           }
         },
         "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted: synthetic:v2:subd#directed",

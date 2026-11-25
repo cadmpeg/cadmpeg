@@ -72,20 +72,9 @@ impl DecodeLossCode {
         }
     }
 
-    /// A shallower delivery refuses a strict decode. A record the
-    /// normalizer gave up keeps all its content in a spelling the decoder
-    /// stated, so it refuses nothing; a repeated id and a missing content
-    /// digest refuse nothing either.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::DepthNotDelivered { .. } => Some(Severity::Warning),
-            Self::IdRepeated | Self::NormalizeIncomplete | Self::ContentDigestUnavailable => None,
-        }
-    }
-
     fn kind(self) -> LossKind {
         NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
+            .with_strict_floor(None)
             .into()
     }
 

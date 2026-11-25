@@ -315,7 +315,6 @@ impl LossTaxonomy {
             | Self::SubdOmitted
             | Self::NoncanonicalSourceSyntax
             | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
             | Self::IntegrityFailure
             | Self::NoExportableSolids => Some(Severity::Warning),
             _ => None,

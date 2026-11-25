@@ -273,7 +273,9 @@ impl ExportLossCode {
     }
 
     fn kind(self) -> LossKind {
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy()).into()
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(None)
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
