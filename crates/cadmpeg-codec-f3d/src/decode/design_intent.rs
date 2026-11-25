@@ -1295,6 +1295,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             parameters: &prereqs.design_parameters,
             placements: &design.design_sketch_placements,
             sketches: &model.sketches,
+            mesh_bodies: Some(geometry.mesh_projection),
         },
         &mut losses,
     )?;

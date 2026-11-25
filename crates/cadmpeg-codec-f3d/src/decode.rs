@@ -4998,8 +4998,7 @@ fn project_mesh_bodies(
         }
         for scope in feature.scopes() {
             let mut bodies = feature
-                .bodies()
-                .iter()
+                .scope_bodies()
                 .filter(|body| body.scope_record_index == Some(scope.record().record_index()))
                 .collect::<Vec<_>>();
             bodies.sort_by_key(|body| body.scope_body_ordinal);

@@ -29,7 +29,7 @@ rewrite_native_record!(DesignMeshCollection, []; {record, base_class_tag, flagge
 rewrite_native_scalar!(DesignMeshCollectionBacklink);
 rewrite_native_record!(DesignMeshCollectionOwner, []; {record, backlink});
 rewrite_native_record!(DesignMeshEntryName, []; {record, name});
-rewrite_native_record!(DesignMeshFeature, []; {id, scopes, collection, texture_table, collection_owner, bodies, operation_bodies});
+rewrite_native_record!(DesignMeshFeature, []; {id, scopes, collection, texture_table, collection_owner, bodies, removed_bodies, operation_bodies});
 impl<const LENGTH: u64> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities
     for DesignMeshFixedRecord<LENGTH>
 {

@@ -1951,6 +1951,8 @@ impl DesignMeshCollection {
             } else {
                 record.frame_length() == length + 4 + u64::from(body_count) * 15
             }
+        } else if body_count == 0 {
+            record.frame_length() == length || record.frame_length() == length + 4
         } else {
             record.frame_length() == length
         };
@@ -2062,6 +2064,9 @@ pub(crate) struct DesignMeshFeature {
     pub(crate) collection_owner: DesignMeshCollectionOwner,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBody>,
+    /// Bodies that a feature scope lists and the collection no longer lists,
+    /// in record order.
+    removed_bodies: Vec<DesignMeshBody>,
     pub(crate) operation_bodies: Vec<DesignMeshOperationBody>,
 }
 
@@ -2090,6 +2095,7 @@ impl DesignMeshFeature {
         texture_table: DesignMeshTextureTable,
         collection_owner: DesignMeshCollectionOwner,
         bodies: Vec<DesignMeshBody>,
+        removed_bodies: Vec<DesignMeshBody>,
     ) -> Result<Self, String> {
         let body_count = u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?;
         if collection.body_count() != u64::from(body_count) {
@@ -2104,6 +2110,12 @@ impl DesignMeshFeature {
         {
             return Err("a body without a scope carries no scope ordinal".into());
         }
+        if removed_bodies
+            .iter()
+            .any(|body| body.scope_record_index.is_none() || body.scope_body_ordinal.is_none())
+        {
+            return Err("a removed body names its scope and its scope ordinal".into());
+        }
         let mut scope_ids = std::collections::HashSet::new();
         for owner in &scopes {
             let index = owner.record().record_index();
@@ -2112,6 +2124,7 @@ impl DesignMeshFeature {
             }
             let mut ordinals = bodies
                 .iter()
+                .chain(&removed_bodies)
                 .filter(|body| body.scope_record_index == Some(index))
                 .map(|body| {
                     body.scope_body_ordinal
@@ -2148,7 +2161,7 @@ impl DesignMeshFeature {
                 return Err("flagged entries must reference distinct collection bodies".into());
             }
         }
-        if bodies.iter().any(|body| {
+        if bodies.iter().chain(&removed_bodies).any(|body| {
             body.scope_record_index
                 .is_some_and(|index| !scope_ids.contains(&index))
         }) {
@@ -2163,6 +2176,7 @@ impl DesignMeshFeature {
             texture_table,
             collection_owner,
             bodies,
+            removed_bodies,
             operation_bodies: Vec::new(),
         })
     }
@@ -2172,31 +2186,48 @@ impl DesignMeshFeature {
     pub(crate) fn collection(&self) -> &DesignMeshCollection {
         &self.collection
     }
+    #[cfg(test)]
     pub(crate) fn bodies(&self) -> &[DesignMeshBody] {
         &self.bodies
     }
+    /// The bodies that a feature scope lists and the collection no longer
+    /// lists.
+    pub(crate) fn removed_bodies(&self) -> &[DesignMeshBody] {
+        &self.removed_bodies
+    }
+    /// The collection bodies and the removed bodies, which the feature
+    /// scopes list.
+    pub(crate) fn scope_bodies(&self) -> impl Iterator<Item = &DesignMeshBody> {
+        self.bodies.iter().chain(&self.removed_bodies)
+    }
     pub(crate) fn all_bodies(&self) -> impl Iterator<Item = &DesignMeshBody> {
-        self.bodies.iter().chain(
+        self.scope_bodies().chain(
             self.operation_bodies
                 .iter()
                 .map(|operation| &operation.body),
         )
     }
     pub(crate) fn body_at(&self, ordinal: usize) -> Option<&DesignMeshBody> {
+        let removed = ordinal.checked_sub(self.bodies.len());
         self.bodies.get(ordinal).or_else(|| {
-            self.operation_bodies
-                .get(ordinal.checked_sub(self.bodies.len())?)
-                .map(|operation| &operation.body)
+            let removed = removed?;
+            self.removed_bodies.get(removed).or_else(|| {
+                self.operation_bodies
+                    .get(removed.checked_sub(self.removed_bodies.len())?)
+                    .map(|operation| &operation.body)
+            })
         })
     }
     pub(crate) fn body_at_mut(&mut self, ordinal: usize) -> Option<&mut DesignMeshBody> {
-        if ordinal < self.bodies.len() {
-            self.bodies.get_mut(ordinal)
-        } else {
-            self.operation_bodies
-                .get_mut(ordinal - self.bodies.len())
-                .map(|operation| &mut operation.body)
-        }
+        let Some(removed) = ordinal.checked_sub(self.bodies.len()) else {
+            return self.bodies.get_mut(ordinal);
+        };
+        let Some(operation) = removed.checked_sub(self.removed_bodies.len()) else {
+            return self.removed_bodies.get_mut(removed);
+        };
+        self.operation_bodies
+            .get_mut(operation)
+            .map(|operation| &mut operation.body)
     }
     fn body_count_offsets(&self) -> [u64; 2] {
         [
@@ -2208,7 +2239,7 @@ impl DesignMeshFeature {
         ]
     }
     fn scope_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
-        self.bodies.iter().filter_map(|body| {
+        self.scope_bodies().filter_map(|body| {
             let owner = self
                 .scopes()
                 .find(|scope| Some(scope.record().record_index()) == body.scope_record_index)?;
@@ -2341,6 +2372,8 @@ struct DesignMeshFeatureWire {
     texture_filename_count_offset: u64,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBodyWire>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    removed_bodies: Vec<DesignMeshBodyWire>,
     /// Texture resources in flags-map order.
     textures: Vec<DesignMeshTextureResourceWire>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2375,6 +2408,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             != wire
                 .bodies
                 .iter()
+                .chain(&wire.removed_bodies)
                 .filter(|body| body.scope_record_index.is_some())
                 .count()
         {
@@ -2401,6 +2435,13 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         .map_err(|error| error.to_string())?;
         for body in wire.bodies {
             bodies.push(DesignMeshBody::from_wire(body)?);
+        }
+        let mut removed_bodies = Vec::new();
+        removed_bodies
+            .try_reserve_exact(wire.removed_bodies.len())
+            .map_err(|error| error.to_string())?;
+        for body in wire.removed_bodies {
+            removed_bodies.push(DesignMeshBody::from_wire(body)?);
         }
         let collection = DesignMeshCollection::new(
             wire.collection_record,
@@ -2450,6 +2491,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 Some(_) => return Err("collection owner frame and name count conflict".into()),
             },
             bodies,
+            removed_bodies,
         )?;
         feature.operation_bodies = wire.operation_bodies;
         if feature.operation_bodies.iter().any(|operation| {
@@ -2495,6 +2537,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             body_record_indices.push(body.placement.record().record_index());
             bodies.push(body.into());
         }
+        let removed_bodies = value.removed_bodies.into_iter().map(Into::into).collect();
         let collection_owner_backlink_offset = value.collection_owner.backlink_offset();
         let collection_owner_name_count = value.collection_owner.name_count();
         let collection_owner_native_frame = value.collection_owner.native_frame().cloned();
@@ -2510,6 +2553,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             scope_body_reference_offsets,
             collection_body_reference_offsets,
             bodies,
+            removed_bodies,
             id: value.id,
             scopes: value.scopes.into_iter().map(MeshScopeWire::from).collect(),
             collection_record: value.collection.record().clone(),

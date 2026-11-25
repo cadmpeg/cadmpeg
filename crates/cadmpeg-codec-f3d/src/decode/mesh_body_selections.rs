@@ -41,12 +41,16 @@ pub(super) fn bind(
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
         .collect::<HashMap<_, _>>();
     let mut records = HashMap::<String, Option<MeshOperationRecords<'_>>>::new();
+    let mut moved = std::collections::BTreeMap::<String, Vec<String>>::new();
     for feature in features.iter_mut() {
-        let FeatureDefinition::Operation(
-            FeatureOperation::MoveBody { bodies, .. } | FeatureOperation::DeleteBody { bodies, .. },
-        ) = feature.evaluation.definition()
-        else {
-            continue;
+        let (bodies, moves) = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
+                (bodies, feature.suppressed != Some(true))
+            }
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => {
+                (bodies, false)
+            }
+            _ => continue,
         };
         let BodySelection::Native(native) = bodies else {
             continue;
@@ -105,8 +109,20 @@ pub(super) fn bind(
             }
         });
         for dependency in dependencies {
+            if moves {
+                moved
+                    .entry(dependency.as_str().to_owned())
+                    .or_default()
+                    .push(feature.id.as_str().to_owned());
+            }
             add_dependency(feature, dependency);
         }
+    }
+    for (import, motions) in moved {
+        let motions = motions.join(", ");
+        losses.push(F3dLossCode::FeatureMeshImportPlacementCombined.note(format!(
+            "Mesh import {import} stores its mesh at the current placement, which includes the motions of {motions}; the import placement before them is not stored."
+        )));
     }
     Ok(())
 }

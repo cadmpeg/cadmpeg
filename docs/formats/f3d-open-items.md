@@ -2598,17 +2598,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
 
-### DR-1062. State of a removed mesh body
+### DR-1063. Import placement of a moved mesh body
 
-**Question.** Which state does the stored mesh of a body that a `MeshRemove` removes hold: the state after its `Base Mesh Feature`, or the state at the `MeshRemove` input?
+**Question.** Does a `Base Mesh Feature` store the placement of its mesh at insert apart from the mesh-body matrices?
 
-**Known.** After a `MeshRemove`, the mesh collection lists no body. The `Base Mesh Feature` scope still lists the mesh-body record, the `MeshRemove` source member names the same record, and the `.paramesh` container of the body decodes. A mesh body that the collection lists holds the current placement, which includes each later `Modify` of the body.
+**Known.** The two equal matrices of a mesh-body record combine the import placement with each later `Modify` of the body. A mesh inserted at the origin with millimetre units stores the f64 nearest f32 `0.1` on the diagonal; a later `Modify` adds its translation to column 3. No other record of the Design stream stores a matrix with that scale. The decoder states the current mesh and reports `feature.mesh-import-placement-combined` with the `Modify` features that moved it.
 
-**Need.** A save that inserts a mesh, moves it with `Modify` by a known distance, and removes it with `MeshRemove`, with the stored mesh-body matrix compared against the inserted and the moved placements.
+**Need.** A save that places the mesh at insert with a known translation and rotation, then moves it with `Modify`, with the `Base Mesh Feature` scope and the mesh-body record compared against an unplaced insert.
 
 **Conflict.** None.
 
-**Note.** The decoder keeps the `MeshImport` source native and reports `feature.mesh-import-tessellations-unresolved` and `mesh.container-unjoined`.
+**Note.** The decoder reports `feature.mesh-import-placement-combined`.
 
 ### DR-473. Geometry states of mesh operation scopes
 

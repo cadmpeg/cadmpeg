@@ -854,13 +854,12 @@ fn parse_variable_mesh_body_at(
     parsed.transpose()
 }
 
-/// Parse one mesh-collection record. `None` for an empty collection, an empty
-/// `ParaMesh` registry with no mesh graph.
+/// Parse one mesh-collection record.
 fn parse_mesh_collection_record(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     frame: TypedPrimaryFrame<'_>,
-) -> Result<Option<MeshCollectionRecord>, CodecError> {
+) -> Result<MeshCollectionRecord, CodecError> {
     validate_mesh_registration(
         frame,
         MESH_COLLECTION_TYPE_VERSION,
@@ -962,9 +961,6 @@ fn parse_mesh_collection_record(
         };
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
-        if body_records.is_empty() {
-            return Some(None);
-        }
         let collection = DesignMeshCollection::new(
             identity,
             base_record,
@@ -987,12 +983,12 @@ fn parse_mesh_collection_record(
                 .with_received_count(u32::try_from(first_count).ok()?)
                 .ok()?
         };
-        Some(Some(MeshCollectionRecord {
+        Some(MeshCollectionRecord {
             collection,
             texture_table_record_index,
             body_records,
             owner_record_index,
-        }))
+        })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-collection", frame.entity_id))
 }
@@ -1832,13 +1828,7 @@ where
     let collections = collection_frames
         .into_iter()
         .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    if collections.is_empty() {
-        return Ok(Vec::new());
-    }
+        .collect::<Result<Vec<_>, _>>()?;
     let mut entry_names = unique_record_map(
         typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
             .into_iter()
@@ -1898,6 +1888,13 @@ where
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
+    if collections
+        .iter()
+        .all(|collection| collection.body_records.is_empty())
+        && scopes.values().all(|scope| scope.body_records.is_empty())
+    {
+        return Ok(Vec::new());
+    }
     let mut states = unique_record_map(
         typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
             .into_iter()
@@ -2011,6 +2008,33 @@ where
                 None => scopeless_bodies += 1,
             }
         }
+        let mut removed_records = bodies
+            .iter()
+            .filter(|(index, body)| {
+                body.collection_record_index == collection_index
+                    && !collection_bodies.contains(*index)
+                    && body.scope_record_index.is_some_and(|scope_index| {
+                        scopes
+                            .get(&scope_index)
+                            .is_some_and(|scope| scope.body_records.contains(index))
+                    })
+            })
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>();
+        removed_records.sort_unstable();
+        for index in &removed_records {
+            collection_bodies.insert(*index);
+            if let Some(scope_index) = bodies.get(index).and_then(|body| body.scope_record_index) {
+                if !scope_indices.contains(&scope_index) {
+                    scope_indices.push(scope_index);
+                }
+            }
+        }
+        if collection.body_records.is_empty() && removed_records.is_empty() {
+            texture_tables.remove(&collection.texture_table_record_index);
+            collection_owners.remove(&collection.owner_record_index);
+            continue;
+        }
         let mut scope_ordinals = HashMap::new();
         let mut selected_scopes = Vec::new();
         for scope_index in scope_indices {
@@ -2040,7 +2064,9 @@ where
             }
             selected_scopes.push(scope.scope);
         }
-        if scope_ordinals.len() + scopeless_bodies != collection.body_records.len() {
+        if scope_ordinals.len() + scopeless_bodies
+            != collection.body_records.len() + removed_records.len()
+        {
             return Err(stream_error("scope bodies partition collection bodies"));
         }
         let scope_offset = selected_scopes.first().map_or_else(
@@ -2099,7 +2125,8 @@ where
         }
 
         let mut feature_bodies = Vec::new();
-        for body_record_index in &collection.body_records {
+        let mut removed_bodies = Vec::new();
+        for body_record_index in collection.body_records.iter().chain(&removed_records) {
             let body = bodies.remove(body_record_index).ok_or_else(|| {
                 stream_error("each collection body reference targets one unused mesh body")
             })?;
@@ -2144,7 +2171,12 @@ where
                 .copied()
                 .ok_or_else(|| stream_error("each mesh body references a typed Body owner"))?;
             let body_owner = parse_mesh_body_owner(bytes, body_owner_frame)?;
-            feature_bodies.push(DesignMeshBody {
+            let destination = if removed_records.contains(body_record_index) {
+                &mut removed_bodies
+            } else {
+                &mut feature_bodies
+            };
+            destination.push(DesignMeshBody {
                 scope_record_index: body.scope_record_index,
                 scope_body_ordinal: scope_ordinals.get(body_record_index).copied(),
                 words: body.words,
@@ -2268,6 +2300,7 @@ where
             })?,
             collection_owner.owner,
             feature_bodies,
+            removed_bodies,
         )
         .map_err(|message| malformed_mesh_graph(&stream, &message))?;
         feature.operation_bodies = operation_bodies;
@@ -3565,8 +3598,7 @@ mod tests {
             let mut frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
             frame.end = record.len();
             let collection = super::parse_mesh_collection_record(&record, &graph.meta, frame)
-                .expect("valid collection")
-                .expect("nonempty collection");
+                .expect("valid collection");
             assert_eq!(collection.body_records, [189, 325]);
             let flagged = collection.collection.flagged_data.as_ref().unwrap();
             assert_eq!(flagged.word, 4);
@@ -3862,7 +3894,8 @@ mod tests {
         assert!(
             super::parse_mesh_collection_record(&record, &graph.meta, frame)
                 .expect("empty flagged registry")
-                .is_none()
+                .body_records
+                .is_empty()
         );
         record[66] = 1;
         assert!(super::parse_mesh_collection_record(&record, &graph.meta, frame).is_err());
