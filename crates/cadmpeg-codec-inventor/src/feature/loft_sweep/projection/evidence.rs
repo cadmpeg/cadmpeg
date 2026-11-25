@@ -435,8 +435,10 @@ pub(in crate::feature::loft_sweep) fn sweep_partition(
             ir,
             generator,
             op,
-            section,
-            normal,
+            Section {
+                curves: section,
+                normal,
+            },
             path.len(),
             &motions,
             end,
@@ -446,12 +448,21 @@ pub(in crate::feature::loft_sweep) fn sweep_partition(
 
 /// The faces of the sweep against the section moved along `motions`, which
 /// end with the motion `end`.
+/// A sweep section: its edges and its plane normal.
+#[derive(Clone, Copy)]
+struct Section<'a> {
+    curves: &'a [(i64, SweepCurve)],
+    normal: Vector3,
+}
+
 fn partition_from(
     ir: &CadIr,
     generator: u32,
     op: SolidSweepOperation,
-    section: &[(i64, SweepCurve)],
-    section_normal: Vector3,
+    Section {
+        curves: section,
+        normal: section_normal,
+    }: Section<'_>,
     spans: usize,
     motions: &[(PathSpan, Pose)],
     end: Pose,

@@ -351,7 +351,7 @@ fn versioned_extent_and_absent_dimension_keep_the_same_predicate() {
         };
         *type_value = 2;
     });
-    assert!(25 >= crate::feature::EXTENT_TYPE_12_FIRST_MAJOR);
+    const { assert!(25 >= crate::feature::EXTENT_TYPE_12_FIRST_MAJOR) };
     assert_eq!(f.admitted(), Err(NativeReason::Slot(4)));
     assert!(!f.validates(&definition()));
     f.change_kind(3, |kind| {
