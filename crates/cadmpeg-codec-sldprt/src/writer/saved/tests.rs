@@ -5,7 +5,8 @@ use std::num::NonZeroI8;
 use cadmpeg_ir::codec::write::saved::HistoryText;
 use cadmpeg_ir::design::units::{Unit, UnitFactor, UnitSymbol};
 
-use super::SolidWorksText;
+use super::{unwritten_losses, SolidWorksText};
+use crate::loss::SldprtLossCode;
 
 fn unit(symbol: UnitSymbol) -> Unit {
     Unit(vec![UnitFactor {
@@ -43,5 +44,35 @@ fn a_unit_with_no_suffix_has_no_literal() {
     assert_eq!(
         SolidWorksText.literal(1.0, &unit(UnitSymbol::Kg), "1"),
         None
+    );
+}
+
+#[test]
+fn each_kind_of_design_record_has_its_loss() {
+    let losses = unwritten_losses(&[
+        "design.features[f].name: no history feature restates it".into(),
+        "design.parameters[p].comment".into(),
+        "design.scopes[s].active_configuration".into(),
+    ]);
+    let codes = losses
+        .iter()
+        .map(|loss| (loss.code.clone(), loss.message.rsplit(": ").next()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        codes,
+        [
+            (
+                SldprtLossCode::WriterParameterEditUnwritten.kind(),
+                Some("design.parameters[p].comment")
+            ),
+            (
+                SldprtLossCode::WriterFeatureEditUnwritten.kind(),
+                Some("no history feature restates it")
+            ),
+            (
+                SldprtLossCode::WriterDesignEditUnwritten.kind(),
+                Some("design.scopes[s].active_configuration")
+            ),
+        ]
     );
 }

@@ -141,8 +141,10 @@ fn unrepresented_product_structure_is_an_export_loss() {
     assert_eq!(
         omitted,
         [
-            "the rhino write does not represent model arena `product_definitions`: 2 record(s) omitted",
-            "the rhino write does not represent model arena `occurrences`: 2 record(s) omitted",
+            "the rhino write does not represent model arena `product_definitions`: 2 record(s) \
+             omitted: cadir:model:product#pin, cadir:model:product#root",
+            "the rhino write does not represent model arena `occurrences`: 2 record(s) omitted: \
+             cadir:model:occurrence#pin.0, cadir:model:occurrence#pin.1",
         ]
     );
 }
@@ -210,9 +212,12 @@ fn a_body_with_design_content_is_written_and_the_content_reported() {
     assert_eq!(
         omitted,
         [
-            "the rhino write does not represent model arena `features`: 1 record(s) omitted",
-            "the rhino write does not represent model arena `parameters`: 1 record(s) omitted",
-            "the rhino write does not represent model arena `attributes`: 1 record(s) omitted",
+            "the rhino write does not represent model arena `features`: 1 record(s) omitted: \
+             cadir:model:feature#boss",
+            "the rhino write does not represent model arena `parameters`: 1 record(s) omitted: \
+             cadir:model:parameter#height",
+            "the rhino write does not represent model arena `attributes`: 1 record(s) omitted: \
+             cadir:model:attribute#finish",
         ]
     );
     let decoded = RhinoCodec
@@ -235,8 +240,10 @@ fn design_content_alone_writes_an_empty_archive_and_says_so() {
         [
             "the written 3DM archive holds no object: the document states no geometry or mesh \
              this writer encodes",
-            "the rhino write does not represent model arena `features`: 1 record(s) omitted",
-            "the rhino write does not represent model arena `parameters`: 1 record(s) omitted",
+            "the rhino write does not represent model arena `features`: 1 record(s) omitted: \
+             cadir:model:feature#boss",
+            "the rhino write does not represent model arena `parameters`: 1 record(s) omitted: \
+             cadir:model:parameter#height",
         ]
     );
 }

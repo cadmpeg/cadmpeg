@@ -128,7 +128,7 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
     let (decoded, expected) = lanes(&source);
     assert_eq!(expected.len(), 2, "{expected:?}");
     let (ir, _, mut fidelity) = decoded.into_parts();
-    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    fidelity.content_digest = None;
     let mut written = Vec::new();
     crate::SldprtCodec
         .plan(

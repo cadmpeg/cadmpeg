@@ -99,7 +99,6 @@ fn check_construction(
     findings: &mut Vec<Finding>,
 ) {
     let kind = construction.kind();
-    let mut built_centroid = false;
     let mut error = |message: Ruled<'_>| super::error(findings, at, message);
     let inputs = construction.inputs();
     let after = construction.after();
@@ -294,7 +293,6 @@ fn check_construction(
                         "a nested construction is the reference of a {relation:?} input"
                     ));
                 }
-                built_centroid |= matches!(relation, Relation::Centroid);
                 if subject == Subject::Whole
                     && matches!(relation, Relation::Coincident)
                     && kind != Kind::Frame
@@ -313,16 +311,6 @@ fn check_construction(
     }
     if matches!(kind, Kind::Plane | Kind::Frame) && leading_offset(index, construction) {
         error(crate::rule!("design.plane-frame-coincident-one-planar-reference", "a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
-        );
-    }
-    if built_centroid {
-        super::warning(
-            findings,
-            at,
-            crate::rule!(
-                "design.nested-construction-reference-centroid-input",
-                "a nested construction is the reference of a Centroid input"
-            ),
         );
     }
     check_values(construction, geometry, at, findings);
@@ -454,7 +442,7 @@ fn check_ratio_spelling(
     if let Some(Dimension::Literal(ratio)) = parameter_ratio {
         if ratio.get() == 0.0 || ratio.get() == 1.0 {
             error(crate::rule!(
-                "design.parameterratio-value-literal-end-curve",
+                "design.parameter-ratio-literal-at-curve-end",
                 "a ParameterRatio value is a literal {}, an end of the curve",
                 ratio.get()
             ));
@@ -468,10 +456,10 @@ fn check_ratio_spelling(
     };
     for pick in picks.as_slice() {
         match stated_curve(index, pick) {
-            StatedCurve::Endless => error(crate::rule!("design.ratio-parameterratio-value-picks-datum-axis", 
+            StatedCurve::Endless => error(crate::rule!("design.ratio-on-endless-line",
                 "a Ratio or ParameterRatio value picks a datum axis, a principal axis, or an infinite line, which has no ends"
             )),
-            StatedCurve::Conic if parameter_ratio.is_some() => error(crate::rule!("design.parameterratio-value-picks-curve-document-states", 
+            StatedCurve::Conic if parameter_ratio.is_some() => error(crate::rule!("design.parameter-ratio-on-line-or-circle",
                 "a ParameterRatio value picks a curve the document states as a line, a circle, or an arc; it is a Ratio"
             )),
             StatedCurve::Conic | StatedCurve::Other => {}

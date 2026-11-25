@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::ContentScope;
 
-use super::{READER_JSON_DEPTH, RECORD_PREFIX_DEPTH};
+use crate::bounds::{text_depth, MAX_DOCUMENT_DEPTH};
 use crate::document::CadIr;
 use crate::process::operation::OperationKind;
 use crate::process::setup::{ProgramStep, Setup, Step};
@@ -12,7 +12,6 @@ use crate::process::stock::StockRule;
 use crate::validate::process::fixture::{
     assert_error, assert_no_process_finding, constant, document, id, process_findings,
 };
-use crate::validate::process::walk::walk;
 
 #[test]
 fn the_fixture_breaks_no_process_rule() {
@@ -157,35 +156,28 @@ fn nested(depth: usize) -> CadIr {
     ir
 }
 
-/// The deepest folder nesting the rule admits.
-fn deepest() -> usize {
-    let depths = (1..READER_JSON_DEPTH).collect::<Vec<_>>();
-    let admitted = depths.partition_point(|&depth| {
-        RECORD_PREFIX_DEPTH + walk(&nested(depth).process.setups[0]).depth <= READER_JSON_DEPTH
-    });
-    depths[admitted - 1]
-}
-
-/// The nesting rule refuses exactly the documents the reader refuses, so a
-/// validated document reads back.
+/// Step folders nest to the document's depth bound (§2.5): a document at the
+/// bound reads back, and one past it is refused. The bound is a condition of
+/// `CadIr`, so validation reports no nesting.
 #[test]
-fn a_record_nests_no_deeper_than_the_reader_admits() {
-    let deepest = deepest();
-    let admitted = nested(deepest);
+fn step_folders_nest_to_the_document_bound() {
+    let depth = |folders: usize| text_depth(&serde_json::to_string(&nested(folders)).unwrap());
+    let past = (1..=MAX_DOCUMENT_DEPTH + 1)
+        .find(|&folders| depth(folders) > MAX_DOCUMENT_DEPTH)
+        .unwrap();
+
+    let admitted = nested(past - 1);
     assert_no_process_finding(&admitted);
     let text = serde_json::to_string(&admitted).unwrap();
     let back = CadIr::from_json(&text).unwrap();
     assert_eq!(serde_json::to_string(&back).unwrap(), text);
 
-    let refused = nested(deepest + 1);
-    assert_error(
-        &refused,
-        "JSON levels deep in the document, past the 127 a reader admits",
-    );
+    let refused = nested(past);
+    assert_no_process_finding(&refused);
     let text = serde_json::to_string(&refused).unwrap();
     let error = CadIr::from_json(&text).unwrap_err();
     assert!(
-        error.to_string().contains("recursion limit exceeded"),
+        error.to_string().contains("levels of a CADIR document"),
         "{error}"
     );
 }

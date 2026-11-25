@@ -400,7 +400,7 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
 }
 
 #[test]
-fn a_built_centroid_reference_is_a_warning() {
+fn a_built_centroid_reference_is_admitted() {
     let point = |inputs: Vec<Value>| {
         json!({"kind": "datum", "value": {
             "element": {"kind": "points", "value": [construction(inputs)]},
@@ -424,14 +424,11 @@ fn a_built_centroid_reference_is_a_warning() {
     let mut features = planes();
     features[1] = feature("b", point(vec![built]));
     let ir = timeline(features);
-    let message = "a nested construction is the reference of a Centroid input";
-    assert_finding(&ir, Check::Design, Severity::Warning, message);
     let findings = findings(&ir);
     assert!(
         !findings
             .iter()
-            .any(|finding| finding.severity == Severity::Error
-                && finding.message.contains("nested construction")),
+            .any(|finding| finding.message.contains("nested construction")),
         "{findings:#?}"
     );
 }
@@ -979,7 +976,7 @@ fn a_witness_body_meets_the_rules_of_one_topology() {
     );
 }
 
-/// A construction nested to the desktop construction ceiling, its innermost
+/// A construction nested `depth` levels, its innermost
 /// reference a pick.
 fn nested_plane(depth: usize) -> Value {
     let mut inner = construction(vec![input(
@@ -998,11 +995,11 @@ fn nested_plane(depth: usize) -> Value {
 }
 
 #[test]
-fn the_walk_at_the_construction_ceiling_runs_on_a_small_stack() {
-    let ceiling =
-        usize::try_from(cadmpeg_core::decode::ResourceLimits::desktop().max_construction_depth)
-            .unwrap();
-    let ir = timeline(vec![feature("a", plane_datum(nested_plane(ceiling)))]);
+fn the_walk_of_the_deepest_construction_runs_on_a_small_stack() {
+    // A nested construction is four levels of JSON: inputs, input, reference
+    // and construction, so no document holds a deeper nesting.
+    let deepest = crate::bounds::MAX_DOCUMENT_DEPTH / 4;
+    let ir = timeline(vec![feature("a", plane_datum(nested_plane(deepest)))]);
     let findings = std::thread::Builder::new()
         .stack_size(256 * 1024)
         .spawn(move || findings(&ir))

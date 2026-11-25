@@ -681,18 +681,30 @@ macro_rules! declare_home_arenas {
                 true $(&& arena_is_ordered(&self.$field))*
             }
 
-            /// Keeps the first record of each id in each sorted arena and
-            /// drops the later ones, returning each repeated id whose copies
-            /// differ.
+            /// States one record of each id in each sorted arena whose copies
+            /// hold one value and none of an id whose copies differ,
+            /// returning each such id.
             pub(crate) fn drop_repeated_ids(&mut self, home: &str) -> Vec<RepeatedId> {
                 let mut repeated = Vec::new();
-                $(keep_first_ids(
+                $(drop_repeated_copies(
                     &mut self.$field,
                     crate::schema::ArenaRecord::record_identity,
                     &format!("{home}.{}", stringify!($field)),
                     &mut repeated,
                 );)*
                 repeated
+            }
+
+            /// Removes the record at `index` of the arena whose wire key is
+            /// `arena`, returning its id.
+            pub(crate) fn remove_record(&mut self, arena: &str, index: usize) -> Option<String> {
+                $(if arena == stringify!($field) {
+                    return (index < self.$field.len()).then(|| {
+                        crate::schema::ArenaRecord::record_identity(&self.$field.remove(index))
+                            .to_owned()
+                    });
+                })*
+                None
             }
 
             /// Sort each arena lexicographically by its entity identity.
@@ -1193,54 +1205,66 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
         .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
 }
 
-/// An id a sorted arena held more than once.
+/// An id a sorted arena held more than once, in copies that differ.
 #[derive(Debug)]
 pub(crate) struct RepeatedId {
     /// The arena, as `<home>.<field>` or `native.<codec>.<arena>`.
     pub(crate) arena: String,
     /// The repeated id.
     pub(crate) id: String,
-    /// The number of later records dropped.
-    pub(crate) dropped: usize,
-    /// Whether a dropped record differs from the kept one.
-    pub(crate) differs: bool,
+    /// The number of copies, all of them dropped.
+    pub(crate) copies: usize,
 }
 
-/// Drops each record of a sorted arena whose id equals the one before it, so
-/// the first record of each id stays, and records each repeated id whose
-/// copies differ from the first.
-///
-/// Copies that hold one value are one record, so dropping them loses
-/// nothing; they are not recorded.
-pub(crate) fn keep_first_ids<T: PartialEq>(
+/// States one record for each id of a sorted arena whose copies hold one
+/// value, and none for an id whose copies differ, which it records in
+/// `repeated` (§2.8).
+pub(crate) fn drop_repeated_copies<T: PartialEq>(
     records: &mut Vec<T>,
     id: impl Fn(&T) -> &str,
     arena: &str,
     repeated: &mut Vec<RepeatedId>,
 ) {
-    let mut current: Option<RepeatedId> = None;
+    let first_new = repeated.len();
+    let mut run: Option<(RepeatedId, bool)> = None;
     records.dedup_by(|later, earlier| {
         if id(later) != id(earlier) {
             return false;
         }
-        match current.as_mut() {
-            Some(run) if run.id == id(later) => {
-                run.dropped += 1;
-                run.differs |= later != earlier;
+        match run.as_mut() {
+            Some((current, differs)) if current.id == id(later) => {
+                current.copies += 1;
+                *differs |= later != earlier;
             }
             _ => {
-                repeated.extend(current.take().filter(|run| run.differs));
-                current = Some(RepeatedId {
-                    arena: arena.to_owned(),
-                    id: id(later).to_owned(),
-                    dropped: 1,
-                    differs: later != earlier,
-                });
+                repeated.extend(
+                    run.take()
+                        .filter(|(_, differs)| *differs)
+                        .map(|(repeated_id, _)| repeated_id),
+                );
+                run = Some((
+                    RepeatedId {
+                        arena: arena.to_owned(),
+                        id: id(later).to_owned(),
+                        copies: 2,
+                    },
+                    later != earlier,
+                ));
             }
         }
         true
     });
-    repeated.extend(current.filter(|run| run.differs));
+    repeated.extend(
+        run.filter(|(_, differs)| *differs)
+            .map(|(repeated_id, _)| repeated_id),
+    );
+    if repeated.len() > first_new {
+        let differing: std::collections::HashSet<&str> = repeated[first_new..]
+            .iter()
+            .map(|repeated| repeated.id.as_str())
+            .collect();
+        records.retain(|record| !differing.contains(id(record)));
+    }
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -2789,8 +2813,9 @@ impl CadIr {
     }
 
     /// Parse JSON and reject any unsupported `ir_version`, or a document
-    /// whose scope excludes a class it holds records of. Every float zero,
-    /// `-0` and `-0.0` included, reads as 0 (§2.5).
+    /// whose scope excludes a class it holds records of, or that nests
+    /// deeper than a CADIR document's bound. Every float zero, `-0` and
+    /// `-0.0` included, reads as 0 (§2.5).
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
@@ -2807,7 +2832,7 @@ impl CadIr {
             "ir_version"
         );
 
-        let probe = serde_json::from_str::<VersionProbe>(s)?;
+        let probe = crate::bounds::read_json::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
         one_zero::from_str::<Self>(s).map_err(|error| {
             match legacy::omitted_arena_refusal(&error.to_string()) {
@@ -2818,11 +2843,9 @@ impl CadIr {
     }
 
     /// Sorts every arena of the document's homes and native namespaces by
-    /// id, keeping records of one id in their present order, then keeps the
-    /// first record of each id and drops the later ones. Returns each
-    /// repeated id whose copies differ; copies that hold one value are one
-    /// record and are not returned. The arenas of a state's delta are left as
-    /// they are.
+    /// id, then states one record of each id whose copies hold one value and
+    /// none of an id whose copies differ. Returns each id whose copies
+    /// differ. The arenas of a state's delta are left as they are.
     pub(crate) fn drop_repeated_ids(&mut self) -> Vec<RepeatedId> {
         self.finalize();
         let mut repeated = self.geometry.drop_repeated_ids("topology");
@@ -2831,6 +2854,69 @@ impl CadIr {
         repeated.extend(self.process.drop_repeated_ids("process"));
         repeated.extend(self.native.drop_repeated_ids());
         repeated
+    }
+
+    /// Removes the record at `place`, returning its id and the ids of the
+    /// procedural constructions it was the owning carrier of, which are
+    /// removed with it: the document states no construction without its
+    /// carrier.
+    pub(crate) fn remove_record(
+        &mut self,
+        place: &crate::bounds::Place,
+    ) -> Option<(String, Vec<String>)> {
+        use crate::bounds::Place;
+        let owned = self.owned_constructions();
+        let id = match place {
+            Place::Home { home, arena, index } => match home.as_str() {
+                "geometry" => self.geometry.remove_record(arena, *index),
+                "model" => self.model.remove_record(arena, *index),
+                "design" => self.design.remove_record(arena, *index),
+                "process" => self.process.remove_record(arena, *index),
+                _ => None,
+            },
+            Place::Native {
+                codec,
+                arena,
+                index,
+            } => self.native.remove_record(codec, arena, *index),
+        }?;
+        let still = self.owned_constructions();
+        let lost =
+            |construction: &str| owned.contains(construction) && !still.contains(construction);
+        let mut dropped = Vec::new();
+        self.geometry.procedural_curves.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        self.geometry.procedural_surfaces.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        Some((id, dropped))
+    }
+
+    /// The ids of the procedural constructions a curve or surface carrier
+    /// owns.
+    fn owned_constructions(&self) -> std::collections::BTreeSet<String> {
+        let curves = self
+            .geometry
+            .curves
+            .iter()
+            .filter_map(|curve| curve.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        let surfaces = self
+            .geometry
+            .surfaces
+            .iter()
+            .filter_map(|surface| surface.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        curves.chain(surfaces).collect()
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record

@@ -43,6 +43,14 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str, Option<&str>)] = &[
         "CadIrWriteWire",
         None,
     ),
+    // `SourceFidelity` writes through `SourceFidelityWriteWire` in its
+    // hand-written `Serialize`.
+    (
+        "crates/cadmpeg-ir/src/source_fidelity.rs",
+        "SourceFidelityWire",
+        "SourceFidelityWriteWire",
+        None,
+    ),
     // Each of these is read by a hand-written `Deserialize` impl for the type
     // named beside it, which derives `Serialize` and writes the keys.
     (

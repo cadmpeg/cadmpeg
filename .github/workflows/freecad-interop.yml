@@ -32,13 +32,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/pinned-rust
-      - uses: ./.github/actions/cargo-job-count
       - id: profiles
         uses: ./.github/actions/cargo-profile-key
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: freecad-native
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
+      - uses: ./.github/actions/cargo-job-count
       - name: Install native runtime
         run: |
           set -euo pipefail

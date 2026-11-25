@@ -111,6 +111,55 @@ fn a_record_that_differs_only_in_its_source_object_is_shared() {
     );
 }
 
+/// The cylinder `key:1`, its basis `key:1:basis`, and, where `subset`, the
+/// construction `key:1:construction` that bounds the basis to it.
+fn cylinder(key: &str, subset: bool) -> Topology {
+    let surface = |child: &str| format!("fcstd:model:surface#{key}:{child}");
+    let geometry = serde_json::json!({"kind": "solved", "value": {"kind": "cylinder",
+        "origin": {"x": 0.0, "y": 0.0, "z": 0.0}, "axis": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "ref_direction": {"x": 1.0, "y": 0.0, "z": 0.0}, "radius": 2.0}});
+    let constructions = if subset {
+        vec![
+            serde_json::json!({"id": surface("1:construction"), "surface": surface("1"),
+            "definition": {"kind": "subset", "support": surface("1:basis"),
+                "parameter_ranges": [[0.0, 3.0], [0.0, 5.0]]}}),
+        ]
+    } else {
+        Vec::new()
+    };
+    topology(&serde_json::json!({
+        "surfaces": [{"id": surface("1"), "geometry": geometry},
+                     {"id": surface("1:basis"), "geometry": geometry}],
+        "procedural_surfaces": constructions,
+    }))
+}
+
+/// A carrier matches a base carrier only with the constructions that
+/// produce it, so a shared carrier keeps its construction in the state.
+#[test]
+fn a_carrier_is_shared_with_the_constructions_that_produce_it() {
+    let first = snapshot(&cylinder("Pad:Shape:A.brp", true), None).unwrap();
+    let base = Base {
+        reference: StateBase::Empty,
+        resolved: first.resolved,
+    };
+    let bounded = snapshot(&cylinder("Mirrored:Shape:B.brp", true), Some(&base)).unwrap();
+    assert!(bounded.records.surfaces.is_empty());
+    assert!(bounded.records.procedural_surfaces.is_empty());
+    assert!(bounded.removed.is_empty());
+    let plain = snapshot(&cylinder("Mirrored:Shape:B.brp", false), Some(&base)).unwrap();
+    let construction = "fcstd:model:surface#Pad:Shape:A.brp:1:construction";
+    assert!(plain.removed.iter().any(|removed| matches!(
+        removed,
+        RecordRef::ProceduralSurface(id) if id.as_str() == construction
+    )));
+    assert!(
+        !plain.resolved.arenas["surfaces"].contains_key("fcstd:model:surface#Pad:Shape:A.brp:1")
+    );
+    assert!(plain.resolved.arenas["surfaces"]
+        .contains_key("fcstd:model:surface#Pad:Shape:A.brp:1:basis"));
+}
+
 #[test]
 fn an_empty_base_shares_nothing() {
     let empty = Base {

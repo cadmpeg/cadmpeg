@@ -12,13 +12,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetData};
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
@@ -298,19 +299,24 @@ struct Builder<'s, 'l, 'c, 'a> {
     meshed: BTreeSet<String>,
     /// Joint prims, resolved after every occurrence exists.
     pending_joints: Vec<physics::PendingJoint>,
+    /// The design joint feature stated for each joint.
+    joint_features: BTreeMap<cadmpeg_ir::products::JointId, cadmpeg_ir::features::FeatureId>,
     pending_physx: Vec<physx::PendingSettings>,
     admitted: u64,
     transferred: bool,
+    /// Whether the stage holds joints that the decode depth leaves out of
+    /// the design.
+    joints_beyond_depth: bool,
 }
 
-/// Writes the model of the root layer stack of `layers` into `ir`. Returns
-/// whether any geometry was transferred.
+/// Writes the model of the root layer stack of `layers` into `ir` and its
+/// losses into `body`. Returns whether any geometry was transferred.
 pub(crate) fn build<'a>(
     ctx: &DecodeContext<'a>,
     layers: &crate::layers::Layers<'a>,
     metrics: &Metrics,
     ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
+    body: &mut DecodeBody,
 ) -> Result<bool, CodecError> {
     let stage = crate::stage::compose(ctx, layers)?;
     let admitted = u64_from_index(ir.entity_count());
@@ -333,9 +339,11 @@ pub(crate) fn build<'a>(
         bodied: BTreeSet::new(),
         meshed: BTreeSet::new(),
         pending_joints: Vec::new(),
+        joint_features: BTreeMap::new(),
         pending_physx: Vec::new(),
         admitted,
         transferred: false,
+        joints_beyond_depth: false,
     };
     for root in stage.roots.clone() {
         builder.prim(root, None, &IDENTITY)?;
@@ -345,6 +353,7 @@ pub(crate) fn build<'a>(
     builder.joints(pending)?;
     builder.finish_physx()?;
     let transferred = builder.transferred;
+    let joints_beyond_depth = builder.joints_beyond_depth;
     let issues = std::mem::take(&mut builder.issues);
     let tallies = std::mem::take(&mut builder.tallies);
     builder.ir.finalize();
@@ -356,14 +365,16 @@ pub(crate) fn build<'a>(
         .filter(|key| !LAYER_KEYS_READ.contains(key))
         .collect();
     if !layer_keys.is_empty() {
-        losses.push(UsdLossCode::MetadataNotTransferred.note(format!(
-            "layer metadata was not transferred: {}",
-            joined(layer_keys.into_iter().map(str::to_owned))
-        )));
+        body.losses
+            .push(UsdLossCode::MetadataNotTransferred.note(format!(
+                "layer metadata was not transferred: {}",
+                joined(layer_keys.into_iter().map(str::to_owned))
+            )));
     }
-    losses.extend(layers.losses.iter().cloned());
+    body.losses.extend(layers.losses.iter().cloned());
     if !layers.unavailable.is_empty() {
-        losses.push(UsdLossCode::CompositionLayerUnavailable.note(format!(
+        body.losses
+            .push(UsdLossCode::CompositionLayerUnavailable.note(format!(
             "{} named layers did not open: {}",
             layers.unavailable.len(),
             joined(
@@ -374,8 +385,11 @@ pub(crate) fn build<'a>(
             )
         )));
     }
-    losses.extend(composition_losses(&stage));
-    losses.extend(tally_losses(&tallies, &issues, metrics));
+    body.losses.extend(composition_losses(&stage));
+    body.losses.extend(tally_losses(&tallies, &issues, metrics));
+    if joints_beyond_depth {
+        body.source_holds(ArenaClass::Design);
+    }
     Ok(transferred)
 }
 
