@@ -28,6 +28,7 @@ use serde_json::Value;
 use self::loss::ReadLossCode;
 use self::text::{Found, Member, Scanner, Span};
 use super::{one_zero, CadIr, Design, Model, Process, Topology};
+use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::evaluation::Cycles;
 use crate::native::{Native, NativeRecord};
 use crate::report::loss::LossNote;
@@ -35,9 +36,6 @@ use crate::report::strictness::Strictness;
 use crate::source_fidelity::SourceFidelity;
 use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::part::{record_unreadable_kind, DecodeParts, GivenUpPart, Part};
-
-/// The JSON depth bound of §2.5.
-const MAX_DEPTH: usize = 128;
 
 /// The refusals one record's repairs may take before the record is given up.
 const MAX_REPAIRS: usize = 64;
@@ -134,7 +132,7 @@ impl CadIr {
         };
         let document = reader.document()?;
         let report = reader.report;
-        match options.strictness.first_refused(&report) {
+        match options.strictness.first_refused(&report, false) {
             Some(entry) => Err(ReadFailure::StrictRejected { report, entry }),
             None => Ok(CadirRead { document, report }),
         }
@@ -285,12 +283,12 @@ impl Reader<'_, '_> {
             return None;
         }
         let depth = enclosing + span.depth;
-        if depth > MAX_DEPTH {
+        if depth > MAX_DOCUMENT_DEPTH {
             self.give_up(
                 span,
                 path,
                 classes,
-                format_args!("it nests to depth {depth}, past the bound of {MAX_DEPTH}"),
+                format_args!("it nests to depth {depth}, past the bound of {MAX_DOCUMENT_DEPTH}"),
             );
             return None;
         }
@@ -724,8 +722,8 @@ impl<'r, 'a> Reader<'r, 'a> {
             return true;
         }
         let value = |span| text::value(self.bytes, span, &mut Vec::new()).ok();
-        left.depth <= MAX_DEPTH
-            && right.depth <= MAX_DEPTH
+        left.depth <= MAX_DOCUMENT_DEPTH
+            && right.depth <= MAX_DOCUMENT_DEPTH
             && value(left).is_some_and(|left| value(right).is_some_and(|right| left == right))
     }
 
