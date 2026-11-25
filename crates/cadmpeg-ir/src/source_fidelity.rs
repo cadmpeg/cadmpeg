@@ -480,8 +480,11 @@ struct SourceFidelityWriteWire<'a> {
     retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
 }
 
-impl Serialize for SourceFidelity {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+impl SourceFidelity {
+    fn serialize_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
         SourceFidelityWriteWire {
             decode_digest: &self.decode_digest,
             file_digests: &self.file_digests,
@@ -492,6 +495,14 @@ impl Serialize for SourceFidelity {
             retained_records: &self.retained_records,
         }
         .serialize(serializer)
+    }
+}
+
+impl Serialize for SourceFidelity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+            self.serialize_erased(adapter)
+        })
     }
 }
 

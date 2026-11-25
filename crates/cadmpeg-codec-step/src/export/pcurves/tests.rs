@@ -280,7 +280,7 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
         {
             assert!(builder.emit_coedge_edge(coedge).is_some());
         }
-        let lines = builder.emitter.into_lines().unwrap();
+        let lines = builder.emitter.into_lines();
         let splines = lines
             .iter()
             .filter(|line| line.contains("B_SPLINE_CURVE_WITH_KNOTS"))
@@ -512,7 +512,7 @@ fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
         assert!(builder
             .emit_coedge_edge(&ir.geometry.coedges[index])
             .is_some());
-        let lines = builder.emitter.into_lines().unwrap();
+        let lines = builder.emitter.into_lines();
         let trimmed = lines.iter().find(|line| line.contains("TRIMMED_CURVE("));
         if vertex_tolerance == 0.005 {
             assert!(trimmed
@@ -606,7 +606,7 @@ fn reflected_conic_emission_uses_a_rational_spline() {
         }
         assert!(builder.emit_coedge_edge(coedge).is_some());
     }
-    let lines = builder.emitter.into_lines().unwrap();
+    let lines = builder.emitter.into_lines();
     assert!(lines
         .iter()
         .any(|line| line.contains("RATIONAL_B_SPLINE_CURVE")));

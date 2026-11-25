@@ -155,19 +155,60 @@ fn zero_angle_elliptical_cone_round_trips_as_an_extruded_ellipse() {
     }
 }
 
-#[test]
-fn zero_angle_cone_of_zero_radius_is_refused_at_planning() {
-    let (ir, _) = zero_angle_cone_cube(0.0, 1.0);
-    let error = StepCodec::default()
+/// Plans `ir`, whose first surface has no STEP surface record, and reads the
+/// written file back: the faces on that surface are left out, the loss names
+/// them, and the other faces are written.
+pub(super) fn assert_first_surface_faces_omitted(ir: &CadIr) {
+    let plan = StepCodec::default()
         .plan(
-            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
                 StepSchema::Ap214.descriptor().id.as_str(),
             )),
         )
-        .expect_err("a semi-angle 0 cone of radius 0 is a line");
+        .expect("a face on a surface STEP cannot hold is left out");
+    let surface = &ir.geometry.surfaces[0].id;
+    let omitted = ir
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| &face.surface == surface)
+        .map(|face| face.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(!omitted.is_empty());
     assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("is a line"))
+        plan.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::UnknownSurfaceFaceOmitted.kind()
+                && omitted.iter().all(|face| loss.message.contains(face))
+        }),
+        "{:?}",
+        plan.report().losses
     );
+    assert!(
+        plan.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+                && loss.message.contains(surface.as_str())
+        }),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write the planned file");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the written file")
+        .into_parts()
+        .0;
+    assert_eq!(
+        decoded.geometry.faces.len(),
+        ir.geometry.faces.len() - omitted.len()
+    );
+}
+
+/// A semi-angle 0 cone of radius 0 is a line, which no STEP surface states.
+#[test]
+fn a_face_on_a_zero_angle_cone_of_zero_radius_is_left_out() {
+    let (ir, _) = zero_angle_cone_cube(0.0, 1.0);
+    assert_first_surface_faces_omitted(&ir);
 }
 
 #[test]
@@ -326,10 +367,8 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
     }));
 }
 
-/// Plans a document whose single surface is a circular cone of `half_angle`.
-fn circular_cone_plan(
-    half_angle: f64,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
+/// A unit cube whose first surface is a circular cone of `half_angle`.
+fn circular_cone_cube(half_angle: f64) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -342,10 +381,18 @@ fn circular_cone_plan(
         )
         .unwrap(),
     ));
+    ir
+}
 
-    crate::StepCodec::default().plan(EncodeInput::new(&ir, None).with_target(
-        TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
-    ))
+/// Plans a document whose first surface is a circular cone of `half_angle`.
+fn circular_cone_plan(
+    half_angle: f64,
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
+    crate::StepCodec::default().plan(
+        EncodeInput::new(&circular_cone_cube(half_angle), None).with_target(
+            TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
+        ),
+    )
 }
 
 #[test]
@@ -363,20 +410,141 @@ fn negative_cone_semi_angle_inside_wr2_is_planned() {
     assert!(circular_cone_plan(-0.715_584_993_317_674_8).is_ok());
 }
 
+/// A semi-angle of `pi/2` is outside `conical_surface` WR2.
 #[test]
-fn right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
-        .expect_err("right angle cone is outside WR2");
+fn a_face_on_a_right_angle_cone_is_left_out() {
+    assert_first_surface_faces_omitted(&circular_cone_cube(std::f64::consts::FRAC_PI_2));
+}
+
+#[test]
+fn a_face_on_a_negative_right_angle_cone_is_left_out() {
+    assert_first_surface_faces_omitted(&circular_cone_cube(-std::f64::consts::FRAC_PI_2));
+}
+
+/// Writes `ir` and decodes the file back, with the report and the STEP text.
+fn written_cone_round_trip(ir: &CadIr) -> (ExportReport, String, CadIr) {
+    let mut output = Vec::new();
+    let report = write_step(
+        ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write the cone cube");
+    let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode the written file")
+        .into_parts()
+        .0;
+    (report, text, decoded)
+}
+
+/// `radius + v tan(angle)` repeats with period `pi`: a semi-angle of 2 rad
+/// is the semi-angle `pi - 2` over the reversed axis, at `(-u, -v)`.
+#[test]
+fn a_cone_past_a_right_angle_is_written_with_the_supplementary_semi_angle() {
+    let ir = circular_cone_cube(2.0);
+    let SurfaceGeometry::Solved(source) = ir.geometry.surfaces[0].geometry.clone() else {
+        unreachable!("the fixture surface is solved")
+    };
+    let (report, text, decoded) = written_cone_round_trip(&ir);
+
+    assert!(text.contains("CONICAL_SURFACE("), "{text}");
+    for code in [
+        StepLossCode::UnknownSurfaceFaceOmitted,
+        StepLossCode::GeometryCarrierNotWritten,
+    ] {
+        assert!(
+            !report.losses.iter().any(|loss| loss.code == code.kind()),
+            "{}: {:?}",
+            code.kind(),
+            report.losses
+        );
+    }
+    assert_eq!(decoded.geometry.faces.len(), ir.geometry.faces.len());
+    let written = decoded
+        .geometry
+        .surfaces
+        .iter()
+        .find_map(|surface| match surface.geometry.solved() {
+            Some(cone @ SolvedSurfaceGeometry::Cone(_)) => Some(cone),
+            _ => None,
+        })
+        .expect("written cone surface");
+    let SolvedSurfaceGeometry::Cone(written_cone) = written else {
+        unreachable!("matched a cone")
+    };
     assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("outside (0, pi/2)"))
+        (written_cone.half_angle().get() - (std::f64::consts::PI - 2.0)).abs()
+            < EPS_ZERO_ANGLE_CONE_POINT
+    );
+    for (u, v) in ZERO_ANGLE_CONE_SAMPLES {
+        let source_point = surface_point_solved(EvaluationAdmission::Standard, &source, u, v)
+            .expect("source point")
+            .get();
+        let written_point = surface_point_solved(EvaluationAdmission::Standard, written, -u, -v)
+            .expect("written point")
+            .get();
+        assert!(distance(source_point, written_point) < EPS_ZERO_ANGLE_CONE_POINT);
+    }
+}
+
+/// A semi-angle of `pi` is the semi-angle 0 cone, a cylinder over the origin
+/// section.
+#[test]
+fn a_half_turn_cone_is_written_as_its_cylinder() {
+    let (report, text, decoded) =
+        written_cone_round_trip(&circular_cone_cube(std::f64::consts::PI));
+
+    assert!(text.contains("CYLINDRICAL_SURFACE("), "{text}");
+    assert_no_cone_reduction(&report, &text);
+    assert_eq!(
+        decoded.geometry.faces.len(),
+        unit_cube().unwrap().geometry.faces.len()
     );
 }
 
 #[test]
-fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
-        .expect_err("negative right angle cone is outside WR2");
+fn a_pcurve_on_a_cone_past_a_right_angle_is_written_in_the_reversed_chart() {
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode sheet pcurve")
+        .into_parts()
+        .0;
+    let surface_id = ir.geometry.faces[0].surface.clone();
+    ir.geometry
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .expect("face surface")
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            2.0,
+        )
+        .expect("cone past a right angle"),
+    ));
+
+    let (report, text, decoded) = written_cone_round_trip(&ir);
+    assert!(text.contains("CONICAL_SURFACE("), "{text}");
+    assert!(text.contains("PCURVE("), "{text}");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PcurveCarrierUnwritable.kind()));
+    // The chart's half-turn is applied to the pcurve itself.
+    assert!(!text.contains("CURVE_REPLICA("), "{text}");
     assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("outside (0, pi/2)"))
+        !text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D("),
+        "{text}"
     );
+    assert_eq!(decoded.geometry.faces.len(), ir.geometry.faces.len());
 }

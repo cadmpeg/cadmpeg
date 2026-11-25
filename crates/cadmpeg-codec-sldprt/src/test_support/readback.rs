@@ -45,7 +45,7 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
             renames.insert(id.to_owned(), format!("{id}:written"));
         }
     }
-    let renamed = edited_json(written, &mut |value| rename(value, &renames), &|id| {
+    let renamed = edited_neutral_json(written, &mut |value| rename(value, &renames), &|id| {
         renames.get(id).cloned().unwrap_or_else(|| id.to_owned())
     });
     let renamed_records = Document::of(&renamed).expect("the renamed document serializes");
@@ -332,14 +332,36 @@ pub(crate) fn edited_json(
     edit: &mut dyn FnMut(&mut Value),
     id: &dyn Fn(&str) -> String,
 ) -> CadIr {
-    let mut value = serde_json::to_value(ir).expect("the document serializes");
+    let value = serde_json::to_value(ir).expect("the document serializes");
+    apply_edited_json(ir, value, edit, id)
+}
+
+fn edited_neutral_json(
+    ir: &CadIr,
+    edit: &mut dyn FnMut(&mut Value),
+    id: &dyn Fn(&str) -> String,
+) -> CadIr {
+    let value = ir
+        .to_neutral_json_value()
+        .expect("the neutral document serializes");
+    apply_edited_json(ir, value, edit, id)
+}
+
+fn apply_edited_json(
+    ir: &CadIr,
+    mut value: Value,
+    edit: &mut dyn FnMut(&mut Value),
+    id: &dyn Fn(&str) -> String,
+) -> CadIr {
     edit(&mut value);
     let mut edited = CadIr::from_projection(value).expect("the edited document reads");
     macro_rules! arenas {
         ($($arena:ident),*) => {$(
-            let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
-            edit(&mut value);
-            edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+            if !ir.model.$arena.is_empty() {
+                let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
+                edit(&mut value);
+                edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+            }
         )*};
     }
     arenas!(

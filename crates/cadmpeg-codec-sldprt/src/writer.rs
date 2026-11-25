@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
+use std::sync::Arc;
 
 mod accounting;
 mod body_drop;
@@ -97,7 +98,7 @@ pub(crate) struct SemanticOutput {
     pub(crate) claims: crate::history::write::read_back::ReadBackClaims,
     /// The retained source image decoded again, when the write compared the
     /// document with it.
-    pub(crate) source: Option<cadmpeg_ir::codec::Decoded>,
+    pub(crate) source: Option<Arc<cadmpeg_ir::codec::Decoded>>,
     /// The write's other losses.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
@@ -111,11 +112,24 @@ pub(crate) struct Retained<'a> {
     pub(crate) records: &'a [SourceRecord<'a>],
 }
 
-/// Writes a semantic document and returns the dialect and arena coverage it
-/// wrote. Each feature of `withheld` keeps its stored definition record, for
-/// the reason it is paired with. The configuration of each edit in `shaped`,
-/// and of each edit the write finds to shape the solid against its retained
-/// source, takes the stale mark.
+/// Lazy cache for the decoded SLDPRT native namespace across read-back retries.
+#[derive(Default)]
+pub(crate) enum CachedNative {
+    #[default]
+    Unloaded,
+    Loaded(Option<SldprtNative>),
+}
+
+/// Reusable decoded source baseline and native records across read-back retries
+/// of one semantic write.
+#[derive(Default)]
+pub(crate) struct SemanticWriteCache {
+    pub(crate) source_baseline: Option<Arc<cadmpeg_ir::codec::Decoded>>,
+    pub(crate) native: CachedNative,
+}
+
+/// [`write_semantic_with_records_cached`] with a cache of its own.
+#[cfg(test)]
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     retained: Retained<'_>,
@@ -124,19 +138,46 @@ pub(crate) fn write_semantic_with_records(
     limits: ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let mut cache = SemanticWriteCache::default();
+    write_semantic_with_records_cached(ir, retained, withheld, shaped, limits, &mut cache, writer)
+}
+
+/// Writes a semantic document and returns the dialect and arena coverage it
+/// wrote. Each feature of `withheld` keeps its stored definition record, for
+/// the reason it is paired with. The configuration of each edit in `shaped`,
+/// and of each edit the write finds to shape the solid against its retained
+/// source, takes the stale mark. `cache` carries the decoded source baseline
+/// and native records across the read-back retries of one semantic write.
+pub(crate) fn write_semantic_with_records_cached(
+    ir: &CadIr,
+    retained: Retained<'_>,
+    withheld: &[(cadmpeg_ir::features::FeatureId, String)],
+    shaped: &[crate::history::write::brep_agreement::ShapingEdit],
+    limits: ResourceLimits,
+    cache: &mut SemanticWriteCache,
+    writer: &mut dyn Write,
+) -> Result<SemanticOutput, CodecError> {
     let Retained {
         annotations,
         digests,
         records: retained_records,
     } = retained;
+    let source_baseline = &mut cache.source_baseline;
     let policy = DecodePolicy { limits };
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) = DecodeContext::from_root_bytes(&[], &digest_arena, &policy)?;
-    let mut native = ir
-        .native
-        .namespace("sldprt")
-        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
-        .transpose()?;
+    if matches!(cache.native, CachedNative::Unloaded) {
+        let loaded = ir
+            .native
+            .namespace("sldprt")
+            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .transpose()?;
+        cache.native = CachedNative::Loaded(loaded);
+    }
+    let mut native = match &cache.native {
+        CachedNative::Loaded(loaded) => loaded.clone(),
+        CachedNative::Unloaded => None,
+    };
     // A feature history or feature-input lane the input already holds comes
     // from a SolidWorks part; the write generates its own for any other source.
     let solidworks_history = native.as_ref().is_some_and(|native| {
@@ -218,7 +259,6 @@ pub(crate) fn write_semantic_with_records(
         Some((records, annotations)) => (records.as_slice(), annotations),
         None => (retained_records, annotations),
     };
-    let mut source_baseline = None;
     let mut unwritten = UnwrittenAttributes::default();
     let mut losses = content_losses;
     // `export:value.unwritable` entries: texts cut to their field's width.
@@ -234,7 +274,7 @@ pub(crate) fn write_semantic_with_records(
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
     {
-        retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        retained_source_baseline(source_baseline, source_context.as_ref())?;
     }
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
@@ -422,8 +462,7 @@ pub(crate) fn write_semantic_with_records(
                 crate::codec_digests::baseline(digests, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
             let material = swobjects_material_local_sha256(&digest_ctx, ir)?;
             if material_baseline != Some(material.as_str()) {
-                let baseline =
-                    retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+                let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
                 losses.extend(materials::retained_materials_kept(
                     ir,
                     baseline.map(|baseline| &baseline.ir),
@@ -441,7 +480,7 @@ pub(crate) fn write_semantic_with_records(
         if !materials.omitted.is_empty() {
             // A source that does not decode leaves the note saying the write
             // cannot tell; it does not refuse the write.
-            let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())
+            let baseline = retained_source_baseline(source_baseline, source_context.as_ref())
                 .ok()
                 .flatten();
             losses.extend(materials::retained_materials_omitted(
@@ -494,7 +533,7 @@ pub(crate) fn write_semantic_with_records(
         members.push(&mut sections, &mut unwritten, "Units".into(), units);
     }
     if !ir.model.tessellations.is_empty() {
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
         if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref()) {
             for (section, payload) in retained {
                 members.push(&mut sections, &mut unwritten, section, payload);
@@ -560,7 +599,7 @@ pub(crate) fn write_semantic_with_records(
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
     {
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
         match (baseline, source_scan.as_ref()) {
             (Some(baseline), Some(scan)) => retained_history_sections(baseline, scan)?,
             _ => Vec::new(),
@@ -629,7 +668,7 @@ pub(crate) fn write_semantic_with_records(
         );
     }
     let patch_active_configuration = if input_active_configuration.is_some() {
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
         baseline.is_none_or(|baseline| {
             active_configuration_intent(&baseline.ir) != input_active_configuration
         })
@@ -650,6 +689,10 @@ pub(crate) fn write_semantic_with_records(
         RetainedBlockPatches {
             active_configuration: patch_active_configuration,
             edited_parameters: &edited_parameters,
+            native: match &cache.native {
+                CachedNative::Loaded(loaded) => loaded.as_ref(),
+                CachedNative::Unloaded => None,
+            },
             stale: &stale.configurations,
         },
     )?;
@@ -756,7 +799,7 @@ pub(crate) fn write_semantic_with_records(
         unwritten_edits,
         written,
         claims,
-        source: source_baseline,
+        source: source_baseline.clone(),
         losses,
     })
 }
@@ -1905,6 +1948,8 @@ struct RetainedBlockPatches<'a> {
     active_configuration: bool,
     /// The PMI records of these parameters; other records keep their bytes.
     edited_parameters: &'a HashSet<cadmpeg_ir::features::ParameterId>,
+    /// Pre-loaded SLDPRT native namespace for `ir`, when already decoded by the caller.
+    native: Option<&'a SldprtNative>,
     /// The configurations, by name, whose stale mark the write sets.
     stale: &'a BTreeSet<String>,
 }
@@ -1920,12 +1965,19 @@ fn opaque_blocks(
     retain_native_brep: bool,
     patches: RetainedBlockPatches<'_>,
 ) -> Result<OpaqueBlocks, CodecError> {
-    let native = ir
-        .native
-        .namespace("sldprt")
-        .map(SldprtNative::load)
-        .transpose()
-        .map_err(CodecError::from)?;
+    let loaded_native;
+    let native = match patches.native {
+        Some(native) => Some(native),
+        None => {
+            loaded_native = ir
+                .native
+                .namespace("sldprt")
+                .map(SldprtNative::load)
+                .transpose()
+                .map_err(CodecError::from)?;
+            loaded_native.as_ref()
+        }
+    };
     let active_name = match ir
         .model
         .configurations
@@ -3244,18 +3296,46 @@ fn active_configuration_intent(ir: &CadIr) -> Option<ActiveConfigurationIntent<'
 }
 
 fn retained_source_baseline<'a>(
-    baseline: &'a mut Option<cadmpeg_ir::codec::Decoded>,
+    baseline: &'a mut Option<Arc<cadmpeg_ir::codec::Decoded>>,
     source: Option<&(DecodeContext<'_>, cadmpeg_core::decode::View<'_>)>,
 ) -> Result<Option<&'a cadmpeg_ir::codec::Decoded>, CodecError> {
+    type CachedBaseline = (
+        cadmpeg_ir::hash::digest::Sha256Digest,
+        usize,
+        Arc<cadmpeg_ir::codec::Decoded>,
+    );
+    static SOURCE_BASELINE_CACHE: std::sync::Mutex<Vec<CachedBaseline>> =
+        std::sync::Mutex::new(Vec::new());
+
     if baseline.is_none() {
         let Some((ctx, root)) = source else {
             return Ok(None);
         };
-        let mut decoded = crate::decode::decode(ctx, *root)?;
+        let raw = root.window();
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(raw);
+        let len = raw.len();
+        if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
+            if let Some((_, _, cached)) = guard.iter().find(|(cached_digest, cached_len, _)| {
+                *cached_digest == digest && *cached_len == len
+            }) {
+                *baseline = Some(Arc::clone(cached));
+                return Ok(baseline.as_deref());
+            }
+            let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
+            sort_arenas(&mut decoded.ir);
+            let shared = Arc::new(decoded);
+            if guard.len() >= 2 {
+                guard.remove(0);
+            }
+            guard.push((digest, len, Arc::clone(&shared)));
+            *baseline = Some(shared);
+            return Ok(baseline.as_deref());
+        }
+        let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
         sort_arenas(&mut decoded.ir);
-        *baseline = Some(decoded);
+        *baseline = Some(Arc::new(decoded));
     }
-    Ok(baseline.as_ref())
+    Ok(baseline.as_deref())
 }
 
 /// The member that holds the display-list table.

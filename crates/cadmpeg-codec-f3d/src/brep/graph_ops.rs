@@ -350,10 +350,10 @@ impl RewriteIdentities for Brep {
         self.creation_timestamps
             .visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite F3D BREP typed fields")?;
 

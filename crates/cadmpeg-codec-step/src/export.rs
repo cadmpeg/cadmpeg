@@ -98,10 +98,10 @@ pub(crate) struct StepWriteOutcome {
 
 /// Writes STEP bytes and returns the facts measured by the writer.
 ///
-/// A real the writer computes that is not finite, and a replica transform
-/// that is not a similarity, refuse the file before any byte is written:
-/// Part 21 states no such number, and its transformation operator states
-/// only a similarity.
+/// An occurrence whose prototype the document does not hold is left out with
+/// `occurrence.no-local-product`. A real the writer computes that is not
+/// finite is left out with the instances that need it
+/// (`export:value.unwritable`): Part 21 states no such number.
 pub(crate) fn write_step_outcome(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
@@ -115,43 +115,13 @@ pub(crate) fn write_step_outcome(
     let cage_bodies = cadmpeg_ir::codec::write::cage_bodies(ir);
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(ir);
     let ir = cageless.as_ref().unwrap_or(ir);
-    let definitions = ir
-        .model
-        .product_definitions
-        .iter()
-        .map(|product| &product.id)
-        .collect::<BTreeSet<_>>();
-    let missing_definitions = ir
-        .model
-        .occurrences
-        .iter()
-        .filter(|occurrence| !definitions.contains(&occurrence.prototype))
-        .count();
-    if missing_definitions != 0 {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
-            "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
-        )));
-    }
-    for surface in &ir.geometry.surfaces {
-        match surface.geometry.solved().and_then(unwritable_cone) {
-            Some(UnwritableCone::SemiAngle(half_angle)) => {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "STEP conical_surface cannot represent surface '{}' with semi-angle {half_angle} outside (0, pi/2)",
-                    surface.id
-                )));
-            }
-            Some(UnwritableCone::Line) => {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "STEP cannot represent surface '{}': a cone of semi-angle 0 with a zero section radius is a line",
-                    surface.id
-                )));
-            }
-            None => {}
-        }
-    }
-    let mut b = Builder::new(ir, schema, recovered_edges, limits)?;
+    let (ir, dangling) = without_dangling_occurrences(ir);
+    let mut b = Builder::new(&ir, schema, recovered_edges, limits)?;
     b.model_name = &opts.product_name;
     b.cage_bodies = cage_bodies;
+    if let Some(note) = dangling {
+        b.losses.push(note);
+    }
     b.build();
     if let Some(error) = b.edge_split_error.take() {
         return Err(error);
@@ -159,8 +129,10 @@ pub(crate) fn write_step_outcome(
     if let Some(limit) = b.approximations.resource_limit() {
         return Err(limit.into());
     }
+    b.drop_non_finite();
+    b.note_written();
     let outcome = b.finish_outcome();
-    let lines = b.emitter.into_lines()?;
+    let lines = b.emitter.into_lines();
 
     write_header(w, schema, opts)?;
     writeln!(w, "DATA;")?;
@@ -172,34 +144,47 @@ pub(crate) fn write_step_outcome(
     Ok(outcome)
 }
 
-/// Why a cone carrier has no STEP surface record.
-enum UnwritableCone {
-    /// A semi-angle of magnitude `pi/2` or more, outside `conical_surface`.
-    SemiAngle(f64),
-    /// A zero semi-angle over a zero section radius: the surface is a line.
-    Line,
-}
-
-/// Why no STEP surface record holds the cone under `geometry`, or `None` when
-/// one does. A semi-angle 0 cone over a positive section is a cylinder, which
-/// [`crate::geometry::surface`] writes.
-fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> Option<UnwritableCone> {
-    loop {
-        match geometry {
-            SolvedSurfaceGeometry::Cone(cone) => {
-                let angle = cone.half_angle().get();
-                if angle.abs() >= std::f64::consts::FRAC_PI_2 {
-                    return Some(UnwritableCone::SemiAngle(angle));
-                }
-                let radius = cone.radius().get();
-                let minor_radius = radius * cone.ratio().get();
-                return (angle == 0.0 && (radius <= 0.0 || minor_radius <= 0.0))
-                    .then_some(UnwritableCone::Line);
-            }
-            SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
-            _ => return None,
-        }
+/// `ir` without the occurrences whose prototype it does not hold, and the
+/// `occurrence.no-local-product` note naming them. No STEP product holds
+/// such an occurrence: `NEXT_ASSEMBLY_USAGE_OCCURRENCE` relates two product
+/// definitions. The definitions that list one stop listing it.
+fn without_dangling_occurrences(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Option<LossNote>) {
+    let definitions = ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|product| &product.id)
+        .collect::<BTreeSet<_>>();
+    let dangling = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| !definitions.contains(&occurrence.prototype))
+        .map(|occurrence| occurrence.id.clone())
+        .collect::<BTreeSet<_>>();
+    if dangling.is_empty() {
+        return (std::borrow::Cow::Borrowed(ir), None);
     }
+    let note = StepLossCode::OccurrenceNoLocalProduct.note(format!(
+        "STEP writes no occurrence whose prototype the document does not hold ({}): {}",
+        dangling.len(),
+        dangling
+            .iter()
+            .map(OccurrenceId::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    let mut written = ir.clone();
+    written
+        .model
+        .occurrences
+        .retain(|occurrence| !dangling.contains(&occurrence.id));
+    for definition in &mut written.model.product_definitions {
+        definition
+            .occurrences
+            .retain(|occurrence| !dangling.contains(occurrence));
+    }
+    (std::borrow::Cow::Owned(written), Some(note))
 }
 
 fn step_triangle_index(index: u32) -> u64 {
@@ -407,6 +392,15 @@ pub(crate) struct Builder<'a> {
     /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
     /// is reached once per shell) and aggregated into a single counted loss.
     unknown_surface_faces: BTreeSet<String>,
+    /// Surface, curve and pcurve carriers left out because a real they need
+    /// is not finite.
+    non_finite_carriers: BTreeSet<String>,
+    /// Open edges whose ends coincide, written as one `EDGE_CURVE` because no
+    /// point of their curve between the ends was found.
+    unsplit_open_edges: BTreeSet<String>,
+    /// Procedural constructions left out because a real the construction
+    /// needs is not finite.
+    non_finite_constructions: BTreeSet<String>,
 
     /// Individual enclosing topology relations that could not be emitted.
     topology_relation_losses: BTreeSet<String>,
@@ -427,6 +421,14 @@ pub(crate) struct Builder<'a> {
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
+    /// The shape items [`Self::build`] wrote for bodies and standalone
+    /// geometry.
+    model_items: Vec<Ref>,
+    /// Whether the document states a product definition.
+    states_structure: bool,
+    /// The number of instances written before the first that states a
+    /// record of the document other than its geometry and structure.
+    scaffolding: usize,
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<AppearanceBindingId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
@@ -662,6 +664,9 @@ impl<'a> Builder<'a> {
             collapsed_curveless_coedges: BTreeSet::new(),
             seam_rings: HashMap::new(),
             unknown_surface_faces: BTreeSet::new(),
+            non_finite_carriers: BTreeSet::new(),
+            unsplit_open_edges: BTreeSet::new(),
+            non_finite_constructions: BTreeSet::new(),
             topology_relation_losses: BTreeSet::new(),
             face_step_refs: HashMap::new(),
             body_step_refs: HashMap::new(),
@@ -675,6 +680,9 @@ impl<'a> Builder<'a> {
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
             tessellation_step_refs: HashMap::new(),
+            model_items: Vec::new(),
+            states_structure: false,
+            scaffolding: 0,
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             conflicted_appearance_bindings: BTreeSet::new(),
@@ -756,12 +764,12 @@ impl<'a> Builder<'a> {
         let mut emitted_items = self.emit_shape_items(context);
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
-        let has_model_items = !emitted_items.is_empty();
-        let states_structure =
+        self.model_items.clone_from(&emitted_items);
+        self.states_structure =
             cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
                 .next()
                 .is_some();
-        if states_structure {
+        if self.states_structure {
             self.emit_product_graph(context);
             if !standalone_items.is_empty() {
                 self.emit_shape_representation(
@@ -791,7 +799,7 @@ impl<'a> Builder<'a> {
         // Every instance emitted from here on writes a record of the
         // document. Before it, a document that states no structure has only
         // the writer's context and default product structure in the file.
-        let scaffolding = self.emitter.instance_count();
+        self.scaffolding = self.emitter.instance_count();
 
         self.emit_visibility();
         self.emit_tessellations(context);
@@ -800,14 +808,25 @@ impl<'a> Builder<'a> {
         self.emit_pmi(context);
         self.emit_layers();
         self.emit_layer_visibility();
-        if !has_model_items && self.tessellation_step_refs.is_empty() {
+    }
+
+    /// Charges what the section [`Self::build`] wrote leaves out of the
+    /// document, after [`Self::drop_non_finite`]: a file whose records of
+    /// the document were all left out, at any stage, is empty.
+    fn note_written(&mut self) {
+        let holds_geometry = self
+            .model_items
+            .iter()
+            .chain(self.tessellation_step_refs.values())
+            .any(|item| self.emitter.holds(*item));
+        if !holds_geometry {
             if !self.ir.geometry.bodies.is_empty() {
                 self.loss(
                     StepLossCode::NoExportableSolids,
                     "no body geometry could be placed in a STEP representation".to_string(),
                 );
             }
-            if states_structure || self.emitter.instance_count() > scaffolding {
+            if self.states_structure || self.emitter.holds_after(self.scaffolding) {
                 self.loss(
                     StepLossCode::NoGeometryWritten,
                     "no geometry was written to a STEP representation".to_string(),
@@ -1213,9 +1232,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(color.r()),
-            self.emitter.real(color.g()),
-            self.emitter.real(color.b())
+            Emitter::real(color.r()),
+            Emitter::real(color.g()),
+            Emitter::real(color.b())
         );
         let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
         if let Some(style) = cache.get(&key) {
@@ -1235,10 +1254,9 @@ impl<'a> Builder<'a> {
             .emit("SURFACE_STYLE_FILL_AREA", &fill.to_string());
         let mut styles = vec![style_fill];
         if color.a() < 1.0 {
-            let transparency = self.emitter.emit(
-                "SURFACE_STYLE_TRANSPARENT",
-                &self.emitter.real(1.0 - color.a()),
-            );
+            let transparency = self
+                .emitter
+                .emit("SURFACE_STYLE_TRANSPARENT", &Emitter::real(1.0 - color.a()));
             let rendering = self.emitter.emit(
                 "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
                 &format!(".CONSTANT_SHADING.,{colour},{}", refs(&[transparency])),
@@ -1266,9 +1284,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(color.r()),
-            self.emitter.real(color.g()),
-            self.emitter.real(color.b())
+            Emitter::real(color.r()),
+            Emitter::real(color.g()),
+            Emitter::real(color.b())
         );
         let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1299,9 +1317,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(color.r()),
-            self.emitter.real(color.g()),
-            self.emitter.real(color.b())
+            Emitter::real(color.r()),
+            Emitter::real(color.g()),
+            Emitter::real(color.b())
         );
         let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1908,7 +1926,7 @@ impl<'a> Builder<'a> {
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                self.emitter.real(self.ir.tolerances.linear.get()),
+                Emitter::real(self.ir.tolerances.linear.get()),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
@@ -1965,6 +1983,7 @@ impl<'a> Builder<'a> {
         let mut items = Vec::new();
         let ir = self.ir;
         for region in &ir.geometry.regions {
+            self.emitter.write_for(Some(region.body.as_str()));
             if self.omitted_prototype_bodies.contains(&region.body) {
                 continue;
             }
@@ -2186,6 +2205,7 @@ impl<'a> Builder<'a> {
                 &mut items,
             );
         }
+        self.emitter.write_for(None);
         items
     }
 
@@ -2960,6 +2980,7 @@ impl<'a> Builder<'a> {
         let mut members = Vec::new();
         let mut has_surfaces = false;
         for surface_id in surface_ids {
+            self.emitter.write_for(Some(&surface_id));
             if let Some(reference) = self.emit_surface(&surface_id) {
                 let ranges =
                     self.procedural_surfaces
@@ -3012,6 +3033,7 @@ impl<'a> Builder<'a> {
             .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
+            self.emitter.write_for(Some(&curve_id));
             if let Some(reference) = self.emit_curve(&curve_id) {
                 let reference = if let Some(range) = self
                     .curves
@@ -3019,7 +3041,7 @@ impl<'a> Builder<'a> {
                     .and_then(|curve| curve.parameter_range)
                 {
                     let [start, end] = range.endpoints();
-                    self.emitter.emit("TRIMMED_CURVE", &format!("'',{reference},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.", self.emitter.real(start), self.emitter.real(end)))
+                    self.emitter.emit("TRIMMED_CURVE", &format!("'',{reference},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.", Emitter::real(start), Emitter::real(end)))
                 } else {
                     reference
                 };
@@ -3045,6 +3067,7 @@ impl<'a> Builder<'a> {
             .map(|point| point.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for point_id in point_ids {
+            self.emitter.write_for(Some(&point_id));
             let Some(point) = self.points.get(point_id.as_str()).copied() else {
                 continue;
             };
@@ -3052,6 +3075,7 @@ impl<'a> Builder<'a> {
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
+        self.emitter.write_for(None);
         if members.is_empty() {
             Vec::new()
         } else {
@@ -3086,6 +3110,7 @@ impl<'a> Builder<'a> {
         let ir = self.ir;
         let mut representation_items = Vec::new();
         for mesh in &ir.model.tessellations {
+            self.emitter.write_for(Some(mesh.id.as_str()));
             if !mesh.feature_edges().is_empty() {
                 self.loss(
                     StepLossCode::TessellationFeatureEdges,
@@ -3146,9 +3171,9 @@ impl<'a> Builder<'a> {
                 .map(|point| {
                     format!(
                         "({},{},{})",
-                        self.emitter.real(point.x),
-                        self.emitter.real(point.y),
-                        self.emitter.real(point.z)
+                        Emitter::real(point.x),
+                        Emitter::real(point.y),
+                        Emitter::real(point.z)
                     )
                 })
                 .collect::<Vec<_>>()
@@ -3170,9 +3195,9 @@ impl<'a> Builder<'a> {
                         .iter()
                         .map(|normal| format!(
                             "({},{},{})",
-                            self.emitter.real(normal.x),
-                            self.emitter.real(normal.y),
-                            self.emitter.real(normal.z)
+                            Emitter::real(normal.x),
+                            Emitter::real(normal.y),
+                            Emitter::real(normal.z)
                         ))
                         .collect::<Vec<_>>()
                         .join(",")
@@ -3276,6 +3301,7 @@ impl<'a> Builder<'a> {
                 .insert(mesh.id.to_string(), item);
             representation_items.push(item);
         }
+        self.emitter.write_for(None);
         if !representation_items.is_empty() {
             self.emitter.emit(
                 "TESSELLATED_SHAPE_REPRESENTATION",
@@ -4174,7 +4200,11 @@ impl<'a> Builder<'a> {
             let pcurve_id = use_.use_.pcurve.as_str();
             let surface_id = use_.surface;
             let face_id = use_.face;
-            if let Some(pcurve) = self.emit_pcurve(use_, edge) {
+            let mark = self.emitter.non_finite_mark();
+            let pcurve = self.emit_pcurve(use_, edge);
+            if self.emitter.take_non_finite_since(mark) {
+                self.non_finite_carriers.insert(pcurve_id.to_string());
+            } else if let Some(pcurve) = pcurve {
                 pcurve_refs.push(pcurve);
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
@@ -4201,13 +4231,17 @@ impl<'a> Builder<'a> {
             Some(*vertex)
         } else {
             match edge_split::midpoint(&self.edge_split_index, edge, self.limits) {
-                Ok(Some(point)) => {
+                Ok(edge_split::Split::At(point)) => {
                     let point = geometry::point(&mut self.emitter, point);
                     let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
                     self.edge_midpoints.insert(edge_id.to_owned(), vertex);
                     Some(vertex)
                 }
-                Ok(None) => None,
+                Ok(edge_split::Split::Whole) => None,
+                Ok(edge_split::Split::Unsplittable) => {
+                    self.unsplit_open_edges.insert(edge_id.to_owned());
+                    None
+                }
                 Err(error) => {
                     self.edge_split_error.get_or_insert(error);
                     return None;
@@ -4304,8 +4338,8 @@ impl<'a> Builder<'a> {
                 "TRIMMED_CURVE",
                 &format!(
                     "'',{curve},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
-                    self.emitter.real(start),
-                    self.emitter.real(end),
+                    Emitter::real(start),
+                    Emitter::real(end),
                 ),
             )
         } else {
@@ -4521,6 +4555,7 @@ impl<'a> Builder<'a> {
             return None;
         }
         self.geometry_emission_depth += 1;
+        let mark = self.emitter.non_finite_mark();
         let result = (|| {
             let surf = self.surfaces.get(surface_id).copied()?;
             let procedural = self.procedural_surfaces.get(surface_id).map(|procedural| {
@@ -4531,7 +4566,21 @@ impl<'a> Builder<'a> {
             });
             let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
-                let reference = self.emit_procedural_surface(solved, &definition)?;
+                // A replica under a transform that is not a similarity has
+                // no `SURFACE_REPLICA`; the solved carrier is written in its
+                // place, or the face is left out as on an unsupported surface.
+                if let ProceduralSurfaceDefinition::Replica { transform, .. } = &definition {
+                    if !geometry::states_similarity(transform) {
+                        return None;
+                    }
+                }
+                let mark = self.emitter.non_finite_mark();
+                let reference = self.emit_procedural_surface(solved, &definition);
+                if self.emitter.take_non_finite_since(mark) {
+                    self.non_finite_constructions.insert(id);
+                    return None;
+                }
+                let reference = reference?;
                 let chart = match &definition {
                     ProceduralSurfaceDefinition::ParallelOffset(payload) => {
                         self.surface_chart(payload.support().as_str())
@@ -4605,6 +4654,10 @@ impl<'a> Builder<'a> {
         })();
         self.active_surfaces.remove(surface_id);
         self.geometry_emission_depth -= 1;
+        if self.emitter.take_non_finite_since(mark) {
+            self.non_finite_carriers.insert(surface_id.to_owned());
+            return None;
+        }
         if let Some((r, chart, reversed_normal)) = result {
             self.surface_refs.insert(
                 surface_id.to_string(),
@@ -4648,7 +4701,7 @@ impl<'a> Builder<'a> {
                 let direction_ref = geometry::direction(&mut self.emitter, *direction);
                 let vector = self.emitter.emit(
                     "VECTOR",
-                    &format!("'',{direction_ref},{}", self.emitter.real(direction.norm())),
+                    &format!("'',{direction_ref},{}", Emitter::real(direction.norm())),
                 );
                 Some(self.emitter.emit(
                     "SURFACE_OF_LINEAR_EXTRUSION",
@@ -4688,7 +4741,7 @@ impl<'a> Builder<'a> {
                         "OFFSET_SURFACE",
                         &format!(
                             "'',{support},{},{}",
-                            self.emitter.real(distance),
+                            Emitter::real(distance),
                             logical(*self_intersect)
                         ),
                     ))
@@ -4712,7 +4765,7 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
                 let source = self.emit_surface(source.as_str())?;
-                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
                 Some(
                     self.emitter
                         .emit("SURFACE_REPLICA", &format!("'',{source},{operator}")),
@@ -4732,8 +4785,8 @@ impl<'a> Builder<'a> {
                     "DEGENERATE_TOROIDAL_SURFACE",
                     &format!(
                         "'',{placement},{},{},{}",
-                        self.emitter.real(major_radius.abs()),
-                        self.emitter.real(minor_radius.abs()),
+                        Emitter::real(major_radius.abs()),
+                        Emitter::real(minor_radius.abs()),
                         if *select_outer { ".T." } else { ".F." }
                     ),
                 );
@@ -4762,10 +4815,10 @@ impl<'a> Builder<'a> {
             "RECTANGULAR_TRIMMED_SURFACE",
             &format!(
                 "'',{support},{},{},{},{},{},{}",
-                self.emitter.real(ranges[0][0]),
-                self.emitter.real(ranges[0][1]),
-                self.emitter.real(ranges[1][0]),
-                self.emitter.real(ranges[1][1]),
+                Emitter::real(ranges[0][0]),
+                Emitter::real(ranges[0][1]),
+                Emitter::real(ranges[1][0]),
+                Emitter::real(ranges[1][1]),
                 if senses[0] == reversed[0] {
                     ".F."
                 } else {
@@ -4831,6 +4884,7 @@ impl<'a> Builder<'a> {
             return None;
         }
         self.geometry_emission_depth += 1;
+        let mark = self.emitter.non_finite_mark();
         let result = (|| {
             let geometry = self.curves.get(curve_id)?.geometry.clone();
             let procedural = self.procedural_curves.get(curve_id).map(|procedural| {
@@ -4840,8 +4894,19 @@ impl<'a> Builder<'a> {
                 )
             });
             let emitted = procedural.and_then(|(id, definition)| {
-                self.emit_procedural_curve(&definition)
-                    .map(|reference| (id, reference))
+                // As a surface replica: the solved carrier, or no edge.
+                if let ProceduralCurveDefinition::Replica { transform, .. } = &definition {
+                    if !geometry::states_similarity(transform) {
+                        return None;
+                    }
+                }
+                let mark = self.emitter.non_finite_mark();
+                let reference = self.emit_procedural_curve(&definition);
+                if self.emitter.take_non_finite_since(mark) {
+                    self.non_finite_constructions.insert(id);
+                    return None;
+                }
+                reference.map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_curves.insert(id);
@@ -4888,6 +4953,10 @@ impl<'a> Builder<'a> {
         })();
         self.active_curves.remove(curve_id);
         self.geometry_emission_depth -= 1;
+        if self.emitter.take_non_finite_since(mark) {
+            self.non_finite_carriers.insert(curve_id.to_owned());
+            return None;
+        }
         if let Some(r) = result {
             self.curve_refs.insert(curve_id.to_string(), r);
         }
@@ -4979,8 +5048,8 @@ impl<'a> Builder<'a> {
                         "TRIMMED_CURVE",
                         &format!(
                         "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
-                        self.emitter.real(start),
-                        self.emitter.real(end),
+                        Emitter::real(start),
+                        Emitter::real(end),
                         if *sense { ".T." } else { ".F." }
                     ),
                     ))
@@ -4988,7 +5057,7 @@ impl<'a> Builder<'a> {
             }
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let source = self.emit_curve(source.as_str())?;
-                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
                 Some(
                     self.emitter
                         .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
@@ -5012,7 +5081,7 @@ impl<'a> Builder<'a> {
                         "OFFSET_CURVE_3D",
                         &format!(
                             "'',{source},{},{self_intersect},{direction}",
-                            self.emitter.real(distance.get())
+                            Emitter::real(distance.get())
                         ),
                     ))
                 }
@@ -6077,7 +6146,7 @@ impl<'a> Builder<'a> {
         };
         self.emitter.emit(
             entity,
-            &format!("{typed}({}),{unit}", self.emitter.real(value.value.get())),
+            &format!("{typed}({}),{unit}", Emitter::real(value.value.get())),
         )
     }
 
@@ -6096,7 +6165,7 @@ impl<'a> Builder<'a> {
             &format!(
                 "{},{typed}({}),{unit}",
                 string(name),
-                self.emitter.real(value.value.get())
+                Emitter::real(value.value.get())
             ),
         )
     }
@@ -6268,7 +6337,7 @@ impl<'a> Builder<'a> {
                 matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let ratio = cone_surface.ratio().get();
-                    ratio != 1.0 && cone_surface.half_angle().get() != 0.0
+                    ratio != 1.0 && geometry::written_half_angle(cone_surface) != 0.0
                 })
             })
             .count();
@@ -6301,19 +6370,41 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        if !self.unsplit_open_edges.is_empty() {
+            self.loss(
+                StepLossCode::OpenEdgeUnsplit,
+                format!(
+                    "{} open edge(s) whose ends coincide within the linear tolerance were each \
+                     written as one EDGE_CURVE: no point of the curve strictly between the ends \
+                     was found to split it at, so a reader may take the edge as closed: {}",
+                    self.unsplit_open_edges.len(),
+                    self.unsplit_open_edges
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+        }
         if !self.unknown_surface_faces.is_empty() {
             self.loss(
                 StepLossCode::UnknownSurfaceFaceOmitted,
                 format!(
                     "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
                      from the STEP shell (an ADVANCED_FACE requires a surface); their \
-                     topology remains in the IR",
-                    self.unknown_surface_faces.len()
+                     topology remains in the IR: {}",
+                    self.unknown_surface_faces.len(),
+                    self.unknown_surface_faces
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             );
         }
         self.unwritten_geometry_carriers.retain(|id| {
-            !self.surface_refs.contains_key(id.as_str())
+            !self.non_finite_carriers.contains(id)
+                && !self.surface_refs.contains_key(id.as_str())
                 && !self.curve_refs.contains_key(id.as_str())
                 && !self.point_refs.contains_key(id.as_str())
         });
@@ -7043,7 +7134,9 @@ impl<'a> Builder<'a> {
             .procedural_surfaces
             .iter()
             .filter(|(owner, procedural)| {
-                self.surface_refs.contains_key::<str>(owner)
+                self.surface_refs
+                    .get::<str>(owner)
+                    .is_some_and(|written| self.emitter.holds(written.reference))
                     && !self
                         .written_procedural_surfaces
                         .contains(procedural.id.as_str())
@@ -7056,7 +7149,9 @@ impl<'a> Builder<'a> {
             .procedural_curves
             .iter()
             .filter(|(owner, procedural)| {
-                self.curve_refs.contains_key::<str>(owner)
+                self.curve_refs
+                    .get::<str>(owner)
+                    .is_some_and(|written| self.emitter.holds(*written))
                     && !self
                         .written_procedural_curves
                         .contains(procedural.id.as_str())
@@ -7078,6 +7173,9 @@ impl<'a> Builder<'a> {
                     && !self.failed_helix_fits.contains_key(procedural.id.as_str())
                     && !self.sampled_surfaces.contains(procedural.id.as_str())
                     && !reduced_surfaces.contains(procedural.id.as_str())
+                    && !self
+                        .non_finite_constructions
+                        .contains(procedural.id.as_str())
             })
             .count();
         let omitted_curve_count = self
@@ -7093,15 +7191,24 @@ impl<'a> Builder<'a> {
                     && !self.failed_helix_fits.contains_key(procedural.id.as_str())
                     && !self.sampled_curves.contains(procedural.id.as_str())
                     && !reduced_curves.contains(procedural.id.as_str())
+                    && !self
+                        .non_finite_constructions
+                        .contains(procedural.id.as_str())
             })
             .count();
         let procedural_surface_count = reduced_surfaces.len();
         let procedural_curve_count = reduced_curves.len();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
+            let reduced = reduced_surfaces
+                .iter()
+                .chain(&reduced_curves)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers: {reduced}"
                 ),
             );
         }
@@ -7203,6 +7310,53 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+    }
+
+    /// Leaves out the instances that hold a non-finite real, with the
+    /// instances that need them, and charges `export:value.unwritable`
+    /// naming the carriers and constructions left out, and the document
+    /// record any other instance left out was written for.
+    fn drop_non_finite(&mut self) {
+        let dropped = self.emitter.drop_non_finite();
+        let carriers = std::mem::take(&mut self.non_finite_carriers);
+        self.losses
+            .extend(cadmpeg_ir::codec::write::value_unwritable(
+                "STEP",
+                "leaves out the geometry carriers that need a non-finite real, which Part 21 \
+             cannot state",
+                carriers,
+            ));
+        self.losses
+            .extend(cadmpeg_ir::codec::write::value_unwritable(
+                "STEP",
+                "writes no construction for the procedural geometry that needs a non-finite real, \
+             which Part 21 cannot state",
+                self.non_finite_constructions.iter().cloned(),
+            ));
+        let (owned, unowned): (Vec<_>, Vec<_>) = dropped
+            .iter()
+            .partition(|instance| instance.record.is_some());
+        self.losses
+            .extend(cadmpeg_ir::codec::write::value_unwritable(
+                "STEP",
+                "leaves out the records whose instances hold or need a non-finite real, which \
+             Part 21 cannot state",
+                owned
+                    .iter()
+                    .filter_map(|instance| instance.record.as_deref())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .map(str::to_owned),
+            ));
+        self.losses
+            .extend(cadmpeg_ir::codec::write::value_unwritable(
+                "STEP",
+                "leaves out the instances of the file's own structure that hold or need a \
+             non-finite real, which Part 21 cannot state",
+                unowned
+                    .iter()
+                    .map(|instance| format!("#{} {}", instance.name.0, instance.tally)),
+            ));
     }
 
     fn finish_outcome(&self) -> StepWriteOutcome {

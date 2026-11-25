@@ -141,13 +141,43 @@ fn a_written_crate_layer_reads_as_its_text_layer() {
     }
 }
 
+/// A field whose value has no USDC form is left out of its spec and named,
+/// and the layer reads back with the rest of the spec.
+#[test]
+fn a_field_with_no_crate_form_is_left_out_and_named() {
+    use crate::text::syntax::{AttributeField, PropertySpec};
+    let text = "#usda 1.0\ndef Xform \"A\"\n{\n    float a = AnimationBlock\n    double b.spline = {\n        1: 0,\n    }\n    float c = 2\n}\n";
+    let (bytes, left_out) = crate::test_support::with_context(text.as_bytes(), |ctx| {
+        let layer = crate::text::grammar::parse_layer(ctx, text.as_bytes()).expect("parse");
+        crate::usdc::write::write(&layer).expect("write")
+    });
+    assert_eq!(left_out, ["/A.a default", "/A.b spline"]);
+    let (read, unread) = crate::test_support::with_root(&bytes, |ctx, root| {
+        crate::usdc::read(ctx, root).expect("read")
+    });
+    assert!(unread.is_empty(), "{unread:?}");
+    let fields: Vec<(&str, bool)> = read.prims[0]
+        .body
+        .properties
+        .iter()
+        .map(|property| match property {
+            PropertySpec::Attribute(attribute) => (
+                attribute.name.as_str(),
+                matches!(attribute.field, AttributeField::Default(_)),
+            ),
+            other @ PropertySpec::Relationship(_) => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(fields, [("a", false), ("b", false), ("c", true)]);
+}
+
 /// A value representation that sets an unused bit is refused.
 #[test]
 fn a_representation_with_an_unused_bit_is_refused() {
     let text = "#usda 1.0\ndef Xform \"A\"\n{\n    double value.timeSamples = {\n        0: 1.5,\n    }\n}\n";
     let mut bytes = crate::test_support::with_context(text.as_bytes(), |ctx| {
         let layer = crate::text::grammar::parse_layer(ctx, text.as_bytes()).expect("parse");
-        crate::usdc::write::write(&layer).expect("write")
+        crate::usdc::write::write(&layer).expect("write").0
     });
     // The sample is a `double` representation in the value bytes, which
     // precede the compressed structural sections; its payload is the offset
