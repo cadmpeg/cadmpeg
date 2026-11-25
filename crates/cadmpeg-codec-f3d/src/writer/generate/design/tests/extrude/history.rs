@@ -123,9 +123,17 @@ fn the_run_is_written_with_its_state_and_the_later_features_follow_the_marker() 
     .join("\n");
     assert!(!omitted.contains("rollback (before"), "{omitted}");
     let residual = loss(&report, "export/record.residual-unavailable").join("\n");
-    assert!(
-        residual.contains("(Sketch scope: its item tail)") && residual.contains("DR-1032"),
-        "{residual}"
+    assert!(!residual.contains("its item tail"), "{residual}");
+    let sketches = tails(&decoded)
+        .into_iter()
+        .filter(|tail| tail.0 == "Sketch")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        sketches,
+        [
+            ("Sketch".to_owned(), [0, 0, 0], false, false, None, None),
+            ("Sketch".to_owned(), [0, 0, 0], true, true, None, None),
+        ]
     );
 }
 
