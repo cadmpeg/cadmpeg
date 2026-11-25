@@ -29,6 +29,22 @@ pub(super) fn omitted_arena_refusal(message: &str) -> Option<String> {
     ))
 }
 
+/// The hint a read reports with an ignored `model` member that names an
+/// arena the wire omits.
+pub(super) fn omitted_arena_hint(key: &str) -> String {
+    if super::ArenaName::WIRE_OMITTED
+        .iter()
+        .any(|arena| arena.key() == key)
+    {
+        format!(
+            "; `model.{key}` is a design arena that an earlier build of wire {IR_VERSION} \
+             wrote and the current wire omits; decode the source file again"
+        )
+    } else {
+        String::new()
+    }
+}
+
 /// What a wire 9 reader must change to read wire 10.
 const WIRE_9_CHANGES: &str = "wire 10 names the trailing pair of an ASM inline pcurve `uv_offset` in place \
      of `parameter_range`, adds an optional `uv_offset` to the general pcurve form, and adds the root \
