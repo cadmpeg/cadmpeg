@@ -99,12 +99,16 @@ fn unit_cube_has_expected_census() {
     assert_eq!(ir.geometry.points.len(), 8);
     assert_eq!(ir.geometry.surfaces.len(), 6);
     assert_eq!(ir.geometry.curves.len(), 12);
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition: {:?}", ir.model.product_definitions);
+    };
+    assert!(root.is_root());
+    assert_eq!(root.bodies, [ir.geometry.bodies[0].id.clone()]);
 }
 
 #[test]
 fn unit_cube_validates_clean() {
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    crate::examples::add_document_root(&mut ir);
+    let ir = unit_cube().expect("valid unit cube fixture");
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),

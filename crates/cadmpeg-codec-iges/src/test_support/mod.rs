@@ -34,7 +34,7 @@ pub(crate) fn plan_at(
     version: crate::IgesVersion,
     ir: &cadmpeg_ir::CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::IgesCodec.plan(
@@ -46,7 +46,7 @@ pub(crate) fn plan_at(
 /// Decode options in strict mode.
 pub(crate) fn strict_options() -> cadmpeg_ir::codec::DecodeOptions {
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
-    options.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    options.strictness.pinned = true;
     options
 }
 

@@ -3413,7 +3413,28 @@ impl<'a> F3dDecodeSession<'a> {
             annotation_records,
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
-        ir.geometry.subds = subds;
+        // No v11 form states a `cage` yet (its forms are unresolved), so each
+        // cage lies outside every form's `cage` and belongs to a body of its
+        // own (§5.6). Interim: the source states no display name, colour, or
+        // visibility for that body.
+        for surface in subds {
+            let key = surface.id.key();
+            ir.geometry.push_cage_object(
+                surface,
+                cadmpeg_ir::ids::BodyId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "body"),
+                    key.clone(),
+                ),
+                cadmpeg_ir::ids::RegionId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "region"),
+                    key.clone(),
+                ),
+                cadmpeg_ir::ids::ShellId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "shell"),
+                    key,
+                ),
+            );
+        }
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;

@@ -117,7 +117,6 @@ impl CadIr {
         let arena = DecodeArena::new();
         let policy = DecodePolicy {
             limits: options.limits,
-            ..DecodePolicy::default()
         };
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .map_err(|error| session_failure(&error))?;

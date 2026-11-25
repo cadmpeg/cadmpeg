@@ -15,7 +15,7 @@ use cadmpeg_registry::{
 
 use crate::application::artifact_store::{self, SidecarLoad};
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::ApplicationError;
+use crate::application::refusal::{ApplicationError, ConversionRefusal};
 
 pub(crate) mod companions;
 
@@ -42,7 +42,7 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 pub(crate) fn load_artifact(
     catalog: &InputCatalog,
     path: &Path,
-    options: DecodeOptions,
+    options: &DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
     let document = load(catalog, path, options, forced)?;
@@ -76,7 +76,7 @@ fn print_load_notice(document: &LoadedDocument) {
 fn load(
     catalog: &InputCatalog,
     path: &Path,
-    options: DecodeOptions,
+    options: &DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
     let companions = companions::Directory::beside(path);
@@ -96,7 +96,8 @@ fn load(
         ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
             ctx.complete_input(&mut file, &mut prefix)?;
-            let result = codec.decode_with_context(&ctx, View::over_retained(&prefix));
+            let result =
+                codec.decode_with_context(&ctx, View::over_retained(&prefix), &options.strictness);
             ctx.finish_session()?;
             let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
@@ -120,13 +121,19 @@ fn load(
     let max_bytes = options.policy.limits.max_input_bytes;
     ctx.complete_input(&mut file, &mut prefix)?;
     ctx.finish_session()?;
+    // The decode's strictness judges the report of this CADIR read. A restored
+    // sidecar's report describes an earlier decode and never decides (CADIR v11
+    // §3.5).
     let read_options = ReadOptions {
         limits: options.policy.limits,
-        ..ReadOptions::default()
+        strictness: options.strictness.clone(),
     };
     let read = CadIr::read(&prefix, &read_options).map_err(|error| match error {
         ReadFailure::ResourceLimit(limit) => {
             ApplicationError::from(cadmpeg_core::CodecError::ResourceLimit(limit))
+        }
+        ReadFailure::StrictRejected { report, entry } => {
+            ConversionRefusal::StrictReadRejected { report, entry }.into()
         }
         _ if names_decode_sidecar(path) => anyhow!(
             "{} is a decode sidecar; pass the CADIR document beside it",
@@ -183,7 +190,7 @@ mod tests {
         let error = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
-            options,
+            &options,
             Some(ForcedInput::Cadir),
         )
         .expect_err("input limit");
@@ -221,7 +228,7 @@ mod tests {
         let outcome = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
-            DecodeOptions::default(),
+            &DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
         .unwrap();
@@ -232,7 +239,7 @@ mod tests {
         let outcome = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
-            DecodeOptions::default(),
+            &DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
         .expect("a stale sidecar does not refuse the load");
