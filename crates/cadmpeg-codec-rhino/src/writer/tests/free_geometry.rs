@@ -112,7 +112,7 @@ fn angular_tolerance_just_above_pi_is_written_as_the_default() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("document angular tolerance")),
         "{losses:?}"
     );
@@ -832,7 +832,7 @@ fn noncanonical_nurbs_periodicity_is_written_as_the_stored_knots_state() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("cadir:model:curve#periodic")),
         "{losses:?}"
     );
@@ -1131,6 +1131,60 @@ fn free_composite_curve_is_written_as_one_nurbs_curve() {
         ends,
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
     );
+}
+
+#[test]
+fn composite_segment_against_its_curve_is_written_reversed() {
+    use cadmpeg_ir::geometry::{CompositeCurveSegments, CurveGeometry};
+
+    // The second line runs from (1, 1) to (1, 0); its segment runs it from
+    // (1, 0) to (1, 1).
+    let mut ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, 1.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, 2.0],
+    );
+    let joined = ir.geometry.curves.last_mut().expect("the composite curve");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+        &mut joined.geometry
+    else {
+        panic!("a composite curve");
+    };
+    let mut reversed = segments.iter().cloned().collect::<Vec<_>>();
+    reversed[1].same_sense = false;
+    *segments = CompositeCurveSegments::try_from(reversed).expect("segments");
+
+    let nurbs = written_joined_nurbs(&ir);
+    for (parameter, expected) in [
+        (0.0, Point3::new(0.0, 0.0, 0.0)),
+        (1.0, Point3::new(1.0, 0.0, 0.0)),
+        (1.25, Point3::new(1.0, 0.25, 0.0)),
+        (2.0, Point3::new(1.0, 1.0, 0.0)),
+    ] {
+        let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &nurbs,
+            parameter,
+        )
+        .expect("the written curve has a point")
+        .get();
+        assert!(
+            actual.distance(expected) <= 1e-12,
+            "{parameter}: {actual:?} != {expected:?}"
+        );
+    }
 }
 
 #[test]

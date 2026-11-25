@@ -57,10 +57,7 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
-    // The writer writes no cage, so it writes no cage body (§5.6); the
-    // `subds` coverage charges the cage.
-    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
-    let source = cageless.as_ref().unwrap_or(input.ir);
+    let source = input.ir;
     let unjoined = unjoined_regions(source);
     let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
         source,
@@ -188,6 +185,14 @@ pub(crate) fn plan(
                 .filter_map(|surface| surface.source_object.as_ref()),
         )
         .chain(written_meshes().filter_map(|mesh| mesh.source_object.as_ref()))
+        .chain(
+            input
+                .ir
+                .geometry
+                .subds
+                .iter()
+                .filter_map(|subd| subd.source_object.as_ref()),
+        )
         .count();
     if associations != 0 {
         losses.push(RhinoLossCode::WriterSourceAssociationOmitted.note(format!(
@@ -257,7 +262,7 @@ const COVERAGE: ArenaDispositions = {
         points: Reported,
         surfaces: Written,
         curves: Reported,
-        subds: Omitted,
+        subds: Written,
         pcurves: Written,
         procedural_surfaces: Omitted,
         procedural_curves: Omitted,
