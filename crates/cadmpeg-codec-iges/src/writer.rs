@@ -449,6 +449,10 @@ fn append_name_properties(
 }
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+    // IGES holds no cage, so a cage body is not written either (§5.6); the
+    // `subds` coverage charges the cage.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(ir);
+    let ir = cageless.as_ref().unwrap_or(ir);
     let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
         ir,
         "IGES",
