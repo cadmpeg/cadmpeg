@@ -459,14 +459,16 @@ impl RhinoLossCode {
 
     /// Strict floor pinned from this local code (independent of taxonomy remap).
     ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection. `ObjectFramingUndecodable` pins Warning above
+    /// Defaults to [`cadmpeg_ir::report::loss::code_strict_floor`].
+    /// `ObjectFramingUndecodable` pins Warning above
     /// its `DecodeDiagnostic` taxonomy (which is otherwise tolerable).
-    const fn strict_floor(self) -> Option<Severity> {
+    fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::IntegrityFailure | Self::ObjectFramingUndecodable => Some(Severity::Warning),
             Self::SourceWriterStampUnverified => None,
-            other => other.shared_taxonomy().strict_floor(),
+            other => {
+                cadmpeg_ir::report::loss::code_strict_floor(other.code(), other.shared_taxonomy())
+            }
         }
     }
 

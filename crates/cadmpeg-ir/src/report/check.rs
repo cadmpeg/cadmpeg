@@ -55,7 +55,7 @@ pub enum Check {
     WireTopology,
     /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
-    /// A face does not state every loop, or a region, shell, or body does
+    /// A face does not state its boundary in full, or a region, shell, or body does
     /// not state every child (§5.6, Unstated children).
     TopologyPartial,
     /// A surface, curve, pcurve, or point carrier is orphan: no topology or

@@ -121,6 +121,8 @@ pub(crate) enum FreecadLossCode {
     TopologyLocationIdentityBounded,
     /// Non-boundary edge geometry transfers with its face incidence retained natively.
     TopologyNonBoundaryIncidenceRetained,
+    /// A face with no boundary wire on a plane, cylinder, or cone is stated partial.
+    TopologyFaceBoundaryUnstated,
     /// A shape listed twice at one location restates its topology records, and the later ones are not stated.
     TopologyRecordRepeated,
     /// Producer version metadata used an alias or conflicting declarations.
@@ -184,6 +186,7 @@ impl FreecadLossCode {
         Self::PcurveLocationAmbiguous,
         Self::TopologyLocationIdentityBounded,
         Self::TopologyNonBoundaryIncidenceRetained,
+        Self::TopologyFaceBoundaryUnstated,
         Self::TopologyRecordRepeated,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
@@ -252,6 +255,7 @@ impl FreecadLossCode {
             Self::TopologyNonBoundaryIncidenceRetained => {
                 "topology.non-boundary-incidence-retained"
             }
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::TopologyRecordRepeated => "topology.record-repeated",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
@@ -311,6 +315,7 @@ impl FreecadLossCode {
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::TopologyNonBoundaryIncidenceRetained
+            | Self::TopologyFaceBoundaryUnstated
             | Self::TopologyRecordRepeated
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
@@ -364,6 +369,7 @@ impl FreecadLossCode {
             | Self::TopologyLocationIdentityBounded
             | Self::TopologyNonBoundaryIncidenceRetained
             | Self::TopologyRecordRepeated => LossTaxonomy::RecordNotTyped,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::AppearanceStateNotTransferred => LossTaxonomy::MaterialNotTransferred,
@@ -382,7 +388,9 @@ impl FreecadLossCode {
     fn kind(self) -> LossKind {
         let strict_floor = match self {
             Self::SourceGuiSchemaUnverified => None,
-            other => other.shared_taxonomy().strict_floor(),
+            other => {
+                cadmpeg_ir::report::loss::code_strict_floor(other.code(), other.shared_taxonomy())
+            }
         };
         NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
             .with_strict_floor(strict_floor)
@@ -459,6 +467,7 @@ mod tests {
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
                 "topology.non-boundary-incidence-retained",
+                "topology.face-boundary-unstated",
                 "topology.record-repeated",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",

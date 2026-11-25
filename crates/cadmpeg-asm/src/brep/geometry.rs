@@ -1244,8 +1244,11 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         face_bodies.insert(&face.id, body);
     }
     // A single-sided face without loops covers a whole closed surface (a
-    // full sphere or torus), so it bounds a volume by itself. A body bounded
-    // only by such faces is a solid; any other face needs its edges closed.
+    // full sphere or torus), so it bounds a volume by itself. On a plane,
+    // cylinder, or cone it is stated partial, and its sidedness is still the
+    // source's only statement about the volume: it has no edge to close. A
+    // body bounded only by such faces is a solid; any other face needs its
+    // edges closed.
     let double_sided = out
         .face_sidedness
         .iter()
@@ -1258,11 +1261,8 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         let Some(body) = face_bodies.get(&face.id).copied() else {
             continue;
         };
-        let whole_surface = face
-            .loops
-            .boundary()
-            .is_some_and(cadmpeg_ir::topology::FaceBoundary::is_empty);
-        if !whole_surface || double_sided.contains(&face.id) {
+        let loopless = face.loops.stated().next().is_none();
+        if !loopless || double_sided.contains(&face.id) {
             body_has_bounded_faces.insert(body);
         }
         for loop_id in face.loops.stated() {

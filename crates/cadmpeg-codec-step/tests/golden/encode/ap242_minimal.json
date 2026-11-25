@@ -36,8 +36,7 @@
             "value": {
               "code": "output.empty",
               "kind": "no_exportable_solids",
-              "namespace": "export",
-              "strict_floor": "warning"
+              "namespace": "export"
             }
           },
           "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
@@ -114,8 +113,7 @@
             "value": {
               "code": "output.empty",
               "kind": "no_exportable_solids",
-              "namespace": "export",
-              "strict_floor": "warning"
+              "namespace": "export"
             }
           },
           "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
@@ -192,8 +190,7 @@
             "value": {
               "code": "output.empty",
               "kind": "no_exportable_solids",
-              "namespace": "export",
-              "strict_floor": "warning"
+              "namespace": "export"
             }
           },
           "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",

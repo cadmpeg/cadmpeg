@@ -310,6 +310,27 @@ impl LossTaxonomy {
     }
 }
 
+/// The shared codes §3.2 spells without a namespace, whichever codec charges
+/// them, each with the strict floor §3.2 states for it.
+pub const BARE_SHARED_CODES: [(&str, Option<Severity>); 6] = [
+    ("record.unreadable", Some(Severity::Error)),
+    ("sidecar.stale", None),
+    ("geometry.vertex-tolerance-widened", None),
+    ("topology.face-boundary-unstated", None),
+    ("target.source-dialect-displaced", None),
+    ("target.request-displaced", None),
+];
+
+/// The strict floor of a code charged under `taxonomy`: the floor §3.2 states
+/// for a bare shared code, and the taxonomy's floor for any other code.
+#[must_use]
+pub fn code_strict_floor(code: &str, taxonomy: LossTaxonomy) -> Option<Severity> {
+    BARE_SHARED_CODES
+        .iter()
+        .find(|(shared, _)| *shared == code)
+        .map_or_else(|| taxonomy.strict_floor(), |(_, floor)| *floor)
+}
+
 impl fmt::Display for LossTaxonomy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
@@ -442,7 +463,7 @@ impl LossKind {
         Self::Shared { kind: taxonomy }
     }
 
-    /// Constructs a codec-local loss with its taxonomy floor.
+    /// Constructs a codec-local loss with its [`code_strict_floor`].
     pub fn namespaced(
         namespace: LossNamespace<'_>,
         code: impl Into<String>,
@@ -495,17 +516,18 @@ impl LossKind {
 }
 
 impl NamespacedLossKind {
-    /// Constructs a codec-local loss with its taxonomy floor.
+    /// Constructs a codec-local loss with its [`code_strict_floor`].
     pub fn new(
         namespace: LossNamespace<'_>,
         code: impl Into<String>,
         taxonomy: LossTaxonomy,
     ) -> Self {
+        let code = code.into();
         Self {
             namespace: LossNamespaceName(namespace.as_str().to_owned()),
-            code: code.into(),
+            strict_floor: code_strict_floor(&code, taxonomy),
+            code,
             taxonomy,
-            strict_floor: taxonomy.strict_floor(),
         }
     }
 
@@ -519,9 +541,9 @@ impl NamespacedLossKind {
     ) -> Result<Self, LossNamespaceError> {
         Ok(Self {
             namespace: LossNamespaceName::try_from(namespace)?,
+            strict_floor: code_strict_floor(&code, taxonomy),
             code,
             taxonomy,
-            strict_floor: taxonomy.strict_floor(),
         })
     }
 

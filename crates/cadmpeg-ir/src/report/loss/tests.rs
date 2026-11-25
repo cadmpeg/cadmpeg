@@ -252,6 +252,28 @@ fn a_displaced_target_dialect_pins_no_strict_floor() {
     }
 }
 
+/// A bare shared code takes the floor §3.2 states for it, whichever codec
+/// charges it and whatever floor its taxonomy pins.
+#[test]
+fn a_bare_shared_code_takes_the_floor_section_3_2_states() {
+    let kind = |code: &str| {
+        LossKind::namespaced(
+            LossNamespace::new("nx").unwrap(),
+            code,
+            LossTaxonomy::TopologyNotTransferred,
+        )
+    };
+    assert_eq!(kind("topology.face-boundary-unstated").strict_floor(), None);
+    assert_eq!(
+        kind("record.unreadable").strict_floor(),
+        Some(Severity::Error)
+    );
+    assert_eq!(
+        kind("topology.face-omitted").strict_floor(),
+        Some(Severity::Warning)
+    );
+}
+
 #[test]
 fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
     let kind: LossKind = NamespacedLossKind::new(

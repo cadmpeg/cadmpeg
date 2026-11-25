@@ -149,12 +149,18 @@ loss_codes! {
     CarrierControlsUnresolved => ("carrier.controls-unresolved", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
-    /// A face loop states no resolvable coedge ring and is omitted from its face.
+    /// A face loop states no resolvable coedge ring: it is omitted, and its face
+    /// is stated partial.
     TopologyLoopRingUnresolved => ("topology.loop-ring-unresolved", Warning, TopologyNotTransferred),
-    /// A face's linked loop boundary cannot be admitted and is omitted.
+    /// A face's linked loop boundary cannot be admitted: it is omitted, and the
+    /// face is stated partial.
     TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
-    /// A vertex loop whose vertex does not resolve to a POINT is omitted from its face.
+    /// A vertex loop whose vertex does not resolve to a POINT: it is omitted,
+    /// and its face is stated partial.
     TopologyVertexLoopUnresolved => ("topology.vertex-loop-unresolved", Warning, TopologyNotTransferred),
+    /// A face states no loop on a plane, cylinder, or cone, which no face
+    /// covers whole: its boundary is unstated, and the face is stated partial.
+    TopologyFaceBoundaryUnstated => ("topology.face-boundary-unstated", Warning, TopologyNotTransferred),
     /// A shell with no admitted face, or a body with no emitted shell, is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
@@ -178,13 +184,16 @@ loss_codes! {
 impl NxLossCode {
     /// Strict floor pinned from this local code.
     ///
-    /// Defaults to the taxonomy floor. `NativeAttachmentFailed` pins Error
+    /// Defaults to [`cadmpeg_ir::report::loss::code_strict_floor`].
+    /// `NativeAttachmentFailed` pins Error
     /// above its `DecodeDiagnostic` taxonomy, which strict mode otherwise
     /// tolerates.
-    const fn strict_floor(self) -> Option<Severity> {
+    fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::NativeAttachmentFailed => Some(Severity::Error),
-            other => other.shared_taxonomy().strict_floor(),
+            other => {
+                cadmpeg_ir::report::loss::code_strict_floor(other.code(), other.shared_taxonomy())
+            }
         }
     }
 
@@ -274,6 +283,7 @@ mod tests {
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
                 "topology.vertex-loop-unresolved",
+                "topology.face-boundary-unstated",
                 "topology.shell-withheld",
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",
@@ -319,7 +329,10 @@ mod tests {
         for code in NxLossCode::ALL {
             let expected = match code {
                 NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
-                other => other.shared_taxonomy().strict_floor(),
+                other => cadmpeg_ir::report::loss::code_strict_floor(
+                    other.code(),
+                    other.shared_taxonomy(),
+                ),
             };
             assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
         }

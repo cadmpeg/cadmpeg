@@ -540,6 +540,9 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # A cold build on a 3-core runner can outlast the timeout. Saving
+          # what it compiled lets the next main run start from there.
+          cache-on-failure: true
 
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
@@ -550,6 +553,9 @@ jobs:
           tool: cargo-nextest
 
       - name: Unit and integration tests
+        # Ends the step before the job's timeout, so the job fails rather
+        # than being cancelled and the cache step saves the build.
+        timeout-minutes: 105
         run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
   # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.

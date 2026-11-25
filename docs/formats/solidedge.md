@@ -91,6 +91,10 @@ link through `other`. The named fin can lie outside every loop, with null
 `backward`, `forward`, and `loop`. The fins of the ring that lie in a loop
 carry the edge's topology.
 
+A FACE whose `loop` pointer is null on a plane, cylinder, or cone states no
+boundary. The face is stated partial with the loss
+`topology.face-boundary-unstated`.
+
 A swept surface (type 67) is the linear extrusion of its `section` curve
 along its unit `sweep` direction. The surface does not store the extent along
 the sweep; the face loops bound it. A null `scale` makes the sweep parameter
