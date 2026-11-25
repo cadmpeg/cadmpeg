@@ -4,9 +4,9 @@
 //! These codes belong to no codec: the wrapper charges them by comparing the
 //! content classes the requested depth names with the classes the document
 //! holds, for a class a decoder states the source holds beyond the delivered
-//! depth, for the records its normalizer gave up, for an id a decoder
-//! emitted twice with different content, and for a document it took no
-//! content digest of, so every codec reports them under one namespace.
+//! depth, for the records its normalizer gave up, and for an id a decoder
+//! emitted twice with different content, so every codec reports them under
+//! one namespace.
 
 use cadmpeg_core::decode::ArenaClass;
 
@@ -32,9 +32,6 @@ pub(crate) enum DecodeLossCode {
     /// The normalizer gave up records part way, which keep spellings the
     /// decoder stated.
     NormalizeIncomplete,
-    /// The document has no canonical JSON, so the wrapper took no content
-    /// digest of it.
-    ContentDigestUnavailable,
 }
 
 impl DecodeLossCode {
@@ -44,7 +41,6 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
             Self::IdRepeated => "id.repeated",
             Self::NormalizeIncomplete => "normalize.incomplete",
-            Self::ContentDigestUnavailable => "content-digest.unavailable",
         }
     }
 
@@ -52,7 +48,7 @@ impl DecodeLossCode {
         match self {
             Self::DepthNotDelivered { .. } => Severity::Error,
             Self::IdRepeated => Severity::Error,
-            Self::NormalizeIncomplete | Self::ContentDigestUnavailable => Severity::Warning,
+            Self::NormalizeIncomplete => Severity::Warning,
         }
     }
 
@@ -65,9 +61,7 @@ impl DecodeLossCode {
             Self::DepthNotDelivered {
                 class: ArenaClass::Design | ArenaClass::Process,
             } => LossTaxonomy::ParametricRecordOmitted,
-            Self::IdRepeated | Self::NormalizeIncomplete | Self::ContentDigestUnavailable => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::IdRepeated | Self::NormalizeIncomplete => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
@@ -75,9 +69,7 @@ impl DecodeLossCode {
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::IdRepeated => Some(Severity::Error),
-            Self::DepthNotDelivered { .. }
-            | Self::NormalizeIncomplete
-            | Self::ContentDigestUnavailable => None,
+            Self::DepthNotDelivered { .. } | Self::NormalizeIncomplete => None,
         }
     }
 
