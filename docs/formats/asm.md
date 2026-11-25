@@ -166,7 +166,7 @@ Each history node is a linked construction state:
 0b                       (false sentinel)
 ```
 
-`prev_state` and `next_state` are node indices. The head state is the state whose `prev_state` is `-1`, and the tail state is the state whose `next_state` is `-1`. A decoder follows these links from the head state to the tail state. The position of a `delta_state` record in the stream has no meaning on decode. The order in which an application writes the records is given in the specification of its format.
+`prev_state` and `next_state` are node indices. The head state is the state whose `prev_state` is `-1`, and the tail state is the state whose `next_state` is `-1`. These links give the order of the chain from the head state to the tail state. The position of a `delta_state` record in the stream does not give its place in the chain. The order in which an application writes the records is given in the specification of its format.
 
 Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores an old and new entity reference: null→entity is insertion, entity→null is deletion, and entity→entity is update.
 
