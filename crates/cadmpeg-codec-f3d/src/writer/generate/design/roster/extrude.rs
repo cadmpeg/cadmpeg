@@ -15,8 +15,8 @@ use super::super::sketch::CurveGeometry;
 use super::super::types;
 use super::owned::Owned;
 use super::swept::{
-    allocator, GroupRecords, ResultRecords, ScopeRecords, SelectionRecords, StartRecords, Swept,
-    FIRST_SELECTION_IDENTITY, PROFILE_ROLE,
+    allocator, GroupRecords, Place, ResultRecords, ScopeRecords, SelectionRecords, StartRecords,
+    Swept, FIRST_SELECTION_IDENTITY, PROFILE_ROLE,
 };
 use super::{Context, PARAMETER_DISCRIMINATOR};
 use crate::writer::generate::presentation::TypeRow;
@@ -165,9 +165,10 @@ pub(super) fn write(
     ctx: &Context<'_>,
     plan: &ExtrudePlan<'_>,
     records: &ExtrudeRecords,
+    place: &Place,
     out: &mut DesignRecords,
 ) -> Result<(), CodecError> {
-    let swept = Swept::new(ctx, FAMILY, &records.scope, plan.sketch, plan.preceding)?;
+    let swept = Swept::new(ctx, FAMILY, &records.scope, plan.sketch, place)?;
     scope(ctx, &swept, records, out)?;
     swept.group(out, &records.group, records.selection.record, PROFILE_ROLE)?;
     swept.start(
@@ -267,6 +268,7 @@ pub(super) fn losses(
     ctx: &Context<'_>,
     plan: &ExtrudePlan<'_>,
     records: &ExtrudeRecords,
+    stated: bool,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let [_, along, _] = records.along;
     let [_, taper, _] = records.taper;
@@ -293,10 +295,14 @@ pub(super) fn losses(
             "record {} (region identity record: the class of its paired header)",
             records.selection.regions
         ),
-        "generic_tag_attrib_def body group of the Extrude's body (Design reference 1)".to_owned(),
-        "record 187 (body-presentation owner: the ten bytes before its name)".to_owned(),
-        "records 193, 215, 219 to 222 (the second Body owner and the parameter-side records of the import roster, kept where f3d-open-items.md DR-916 states the presentation owner as the result body's only presentation record)".to_owned(),
     ];
+    if stated {
+        entries.extend([
+            "generic_tag_attrib_def body group of the Extrude's body (Design reference 1)".to_owned(),
+            "record 187 (body-presentation owner: the ten bytes before its name)".to_owned(),
+            "records 193, 215, 219 to 222 (the second Body owner and the parameter-side records of the import roster, kept where f3d-open-items.md DR-916 states the presentation owner as the result body's only presentation record)".to_owned(),
+        ]);
+    }
     if plan.profile.iter().filter(|hole| !hole.exterior).count() > 1 {
         entries.push(format!(
                 "record {} and the side tokens of its hole loops (the holes stored in the order of their curves' primary identities, a hole of several curves by its smallest, their side tokens in stored order, f3d-open-items.md DR-883)",

@@ -157,24 +157,29 @@ opt-level = 2
 
 # Evaluation charges `WorkBudget` once per step. At opt-level 0 the budget
 # debit and its ancestor walk take about a quarter of the self time of
-# measured-geometry tests.
+# measured-geometry tests. Compiling `cadmpeg-core` and `cadmpeg-container`
+# at opt-level 2 keeps byte-level container scanning, erased serde adapters,
+# and JSON formatting fast without optimizing the large codec crates.
 [profile.dev.package.cadmpeg-core]
 opt-level = 1
 
-# Measurement tests spend most of their time in this crate's quadrature.
+[profile.dev.package.cadmpeg-container]
+opt-level = 1
+
+# Parasolid framing and record scans run across SLDPRT, NX, and Solid Edge
+# decoders; opt-level 1 keeps scans fast while halving compile cost.
+[profile.dev.package.cadmpeg-parasolid]
+opt-level = 1
+
+# Measurement tests spend most of their time in this crate's quadrature;
+# opt-level 1 keeps quadrature fast while avoiding -O2 LLVM compile overhead.
 [profile.dev.package.cadmpeg-measure]
-opt-level = 2
+opt-level = 1
 
 [profile.test]
 # Test failures need `file:line` in the backtrace; they do not need variable
 # and type DWARF. This drops the rest.
 debug = "line-tables-only"
-
-# The SLDPRT writer tests decode, write and decode again one part per edit.
-# At opt-level 0 and 1 the crate calls the generic byte scans and hashing that
-# unoptimized crates instantiate; at 2 it instantiates and inlines its own.
-[profile.test.package.cadmpeg-codec-sldprt]
-opt-level = 2
 
 [profile.release]
 lto = "thin"

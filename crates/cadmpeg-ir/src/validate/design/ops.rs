@@ -69,7 +69,7 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     for feature in &index.ir.design.features {
         check_feature(index, feature, findings);
     }
-    body::check_template_inputs(index, findings);
+    body::check_generators(index, findings);
     assembly::check_occurrence_creators(index, findings);
     assembly::check_spans(index, findings);
     sheet_metal::check_rules(index, findings);

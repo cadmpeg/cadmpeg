@@ -1408,3 +1408,27 @@ fn a_plane_stays_unknown_while_a_component_origin_is_unlisted() {
     types.push(component_row(meta, [1, 2]));
     assert_eq!(classify_origin_entity(&types, bulk, 900), Class::Unknown);
 }
+
+#[test]
+fn a_member_meta_scope_matches_its_decoded_bulk_sibling() {
+    let local = "Design@1/MetaStream.dat";
+    let direct = crate::ids::native_scope(local);
+    assert!(direct.ends_with("Design%401/MetaStream.dat"));
+    assert!(super::meta_scope_matches_bulk(
+        &direct,
+        "Design@1/BulkStream.dat"
+    ));
+    let member = crate::ids::qualify(&direct, "role-a/reference-0/occurrence-0").unwrap();
+    assert!(super::meta_scope_matches_bulk(
+        &member,
+        "role-a/reference-0/occurrence-0@Design@1/BulkStream.dat"
+    ));
+    assert!(!super::meta_scope_matches_bulk(
+        &member,
+        "Design@1/BulkStream.dat"
+    ));
+    assert!(!super::meta_scope_matches_bulk(
+        &member,
+        "role-b/reference-0/occurrence-0@Design@1/BulkStream.dat"
+    ));
+}

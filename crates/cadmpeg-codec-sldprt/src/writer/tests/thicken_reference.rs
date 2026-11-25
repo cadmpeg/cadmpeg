@@ -445,16 +445,11 @@ fn semantic_writer_retains_partial_native_scale_construction() {
     for index in 0..2 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
             &detached,
             decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(
-            error.to_string().contains("unresolved scale construction"),
-            "{error}"
         );
+        assert!(error.contains("unresolved scale construction"), "{error}");
     }
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
@@ -1578,13 +1573,11 @@ fn semantic_writer_retains_partial_native_dome_construction() {
 
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved dome construction"));
+    );
+    assert!(error.contains("unresolved dome construction"));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed dome".into());
     let mut encoded = Vec::new();
