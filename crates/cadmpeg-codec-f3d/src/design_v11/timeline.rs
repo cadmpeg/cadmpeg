@@ -62,7 +62,7 @@ pub(super) struct Projected {
 
 /// The timeline containers and item features of every document of the
 /// decode, keyed by the document's identity prefix (empty for the root
-/// document, `xref/…/occurrence-N/` for a referenced design). `bodies` are
+/// document, the definition key and `@` for a referenced design). `bodies` are
 /// the bodies of the current geometry. A timeline whose rollback marker the
 /// flags leave open charges a loss to `losses`.
 pub(super) fn project(
@@ -210,18 +210,26 @@ fn rollback(
         .map_or(Rollback::End, Rollback::Before)
 }
 
-/// The identity prefix of the document that holds `stream`: everything up to
-/// and including its last `occurrence-N/` segment, empty for the root
-/// document.
+/// The identity prefix of the document that holds `stream`: the definition
+/// key of the archive member and its `@`, empty for the root document.
 pub(super) fn document_prefix(stream: &str) -> &str {
     let local = stream.strip_prefix("f3d:").unwrap_or(stream);
-    local
-        .rfind("/occurrence-")
-        .and_then(|at| {
-            let tail = at + "/occurrence-".len();
-            local[tail..].find('/').map(|slash| &local[..=tail + slash])
-        })
-        .unwrap_or("")
+    let scope = local.split_once(':').map_or(local, |(scope, _)| scope);
+    scope
+        .split_once('@')
+        .map_or("", |(key, _)| &local[..=key.len()])
+}
+
+/// Whether the document at `prefix` is the document at `outer` or an archive
+/// member placed below it.
+pub(super) fn within(prefix: &str, outer: &str) -> bool {
+    let Some(outer) = outer.strip_suffix('@') else {
+        return outer.is_empty();
+    };
+    prefix.strip_suffix('@').is_some_and(|key| {
+        key.strip_prefix(outer)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
 }
 
 /// The v10 feature of the item whose record is `record`, among the features

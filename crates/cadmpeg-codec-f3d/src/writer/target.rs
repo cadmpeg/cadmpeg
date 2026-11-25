@@ -4,8 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
-    ExportBody, MissingStateForm, NativeDisposition, NativeDispositions, PatchConsumption,
-    WritePath,
+    ExportBody, NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -182,7 +181,8 @@ fn synthesized_body(
     displaced: Option<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let generated = super::generate::write_new(input.ir, &mut bytes)?;
+    let generated = super::generate::write_new(input.ir, input.missing_states, &mut bytes)?;
+    let geometry_true = generated.geometry_true;
     let (consumption, loss) = cause.into_fidelity();
     let mut losses: Vec<_> = loss.into_iter().chain(displaced).collect();
     losses.extend(generated.losses);
@@ -221,10 +221,10 @@ fn synthesized_body(
         losses,
         bytes,
     );
-    if input.missing_states == MissingStateForm::HistoryTrue {
+    if geometry_true {
         body.notes.push(
-            "the F3D writer writes the geometry-true form only, so the file holds the current \
-             geometry and not the history-true form the request names"
+            "the F3D writer writes no design timeline, so the file holds the current geometry \
+             in the geometry-true form and not the history-true form the request names"
                 .to_owned(),
         );
     }

@@ -22,8 +22,11 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
 use cadmpeg_ir::codec::write::{
-    output_empty, partial_topology_omitted, record_invalid, NativeDisposition, NativeDispositions,
+    output_empty, partial_topology_omitted, record_invalid, MissingStateForm, NativeDisposition,
+    NativeDispositions,
 };
+use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
@@ -140,6 +143,8 @@ pub(super) struct Reduction<'a> {
     native: NativeDispositions,
     design_dropped: bool,
     neutral_dropped: bool,
+    /// The form of the features whose states the writer cannot write.
+    missing_states: MissingStateForm,
     /// The parts of the design scope's form dropped after a failure.
     fallback: super::design::Fallback,
     /// The faces omitted from each opened body, charged at [`Self::finish`]
@@ -151,10 +156,11 @@ pub(super) struct Reduction<'a> {
 }
 
 impl<'a> Reduction<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
         let mut native = NativeDispositions::dropped();
         native.namespace("f3d", NativeDisposition::Written);
         Self {
+            missing_states,
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
             native,
@@ -268,6 +274,7 @@ impl<'a> Reduction<'a> {
     pub(super) fn prepare(&mut self) -> Result<(), CodecError> {
         self.omit_partial_bodies()?;
         self.drop_unwritten_native();
+        self.drop_rolled_back_native_design();
         if !self.writes_design() {
             self.drop_design_only_arenas();
         }
@@ -1308,11 +1315,40 @@ impl<'a> Reduction<'a> {
         true
     }
 
+    /// A native design whose timeline is rolled back is written from its
+    /// neutral records, which give the features after the marker the form
+    /// that `missing_states` selects (cadir-v11.md §3.4, Features without
+    /// their state). The generator writes no feature scope from native
+    /// records.
+    fn drop_rolled_back_native_design(&mut self) {
+        if !self.writes_design() {
+            return;
+        }
+        let first = match rolled_back_from(&self.ir) {
+            Some(Member::Feature(feature)) => feature.to_string(),
+            Some(Member::Container(container)) => container.to_string(),
+            None => return,
+        };
+        let form = match self.missing_states {
+            MissingStateForm::GeometryTrue => "geometry-true",
+            MissingStateForm::HistoryTrue => "history-true",
+        };
+        let reason = format!(
+            "of the Design stream, because the generator writes the design's timeline, rolled back before {first}, from its neutral records in the {form} form"
+        );
+        let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
+        self.design_dropped = true;
+        self.native.drop_records("f3d", &reason, dropped);
+    }
+
     /// Write the design scope without its next droppable part (its sketch
     /// dimensions, its `Extrude` item, its `Sketch` items, in that order):
     /// the design plan charges what the part held.
     fn drop_design_part(&mut self, reason: &str) -> bool {
-        self.writes_neutral_design() && self.fallback.drop_next(&self.ir, reason)
+        self.writes_neutral_design()
+            && self
+                .fallback
+                .drop_next(&self.ir, self.missing_states, reason)
     }
 
     /// Write no design scope: every design scope, container, feature and
@@ -2111,7 +2147,7 @@ macro_rules! for_each_geometry_arena {
 }
 
 /// Each non-empty geometry arena: its name, row count and record ids.
-fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topology) -> Vec<String> {
+pub(super) fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topology) -> Vec<String> {
     let mut arenas = Vec::new();
     macro_rules! list {
         ($($field:ident),*) => {$(
@@ -2281,4 +2317,20 @@ fn retain_bodies(ir: &mut CadIr, kept: &BTreeSet<&str>) -> Result<BTreeSet<Strin
     }
     for_each_geometry_arena!(retain);
     Ok(removed)
+}
+
+/// The member a timeline marker of `ir` stands before, where it is a member
+/// of the marker's container.
+fn rolled_back_from(ir: &CadIr) -> Option<&Member> {
+    ir.design
+        .containers
+        .iter()
+        .find_map(|container| match container {
+            Container::Ordered {
+                members,
+                rollback: Some(Rollback::Before(before)),
+                ..
+            } if members.contains(before) => Some(before),
+            _ => None,
+        })
 }

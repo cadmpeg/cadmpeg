@@ -1983,22 +1983,15 @@ fn source_native_record_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(
-        !report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("f3d:test:unknown#0")),
-        "a given-up part's stub incurs no omission loss: {:?}",
-        report.losses
-    );
-    assert!(
-        report.losses.iter().any(
-            |loss| loss.code.to_string() == "export/native.records-omitted"
-                && loss.message
-                    == "the step write omits 1 native record(s) of `f3d` arena `asm_histories`: \
-                    f3d:test:asm-history#0"
-        ),
-        "{:?}",
-        report.losses
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // A given-up part's `unknowns` stub incurs no omission loss.
+    assert_eq!(
+        omitted,
+        ["the step write omits 1 native record(s) of `f3d` arena `asm_histories`: f3d:test:asm-history#0"]
     );
 }

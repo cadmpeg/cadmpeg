@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, MissingStateForm};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
@@ -199,9 +199,17 @@ fn write(ir: &CadIr) -> (ExportReport, CadIr) {
 }
 
 fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
+    write_bytes_as(ir, MissingStateForm::GeometryTrue)
+}
+
+/// [`write_bytes`] in the form `missing_states`.
+fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport, CadIr, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(
+            EncodeInput::new(ir, None).with_missing_states(missing_states),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
     let decoded = F3dCodec
@@ -416,7 +424,7 @@ fn a_comment_is_written_with_its_parameter() {
 
 #[test]
 fn a_failure_of_the_design_module_drops_the_design_not_the_body() {
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, ir) = write(&scoped_cube());
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(ir.model.parameters.is_empty());
@@ -606,8 +614,12 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
 fn a_base_feature_write_drops_the_native_arenas_whose_indices_it_reuses() {
     use cadmpeg_ir::codec::write::NativeDisposition;
     let mut output = Vec::new();
-    let generated = crate::writer::generate::write_new(&scoped_cube(), &mut output)
-        .expect("the cube is written as a Base Feature");
+    let generated = crate::writer::generate::write_new(
+        &scoped_cube(),
+        cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
+        &mut output,
+    )
+    .expect("the cube is written as a Base Feature");
     for arena in [
         "design_record_headers",
         "sketch_points",
@@ -1047,7 +1059,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
             pmi: None,
             native_ref: None,
         });
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, _) = write(&ir);
     let omitted = loss(
         &report,
@@ -1165,7 +1177,7 @@ fn a_stale_and_a_current_evaluation_are_each_charged_once_by_name() {
     let stale = format!("{stale}: {root} tool body of {EXTRUDE} (stale)");
     let current = format!("{current}: {root} state at the start of {timeline}");
     for dropped in [false, true] {
-        super::FAIL_NEXT_PLAN.with(|fail| fail.set(dropped));
+        super::FAIL_NEXT_PLAN.with(|fail| fail.set(u32::from(dropped)));
         let (report, _) = write(&ir);
         assert!(
             loss(&report, "export/evaluation.stale")
