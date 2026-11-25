@@ -16,9 +16,6 @@ use crate::design::selection::{Members, PickTarget, Picked, Unordered};
 use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
-/// The `$ref` links [`Schema::resolve`] follows from one node.
-const MAX_LINKS: usize = 16;
-
 /// The CADIR schema, read to type each value of a record.
 pub(crate) struct Schema(Value);
 
@@ -37,10 +34,14 @@ impl Schema {
     }
 
     /// `node` with its `$ref` links followed, and the name of the last
-    /// definition reached.
+    /// definition reached. A chain of more links than there are definitions
+    /// is a cycle, and stops at the definition it reached.
     fn resolve<'s>(&'s self, mut node: &'s Value) -> (&'s Value, Option<&'s str>) {
+        let Some(defs) = self.0.get("$defs").and_then(Value::as_object) else {
+            return (node, None);
+        };
         let mut name = None;
-        for _ in 0..MAX_LINKS {
+        for _ in 0..=defs.len() {
             let Some(target) = node
                 .get("$ref")
                 .and_then(Value::as_str)
@@ -48,7 +49,7 @@ impl Schema {
             else {
                 break;
             };
-            let Some(definition) = self.0.get("$defs").and_then(|defs| defs.get(target)) else {
+            let Some(definition) = defs.get(target) else {
                 break;
             };
             name = Some(target);
