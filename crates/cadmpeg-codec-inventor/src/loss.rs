@@ -37,6 +37,9 @@ pub(crate) enum InventorLossCode {
     /// A helix curve record stores the zero vector as its axis; the axis is
     /// stated as the unit normal of the radial plane.
     GeometryHelixAxisAssumed,
+    /// A face states no loop on a plane, cylinder, or cone; the face is
+    /// stated partial.
+    TopologyFaceBoundaryUnstated,
     /// Structurally paired `RSe` segments have no record semantics.
     RseSegmentPairUntyped,
     /// `RSe` metadata streams are malformed or outside the implemented envelope.
@@ -365,6 +368,7 @@ impl InventorLossCode {
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::GeometryHelixAxisAssumed,
+        Self::TopologyFaceBoundaryUnstated,
         Self::RseSegmentPairUntyped,
         Self::RseMetadataStreamMalformed,
         Self::RseBulkStreamMalformed,
@@ -529,6 +533,7 @@ impl InventorLossCode {
                 "geometry.procedural-surface-not-transferred"
             }
             Self::GeometryHelixAxisAssumed => "geometry.helix-axis-assumed",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
             Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
             Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
@@ -738,6 +743,7 @@ impl InventorLossCode {
             | Self::PmiDatumSystemUnresolved => LossTaxonomy::PmiOmitted,
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::DrawingNativeOnly | Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -932,6 +938,7 @@ mod tests {
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
                 "geometry.helix-axis-assumed",
+                "topology.face-boundary-unstated",
                 "rse.segment-pair-untyped",
                 "rse.metadata-stream-malformed",
                 "rse.bulk-stream-malformed",

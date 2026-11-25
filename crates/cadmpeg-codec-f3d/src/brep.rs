@@ -162,6 +162,7 @@ impl Brep {
             attributes,
             unknowns,
             annotation_records,
+            unbounded_faces,
         );
         self.asm.stats.mesh_surface_faces += asm.stats.mesh_surface_faces;
         self.asm.stats.nurbs_surfaces += asm.stats.nurbs_surfaces;

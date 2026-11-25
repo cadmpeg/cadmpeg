@@ -77,6 +77,9 @@ loss_codes! {
     BoundaryPcurveDisagrees => "topology.boundary-pcurve-disagrees",
     /// A Type 144 boundary has no winding about its support normal and keeps its source traversal.
     BoundaryWindingUnresolved => "topology.boundary-winding-unresolved",
+    /// A face its source holds with no boundary on a plane, cylinder, or cone,
+    /// whose domain is unbounded, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved => "graph.pointer-unresolved",
     /// Parameter Data has more than one structural trailing pointer-group boundary.
@@ -197,6 +200,7 @@ impl IgesLossCode {
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::BoundaryPcurveDisagrees
             | Self::BoundaryWindingUnresolved
+            | Self::TopologyFaceBoundaryUnstated
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
@@ -261,6 +265,7 @@ impl IgesLossCode {
                 LossTaxonomy::SourceTopologyInvalid
             }
             Self::BoundaryWindingUnresolved => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::DisplayDataNotProjected | Self::LineWeightScaleUnavailable => {
@@ -365,6 +370,7 @@ mod tests {
                 "topology.boundary-pcurve-outside-support-domain",
                 "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",
+                "topology.face-boundary-unstated",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
