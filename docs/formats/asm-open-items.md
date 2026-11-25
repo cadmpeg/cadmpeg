@@ -421,6 +421,14 @@ projection.
 
 **Need.** A writer that adds a state must write a correct `stream_size`.
 
+### HS-02. Value of the `history_entry_count` preamble field
+
+**Question.** What does the fourth preamble field, `history_entry_count`, count?
+
+**Known.** `asm.md` §3.1 "The history-container record" gives the preamble. The field stores a positive value, and the least value is `1`. A chain of two states stores values from `1` to above `2000`. Longer chains store values from `1` to above `40000`. Two histories with the same states, the same records and the same bulletin-board changes store different values. Thus the stored history does not set the value.
+
+**Need.** A history stream saved after each edit of a series of edits of one design, in one session and over more than one session, with edits that add a feature and edits that undo one: the field compared across the saves with the edits and the sessions.
+
 ## 7. External kernel layers
 
 ### XL-01. Semantics of SAT source-stream recovery

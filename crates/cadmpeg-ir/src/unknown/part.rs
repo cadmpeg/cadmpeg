@@ -185,6 +185,18 @@ fn part_address(kind: &str, stream: Option<&StreamName>, offset: u64) -> Vec<u8>
     address
 }
 
+/// The address the stub id of a record given up after the decode is minted
+/// from: its kind and its path in the document, each length-prefixed, after
+/// a tag no length of a part's kind takes.
+fn record_address(kind: &str, path: &str) -> Vec<u8> {
+    let mut address = (u64::MAX - 1).to_be_bytes().to_vec();
+    for field in [kind.as_bytes(), path.as_bytes()] {
+        address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
+        address.extend_from_slice(field);
+    }
+    address
+}
+
 fn part_id(codec: &str, address: &[u8]) -> Result<UnknownId, CodecError> {
     UnknownId::mint(format!(
         "{codec}:source:part#{}",
@@ -207,6 +219,58 @@ pub struct GivenUpPart {
 }
 
 impl GivenUpPart {
+    /// The stub id of a record the decode wrapper gives up after the decode,
+    /// minted from codec, the record's kind, and its path in the document,
+    /// which stand for the part's kind, stream, and offset.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError::Malformed`] when the codec name cannot open an id.
+    pub(crate) fn record_id(codec: &str, kind: &str, path: &str) -> Result<UnknownId, CodecError> {
+        part_id(codec, &record_address(kind, path))
+    }
+
+    /// A record the decode wrapper gives up after the decode, as a part: its
+    /// kind is the record's, its stream is the record's path in the
+    /// document, its bytes are the record's canonical JSON `text`, kept
+    /// `untyped` with `classes`, and `loss` names it. It sits in no record,
+    /// so its stub links to the document.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError::Malformed`] when `path` is empty or the codec name
+    /// cannot open an id.
+    pub(crate) fn of_record(
+        codec: &'static str,
+        kind: &'static str,
+        path: &str,
+        text: Vec<u8>,
+        classes: impl IntoIterator<Item = ArenaClass>,
+        loss: LossNote,
+    ) -> Result<Self, CodecError> {
+        let stream = StreamName::try_from(path.to_owned())
+            .map_err(|_| CodecError::malformed("a given-up record has an empty path"))?;
+        let retained = RetainedSourceRecord::from_bytes(
+            SourceOwner::from(stream.clone()),
+            0,
+            RetainedBytes::Inline { data: text },
+        )?
+        .with_untyped(classes);
+        Ok(Self {
+            codec,
+            kind,
+            name: None,
+            stream: Some(stream),
+            offset: 0,
+            stub: NativeUnknownRecord {
+                id: Self::record_id(codec, kind, path)?,
+                links: Vec::new(),
+            },
+            retained,
+            loss,
+        })
+    }
+
     #[doc = "Coalesce repeated readings of the same source part, retaining every containing link."]
     #[doc = "Returns a malformed error when equal part identities carry different source images or losses."]
     pub fn coalesce(mut parts: Vec<Self>) -> Result<Vec<Self>, CodecError> {

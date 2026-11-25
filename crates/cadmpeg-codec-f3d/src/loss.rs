@@ -823,7 +823,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// A scope tail sets the third state byte; the scope is read as an active feature with no evaluated result.
     FeatureUnevaluatedStateAssumed,
-    /// A scope tail stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
+    /// A scope tail before the timeline marker stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
     FeatureNoResultActiveAssumed,
     /// A scope tail stores a state byte above `1`; the byte is read as set.
     FeatureStateByteAboveOne,
