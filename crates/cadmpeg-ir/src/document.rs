@@ -1414,7 +1414,7 @@ macro_rules! declare_document_arenas {
                         if !rewrite(&mut value) {
                             return false;
                         }
-                        let Ok(entity) = serde_json::from_value(value) else {
+                        let Ok(entity) = cadmpeg_core::serde_erase::from_json_value(&value) else {
                             return false;
                         };
                         rewritten.push(entity);
