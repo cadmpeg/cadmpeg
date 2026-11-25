@@ -168,22 +168,35 @@ fn state(
     }
 }
 
-/// States in a single chain, head first, with node indices 0, 1, 2, ...
+/// The states of a single chain, whose changes are given head first, in
+/// stored order (asm.md §3.2): the records stand in node-index order, and
+/// the node indices alternate between the two ends of the chain, the head
+/// `0`, the tail `1`, the head's next state `2`, the tail's previous state
+/// `3`, and so on.
 fn chain_of(changes: &[&[EntityChange]]) -> Vec<DeltaStateView<'static>> {
     let last = changes.len() - 1;
-    changes
+    let node = |at: usize| {
+        let node = if at <= last / 2 {
+            2 * at
+        } else {
+            2 * (last - at) + 1
+        };
+        i64::try_from(node).unwrap()
+    };
+    let mut states = changes
         .iter()
         .enumerate()
-        .map(|(i, &c)| {
-            let node = i64::try_from(i).unwrap();
+        .map(|(at, &c)| {
             state(
-                node,
-                (i > 0).then_some(node - 1),
-                (i < last).then_some(node + 1),
+                node(at),
+                (at > 0).then(|| node(at - 1)),
+                (at < last).then(|| node(at + 1)),
                 c,
             )
         })
-        .collect()
+        .collect::<Vec<_>>();
+    states.sort_by_key(|state| state.node_index);
+    states
 }
 
 type VisitedMap = (usize, Vec<(i64, i64)>);
@@ -211,6 +224,36 @@ fn walk_closes_a_chain_that_removes_every_slot_but_zero() {
     assert_eq!(
         seen,
         [(0, vec![(0, 0), (1, 1), (2, 2)]), (1, vec![(0, 0), (1, 1)]),]
+    );
+}
+
+#[test]
+fn walk_follows_the_links_of_a_stored_chain_from_the_head_to_the_tail() {
+    let states = chain_of(&[
+        &[EntityChange::Insert { new: 3 }],
+        &[EntityChange::Insert { new: 2 }],
+        &[EntityChange::Insert { new: 1 }],
+    ]);
+    assert_eq!(
+        states
+            .iter()
+            .map(|state| (state.node_index, state.previous_ref, state.next_ref))
+            .collect::<Vec<_>>(),
+        [
+            (0, None, Some(2)),
+            (1, Some(2), None),
+            (2, Some(0), Some(1))
+        ]
+    );
+    let (closed, seen) = walk_states(&states, 4, &[]);
+    assert!(closed);
+    assert_eq!(
+        seen,
+        [
+            (0, vec![(0, 0), (1, 1), (2, 2), (3, 3)]),
+            (2, vec![(0, 0), (1, 1), (2, 2)]),
+            (1, vec![(0, 0), (1, 1)]),
+        ]
     );
 }
 

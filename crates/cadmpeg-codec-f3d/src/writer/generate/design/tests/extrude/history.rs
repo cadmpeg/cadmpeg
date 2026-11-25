@@ -1020,3 +1020,102 @@ fn a_history_true_join_after_a_held_state_writes_that_state_and_its_body() {
         "{omitted}"
     );
 }
+
+/// [`with_a_second_extrude`] with a new body whose faces lie on the cube's
+/// surfaces where the two have the same surface, so that the two bodies
+/// share those carriers. Returns the design and the number of shared
+/// surfaces.
+fn sharing_carriers() -> (CadIr, usize) {
+    use std::collections::BTreeMap;
+    let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let content = |surface: &cadmpeg_ir::geometry::Surface| {
+        let mut value = serde_json::to_value(surface).expect("a surface serializes");
+        value
+            .as_object_mut()
+            .expect("a surface object")
+            .remove("id");
+        value
+    };
+    let (cube, prism): (Vec<_>, Vec<_>) = ir
+        .geometry
+        .surfaces
+        .iter()
+        .partition(|surface| !surface.id.as_str().contains("#second-"));
+    let shared = prism
+        .iter()
+        .filter_map(|surface| {
+            let on = cube.iter().find(|cube| content(cube) == content(surface))?;
+            Some((surface.id.clone(), on.id.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for face in &mut ir.geometry.faces {
+        if let Some(on) = shared.get(&face.surface) {
+            face.surface = on.clone();
+        }
+    }
+    ir.geometry
+        .surfaces
+        .retain(|surface| !shared.contains_key(&surface.id));
+    ir.finalize();
+    (ir, shared.len())
+}
+
+#[test]
+fn a_carrier_that_two_bodies_share_is_in_the_state_of_the_first() {
+    let (ir, shared) = sharing_carriers();
+    assert!(shared > 0, "the prism shares no surface with the cube");
+    for form in [
+        MissingStateForm::GeometryTrue,
+        MissingStateForm::HistoryTrue,
+    ] {
+        let (report, decoded, bytes) = write_bytes_as(&ir, form);
+        assert_eq!(
+            kinds(&decoded),
+            ["sketch", "extrude", "sketch", "extrude"],
+            "{:#?}",
+            report.losses
+        );
+        assert_eq!(decoded.geometry.bodies.len(), 2);
+        assert_eq!(decoded.geometry.surfaces.len(), 12 - shared);
+        assert_eq!(
+            history_chain(&bytes),
+            [
+                (4, -1, 2, 0, vec![(0, 2, true)]),
+                (2, 2, -1, 1, Vec::new()),
+                (3, 0, 1, 2, vec![(2, 2, true)]),
+            ]
+        );
+        let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+        assert!(!residual.contains("ASM record"), "{residual}");
+        each_board_inserts_the_records_of_its_body(&decoded, &bytes);
+    }
+}
+
+#[test]
+fn a_state_whose_result_body_is_not_written_names_its_feature_and_body() {
+    use cadmpeg_ir::ids::BodyId;
+    let body = |name: &str| BodyId::mint(format!("test:model:body#{name}")).expect("a body id");
+    let feature =
+        |name: &str| FeatureId::mint(format!("test:model:feature#{name}")).expect("a feature id");
+    let (cube, prism) = (body("cube"), body("prism"));
+    let (first, second) = (feature("first"), feature("second"));
+    let written = [&prism, &cube];
+    assert_eq!(
+        crate::writer::generate::design::state_bodies(
+            [(&first, &cube), (&second, &prism)],
+            &written
+        )
+        .expect("both bodies are written"),
+        [1, 0]
+    );
+    let error = crate::writer::generate::design::state_bodies(
+        [(&first, &cube), (&second, &prism)],
+        &[&cube],
+    )
+    .expect_err("the prism is not written")
+    .to_string();
+    assert!(
+        error.contains(second.as_str()) && error.contains(prism.as_str()),
+        "{error}"
+    );
+}

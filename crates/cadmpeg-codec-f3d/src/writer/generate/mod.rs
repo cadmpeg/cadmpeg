@@ -221,7 +221,10 @@ fn attempt<W: Write + Seek>(
     };
     let (smbh, history_notes) = match neutral.as_ref().filter(|_| stamped) {
         Some(neutral) => {
-            design::history::with_insertion_history(&smbh, &neutral.history_states(target))
+            let states = neutral
+                .history_states(target)
+                .map_err(Failure::neutral_design)?;
+            design::history::with_insertion_history(&smbh, &states)
                 .map_err(Failure::neutral_design)?
         }
         None => (smbh, Vec::new()),

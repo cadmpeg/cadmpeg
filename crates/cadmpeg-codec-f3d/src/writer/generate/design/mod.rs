@@ -53,6 +53,7 @@ use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::presentation::GeneratedDesignRegistry;
@@ -693,16 +694,20 @@ impl NeutralDesign<'_> {
     /// state after the root state, in state order: one state that holds
     /// every body for a `Base Feature`, and the body of each geometry item
     /// (f3d.md §3.1, "History states").
-    pub(super) fn history_states(&self, target: &CadIr) -> Vec<usize> {
-        let bodies = self.base_feature.roster_bodies(target);
-        self.item
-            .items()
-            .iter()
-            .filter_map(|item| {
-                let body = item.body()?;
-                bodies.iter().position(|written| written.id == body)
-            })
-            .collect()
+    pub(super) fn history_states(&self, target: &CadIr) -> Result<Vec<usize>, CodecError> {
+        let written = self
+            .base_feature
+            .roster_bodies(target)
+            .into_iter()
+            .map(|body| body.id)
+            .collect::<Vec<_>>();
+        state_bodies(
+            self.item
+                .items()
+                .iter()
+                .filter_map(|item| Some((item.feature(), item.body()?))),
+            &written,
+        )
     }
 
     /// The parameter records and the design's records, with their types
@@ -1179,4 +1184,24 @@ fn walk<'a>(
             Member::Container(nested) => walk(nested, containers, visited, features),
         }
     }
+}
+
+/// The position among `written` of the result body of each feature of
+/// `results`, in order. A feature whose result body is not among `written`
+/// fails the history with its name and the body's, so the design's
+/// fallback charges it.
+fn state_bodies<'a>(
+    results: impl IntoIterator<Item = (&'a FeatureId, &'a BodyId)>,
+    written: &[&BodyId],
+) -> Result<Vec<usize>, CodecError> {
+    results
+        .into_iter()
+        .map(|(feature, body)| {
+            written.iter().position(|&at| at == body).ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "the history state of {feature} holds its result body {body}, which the B-rep stream does not write"
+                ))
+            })
+        })
+        .collect()
 }

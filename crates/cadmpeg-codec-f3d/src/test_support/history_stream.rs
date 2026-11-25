@@ -41,7 +41,9 @@ pub(crate) struct BulletinBoard {
 }
 
 /// A history partition in chain order: `states[0]` is the head, the current
-/// model, and the last state is the tail, the initial model.
+/// model, and the last state is the tail, the initial model. The stream
+/// stores the states in node-index order, and the node indices alternate
+/// between the two ends of the chain (asm.md §3.2).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct HistoryPartition {
     pub(crate) states: Vec<Vec<BulletinBoard>>,
@@ -57,8 +59,18 @@ impl HistoryPartition {
     pub(crate) fn append_to(&self, smbh: &mut Vec<u8>) {
         let count = i64::try_from(self.states.len()).unwrap();
         assert!(count > 0, "a history partition has a head state");
+        let last = count - 1;
+        // The node index of the state at chain position `at`: the head `0`,
+        // the tail `1`, the head's next state `2`, and so on.
+        let node_of = |at: i64| {
+            if at <= last / 2 {
+                2 * at
+            } else {
+                2 * (last - at) + 1
+            }
+        };
         // The head state's id equals the preamble stream size.
-        let state_id = |node: i64| count - node;
+        let state_id = |at: i64| count - at;
         for part in ["Begin", "of", "ASM", "History"] {
             t_subident(smbh, part);
         }
@@ -67,18 +79,20 @@ impl HistoryPartition {
         for value in [state_id(0), state_id(0), 0, count] {
             t_long(smbh, value);
         }
-        for reference in [-1, 0, count - 1, -1] {
+        for reference in [-1, 0, node_of(last), -1] {
             t_ref(smbh, reference);
         }
         t_end(smbh);
-        for (node, boards) in (0..).zip(&self.states) {
+        let mut stored = (0..).zip(&self.states).collect::<Vec<_>>();
+        stored.sort_by_key(|&(at, _)| node_of(at));
+        for (at, boards) in stored {
             t_ident(smbh, "delta_state");
-            for value in [state_id(node), 1, 0] {
+            for value in [state_id(at), 1, 0] {
                 t_long(smbh, value);
             }
-            let previous = if node == 0 { -1 } else { node - 1 };
-            let next = if node + 1 == count { -1 } else { node + 1 };
-            for reference in [previous, next, node, -1, 0] {
+            let previous = if at == 0 { -1 } else { node_of(at - 1) };
+            let next = if at == last { -1 } else { node_of(at + 1) };
+            for reference in [previous, next, node_of(at), -1, 0] {
                 t_ref(smbh, reference);
             }
             smbh.push(0x0b);
@@ -244,7 +258,7 @@ impl DesignScale {
         }
         let first_revision = i64::try_from(self.active_records()).unwrap();
         let mut partition = HistoryPartition::default();
-        // States are written head first, so a tool body's deletion allocates
+        // States are built head first, so a tool body's deletion allocates
         // the revisions that its older insertion state then inserts.
         let mut tool_revisions = None;
         for state in (0..self.states).rev() {
