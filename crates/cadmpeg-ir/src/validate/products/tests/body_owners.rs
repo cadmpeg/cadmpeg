@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part 10: every body of the geometry is listed by exactly one definition's
-//! `bodies`, or by `instance_bodies` entries and by no definition's `bodies`
-//! (§8.1).
+//! `bodies` and by no `instance_bodies` entry, or by `instance_bodies` entries
+//! and by no definition's `bodies` (§8.1).
 
 use crate::design::selection::OccurrencePath;
 use crate::document::CadIr;
@@ -99,6 +99,26 @@ fn a_body_listed_once_or_by_instance_bodies_breaks_no_rule() {
     let (mut ir, _) = cube();
     ir.fragment = true;
     assert!(owner_findings(&ir).is_empty());
+}
+
+#[test]
+fn a_body_an_instance_bodies_entry_shows_is_listed_by_no_definition() {
+    let (mut ir, body) = cube();
+    let mut other = part("other");
+    other.bodies.push(body.clone());
+    ir.model.product_definitions.push(other);
+    ir.model.product_definitions[0]
+        .instance_bodies
+        .push(InstanceBodies {
+            occurrence: OccurrencePath(Vec::new()),
+            bodies: vec![body.clone()],
+        });
+    let found = owner_findings(&ir);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].entity.as_deref(), Some(body.as_str()));
+    assert_eq!(found[0].severity, Severity::Error);
+    assert_eq!(found[0].related, ["test:model:product-definition#other"]);
+    assert!(found[0].message.contains("an `instance_bodies` entry"));
 }
 
 #[test]

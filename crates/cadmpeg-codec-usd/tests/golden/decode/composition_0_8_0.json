@@ -1452,8 +1452,7 @@
           "value": {
             "code": "composition.over-undefined",
             "kind": "reference_graph_not_closed",
-            "namespace": "usd",
-            "strict_floor": "warning"
+            "namespace": "usd"
           }
         },
         "message": "1 prims have only `over` specifications in this layer and were not composed: /Unrelated",

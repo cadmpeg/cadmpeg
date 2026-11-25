@@ -2017,8 +2017,7 @@
             "value": {
               "code": "source.kernel-dialect-unverified",
               "kind": "source_dialect_unverified",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
@@ -2030,8 +2029,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 300 states no loop on a plane, which no face covers whole: face nx:s0:face#300 is stated partial",
@@ -2043,8 +2041,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 301 states no loop on a plane, which no face covers whole: face nx:s0:face#301 is stated partial",
@@ -2056,8 +2053,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 302 states no loop on a plane, which no face covers whole: face nx:s0:face#302 is stated partial",
@@ -2069,8 +2065,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 303 states no loop on a plane, which no face covers whole: face nx:s0:face#303 is stated partial",
@@ -2082,8 +2077,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 304 states no loop on a plane, which no face covers whole: face nx:s0:face#304 is stated partial",
@@ -2095,8 +2089,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 305 states no loop on a plane, which no face covers whole: face nx:s0:face#305 is stated partial",
@@ -2108,8 +2101,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 306 states no loop on a plane, which no face covers whole: face nx:s0:face#306 is stated partial",
@@ -2121,8 +2113,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 307 states no loop on a plane, which no face covers whole: face nx:s0:face#307 is stated partial",
@@ -2134,8 +2125,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 308 states no loop on a plane, which no face covers whole: face nx:s0:face#308 is stated partial",
@@ -2147,8 +2137,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 309 states no loop on a plane, which no face covers whole: face nx:s0:face#309 is stated partial",
@@ -2160,8 +2149,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 310 states no loop on a plane, which no face covers whole: face nx:s0:face#310 is stated partial",
@@ -2173,8 +2161,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 311 states no loop on a plane, which no face covers whole: face nx:s0:face#311 is stated partial",
@@ -2186,8 +2173,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 312 states no loop on a plane, which no face covers whole: face nx:s0:face#312 is stated partial",
@@ -2199,8 +2185,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 313 states no loop on a plane, which no face covers whole: face nx:s0:face#313 is stated partial",
@@ -2212,8 +2197,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 314 states no loop on a plane, which no face covers whole: face nx:s0:face#314 is stated partial",
@@ -2225,8 +2209,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 315 states no loop on a plane, which no face covers whole: face nx:s0:face#315 is stated partial",
@@ -2238,8 +2221,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 316 states no loop on a plane, which no face covers whole: face nx:s0:face#316 is stated partial",
@@ -2251,8 +2233,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 317 states no loop on a plane, which no face covers whole: face nx:s0:face#317 is stated partial",
@@ -2264,8 +2245,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 318 states no loop on a plane, which no face covers whole: face nx:s0:face#318 is stated partial",
@@ -2277,8 +2257,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 319 states no loop on a plane, which no face covers whole: face nx:s0:face#319 is stated partial",
@@ -2290,8 +2269,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 320 states no loop on a plane, which no face covers whole: face nx:s0:face#320 is stated partial",
@@ -2303,8 +2281,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 321 states no loop on a plane, which no face covers whole: face nx:s0:face#321 is stated partial",
@@ -2316,8 +2293,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 322 states no loop on a plane, which no face covers whole: face nx:s0:face#322 is stated partial",
@@ -2329,8 +2305,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 323 states no loop on a plane, which no face covers whole: face nx:s0:face#323 is stated partial",
@@ -2342,8 +2317,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 324 states no loop on a plane, which no face covers whole: face nx:s0:face#324 is stated partial",
@@ -2355,8 +2329,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 325 states no loop on a plane, which no face covers whole: face nx:s0:face#325 is stated partial",
@@ -2368,8 +2341,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 326 states no loop on a plane, which no face covers whole: face nx:s0:face#326 is stated partial",
@@ -2381,8 +2353,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 327 states no loop on a plane, which no face covers whole: face nx:s0:face#327 is stated partial",
@@ -2394,8 +2365,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 328 states no loop on a plane, which no face covers whole: face nx:s0:face#328 is stated partial",
@@ -2407,8 +2377,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 329 states no loop on a plane, which no face covers whole: face nx:s0:face#329 is stated partial",
@@ -2420,8 +2389,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 330 states no loop on a plane, which no face covers whole: face nx:s0:face#330 is stated partial",
@@ -2433,8 +2401,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 331 states no loop on a plane, which no face covers whole: face nx:s0:face#331 is stated partial",
@@ -2446,8 +2413,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 332 states no loop on a plane, which no face covers whole: face nx:s0:face#332 is stated partial",
@@ -2459,8 +2425,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 333 states no loop on a plane, which no face covers whole: face nx:s0:face#333 is stated partial",
@@ -2472,8 +2437,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 334 states no loop on a plane, which no face covers whole: face nx:s0:face#334 is stated partial",
@@ -2485,8 +2449,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 335 states no loop on a plane, which no face covers whole: face nx:s0:face#335 is stated partial",
@@ -2498,8 +2461,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 336 states no loop on a plane, which no face covers whole: face nx:s0:face#336 is stated partial",
@@ -2511,8 +2473,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 337 states no loop on a plane, which no face covers whole: face nx:s0:face#337 is stated partial",
@@ -2524,8 +2485,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 338 states no loop on a plane, which no face covers whole: face nx:s0:face#338 is stated partial",
@@ -2537,8 +2497,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 339 states no loop on a plane, which no face covers whole: face nx:s0:face#339 is stated partial",
@@ -2550,8 +2509,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 340 states no loop on a plane, which no face covers whole: face nx:s0:face#340 is stated partial",
@@ -2563,8 +2521,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 341 states no loop on a plane, which no face covers whole: face nx:s0:face#341 is stated partial",
@@ -2576,8 +2533,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 342 states no loop on a plane, which no face covers whole: face nx:s0:face#342 is stated partial",
@@ -2589,8 +2545,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 343 states no loop on a plane, which no face covers whole: face nx:s0:face#343 is stated partial",
@@ -2602,8 +2557,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 344 states no loop on a plane, which no face covers whole: face nx:s0:face#344 is stated partial",
@@ -2615,8 +2569,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 345 states no loop on a plane, which no face covers whole: face nx:s0:face#345 is stated partial",
@@ -2628,8 +2581,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 346 states no loop on a plane, which no face covers whole: face nx:s0:face#346 is stated partial",
@@ -2641,8 +2593,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 347 states no loop on a plane, which no face covers whole: face nx:s0:face#347 is stated partial",
@@ -2654,8 +2605,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 348 states no loop on a plane, which no face covers whole: face nx:s0:face#348 is stated partial",
@@ -2667,8 +2617,7 @@
             "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "parasolid#0 FACE 349 states no loop on a plane, which no face covers whole: face nx:s0:face#349 is stated partial",
@@ -3931,8 +3880,7 @@
           "value": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "nx",
-            "strict_floor": "warning"
+            "namespace": "nx"
           }
         },
         "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",

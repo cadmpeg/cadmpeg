@@ -307,22 +307,13 @@ pub fn push_extras(
     let mut collisions = Vec::new();
     for layer in extras {
         let ClassifiedLayer { matched, carrier } = layer;
-        match layers.insert(matched) {
-            Ok(()) => {}
-            Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)) => {
-                collisions.push(format!(
-                    "the container produced a duplicate {} dialect layer at carrier {carrier}; \
-                     the later classification was omitted",
-                    rejected.format()
-                ));
-            }
-            Err(cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected)) => {
-                collisions.push(format!(
-                    "the container produced an untagged {} dialect layer at carrier {carrier}; \
-                     the later classification was omitted",
-                    rejected.format()
-                ));
-            }
+        if let Err(cadmpeg_core::dialect::DuplicateDialectLayer(rejected)) = layers.insert(matched)
+        {
+            collisions.push(format!(
+                "the container produced a duplicate {} dialect layer at carrier {carrier}; \
+                 the later classification was omitted",
+                rejected.format()
+            ));
         }
     }
     collisions
