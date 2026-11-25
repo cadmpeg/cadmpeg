@@ -321,12 +321,12 @@ impl References {
     }
 }
 
-/// The canonical JSON text of the copies of one record: the record's own
-/// where there is one copy, and the array of the copies otherwise. A value
-/// with no canonical JSON keeps its plain JSON text.
+/// The compact canonical JSON text of the copies of one record: the
+/// record's own where there is one copy, and the array of the copies
+/// otherwise. A value with no canonical JSON keeps its plain JSON text.
 pub(crate) fn record_text<T: Serialize>(copies: &[T]) -> String {
     fn text<U: Serialize + ?Sized>(value: &U) -> String {
-        crate::hash::finite_json::to_canonical_json_string(value).unwrap_or_else(|_| {
+        crate::hash::finite_json::to_compact_canonical_json_string(value).unwrap_or_else(|_| {
             crate::hash::finite_json::to_json_value(value)
                 .map(|value| value.to_string())
                 .unwrap_or_default()

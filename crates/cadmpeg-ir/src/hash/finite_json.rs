@@ -166,6 +166,53 @@ pub fn to_canonical_json_string<T: Serialize + ?Sized>(
         .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
 }
 
+/// Renders `value` as canonical JSON text with no whitespace between tokens:
+/// the text `serde_json::to_string` writes, with canonical floats. A
+/// non-finite float is refused.
+pub(crate) fn to_compact_canonical_json_string<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<String, CanonicalJsonError> {
+    let mut compact = Compact::default();
+    write_canonical_json(CanonicalAdmission::unlimited(), &mut compact, value)?;
+    String::from_utf8(compact.bytes)
+        .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
+}
+
+/// Keeps the pretty JSON written to it without the spaces and line breaks
+/// between tokens.
+#[derive(Default)]
+struct Compact {
+    bytes: Vec<u8>,
+    in_string: bool,
+    escaped: bool,
+}
+
+impl std::io::Write for Compact {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for &byte in buf {
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                }
+            } else if byte == b' ' || byte == b'\n' {
+                continue;
+            } else if byte == b'"' {
+                self.in_string = true;
+            }
+            self.bytes.push(byte);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Returns the `serde_json::Value` that `serde_json::to_value` returns for
 /// `value`.
 ///

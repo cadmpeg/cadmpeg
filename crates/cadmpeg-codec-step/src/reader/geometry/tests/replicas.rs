@@ -1098,13 +1098,13 @@ fn a_surface_replica_chain_past_the_document_depth_is_given_up_at_decode() {
     }));
 }
 
-/// Whether `message` names STEP record `#step`, and not a record whose number
-/// starts with the same digits.
+/// Whether `message` names STEP record `#step`: no letter or digit follows
+/// the number, as one does in a longer record number or a stub's digest.
 fn names_record(message: &str, step: usize) -> bool {
     let token = format!("#{step}");
-    message
-        .match_indices(&token)
-        .any(|(at, _)| !message[at + token.len()..].starts_with(|next: char| next.is_ascii_digit()))
+    message.match_indices(&token).any(|(at, _)| {
+        !message[at + token.len()..].starts_with(|next: char| next.is_ascii_alphanumeric())
+    })
 }
 
 /// A replica one placement past [`MAX_GEOMETRY_NESTING`] keeps its record with
