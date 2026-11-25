@@ -5,6 +5,7 @@ use crate::archive::Bundle;
 use crate::loss::OnshapeLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use serde_json::Value;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 pub(super) type ReferenceKey = [String; 5];
@@ -19,6 +20,7 @@ pub(super) struct Index<'a> {
     pub studios: BTreeMap<StudioKey, usize>,
     pub native_features: BTreeMap<(String, String), &'a Value>,
     external: BTreeMap<StudioKey, Option<&'a str>>,
+    pinned: String,
 }
 
 impl<'a> Index<'a> {
@@ -27,6 +29,7 @@ impl<'a> Index<'a> {
         definition: &'a Value,
         manifest: &'a Value,
         bundle: &'a Bundle<'_>,
+        pinned: &str,
         report: &mut Report,
     ) -> Result<Self, Error> {
         let mut index = Self {
@@ -37,6 +40,7 @@ impl<'a> Index<'a> {
             studios: BTreeMap::new(),
             native_features: BTreeMap::new(),
             external: BTreeMap::new(),
+            pinned: pinned.into(),
         };
         for row in source_rows(manifest, "external", report) {
             ctx.charge_entities(1, "Onshape external reference index")?;
@@ -73,14 +77,14 @@ impl<'a> Index<'a> {
             });
             match path {
                 Ok(path) => match index.occurrences.entry(path) {
-                    std::collections::btree_map::Entry::Occupied(entry) => {
+                    Entry::Occupied(entry) => {
                         report.push_coded(
                             &key(entry.key()),
                             OnshapeLossCode::AssemblyRecordUnsupported,
                             "occurrence path repeats; retained the first placement",
                         );
                     }
-                    std::collections::btree_map::Entry::Vacant(entry) => {
+                    Entry::Vacant(entry) => {
                         entry.insert(row);
                     }
                 },
@@ -105,14 +109,44 @@ impl<'a> Index<'a> {
                 );
                 continue;
             }
-            index
-                .subassemblies
-                .entry(index.definition_key(sub))
-                .or_insert(sub);
+            if sub.get("instances").is_none() {
+                report.push_coded(
+                    "subassembly",
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    "subassembly record has no instances field; it decodes as an empty subassembly",
+                );
+            }
+            let definition_key = index.definition_key(sub);
+            match index.subassemblies.entry(definition_key) {
+                Entry::Occupied(entry) => report.push_coded(
+                    "subassembly",
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    format!(
+                        "subassembly definition repeats; retained the first record: {:?}",
+                        entry.key()
+                    ),
+                ),
+                Entry::Vacant(entry) => {
+                    entry.insert(sub);
+                }
+            }
         }
         for part in source_rows(definition, "parts", report) {
             ctx.charge_entities(1, "Onshape part identity index")?;
-            index.parts.entry(index.reference(part)).or_insert(part);
+            let reference = index.reference(part);
+            match index.parts.entry(reference) {
+                Entry::Occupied(entry) => report.push_coded(
+                    "part",
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    format!(
+                        "part identity repeats; retained the first record: {:?}",
+                        entry.key()
+                    ),
+                ),
+                Entry::Vacant(entry) => {
+                    entry.insert(part);
+                }
+            }
             *index.studios.entry(studio_key(part)).or_default() += 1;
             if let Some(name) = part.get("name").and_then(Value::as_str) {
                 let (document, element) = studio_key(part);
@@ -157,14 +191,25 @@ impl<'a> Index<'a> {
             .and_then(Value::as_str)
             .or_else(|| self.external.get(&studio_key(row)).copied().flatten())
     }
+    /// The identity key of a source row. The pinned document microversion and
+    /// an omitted microversion share one key component, as do an omitted,
+    /// empty and `default` configuration.
     pub(super) fn reference(&self, row: &Value) -> ReferenceKey {
         let (document, element) = studio_key(row);
+        let configuration = string(row, "configuration");
         [
             document,
             element,
             string(row, "partId"),
-            self.microversion(row).unwrap_or("").into(),
-            string(row, "configuration"),
+            self.microversion(row)
+                .filter(|microversion| *microversion != self.pinned)
+                .unwrap_or("")
+                .into(),
+            if configuration == "default" {
+                String::new()
+            } else {
+                configuration
+            },
         ]
     }
     pub(super) fn definition_key(&self, row: &Value) -> DefinitionKey {

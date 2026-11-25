@@ -34,7 +34,24 @@ pub(super) fn read(
     let mut model = Model::from_decoded(empty(ctx, root), None);
     let mut bodies = BTreeMap::new();
     let mut single_bodies = BTreeMap::new();
-    for element in rows(manifest, "elements").map_err(Error::Decode)? {
+    let elements = rows(manifest, "elements").map_err(Error::Decode)?;
+    let mut declared = BTreeMap::new();
+    for (position, element) in elements.iter().enumerate() {
+        if let Some(eid) = element.get("id").and_then(Value::as_str) {
+            declared.entry(eid).or_insert(position);
+        }
+    }
+    for (position, element) in elements.iter().enumerate() {
+        if let Some(eid) = element.get("id").and_then(Value::as_str) {
+            if declared.get(eid) != Some(&position) {
+                report.push_coded(
+                    eid,
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    "element id repeats; retained the first declaration",
+                );
+                continue;
+            }
+        }
         if element.get("type").and_then(Value::as_str) == Some("ASSEMBLY")
             && !element
                 .get("id")
@@ -96,6 +113,9 @@ pub(super) fn read(
             )
         };
         let mut ir = rescope_home(ctx, &part.ir, &tail)?;
+        if model.ir.source.is_none() {
+            model.ir.source.clone_from(&ir.source);
+        }
         let mut annotations = part.source_fidelity.annotations;
         annotations
             .map_ids(rescope)?
@@ -177,14 +197,13 @@ pub(super) fn read(
         );
         return Ok(model);
     }
-    if rows(manifest, "elements")
-        .map_err(Error::Decode)?
-        .iter()
-        .any(|element| {
-            element.get("id").and_then(Value::as_str) == Some(root_id)
-                && element.get("type").and_then(Value::as_str) == Some("PARTSTUDIO")
-        })
-    {
+    if declared.get(root_id).is_some_and(|position| {
+        elements
+            .get(*position)
+            .and_then(|element| element.get("type"))
+            .and_then(Value::as_str)
+            == Some("PARTSTUDIO")
+    }) {
         return Ok(model);
     }
     let definition = match bundle.json(&format!("assemblies/{root_id}/definition.json")) {
@@ -198,7 +217,7 @@ pub(super) fn read(
             return Ok(model);
         }
     };
-    let index = index::Index::build(ctx, definition, manifest, bundle, report)?;
+    let index = index::Index::build(ctx, definition, manifest, bundle, mid, report)?;
     let mut products = BTreeMap::new();
     for (position, product) in model.ir.model.product_definitions.iter().enumerate() {
         ctx.charge_entities(1, "Onshape product identity index")?;

@@ -76,6 +76,10 @@ impl OnshapeLossCode {
                 self.code(),
                 match self {
                     Self::StepUnreadable => LossTaxonomy::GeometryNotTransferred,
+                    Self::AssemblyReferenceUnresolved => LossTaxonomy::AssemblyComponentsExternal,
+                    Self::AssemblyRecordUnsupported => {
+                        LossTaxonomy::AssemblyPlacementsNotTransferred
+                    }
                     Self::EmptyMember | Self::MemberTooLarge | Self::MemberUnreadable => {
                         LossTaxonomy::MetadataNotTransferred
                     }

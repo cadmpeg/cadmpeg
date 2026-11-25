@@ -173,9 +173,8 @@ fn mate(
         [first.joint, second.joint],
         None,
     );
-    if !joint.set_frame_sense(sense) {
-        return Err(unsupported("joint rejects its solved axis sense".into()));
-    }
+    // A paired joint always stores its frame sense.
+    joint.set_frame_sense(sense);
     joint.suppressed = suppressed
         || feature
             .get("suppressed")
@@ -272,7 +271,7 @@ fn connector(
             detached: false,
         },
         world,
-        nested: path.len() > 1,
+        nested: components.len() > 1,
     })
 }
 
@@ -334,14 +333,11 @@ fn quantities(
             }
         }
     }
-    let disabled = |family: &str| {
-        parameters.iter().any(|(name, value)| {
-            let lower = name.to_ascii_lowercase();
-            lower.contains(family) && lower.contains("enable") && value.as_bool() == Some(false)
-        })
-    };
-    let disabled_limits = disabled("limit");
-    let disabled_offsets = disabled("offset");
+    let switches: Vec<Vec<String>> = parameters
+        .iter()
+        .filter(|(_, value)| value.as_bool() == Some(false))
+        .filter_map(|(name, _)| switch_scope(name))
+        .collect();
     let mut ids = std::collections::BTreeSet::new();
     for (name, value) in parameters {
         if matches!(
@@ -361,8 +357,10 @@ fn quantities(
         }
         let lower = name.to_ascii_lowercase();
         if lower.contains("limit") || lower.contains("offset") {
-            if (lower.contains("limit") && disabled_limits)
-                || (lower.contains("offset") && disabled_offsets)
+            let tokens = name_tokens(&name);
+            if switches
+                .iter()
+                .any(|scope| scope.iter().all(|token| tokens.contains(token)))
             {
                 continue;
             }
@@ -388,4 +386,48 @@ fn quantities(
         ids.insert(name);
     }
     Ok(ids.into_iter().collect())
+}
+
+/// Lowercase words of a parameter name, split at separators and camel-case
+/// boundaries, with a plural `s` removed.
+fn name_tokens(name: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut word = String::new();
+    let mut previous_lower = false;
+    for character in name.chars() {
+        let boundary = !character.is_alphanumeric() || (character.is_uppercase() && previous_lower);
+        if boundary && !word.is_empty() {
+            tokens.push(std::mem::take(&mut word));
+        }
+        if character.is_alphanumeric() {
+            word.extend(character.to_lowercase());
+        }
+        previous_lower = character.is_lowercase();
+    }
+    if !word.is_empty() {
+        tokens.push(word);
+    }
+    for token in &mut tokens {
+        if token.len() > 3 && token.ends_with('s') {
+            token.pop();
+        }
+    }
+    tokens
+}
+
+/// The words an `enable` switch governs: its own name without the switch
+/// word. A switch governs a limit or offset only when it names one.
+fn switch_scope(name: &str) -> Option<Vec<String>> {
+    let tokens = name_tokens(name);
+    if !tokens.iter().any(|token| token.starts_with("enable")) {
+        return None;
+    }
+    let scope: Vec<String> = tokens
+        .into_iter()
+        .filter(|token| !token.starts_with("enable"))
+        .collect();
+    scope
+        .iter()
+        .any(|token| matches!(token.as_str(), "limit" | "offset"))
+        .then_some(scope)
 }
