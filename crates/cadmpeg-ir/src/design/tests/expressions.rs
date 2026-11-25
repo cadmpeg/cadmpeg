@@ -364,7 +364,6 @@ fn every_printed_expression_reads_back() {
                 assert!(holds_a_call_with_no_argument(&node), "{node:?}: {error}");
                 refused += 1;
             }
-            Err(error) => panic!("{node:?}: {error}"),
         }
     }
     assert!(
