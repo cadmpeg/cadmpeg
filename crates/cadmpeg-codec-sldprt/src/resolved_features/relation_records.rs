@@ -311,8 +311,29 @@ impl<'l> DimensionClaims<'l> {
     }
 }
 
+/// Parasolid's linear resolution in metres: the tolerance in force for a
+/// part whose bodies store no precision (`cadir-v11.md` §2.3), and the
+/// resolution of sketch comparisons in `sldprt.md`.
+const LINEAR_RESOLUTION_M: f64 = 1.0e-8;
+
+fn within_linear_resolution(left: f64, right: f64) -> bool {
+    (left - right).abs() <= LINEAR_RESOLUTION_M
+}
+
+/// The point-distance families, whose relation the two sketch points of its
+/// operands measure.
+fn is_point_distance_family(family: FeatureInputRelationFamily) -> bool {
+    matches!(
+        family,
+        FeatureInputRelationFamily::PointPointDistance
+            | FeatureInputRelationFamily::PointPointHorizontalDistance
+            | FeatureInputRelationFamily::PointPointVerticalDistance
+    )
+}
+
 /// Whether a point-distance relation's bound operands are two sketch points
-/// whose distance, along the family's axis, is the relation's value.
+/// whose distance, along the family's axis, is the relation's value within
+/// the linear resolution.
 fn relation_measures_its_value(
     relation: &FeatureInputRelationInstance,
     index: &RelationOperandIndex<'_>,
@@ -345,53 +366,56 @@ fn relation_measures_its_value(
         || point_distance(first, second),
         |horizontal| axis_distance(first, second, horizontal),
     );
-    same_relation_dimension(measured, target.get())
+    within_linear_resolution(measured, target.get())
 }
 
-/// One loss note naming the sketch dimensions of a compound-file lane that
-/// form no relation instance because no declaration claims them and their
-/// relation class is unknown (open item EV-05).
-pub(crate) fn unclassed_dimension_note(
-    histories: &[crate::records::FeatureHistory],
+/// A lane's relation instances, and for a compound-file lane the loss note
+/// that names its sketch dimension scalars of unknown relation class.
+pub(super) struct LaneRelations {
+    pub(super) instances: Vec<FeatureInputRelationInstance>,
+    pub(super) unclassed: Option<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// One loss note naming `scalars`, the sketch dimension scalars of a
+/// compound-file lane whose relation class is unknown (open item EV-05) and
+/// that no relation instance holds.
+fn unclassed_dimension_note(
     lane: &FeatureInputLane,
+    sketch_features: &HashSet<&str>,
+    scalars: &HashSet<String>,
+    instances: &[FeatureInputRelationInstance],
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    if !compound_opening(&lane.native_payload) {
-        return None;
-    }
-    let intervals = feature_intervals(histories, lane);
-    let claims = DimensionClaims::of(lane, &intervals);
-    if claims.unclaimed.is_empty() {
-        return None;
-    }
-    let sketch_features = sketch_features(histories);
-    let formed = lane
-        .relation_instances
+    let held = instances
         .iter()
         .flat_map(FeatureInputRelationInstance::scalar_refs)
         .map(String::as_str)
         .collect::<HashSet<_>>();
-    let unclassed = claims
-        .unclaimed
+    let mut unclassed = lane
+        .scalars
         .iter()
         .filter(|scalar| {
-            scalar
-                .feature_ref
-                .as_deref()
-                .is_some_and(|feature| sketch_features.contains(feature))
-                && !formed.contains(scalar.id.as_str())
+            scalars.contains(scalar.id.as_str())
+                && !held.contains(scalar.id.as_str())
+                && scalar
+                    .feature_ref
+                    .as_deref()
+                    .is_some_and(|feature| sketch_features.contains(feature))
         })
-        .map(|scalar| scalar.id.as_str())
         .collect::<Vec<_>>();
+    unclassed.sort_by_key(|scalar| scalar.offset);
     if unclassed.is_empty() {
         return None;
     }
+    let ids = unclassed
+        .iter()
+        .map(|scalar| scalar.id.as_str())
+        .collect::<Vec<_>>();
     Some(
         crate::loss::SldprtLossCode::SketchDimensionClassUnknown.note(format!(
             "sketch dimension scalar(s) {} of a compound-file lane form no relation instance: \
-             the nearest relation-class declaration of each states another quantity than its \
-             record, and its relation class is unknown (open item EV-05). The scalar records \
-             are kept as native records.",
-            crate::loss::named(&unclassed)
+             the relation class of their dimensions is unknown (open item EV-05). The scalar \
+             records are kept as native records.",
+            crate::loss::named(&ids)
         )),
     )
 }
@@ -409,10 +433,10 @@ struct RelationGroup<'a> {
     feature_ref: &'a str,
     family: FeatureInputRelationFamily,
     class_ref: &'a str,
-    /// Whether `class_ref` comes only from relation-class tokens of a
-    /// compound-file lane (open item EV-05), so that the group forms only
-    /// where its sketch points measure its value.
-    gated: bool,
+    /// The scalar whose relation-class declaration gives the group its
+    /// class where that class comes only from a compound-file lane's
+    /// relation-class token (open item EV-05).
+    gate: Option<&'a str>,
     operands: &'a [FeatureInputOperand],
     scalars: Vec<(usize, &'a FeatureInputScalar)>,
     /// Present while every scalar is a one-operand display scalar of one
@@ -615,7 +639,7 @@ const RELATION_OBJECT_ZERO: u64 = 4;
 pub(super) fn relation_instances(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Result<Vec<FeatureInputRelationInstance>, CodecError> {
+) -> Result<LaneRelations, CodecError> {
     let sketch_features = sketch_features(histories);
     let intervals = feature_intervals(histories, lane);
     let claims = DimensionClaims::of(lane, &intervals);
@@ -624,7 +648,12 @@ pub(super) fn relation_instances(
         if claims.counts.get(scalar.id.as_str()) == Some(&1) {
             declarations.insert(
                 scalar.id.as_str(),
-                (class.offset, family, class.id.as_str(), false),
+                Declaration {
+                    class_offset: class.offset,
+                    family,
+                    class_ref: class.id.as_str(),
+                    token_only: false,
+                },
             );
         }
     }
@@ -632,16 +661,15 @@ pub(super) fn relation_instances(
     // An unclaimed dimension has the relation class its own relation-class
     // token names, of the quantity its record states (§2). A compound-file
     // lane does not state which tokens are its own (open item EV-05); there
-    // the class holds only where the sketch points its relation binds
-    // measure the relation's value, and the lane is grouped again without
-    // each declaration whose relation they do not measure.
+    // a point-distance class holds where two sketch points measure the
+    // relation's value, and each other class is unknown.
     let compound = compound_opening(&lane.native_payload);
     let token_classes = if claims.unclaimed.is_empty() {
         HashMap::new()
     } else {
         token_relation_classes(lane, &sketch_features)
     };
-    for scalar in claims.unclaimed {
+    for scalar in &claims.unclaimed {
         let Some(class) = token_classes.get(scalar.id.as_str()) else {
             continue;
         };
@@ -655,46 +683,104 @@ pub(super) fn relation_instances(
         if stated_kind.is_none()
             || relation_kind(&class.name) != stated_kind
             || !relation_signature_for_declaration(family, scalar)
+            || (compound && !is_point_distance_family(family))
         {
             continue;
         }
         declarations.insert(
             scalar.id.as_str(),
-            (class.offset, family, class.id.as_str(), compound),
+            Declaration {
+                class_offset: class.offset,
+                family,
+                class_ref: class.id.as_str(),
+                token_only: compound,
+            },
         );
     }
     let index = RelationOperandIndex::new(lane);
-    loop {
-        let (mut instances, gated) = form_relations(
+    let mut lane_declarations = declarations.clone();
+    lane_declarations.retain(|_, declaration| !declaration.token_only);
+    let (main, _) = form_relations(
+        lane,
+        &sketch_features,
+        &lane_declarations,
+        &candidate_counts,
+        &index,
+    )?;
+    let mut tried = claims
+        .unclaimed
+        .iter()
+        .map(|scalar| scalar.id.clone())
+        .collect::<HashSet<_>>();
+    let instances = if lane_declarations.len() == declarations.len() {
+        main
+    } else {
+        measured_relations(
             lane,
             &sketch_features,
-            &declarations,
+            declarations,
             &candidate_counts,
             &index,
+            main,
+            &mut tried,
+        )?
+    };
+    let unclassed = compound
+        .then(|| unclassed_dimension_note(lane, &sketch_features, &tried, &instances))
+        .flatten();
+    Ok(LaneRelations {
+        instances,
+        unclassed,
+    })
+}
+
+/// The lane's relation instances: `main`, which the lane's declarations
+/// form, and each relation whose class comes only from a compound-file
+/// lane's relation-class token (open item EV-05) where two sketch points
+/// measure its value and `main` holds none of its scalars. The lane is formed
+/// again without the token declaration of each other such relation. The
+/// scalars of every such relation go into `tried`.
+fn measured_relations<'l>(
+    lane: &'l FeatureInputLane,
+    sketch_features: &HashSet<&str>,
+    mut declarations: HashMap<&'l str, Declaration<'l>>,
+    candidate_counts: &HashMap<&'l str, usize>,
+    index: &RelationOperandIndex<'_>,
+    main: Vec<FeatureInputRelationInstance>,
+    tried: &mut HashSet<String>,
+) -> Result<Vec<FeatureInputRelationInstance>, CodecError> {
+    let held = main
+        .iter()
+        .flat_map(FeatureInputRelationInstance::scalar_refs)
+        .cloned()
+        .collect::<HashSet<_>>();
+    loop {
+        let (formed, gates) = form_relations(
+            lane,
+            sketch_features,
+            &declarations,
+            candidate_counts,
+            index,
         )?;
-        let unmeasured = instances
-            .iter()
-            .filter(|relation| {
-                gated.contains(&relation.id) && !relation_measures_its_value(relation, &index)
-            })
-            .map(|relation| relation.id.clone())
-            .collect::<HashSet<_>>();
-        if unmeasured.is_empty() {
-            return Ok(instances);
+        let mut measured = Vec::new();
+        let mut rejected = HashSet::new();
+        for relation in formed {
+            let Some(gate) = gates.get(&relation.id) else {
+                continue;
+            };
+            tried.extend(relation.scalar_refs().iter().cloned());
+            if relation_measures_its_value(&relation, index)
+                && relation.scalar_refs().iter().all(|id| !held.contains(id))
+            {
+                measured.push(relation);
+            } else {
+                rejected.insert(*gate);
+            }
         }
-        let withdrawn = instances
-            .iter()
-            .filter(|relation| unmeasured.contains(&relation.id))
-            .flat_map(FeatureInputRelationInstance::scalar_refs)
-            .filter(|id| {
-                declarations
-                    .get(id.as_str())
-                    .is_some_and(|declaration| declaration.3)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if withdrawn.is_empty() {
-            instances.retain(|relation| !unmeasured.contains(&relation.id));
+        if rejected.is_empty() {
+            let mut instances = main;
+            instances.extend(measured);
+            instances.sort_by_key(|relation| relation.offset);
             for (ordinal, relation) in instances.iter_mut().enumerate() {
                 relation.ordinal = u32::try_from(ordinal).map_err(|_| {
                     CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
@@ -702,27 +788,37 @@ pub(super) fn relation_instances(
             }
             return Ok(instances);
         }
-        for id in &withdrawn {
-            declarations.remove(id.as_str());
+        declarations.retain(|id, _| !rejected.contains(id));
+        if declarations
+            .values()
+            .all(|declaration| !declaration.token_only)
+        {
+            return Ok(main);
         }
     }
 }
 
-/// A relation-class declaration: the class's offset, family and identity,
-/// and whether the class comes only from a compound-file lane's
-/// relation-class token (open item EV-05).
-type Declaration<'l> = (u64, FeatureInputRelationFamily, &'l str, bool);
+/// A relation-class declaration that claims one scalar.
+#[derive(Clone, Copy)]
+struct Declaration<'l> {
+    class_offset: u64,
+    family: FeatureInputRelationFamily,
+    class_ref: &'l str,
+    /// Whether the class comes only from a compound-file lane's
+    /// relation-class token (open item EV-05).
+    token_only: bool,
+}
 
 /// The lane's relation instances under `declarations`, with their operands
-/// bound, and the identities of the instances whose class comes only from a
-/// compound-file lane's relation-class tokens.
+/// bound, and the gate scalar of each instance whose class comes only from a
+/// compound-file lane's relation-class token, by instance identity.
 fn form_relations<'l>(
     lane: &'l FeatureInputLane,
     sketch_features: &HashSet<&str>,
     declarations: &HashMap<&'l str, Declaration<'l>>,
     candidate_counts: &HashMap<&'l str, usize>,
     index: &RelationOperandIndex<'_>,
-) -> Result<(Vec<FeatureInputRelationInstance>, HashSet<String>), CodecError> {
+) -> Result<(Vec<FeatureInputRelationInstance>, HashMap<String, &'l str>), CodecError> {
     let mut relation_class_offsets = lane
         .classes
         .iter()
@@ -748,8 +844,7 @@ fn form_relations<'l>(
             continue;
         };
         let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
-        let declaration = declarations.get(scalar.id.as_str());
-        let Some((class_offset, family, class_ref, gated)) = declaration else {
+        let Some(declaration) = declarations.get(scalar.id.as_str()) else {
             if candidate_counts
                 .get(scalar.id.as_str())
                 .is_some_and(|count| *count > 1)
@@ -780,7 +875,7 @@ fn form_relations<'l>(
                     feature_ref,
                     family,
                     class_ref,
-                    gated: false,
+                    gate: None,
                     operands: &scalar.operands,
                     scalars: vec![(scalar_index, scalar)],
                     circle_displays: CircleDisplays::of(scalar, scalar_name),
@@ -821,7 +916,7 @@ fn form_relations<'l>(
                         feature_ref: group.feature_ref,
                         family: group.family,
                         class_ref: group.class_ref,
-                        gated: group.gated,
+                        gate: group.gate,
                         operands: &scalar.operands,
                         scalars: vec![(scalar_index, scalar)],
                         circle_displays: CircleDisplays::of(scalar, scalar_name),
@@ -834,36 +929,37 @@ fn form_relations<'l>(
         // A display scalar can precede the declaration selected by its adjacent
         // driving scalar. The driving scalar's declaration is authoritative for
         // that pair; display-only scalars still stop at a class declaration.
+        let gate = declaration.token_only.then_some(scalar.id.as_str());
         let promote_class = groups.last().is_some_and(|group| {
-            group.class_ref != *class_ref
+            group.class_ref != declaration.class_ref
                 && group.scalars.len() == 1
                 && group.scalars[0].1.role == FeatureInputScalarRole::Display
                 && scalar.role == FeatureInputScalarRole::Driving
-                && *class_offset > group.scalars[0].1.offset
-                && *class_offset < scalar.offset
+                && declaration.class_offset > group.scalars[0].1.offset
+                && declaration.class_offset < scalar.offset
         });
         let append = groups.last_mut().filter(|group| {
             group.feature_ref == feature_ref
-                && (group.family == *family || promote_class)
-                && (group.class_ref == *class_ref || promote_class)
+                && (group.family == declaration.family || promote_class)
+                && (group.class_ref == declaration.class_ref || promote_class)
                 && matches!(group.scalars.as_slice(), [(index, _)] if *index + 1 == scalar_index)
                 && same_operand_cells(group.operands, &scalar.operands)
         });
         if let Some(group) = append {
             if promote_class {
-                group.family = *family;
-                group.class_ref = *class_ref;
-                group.gated = *gated;
-            } else {
-                group.gated &= *gated;
+                group.family = declaration.family;
+                group.class_ref = declaration.class_ref;
+                group.gate = gate;
+            } else if gate.is_none() {
+                group.gate = None;
             }
             group.push(scalar_index, scalar, scalar_name);
         } else {
             groups.push(RelationGroup {
                 feature_ref,
-                family: *family,
-                class_ref,
-                gated: *gated,
+                family: declaration.family,
+                class_ref: declaration.class_ref,
+                gate,
                 operands: &scalar.operands,
                 scalars: vec![(scalar_index, scalar)],
                 circle_displays: CircleDisplays::of(scalar, scalar_name),
@@ -871,7 +967,7 @@ fn form_relations<'l>(
         }
     }
     let mut instances = Vec::new();
-    let mut gated = HashSet::new();
+    let mut gates = HashMap::new();
     let mut claimed_scalar_refs = HashSet::new();
     let lane_key = lane
         .id
@@ -883,8 +979,8 @@ fn form_relations<'l>(
         }
         let offset = group.scalars[0].1.offset;
         let id = format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{offset}");
-        if group.gated {
-            gated.insert(id.clone());
+        if let Some(gate) = group.gate {
+            gates.insert(id.clone(), gate);
         }
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
@@ -953,9 +1049,14 @@ fn form_relations<'l>(
     bind_detached_relation_drivers(&mut instances, lane)?;
     bind_circle_dimension_centers(&mut instances, lane)?;
     for relation in &mut instances {
-        bind_relation_geometry(relation, index);
+        let within = if gates.contains_key(&relation.id) {
+            within_linear_resolution
+        } else {
+            same_relation_dimension
+        };
+        bind_relation_geometry(relation, index, within);
     }
-    Ok((instances, gated))
+    Ok((instances, gates))
 }
 
 pub(super) fn bind_circle_dimension_centers(
@@ -1628,6 +1729,7 @@ fn dynamic_point_matches<'a>(
     second_candidates: &[&'a crate::records::SketchInputEntity],
     target: f64,
     horizontal: Option<bool>,
+    within: fn(f64, f64) -> bool,
 ) -> Vec<(&'a str, &'a str)> {
     let mut matches = Vec::<(&str, &str)>::new();
     for first in first_candidates {
@@ -1651,7 +1753,7 @@ fn dynamic_point_matches<'a>(
                 || point_distance(first_coordinates, second_coordinates),
                 |horizontal| axis_distance(first_coordinates, second_coordinates, horizontal),
             );
-            if same_relation_dimension(measured, target) {
+            if within(measured, target) {
                 matches.push((first.id(), second.id()));
             }
         }
@@ -1664,6 +1766,7 @@ fn bind_dynamic_point_relation(
     entities: &[&crate::records::SketchInputEntity],
     target: f64,
     horizontal: Option<bool>,
+    within: fn(f64, f64) -> bool,
 ) {
     let [first, second] = relation.operands.as_slice() else {
         clear_relation_operands(relation);
@@ -1676,8 +1779,13 @@ fn bind_dynamic_point_relation(
         .copied()
         .filter(|entity| is_finite_point(entity))
         .collect::<Vec<_>>();
-    let mut matches =
-        dynamic_point_matches(&first_candidates, &second_candidates, target, horizontal);
+    let mut matches = dynamic_point_matches(
+        &first_candidates,
+        &second_candidates,
+        target,
+        horizontal,
+        within,
+    );
     if matches.is_empty() {
         let first_fallback = if first.entity_ref.is_none() {
             &coordinate_points
@@ -1689,7 +1797,8 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = dynamic_point_matches(first_fallback, second_fallback, target, horizontal);
+        matches =
+            dynamic_point_matches(first_fallback, second_fallback, target, horizontal, within);
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
@@ -1707,6 +1816,7 @@ fn bind_dynamic_point_relation(
             second_relaxed.as_deref().unwrap_or(&second_candidates),
             target,
             horizontal,
+            within,
         );
     }
     if matches.is_empty() {
@@ -1720,7 +1830,7 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = dynamic_point_matches(first_relaxed, second_relaxed, target, horizontal);
+        matches = dynamic_point_matches(first_relaxed, second_relaxed, target, horizontal, within);
     }
     matches.sort_unstable_by(Ord::cmp);
     matches.dedup();
@@ -1858,10 +1968,12 @@ fn bind_dynamic_line_relation(
 }
 
 /// Binds the operands of a relation whose family states their meaning to
-/// the sketch entities that measure its value.
+/// the sketch entities that measure its value; `within` compares two
+/// point-to-point distances.
 fn bind_relation_geometry(
     relation: &mut FeatureInputRelationInstance,
     index: &RelationOperandIndex<'_>,
+    within: fn(f64, f64) -> bool,
 ) {
     let dynamic = relation_uses_dynamic_operands(relation);
     let unbound_points = matches!(
@@ -1895,13 +2007,13 @@ fn bind_relation_geometry(
     let entities = index.feature_entities(relation.feature_ref.as_str());
     match relation.family {
         FeatureInputRelationFamily::PointPointDistance => {
-            bind_dynamic_point_relation(relation, entities, target.get(), None);
+            bind_dynamic_point_relation(relation, entities, target.get(), None, within);
         }
         FeatureInputRelationFamily::PointPointHorizontalDistance => {
-            bind_dynamic_point_relation(relation, entities, target.get(), Some(true));
+            bind_dynamic_point_relation(relation, entities, target.get(), Some(true), within);
         }
         FeatureInputRelationFamily::PointPointVerticalDistance => {
-            bind_dynamic_point_relation(relation, entities, target.get(), Some(false));
+            bind_dynamic_point_relation(relation, entities, target.get(), Some(false), within);
         }
         FeatureInputRelationFamily::PointLineDistance => {
             bind_dynamic_point_line_relation(relation, entities, target.get());

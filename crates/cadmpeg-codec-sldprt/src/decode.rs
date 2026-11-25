@@ -1297,16 +1297,6 @@ pub(crate) fn append_design_losses(
                 "{multiply_projected_relations} native sketch relation record(s) are claimed by multiple neutral objects."
             )));
     }
-    if let Some(native) = native.as_ref() {
-        report
-            .losses
-            .extend(native.feature_input_lanes.iter().filter_map(|lane| {
-                crate::resolved_features::relation_records::unclassed_dimension_note(
-                    &native.feature_histories,
-                    lane,
-                )
-            }));
-    }
 
     let native_features = evaluated_feature_states
         .iter()
@@ -3765,8 +3755,12 @@ fn build_geometry_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
+        ctx, &histories, &mut lanes,
+    )?);
     crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
+    // `bind_unresolved_detached_sketch_objects` binds these lanes again and
+    // reports their loss notes.
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -3844,12 +3838,14 @@ fn build_geometry_ir(
         &lanes,
         &exact_profiles,
     );
-    crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
-        ctx,
-        &ir.model.features,
-        &histories,
-        &mut supplemental_config_lanes,
-    )?;
+    pmi_losses.extend(
+        crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
+            ctx,
+            &ir.model.features,
+            &histories,
+            &mut supplemental_config_lanes,
+        )?,
+    );
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
         &[],
@@ -5308,8 +5304,12 @@ fn build_metadata_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
+        ctx, &histories, &mut lanes,
+    )?);
     crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
+    // `bind_unresolved_detached_sketch_objects` binds these lanes again and
+    // reports their loss notes.
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -5412,12 +5412,14 @@ fn build_metadata_ir(
         &lanes,
         &exact_profiles,
     );
-    crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
-        ctx,
-        &ir.model.features,
-        &histories,
-        &mut supplemental_config_lanes,
-    )?;
+    pmi_losses.extend(
+        crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
+            ctx,
+            &ir.model.features,
+            &histories,
+            &mut supplemental_config_lanes,
+        )?,
+    );
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
         &[],

@@ -65,7 +65,9 @@ fn dynamic_relation_tags_are_admitted_by_family_scope() {
         )],
     );
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -89,7 +91,9 @@ fn dynamic_point_relation_uses_unique_geometry_match_across_address_tiers() {
     );
     lane.sketch_entities = dynamic_point_markers();
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -115,7 +119,9 @@ fn dynamic_point_relation_preserves_explicit_driving_operand_reference() {
     let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
     lane.sketch_entities = dynamic_point_markers();
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -170,7 +176,9 @@ fn dynamic_point_relation_falls_back_to_unique_geometry_after_address_miss() {
         ),
     ];
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -207,7 +215,9 @@ fn relation_instance_keeps_first_scalar_operands_when_grouping_display_and_drive
     );
     lane.sketch_entities = dynamic_point_markers();
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one grouped relation instance");
     };
@@ -237,7 +247,9 @@ fn dynamic_display_relation_uses_display_value_without_driver() {
     let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![display]);
     lane.sketch_entities = dynamic_point_markers();
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -266,7 +278,9 @@ fn dynamic_point_relation_with_ambiguous_geometry_stays_unbound() {
     lane.sketch_entities = dynamic_point_markers();
     lane.sketch_entities[3].coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -324,7 +338,9 @@ fn dynamic_point_line_relation_resolves_solver_line_by_exact_distance() {
         ),
     ];
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -373,7 +389,9 @@ fn dynamic_line_relation_validates_solver_line_pair() {
         ),
     ];
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged relation");
     };
@@ -423,7 +441,9 @@ fn dynamic_angle_accepts_reversed_solver_line_direction() {
         ),
     ];
 
-    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    let instances = relation_instances(&sketch_history(), &lane)
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one dynamically tagged angle relation");
     };
