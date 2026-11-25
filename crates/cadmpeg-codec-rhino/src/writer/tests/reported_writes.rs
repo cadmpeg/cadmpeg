@@ -243,7 +243,7 @@ fn a_face_name_is_written_without_and_named() {
     let (decoded, losses) = written(&ir);
     assert_eq!(decoded.geometry.faces.len(), 1);
     assert!(
-        has_loss(&losses, "export/value.unwritable", &face),
+        has_loss(&losses, "rhino/writer.attributes-omitted", &face),
         "{losses:?}"
     );
 }
@@ -365,7 +365,7 @@ fn a_free_polyline_is_written_as_a_degree_one_nurbs_and_its_deflection_named() {
     assert!(
         has_loss(
             &losses,
-            "export/value.unwritable",
+            "rhino/writer.value-omitted",
             "cadir:model:curve#polyline"
         ),
         "{losses:?}"
@@ -455,7 +455,7 @@ fn a_free_vertex_with_a_tolerance_is_written_as_a_point_and_named() {
     assert!(
         has_loss(
             &losses,
-            "export/value.unwritable",
+            "rhino/writer.value-omitted",
             "cadir:model:vertex#acorn"
         ),
         "{losses:?}"

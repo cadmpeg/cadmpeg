@@ -11,8 +11,9 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteBinary32;
-use cadmpeg_ir::subd::{SubdCage, SubdEdgeTag, SubdScheme, SubdVertexTag};
+use cadmpeg_ir::subd::{SubdCage, SubdEdgeTag, SubdScheme, SubdSymmetryKind, SubdVertexTag};
 use cadmpeg_ir::transform::Transform;
 
 use crate::RhinoArchiveVersion;
@@ -33,38 +34,45 @@ const CLASS_USERDATA_HEADER: u32 = 0x0002_fff9;
 /// Class-userdata wrapper version 2.2, as `major << 4 | minor`.
 const CLASS_USERDATA_VERSION: u8 = 0x22;
 
-/// The most vertices, and the most faces, a written 3DM mesh holds.
-const MESH_COUNT_LIMIT: usize = 1 << 24;
+/// `ON_Symmetry::ReflectId`.
+const REFLECT_ID: crate::wire::Uuid = crate::wire::Uuid::from_canonical([
+    0x3c, 0x6c, 0x7a, 0xbd, 0xf3, 0xd5, 0x41, 0xc2, 0x96, 0xc9, 0xdb, 0x9a, 0xea, 0xf0, 0x6e, 0x90,
+]);
 
 /// The empty bounding box `ON_BoundingBox::EmptyBoundingBox`.
 const EMPTY_BOX: [f64; 6] = [1.0, 0.0, 0.0, -1.0, 0.0, 0.0];
 
 /// How a 3DM archive holds a cage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CageForm {
     /// An `ON_SubD` object.
     Subd,
     /// An `ON_Mesh` of the control net that carries the cage as
     /// `ON_SubDMeshProxyUserData` (§7.2.6).
     MeshProxy,
-    /// An `ON_Mesh` of the control net only, for the stated reason.
-    ControlMesh(&'static str),
+    /// An `ON_Mesh` of the control net only.
+    ControlMesh,
 }
 
-/// How `version` holds `cage`.
+/// How `version` holds `cage` of `scheme`. Archive version 50 holds no
+/// `ON_SubD` object, and holds the cage as a mesh of its control net.
 pub(super) fn cage_form(
-    cage: &cadmpeg_ir::subd::SubdSurface,
+    scheme: SubdScheme,
+    cage: &SubdCage,
     version: RhinoArchiveVersion,
-) -> CageForm {
-    if cage.scheme == SubdScheme::TSpline {
-        CageForm::ControlMesh(
-            "a 3DM SubD is a Catmull-Clark cage, and these cages are T-spline cages",
-        )
-    } else if version != RhinoArchiveVersion::V5 {
-        CageForm::Subd
-    } else if cage.cage.vertices().len() > 2 {
-        CageForm::MeshProxy
+) -> Result<CageForm, CodecError> {
+    if version != RhinoArchiveVersion::V5 {
+        Ok(CageForm::Subd)
+    } else if cage.faces().is_empty() {
+        Err(CodecError::NotImplemented(
+            "archive version 50 holds a cage only as a mesh of its control net, and a 3DM mesh \
+             holds at least one face"
+                .into(),
+        ))
+    } else if scheme == SubdScheme::TSpline {
+        Ok(CageForm::ControlMesh)
     } else {
-        CageForm::ControlMesh("a SubD mesh proxy needs a control net of more than two vertices")
+        Ok(CageForm::MeshProxy)
     }
 }
 
@@ -99,6 +107,7 @@ pub(super) fn control_mesh(cage: &SubdCage) -> Result<ControlMesh, CodecError> {
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
         match corners[..] {
+            [] | [_] | [_, _] => {}
             [a, b, c] => faces.push([a, b, c, c]),
             [a, b, c, d] => faces.push([a, b, c, d]),
             [first, ref rest @ ..] => {
@@ -108,7 +117,6 @@ pub(super) fn control_mesh(cage: &SubdCage) -> Result<ControlMesh, CodecError> {
                         .map(|pair| [first, pair[0], pair[1], pair[1]]),
                 );
             }
-            [] => {}
         }
     }
     let vertices = cage
@@ -116,10 +124,10 @@ pub(super) fn control_mesh(cage: &SubdCage) -> Result<ControlMesh, CodecError> {
         .iter()
         .map(cadmpeg_ir::subd::SubdVertex::point)
         .collect::<Vec<_>>();
-    if faces.is_empty() || vertices.len() > MESH_COUNT_LIMIT || faces.len() > MESH_COUNT_LIMIT {
+    let limit = crate::mesh::MESH_COUNT_LIMIT;
+    if vertices.len() > limit || faces.len() > limit {
         return Err(CodecError::NotImplemented(
-            "the cage's control net counts are outside a 3DM mesh's range: it holds from one \
-             face to 2^24 faces and vertices"
+            "the cage's control net has more faces or vertices than the 2^24 a 3DM mesh holds"
                 .into(),
         ));
     }
@@ -131,7 +139,8 @@ pub(super) fn control_mesh(cage: &SubdCage) -> Result<ControlMesh, CodecError> {
 }
 
 /// The body that holds a cage (§5.6), the region and shell that hold it
-/// there, and whether the body holds other cages too.
+/// there, and whether the body holds other cages or other shells too, which
+/// the archive holds as other objects.
 pub(super) struct CageOwner<'ir> {
     pub(super) body: &'ir cadmpeg_ir::topology::Body,
     pub(super) region: &'ir str,
@@ -162,6 +171,7 @@ pub(super) fn cage_owners(ir: &CadIr) -> HashMap<&str, CageOwner<'_>> {
         .collect::<HashMap<_, _>>();
     let mut owners = HashMap::new();
     let mut cages_by_body = HashMap::<&str, usize>::new();
+    let mut mixed_bodies = HashSet::new();
     for region in &geometry.regions {
         let Some(body) = bodies.get(region.body.as_str()).copied() else {
             continue;
@@ -182,6 +192,7 @@ pub(super) fn cage_owners(ir: &CadIr) -> HashMap<&str, CageOwner<'_>> {
                 || cages.len() != record.members.len()
                 || face_shells.contains(shell.as_str())
             {
+                mixed_bodies.insert(body.id.as_str());
                 continue;
             }
             for cage in cages {
@@ -202,7 +213,8 @@ pub(super) fn cage_owners(ir: &CadIr) -> HashMap<&str, CageOwner<'_>> {
         }
     }
     for owner in owners.values_mut() {
-        owner.shared = cages_by_body.get(owner.body.id.as_str()) > Some(&1);
+        let body = owner.body.id.as_str();
+        owner.shared = cages_by_body.get(body) > Some(&1) || mixed_bodies.contains(body);
     }
     owners
 }
@@ -212,17 +224,26 @@ pub(super) fn cage_owners(ir: &CadIr) -> HashMap<&str, CageOwner<'_>> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Unheld {
     Symmetries,
+    SymmetryCorrespondences,
     SecondaryGrips,
     KnotIntervals,
     EndSharpness,
-    SideGrouping,
 }
 
 impl Unheld {
     /// What the writer does with the content, as a loss states it.
     pub(super) const fn reason(self) -> &'static str {
         match self {
-            Self::Symmetries => "writes these cages without their symmetries",
+            Self::Symmetries => {
+                "writes these cages without the symmetries their ON_SubD does not hold; an \
+                 ON_SubD of archive version 70 or later holds the first symmetry of a cage where \
+                 it is a reflection and the body placement is a rigid motion, and an earlier one \
+                 holds no symmetry"
+            }
+            Self::SymmetryCorrespondences => {
+                "writes the reflection symmetry of these cages without its face, edge, and \
+                 vertex correspondences, which an ON_Symmetry does not hold"
+            }
             Self::SecondaryGrips => "writes these cages without their vertices' secondary grips",
             Self::KnotIntervals => {
                 "writes these cages without their edge knot intervals and user knots"
@@ -231,17 +252,102 @@ impl Unheld {
                 "writes the start sharpness of each edge of these cages at both of its ends; \
                  archive versions before 80 hold one sharpness per edge"
             }
-            Self::SideGrouping => {
-                "writes each face side of these cages that holds more than one edge as one side \
-                 per edge"
-            }
         }
     }
 }
 
+/// The unit plane equation `[x, y, z, d]`, with `x X + y Y + z Z + d = 0`, of
+/// the reflection symmetry that an `ON_SubD` of `version` holds for `cage`
+/// placed by `transform`: the first symmetry of the cage, where it is a
+/// reflection, the archive version is 70 or later, and the placement is a
+/// rigid motion.
+pub(super) fn reflection(
+    cage: &SubdCage,
+    transform: Option<Transform>,
+    version: RhinoArchiveVersion,
+) -> Option<[f64; 4]> {
+    let symmetry = cage.symmetries().first()?;
+    if version.value() < 70 || !matches!(symmetry.kind(), SubdSymmetryKind::Correspondence {}) {
+        return None;
+    }
+    let plane = &symmetry.plane;
+    let origin = plane.origin().get();
+    let normal = plane
+        .first_axis()
+        .as_raw()
+        .cross(*plane.second_axis().as_raw());
+    let (origin, normal) = match transform {
+        None => (origin, normal),
+        Some(transform) if transform.is_proper_rigid() => (
+            transform.apply_point(origin)?.get(),
+            transform.apply_vector(normal)?.get(),
+        ),
+        Some(_) => return None,
+    };
+    let normal = normal.unit()?;
+    let offset = -normal.dot(Vector3::new(origin.x, origin.y, origin.z));
+    offset
+        .is_finite()
+        .then_some([normal.x, normal.y, normal.z, offset])
+}
+
+/// The content of `cage` of `scheme` that an `ON_SubD` of `version` does not
+/// hold, where `reflected` states that it holds the reflection symmetry of
+/// [`reflection`]. The knot intervals of a T-spline cage belong to its
+/// reduction to a Catmull-Clark cage.
+pub(super) fn unheld(
+    cage: &SubdCage,
+    scheme: SubdScheme,
+    reflected: bool,
+    version: RhinoArchiveVersion,
+) -> Vec<Unheld> {
+    let symmetries = cage.symmetries();
+    let edges = cage.edges();
+    [
+        (
+            Unheld::Symmetries,
+            symmetries.len() > usize::from(reflected),
+        ),
+        (
+            Unheld::SymmetryCorrespondences,
+            reflected
+                && symmetries.first().is_some_and(|symmetry| {
+                    !symmetry.face_pairs().is_empty()
+                        || !symmetry.edge_pairs().is_empty()
+                        || !symmetry.vertex_pairs().is_empty()
+                }),
+        ),
+        (
+            Unheld::SecondaryGrips,
+            cage.vertices()
+                .iter()
+                .any(|vertex| vertex.secondary_grips().is_some()),
+        ),
+        (
+            Unheld::KnotIntervals,
+            scheme == SubdScheme::CatmullClark
+                && edges
+                    .iter()
+                    .any(|edge| edge.knot_interval().is_some() || edge.user_knot.is_some()),
+        ),
+        (
+            Unheld::EndSharpness,
+            version.value() < 80
+                && edges.iter().any(|edge| {
+                    let [start, end] = edge.sharpness();
+                    start != end
+                }),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(content, present)| present.then_some(content))
+    .collect()
+}
+
 /// The `ON_SubDMeshProxyUserData` item that carries the `ON_SubD` payload
-/// `subd` on the mesh written from `mesh` (§7.2.6).
-pub(super) fn mesh_proxy(subd: &[u8], mesh: &ControlMesh) -> Result<Vec<u8>, CodecError> {
+/// `subd` on the mesh written from `mesh` (§7.2.6). Each chunk checksum
+/// covers the bytes the chunk holds outside its child chunks.
+pub(super) fn mesh_proxy(subd: &SubdPayload, mesh: &ControlMesh) -> Result<Vec<u8>, CodecError> {
     let unwritable = || CodecError::Malformed("mesh vertex exceeds f32 range".into());
     let vertices = mesh
         .vertices
@@ -266,16 +372,27 @@ pub(super) fn mesh_proxy(subd: &[u8], mesh: &ControlMesh) -> Result<Vec<u8>, Cod
     let mut proxy = 1_i32.to_le_bytes().to_vec();
     proxy.extend(1_i32.to_le_bytes());
     proxy.push(1);
-    proxy.extend(subd);
-    proxy.extend(count(fingerprint.face_count)?.to_le_bytes());
-    proxy.extend(count(fingerprint.vertex_count)?.to_le_bytes());
+    let mut direct = proxy.clone();
+    direct.extend(&subd.direct);
+    proxy.extend(&subd.body);
+    let counts = [fingerprint.face_count, fingerprint.vertex_count]
+        .map(|value| count(value).map(i32::to_le_bytes))
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?
+        .concat();
+    proxy.extend(&counts);
+    direct.extend(&counts);
     for digest in [fingerprint.face_sha1, fingerprint.vertex_sha1] {
         let mut record = 1_i32.to_le_bytes().to_vec();
         record.extend(0_i32.to_le_bytes());
         record.extend(digest);
         proxy.extend(super::crc_chunk(ANONYMOUS, &record)?);
     }
-    let payload = super::crc_chunk(ANONYMOUS, &super::crc_chunk(ANONYMOUS, &proxy)?)?;
+    let payload = super::crc_chunk_with_direct(
+        ANONYMOUS,
+        &super::crc_chunk_with_direct(ANONYMOUS, &proxy, &direct)?,
+        &[],
+    )?;
 
     let class = crate::subd::SUBD_MESH_PROXY_USERDATA.to_wire();
     let mut header = class.to_vec();
@@ -304,17 +421,19 @@ pub(super) fn mesh_proxy(subd: &[u8], mesh: &ControlMesh) -> Result<Vec<u8>, Cod
     super::crc_chunk_with_direct(CLASS_USERDATA, &body, &[CLASS_USERDATA_VERSION])
 }
 
-/// A cage's `ON_SubD` class data, the bytes its class-data checksum covers,
-/// and the cage content the payload does not hold.
+/// A cage's `ON_SubD` class data, and the bytes its class-data checksum
+/// covers.
 pub(super) struct SubdPayload {
     pub(super) body: Vec<u8>,
     pub(super) direct: Vec<u8>,
-    pub(super) unheld: Vec<Unheld>,
 }
 
-/// The `ON_SubD` class data of `cage` for `version`.
+/// The `ON_SubD` class data of `cage` for `version`, with the reflection
+/// symmetry of the plane equation `reflection`, which needs archive version
+/// 70 or later.
 pub(super) fn payload(
     cage: &SubdCage,
+    reflection: Option<[f64; 4]>,
     version: RhinoArchiveVersion,
 ) -> Result<SubdPayload, CodecError> {
     let archive = version.value();
@@ -459,57 +578,66 @@ pub(super) fn payload(
 
     let mut subdimple = Vec::new();
     subdimple.extend(1_i32.to_le_bytes());
-    subdimple.extend(0_i32.to_le_bytes());
+    subdimple.extend(if reflection.is_some() { 2_i32 } else { 0 }.to_le_bytes());
     for value in [1, vertex_count, edge_count, face_count] {
         subdimple.extend(value.to_le_bytes());
     }
     for value in EMPTY_BOX {
         subdimple.extend(value.to_le_bytes());
     }
-    let direct = subdimple.clone();
+    let mut direct = subdimple.clone();
     subdimple.extend(level);
+    if let Some(plane) = reflection {
+        subdimple.push(0);
+        direct.push(0);
+        subdimple.extend(identity_mapping_tag()?);
+        subdimple.extend(reflect_symmetry(plane)?);
+    }
     let mut body = vec![1];
     body.extend(super::crc_chunk_with_direct(
         ANONYMOUS, &subdimple, &direct,
     )?);
-
-    let unheld = [
-        (Unheld::Symmetries, !cage.symmetries().is_empty()),
-        (
-            Unheld::SecondaryGrips,
-            vertices
-                .iter()
-                .any(|vertex| vertex.secondary_grips().is_some()),
-        ),
-        (
-            Unheld::KnotIntervals,
-            edges
-                .iter()
-                .any(|edge| edge.knot_interval().is_some() || edge.user_knot.is_some()),
-        ),
-        (
-            Unheld::EndSharpness,
-            archive < 80
-                && edges.iter().any(|edge| {
-                    let [start, end] = edge.sharpness();
-                    start != end
-                }),
-        ),
-        (
-            Unheld::SideGrouping,
-            faces
-                .iter()
-                .any(|face| face.sides().iter().any(|side| side.edges.len() > 1)),
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(content, present)| present.then_some(content))
-    .collect();
     Ok(SubdPayload {
         body,
         direct: vec![1],
-        unheld,
     })
+}
+
+/// The `ON_MappingTag` 1.1 of no texture mapping: the nil mapping id, a zero
+/// checksum, the identity transform, and the unset mapping type.
+fn identity_mapping_tag() -> Result<Vec<u8>, CodecError> {
+    let mut tag = 1_i32.to_le_bytes().to_vec();
+    tag.extend(1_i32.to_le_bytes());
+    tag.extend([0; 16]);
+    tag.extend(0_i32.to_le_bytes());
+    for index in 0..16 {
+        let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
+        tag.extend(value.to_le_bytes());
+    }
+    tag.extend(0_u32.to_le_bytes());
+    super::crc_chunk(ANONYMOUS, &tag)
+}
+
+/// The `ON_Symmetry` 1.2 of the reflection across the plane of the unit
+/// plane equation `plane`, in object coordinates. Its checksum covers the
+/// bytes outside the plane child chunk.
+fn reflect_symmetry(plane: [f64; 4]) -> Result<Vec<u8>, CodecError> {
+    let mut inner = 1_i32.to_le_bytes().to_vec();
+    inner.extend(3_i32.to_le_bytes());
+    for value in plane {
+        inner.extend(value.to_le_bytes());
+    }
+    let mut symmetry = 1_i32.to_le_bytes().to_vec();
+    symmetry.extend(2_i32.to_le_bytes());
+    symmetry.push(1);
+    symmetry.extend(2_u32.to_le_bytes());
+    symmetry.extend(1_u32.to_le_bytes());
+    symmetry.extend(REFLECT_ID.to_wire());
+    let mut direct = symmetry.clone();
+    symmetry.extend(super::crc_chunk(ANONYMOUS, &inner)?);
+    symmetry.push(1);
+    direct.push(1);
+    super::crc_chunk_with_direct(ANONYMOUS, &symmetry, &direct)
 }
 
 /// `cage` with its vertices placed by `transform`, the placement of the body

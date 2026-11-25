@@ -1137,8 +1137,7 @@ fn prepare_write(
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let mut losses = Vec::new();
     let angular = if ir.tolerances.angular.get() > std::f64::consts::PI {
-        losses.extend(value_unwritable(
-            "Rhino",
+        losses.extend(RhinoLossCode::WriterValueOmitted.listed(
             "writes the default angular tolerance pi/180 in place of an angular tolerance above \
              pi, which 3DM does not hold",
             ["document angular tolerance"],
@@ -1436,7 +1435,8 @@ fn prepare_write(
     let cage_owners = subd::cage_owners(ir);
     let mut unheld_cage_content = std::collections::BTreeMap::<_, Vec<&str>>::new();
     let mut shared_cage_bodies = std::collections::BTreeMap::<&str, Vec<&str>>::new();
-    let mut meshed_cages = std::collections::BTreeMap::<_, Vec<&str>>::new();
+    let mut control_meshes = Vec::new();
+    let mut reduced_cages = Vec::new();
     let mut fanned_cages = Vec::new();
     let mut quantized_cages = Vec::new();
     for surface in &geometry.subds {
@@ -1447,80 +1447,38 @@ fn prepare_write(
             _ => surface.id.as_str(),
         };
         let name = body.and_then(|body| written_name(body.name.as_deref()));
-        let form = subd::cage_form(surface, archive_version);
-        let built =
-            subd::placed(&surface.cage, body.and_then(|body| body.transform)).and_then(|cage| {
-                let attributes = object_attributes_payload(
-                    identity,
-                    name,
-                    body.and_then(|body| body.color),
-                    body.and_then(|body| body.visible),
-                )?;
-                if let subd::CageForm::Subd = form {
-                    let payload = subd::payload(&cage, archive_version)?;
-                    let record = framed_object_record(
-                        subd::SUBD_OBJECT_TYPE,
-                        subd::SUBD_CLASS,
-                        &payload.body,
-                        Some(&payload.direct),
-                        &[],
-                        Some(attributes),
-                    )?;
-                    return Ok((record, payload.unheld, false, false));
-                }
-                let mesh = subd::control_mesh(&cage)?;
-                let proxied = matches!(form, subd::CageForm::MeshProxy);
-                let (userdata, unheld) = if proxied {
-                    let payload = subd::payload(&cage, archive_version)?;
-                    (subd::mesh_proxy(&payload.body, &mesh)?, payload.unheld)
-                } else {
-                    (Vec::new(), Vec::new())
-                };
-                let rows = MeshRows {
-                    vertices: mesh.vertices,
-                    faces: mesh.faces,
-                    normals: Vec::new(),
-                    channels: [&[]; 4],
-                };
-                let payload = mesh_payload(&rows, archive_version)?;
-                let record = framed_object_record(
-                    0x20,
-                    MESH_CLASS,
-                    &payload.body,
-                    Some(&payload.direct),
-                    &userdata,
-                    Some(attributes),
-                )?;
-                let quantized = !proxied
-                    && !archive_version.stores_mesh_vertices_as_f64()
-                    && quantizes(&rows.vertices);
-                Ok((record, unheld, !proxied && mesh.fanned, quantized))
-            });
         let named = match owner {
             Some(owner) => format!("cage {} of body {}", surface.id, owner.body.id),
             None => surface.id.as_str().to_owned(),
         };
-        let Some((record, unheld, fanned, quantized)) = records.admit(&named, built)? else {
+        let built = cage_record(surface, body, identity, name, archive_version);
+        let Some(written) = records.admit(&named, built)? else {
             continue;
         };
-        records.file.write_all(&record)?;
-        if let subd::CageForm::ControlMesh(reason) = form {
-            meshed_cages
-                .entry(reason)
-                .or_default()
-                .push(surface.id.as_str());
-        }
-        if fanned {
+        records.file.write_all(&written.record)?;
+        if written.fanned {
             fanned_cages.push(surface.id.as_str());
         }
-        if quantized {
+        if written.quantized {
             quantized_cages.push(surface.id.as_str());
         }
-        for content in unheld {
+        for content in written.unheld {
             unheld_cage_content
                 .entry(content)
                 .or_default()
                 .push(surface.id.as_str());
+        }
+        if let Some(owner) = owner {
+            if owner.body.name.as_deref() != name {
+                cut_names.push(identity.to_owned());
+            }
+        }
+        if written.form == subd::CageForm::ControlMesh {
+            control_meshes.push(named);
+            continue;
+        }
+        if surface.scheme == cadmpeg_ir::SubdScheme::TSpline {
+            reduced_cages.push(named);
         }
         let Some(owner) = owner else {
             continue;
@@ -1532,25 +1490,25 @@ fn prepare_write(
                 .or_default()
                 .push(surface.id.as_str());
         }
-        if owner.body.name.as_deref() != name {
-            cut_names.push(identity.to_owned());
-        }
     }
-    for (reason, cages) in meshed_cages {
-        losses.push(RhinoLossCode::WriterSubdControlMesh.note(format!(
-            "{} subdivision cage(s) are written as meshes of their control nets, without the \
-             subdivision rule, edge sharpness, and vertex tags: {reason}: {}",
-            cages.len(),
-            cages.join(", ")
-        )));
-    }
-    if !fanned_cages.is_empty() {
-        losses.push(RhinoLossCode::WriterSubdControlMesh.note(format!(
-            "each control-net face of more than four sides is written as a fan of triangles \
-             from its first corner: {}",
-            fanned_cages.join(", ")
-        )));
-    }
+    losses.extend(RhinoLossCode::WriterSubdControlMesh.listed(
+        "writes these T-spline cages as meshes of their control nets, which hold the name, \
+         color, and visibility of each body, without their bodies, subdivision rule, edge \
+         sharpness, vertex tags, symmetries, secondary grips, and knot intervals",
+        control_meshes,
+    ));
+    losses.extend(RhinoLossCode::WriterSubdControlMesh.listed(
+        "writes each control-net face of more than four sides of these cages as a fan of \
+         triangles from its first corner",
+        fanned_cages,
+    ));
+    losses.extend(RhinoLossCode::WriterTsplineReduced.listed(
+        "writes these T-spline cages as Catmull-Clark ON_SubD objects without their edge knot \
+         intervals and user knots; the Catmull-Clark limit surface differs from the T-spline \
+         limit surface where knot intervals are unequal, at T-junctions, and at the G1 caps \
+         around extraordinary vertices",
+        reduced_cages,
+    ));
     if !quantized_cages.is_empty() {
         losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(format!(
             "archive version 50 stores mesh vertices as f32, and the control nets of these \
@@ -1559,12 +1517,12 @@ fn prepare_write(
         )));
     }
     for (content, cages) in unheld_cage_content {
-        losses.extend(value_unwritable("Rhino", content.reason(), cages));
+        losses.extend(RhinoLossCode::WriterSubdContentOmitted.listed(content.reason(), cages));
     }
     for (body, cages) in shared_cage_bodies {
         losses.push(RhinoLossCode::WriterBodySplit.note(format!(
-            "body {body} is written as {} objects, one for each of its cages: {}",
-            cages.len(),
+            "body {body} is written as separate objects, one for each of its cages and one for \
+             its other content: {}",
             cages.join(", ")
         )));
     }
@@ -1649,28 +1607,23 @@ fn prepare_write(
             unheld.join(", ")
         )));
     }
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterAttributesOmitted.listed(
         "writes these object names up to their first NUL character, which ends a 3DM name",
         cut_names,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these free vertices as points without their tolerance",
         tolerant_vertices,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these polylines as degree-1 NURBS curves without their chordal deflection",
         deflected,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these meshes as standalone objects without their body binding",
         unbound,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these NURBS carriers without their periodic flag, which 3DM derives from the \
          knot vector",
         periodic_flags_changed(ir, &written_carriers),
@@ -1679,6 +1632,95 @@ fn prepare_write(
         records: records.file,
         angular,
         losses,
+    })
+}
+
+/// A cage's object record, how it holds the cage, the cage content it does
+/// not hold, and whether its control net is fanned or quantized.
+struct CageRecord {
+    record: Vec<u8>,
+    form: subd::CageForm,
+    unheld: Vec<subd::Unheld>,
+    fanned: bool,
+    quantized: bool,
+}
+
+/// The object record of `surface`, which `body` holds, with the attributes
+/// of `body` under `identity` and `name`.
+fn cage_record(
+    surface: &cadmpeg_ir::subd::SubdSurface,
+    body: Option<&cadmpeg_ir::topology::Body>,
+    identity: &str,
+    name: Option<&str>,
+    archive_version: RhinoArchiveVersion,
+) -> Result<CageRecord, CodecError> {
+    let form = subd::cage_form(surface.scheme, &surface.cage, archive_version)?;
+    let transform = body.and_then(|body| body.transform);
+    let cage = subd::placed(&surface.cage, transform)?;
+    let reflection = subd::reflection(&surface.cage, transform, archive_version);
+    let attributes = object_attributes_payload(
+        identity,
+        name,
+        body.and_then(|body| body.color),
+        body.and_then(|body| body.visible),
+    )?;
+    let unheld = match form {
+        subd::CageForm::ControlMesh => Vec::new(),
+        subd::CageForm::Subd | subd::CageForm::MeshProxy => subd::unheld(
+            &surface.cage,
+            surface.scheme,
+            reflection.is_some(),
+            archive_version,
+        ),
+    };
+    if form == subd::CageForm::Subd {
+        let payload = subd::payload(&cage, reflection, archive_version)?;
+        let record = framed_object_record(
+            subd::SUBD_OBJECT_TYPE,
+            subd::SUBD_CLASS,
+            &payload.body,
+            Some(&payload.direct),
+            &[],
+            Some(attributes),
+        )?;
+        return Ok(CageRecord {
+            record,
+            form,
+            unheld,
+            fanned: false,
+            quantized: false,
+        });
+    }
+    let mesh = subd::control_mesh(&cage)?;
+    let proxied = form == subd::CageForm::MeshProxy;
+    let userdata = if proxied {
+        subd::mesh_proxy(&subd::payload(&cage, None, archive_version)?, &mesh)?
+    } else {
+        Vec::new()
+    };
+    let rows = MeshRows {
+        vertices: mesh.vertices,
+        faces: mesh.faces,
+        normals: Vec::new(),
+        channels: [&[]; 4],
+    };
+    let payload = mesh_payload(&rows, archive_version)?;
+    let record = framed_object_record(
+        0x20,
+        MESH_CLASS,
+        &payload.body,
+        Some(&payload.direct),
+        &userdata,
+        Some(attributes),
+    )?;
+    Ok(CageRecord {
+        record,
+        form,
+        unheld,
+        fanned: !proxied && mesh.fanned,
+        quantized: !proxied
+            && !archive_version.stores_mesh_vertices_as_f64()
+            && quantizes(&rows.vertices),
     })
 }
 
@@ -2938,7 +2980,10 @@ struct MeshAdmission {
 /// groups, and texture assignments, are written without and named.
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<MeshAdmission, CodecError> {
     let vertex_count = mesh.vertices().len();
-    if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles().len() > (1 << 24) {
+    if vertex_count == 0
+        || vertex_count > crate::mesh::MESH_COUNT_LIMIT
+        || mesh.triangles().len() > crate::mesh::MESH_COUNT_LIMIT
+    {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} counts are outside Rhino's native range",
             mesh.id

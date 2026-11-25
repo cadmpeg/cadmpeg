@@ -14,6 +14,8 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
+use crate::loss::RhinoLossCode;
+
 use super::{
     admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, close_point,
     generated_projected_brep_c2_curve, singular_trim_iso, stated_write_tolerance,
@@ -29,8 +31,9 @@ pub(super) struct WritableModel<'a> {
     pub(super) faces: Vec<WritableFace<'a>>,
     pub(super) surfaces: Vec<WritableFaceSurface<'a>>,
     /// The losses of the Brep write: `export:record.invalid` for each record
-    /// it writes although its geometry disagrees, and `export:value.unwritable`
-    /// for the face values a Brep face does not hold.
+    /// it writes although its geometry disagrees, and
+    /// `rhino:writer.attributes-omitted` for the face names and colors a Brep
+    /// face does not hold.
     pub(super) losses: Vec<LossNote>,
 }
 
@@ -1169,8 +1172,7 @@ impl<'a> WritableModel<'a> {
                 ),
             ));
         }
-        result.losses.extend(cadmpeg_ir::codec::write::value_unwritable(
-            "Rhino",
+        result.losses.extend(RhinoLossCode::WriterAttributesOmitted.listed(
             "writes these Brep faces without their name or color, which a 3DM Brep face does not hold",
             geometry
                 .faces

@@ -438,6 +438,24 @@ impl SubdPlaneFrame {
             second_axis,
         })
     }
+
+    /// A point on the plane in document length units.
+    #[must_use]
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
+    }
+
+    /// The first unit in-plane axis.
+    #[must_use]
+    pub const fn first_axis(&self) -> UnitVector3 {
+        self.first_axis
+    }
+
+    /// The second unit in-plane axis.
+    #[must_use]
+    pub const fn second_axis(&self) -> UnitVector3 {
+        self.second_axis
+    }
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
@@ -658,6 +676,30 @@ impl SubdSymmetry {
             edge_pairs,
             vertex_pairs,
         })
+    }
+
+    /// The symmetry mode and its radial controls.
+    #[must_use]
+    pub const fn kind(&self) -> &SubdSymmetryKind {
+        &self.kind
+    }
+
+    /// The forward face correspondences.
+    #[must_use]
+    pub fn face_pairs(&self) -> &[[u32; 2]] {
+        &self.face_pairs
+    }
+
+    /// The forward edge correspondences.
+    #[must_use]
+    pub fn edge_pairs(&self) -> &[[u32; 2]] {
+        &self.edge_pairs
+    }
+
+    /// The forward vertex correspondences.
+    #[must_use]
+    pub fn vertex_pairs(&self) -> &[[u32; 2]] {
+        &self.vertex_pairs
     }
 }
 

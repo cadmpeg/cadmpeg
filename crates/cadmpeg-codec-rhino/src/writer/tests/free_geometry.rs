@@ -111,7 +111,7 @@ fn angular_tolerance_just_above_pi_is_written_as_the_default() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("document angular tolerance")),
         "{losses:?}"
     );
@@ -821,7 +821,7 @@ fn noncanonical_nurbs_periodicity_is_written_as_the_stored_knots_state() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("cadir:model:curve#periodic")),
         "{losses:?}"
     );

@@ -2,16 +2,23 @@
 //! `ON_SubD` payloads read back through the decoder to the cage they state.
 
 use cadmpeg_ir::ids::SubdId;
-use cadmpeg_ir::subd::{SubdCage, SubdEdge};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::subd::{
+    SubdCage, SubdEdge, SubdPlaneFrame, SubdScheme, SubdSymmetry, SubdSymmetryKind,
+};
+use cadmpeg_ir::transform::Transform;
 
-use super::{control_mesh, payload, placed, Unheld, SUBD_CLASS};
+use super::{
+    cage_form, control_mesh, payload, placed, reflection, unheld, CageForm, Unheld, SUBD_CLASS,
+};
 use crate::chunks::ArchiveVersion;
 use crate::settings::MillimeterScale;
 use crate::test_support::{start_sharpness_cage, two_quad_cage};
 use crate::RhinoArchiveVersion;
 
 fn read_back(cage: &SubdCage, version: RhinoArchiveVersion) -> (SubdCage, Vec<Unheld>) {
-    let written = payload(cage, version).expect("the payload is written");
+    let reflection = reflection(cage, None, version);
+    let written = payload(cage, reflection, version).expect("the payload is written");
     assert_eq!(written.direct, [1]);
     let decoded = crate::subd::decode(
         &written.body,
@@ -23,8 +30,41 @@ fn read_back(cage: &SubdCage, version: RhinoArchiveVersion) -> (SubdCage, Vec<Un
     .expect("the payload decodes")
     .expect("the payload holds a SubDimple");
     assert_eq!(decoded.warnings.messages().count(), 0);
-    assert!(!decoded.neutral_metadata);
-    (decoded.surface.cage, written.unheld)
+    assert_eq!(decoded.neutral_metadata, reflection.is_some());
+    (
+        decoded.surface.cage,
+        unheld(
+            cage,
+            SubdScheme::CatmullClark,
+            reflection.is_some(),
+            version,
+        ),
+    )
+}
+
+/// `cage` with one reflection symmetry across the plane x = 1.
+fn reflected(cage: &SubdCage) -> SubdCage {
+    let plane = SubdPlaneFrame::new(
+        Point3::new(1.0, 0.5, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    )
+    .expect("an orthonormal frame");
+    let symmetry = SubdSymmetry::new(
+        SubdSymmetryKind::Correspondence {},
+        plane,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("a symmetry");
+    SubdCage::new(
+        cage.vertices().to_vec(),
+        cage.edges().to_vec(),
+        cage.faces().to_vec(),
+        vec![symmetry],
+    )
+    .expect("a valid cage")
 }
 
 #[test]
@@ -134,6 +174,81 @@ fn a_control_mesh_fans_a_face_of_more_than_four_sides() {
 }
 
 #[test]
-fn a_cage_of_no_face_has_no_control_mesh() {
-    assert!(control_mesh(&SubdCage::default()).is_err());
+fn archive_50_holds_no_cage_of_no_face() {
+    let error = cage_form(
+        SubdScheme::CatmullClark,
+        &SubdCage::default(),
+        RhinoArchiveVersion::V5,
+    )
+    .expect_err("archive version 50 holds a cage as a mesh");
+    assert!(error.to_string().contains("at least one face"), "{error}");
+    assert_eq!(
+        cage_form(
+            SubdScheme::TSpline,
+            &SubdCage::default(),
+            RhinoArchiveVersion::V6
+        )
+        .ok(),
+        Some(CageForm::Subd)
+    );
+}
+
+#[test]
+fn archive_50_holds_a_t_spline_cage_as_its_control_net() {
+    for (scheme, form) in [
+        (SubdScheme::CatmullClark, CageForm::MeshProxy),
+        (SubdScheme::TSpline, CageForm::ControlMesh),
+    ] {
+        assert_eq!(
+            cage_form(scheme, &two_quad_cage(), RhinoArchiveVersion::V5).ok(),
+            Some(form)
+        );
+    }
+}
+
+#[test]
+fn an_archive_70_payload_holds_a_reflection_symmetry() {
+    let cage = reflected(&two_quad_cage());
+    assert_eq!(
+        reflection(&cage, None, RhinoArchiveVersion::V7),
+        Some([1.0, 0.0, 0.0, -1.0])
+    );
+    for version in [RhinoArchiveVersion::V7, RhinoArchiveVersion::V8] {
+        let (decoded, unheld) = read_back(&cage, version);
+        assert_eq!(decoded.vertices(), cage.vertices(), "{version:?}");
+        assert!(!unheld.contains(&Unheld::Symmetries), "{version:?}");
+    }
+}
+
+#[test]
+fn an_archive_60_payload_names_its_symmetries() {
+    let cage = reflected(&two_quad_cage());
+    assert_eq!(reflection(&cage, None, RhinoArchiveVersion::V6), None);
+    let (_, unheld) = read_back(&cage, RhinoArchiveVersion::V6);
+    assert!(unheld.contains(&Unheld::Symmetries), "{unheld:?}");
+}
+
+#[test]
+fn a_rigid_placement_moves_the_reflection_plane() {
+    let cage = reflected(&two_quad_cage());
+    let turn = Transform::affine([
+        [0.0, -1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 3.0],
+    ])
+    .expect("an affine placement");
+    assert_eq!(
+        reflection(&cage, Some(turn), RhinoArchiveVersion::V8),
+        Some([0.0, 1.0, 0.0, -1.0])
+    );
+    let stretch = Transform::affine([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("an affine placement");
+    assert_eq!(
+        reflection(&cage, Some(stretch), RhinoArchiveVersion::V8),
+        None
+    );
 }
