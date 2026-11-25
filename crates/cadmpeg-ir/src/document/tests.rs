@@ -1216,7 +1216,7 @@ fn a_solver_setting_of_a_joint_reads_the_design() {
 }
 
 #[test]
-fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
+fn an_arena_out_of_order_is_written_sorted_and_the_strict_reader_refuses_it() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let sorted = serde_json::to_value(&ir).expect("a sorted document writes");
     assert!(ir.geometry.points.len() >= 2);
@@ -1243,16 +1243,14 @@ fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
     assert_eq!(points.len(), ir.geometry.points.len() + 1);
     assert_eq!(points[0]["native_ref"], "the later copy");
 
-    // Reading adds no refusal and no repair of its own (item Q).
+    // The strict reader refuses an arena out of order and a repeated id.
     let mut swapped = sorted;
     swapped["geometry"]["points"]
         .as_array_mut()
         .unwrap()
         .swap(0, 1);
-    let read = CadIr::from_json(&swapped.to_string()).expect("an arena out of order reads");
-    assert_eq!(read.geometry.points, unsorted.geometry.points);
-    let read = CadIr::from_json(&wire.to_string()).expect("a repeated id reads");
-    assert_eq!(read.geometry.points.len(), ir.geometry.points.len() + 1);
+    assert!(CadIr::from_json(&swapped.to_string()).is_err());
+    assert!(CadIr::from_json(&wire.to_string()).is_err());
 }
 
 /// The wire writes every `model` arena but those the registry marks omitted,

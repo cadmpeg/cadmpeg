@@ -154,7 +154,7 @@ pub(in crate::validate) fn refused<O: MemberOrder>(
 }
 
 /// Whether two selections name one pick: equal identity keys.
-pub(super) fn share_pick<A: MemberOrder, B: MemberOrder>(
+pub(in crate::validate::design) fn share_pick<A: MemberOrder, B: MemberOrder>(
     first: &Selection<A>,
     second: &Selection<B>,
 ) -> bool {

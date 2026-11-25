@@ -302,3 +302,8 @@ coedges keeps its boundary ownership. A face root retains the same edge roles. B
 remains solid. STEP keeps all three cylinder faces and the additional edge. A forward open edge
 continues to fail the boundary-order check. Native records retain the non-boundary face incidence;
 `topology.non-boundary-incidence-retained` reports that neutral association limit.
+
+## Faces with no boundary wire
+
+A synthetic text BRep test covers a face with no wire on a plane. The face is partial with no
+loop, and `topology.face-boundary-unstated` names it.

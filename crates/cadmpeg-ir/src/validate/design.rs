@@ -40,6 +40,7 @@ mod programs;
 pub(super) mod records;
 pub(super) mod resolved;
 pub(super) mod selections;
+mod sheets;
 mod states;
 mod target_states;
 mod tolerances;
@@ -159,6 +160,7 @@ pub(super) fn check_design(
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
     picked::check(&index, &matchers, findings);
+    sheets::check(&index, findings);
     materials::check(&index, &matchers, findings);
     Ok(())
 }
