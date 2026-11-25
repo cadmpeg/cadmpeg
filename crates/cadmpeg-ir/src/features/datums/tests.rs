@@ -765,6 +765,7 @@ fn datum_axis_target_checks_use_declarations_and_reach_nested_contexts() {
         ir.model
             .features
             .sort_by(|left, right| left.id.cmp(&right.id));
+        crate::examples::add_document_root(&mut ir);
         let findings = crate::validate_neutral(&ir, Vec::new()).unwrap().findings;
         if let Some(expected) = expected {
             assert!(

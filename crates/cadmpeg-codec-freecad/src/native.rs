@@ -48,6 +48,19 @@ pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
 }
 
+/// The key of the shape payload, among those `is_payload` accepts, whose
+/// records include the model record `id`: [`model_id`] keys each record of a
+/// payload by the payload's key, then `:` and the record's own segments.
+pub(crate) fn payload_of(id: &str, is_payload: impl Fn(&str) -> bool) -> Option<&str> {
+    let mut key = id_key(id);
+    loop {
+        if is_payload(key) {
+            return Some(key);
+        }
+        key = key.rsplit_once(':')?.0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

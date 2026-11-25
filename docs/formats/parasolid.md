@@ -4,7 +4,7 @@
 
 ---
 
-A Parasolid transmit stream serializes one modelling-kernel partition as a binary transmit header and a node sequence. Siemens NX `.prt` files carry these streams as described in [`siemens_nx.md`](siemens_nx.md) §3. SolidWorks `.sldprt` files carry them as described in [`sldprt.md`](sldprt.md) §3. This document gives the stream grammar that both hosts share.
+A Parasolid transmit stream serializes one modelling-kernel partition as a binary transmit header and a node sequence. Siemens NX `.prt` files carry these streams as described in [`siemens_nx.md`](siemens_nx.md) §3. SolidWorks `.sldprt` files carry them as described in [`sldprt.md`](sldprt.md) §3. Solid Edge documents carry these streams as described in [`solidedge.md`](solidedge.md) §2. This document gives the stream grammar that the hosts share.
 
 ## 1. Neutral-binary encoding
 

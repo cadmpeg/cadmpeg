@@ -355,11 +355,11 @@ fn known_sphere_record_retains_source_offset_tag_and_derived_fields() {
     assert_eq!(provenance.tag.as_deref(), Some("sphere-surface"));
     let fields = fidelity.annotations.exactness()[surface_id.as_str()].fields();
     assert_eq!(
-        fields.get("geometry.axis"),
+        fields.get("geometry.value.axis"),
         Some(&cadmpeg_ir::Exactness::Derived)
     );
     assert_eq!(
-        fields.get("geometry.ref_direction"),
+        fields.get("geometry.value.ref_direction"),
         Some(&cadmpeg_ir::Exactness::Derived)
     );
 }

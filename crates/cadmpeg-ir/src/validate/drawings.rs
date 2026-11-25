@@ -59,7 +59,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(drawing.id.as_str()),
-                format_args!(
+                crate::rule!("drawings.drawing-views-base-view-name-record", 
                     "drawing views or base view name a record of another kind, repeat, or form a cycle"
                 ),
             );
@@ -80,7 +80,10 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(drawing.id.as_str()),
-                format_args!("invalid drawing reference, order, or numeric state"),
+                crate::rule!(
+                    "drawings.invalid-drawing-reference-order-numeric-state",
+                    "invalid drawing reference, order, or numeric state"
+                ),
             );
         }
     }

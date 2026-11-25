@@ -66,7 +66,7 @@ fn check_overrides(
                 continue;
             };
             if !dimension.equals(stated, tolerance) {
-                super::error(findings, holder, format_args!(
+                super::error(findings, holder, crate::rule!("design.definition-override-states-another-dimension-base", 
                     "definition override of {} states another dimension at {} than the base definition; a dimension difference is a parameter override",
                     feature.as_str(),
                     place.join(".")

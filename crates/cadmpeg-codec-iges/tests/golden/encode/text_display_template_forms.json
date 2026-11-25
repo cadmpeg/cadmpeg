@@ -1,3 +1,3 @@
 {
-  "encode_error": "not implemented yet: IGES semantic writer cannot preserve native arena text_templates"
+  "encode_error": "not implemented yet: IGES semantic writer refuses an empty model"
 }

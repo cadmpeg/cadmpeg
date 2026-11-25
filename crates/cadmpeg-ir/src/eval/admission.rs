@@ -390,6 +390,7 @@ impl ModelEvaluationPass {
         ] {
             if count > 0 {
                 findings.push(crate::report::check::Finding {
+                    rule: crate::rule_name!("eval.model-carrier-evaluations-reached-local-work"),
                     check: crate::report::check::Check::GeometricConsistency,
                     severity: crate::report::Severity::Warning,
                     message: format!(
