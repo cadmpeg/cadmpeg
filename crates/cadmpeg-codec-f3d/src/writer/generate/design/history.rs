@@ -64,7 +64,8 @@ pub(in crate::writer::generate) fn with_insertion_history(
         .map_err(|_| CodecError::NotImplemented("history state count exceeds i64".into()))?;
     let head = root + count;
     // Node `n` is the state `head - n / 2` for even `n` and `root + n / 2`
-    // for odd `n`; the records stand in node order (asm.md §3.2).
+    // for odd `n`; the records stand in node order (f3d.md §3.1, "History
+    // chain").
     let order = node_order(root, head);
     let node = |state: i64| -> i64 {
         order
