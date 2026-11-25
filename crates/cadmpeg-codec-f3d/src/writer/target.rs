@@ -34,25 +34,8 @@ pub(crate) fn plan(
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let off_catalog = target.entry().is_none();
-    let preserving = off_catalog || target.preserves_source();
-    let restored;
-    let (input, declined) = match super::saved::restore(input, preserving) {
-        Ok(Some(ir)) => {
-            restored = ir;
-            (
-                EncodeInput {
-                    ir: &restored,
-                    ..input
-                },
-                None,
-            )
-        }
-        Ok(None) => (input, None),
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
-        Err(error) => (input, Some(error)),
-    };
-    if preserving {
-        let cause = match declined.map_or_else(|| preserve(input), Err) {
+    if off_catalog || target.preserves_source() {
+        let cause = match preserve(input) {
             Ok(Preservation::Written {
                 bytes,
                 write_path,

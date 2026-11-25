@@ -47,7 +47,7 @@ pub(in crate::validate) fn check_qualified_scope(
                 Check::Identity,
                 Severity::Error,
                 Some(id),
-                crate::rule!("products.entity-id-scope-qualified-key-no", 
+                crate::rule!("products.entity-id-scope-key-names-no-file",
                     "entity id's scope is qualified by `{key}@`, the key of no `File` definition of the document"
                 ),
             );

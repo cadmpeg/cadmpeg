@@ -617,11 +617,11 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .iter()
         .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
 
-    let lossless = fixture(
-        dir.path(),
-        "cube.cadir.json",
-        &unit_cube().expect("unit cube fixture is admitted"),
-    );
+    let lossless = fixture(dir.path(), "cube.cadir.json", &{
+        let mut cube = unit_cube().expect("unit cube fixture is admitted");
+        cadmpeg_ir::examples::add_document_root(&mut cube);
+        cube
+    });
     for scope in [
         "--reject-lossy",
         "--reject-lossy=decode",
