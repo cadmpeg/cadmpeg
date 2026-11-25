@@ -730,6 +730,7 @@ pub(super) fn decode(
                     exchange,
                     carrier_index,
                     index: &index,
+                    surfaces: &document.geometry.surfaces,
                     tolerance: document.tolerances.linear.get(),
                     ctx,
                 },
@@ -1612,6 +1613,7 @@ fn build_geometric_set(
         exchange,
         carrier_index,
         index,
+        surfaces,
         tolerance,
         ctx,
     } = sources;
@@ -1661,7 +1663,7 @@ fn build_geometric_set(
                         .dash(key_word!("set"))
                         .dash(id),
                 ));
-                let face_loops = match exchange.records().get(&surface_step) {
+                let bounded_face = match exchange.records().get(&surface_step) {
                     Some(record) if record.partial("CURVE_BOUNDED_SURFACE").is_some() => {
                         curve_bounded_face_loops(
                             &face_id,
@@ -1682,7 +1684,7 @@ fn build_geometric_set(
                             losses,
                         )?
                     }
-                    _ => None,
+                    _ => CurveBoundedFace::Bare,
                 };
                 let face_shell = if faces.is_empty() {
                     shell_id.clone()
@@ -1696,14 +1698,39 @@ fn build_geometric_set(
                             .dash(faces.len()),
                     ))
                 };
+                let face_loops = match bounded_face {
+                    CurveBoundedFace::Stated(face_loops) => face_loops,
+                    CurveBoundedFace::Unresolved { boundary } => {
+                        // The source bounds the face, so it is partial on
+                        // any surface.
+                        losses.push(StepLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                            "CURVE_BOUNDED_SURFACE #{surface_step} boundary #{boundary} does not resolve to a closed loop: face {face_id} is stated partial"
+                        )));
+                        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+                    }
+                    CurveBoundedFace::Bare => {
+                        // A set member that is a bare surface is a face with
+                        // no loop; on an unbounded surface it is partial.
+                        let geometry = surfaces
+                            .iter()
+                            .find(|record| record.id == surface)
+                            .map(|record| &record.geometry);
+                        let (face_loops, unbounded) =
+                            cadmpeg_ir::topology::FaceLoops::unspecified_on(Vec::new(), geometry);
+                        if let Some(kind) = unbounded {
+                            losses.push(StepLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                                "GEOMETRIC_SET #{set_id} holds #{surface_step}, a {kind} with no boundary, which no face covers whole: face {face_id} is stated partial"
+                            )));
+                        }
+                        face_loops
+                    }
+                };
                 let face = Face {
                     id: face_id,
                     shell: face_shell,
                     surface,
                     sense: Sense::Forward,
-                    loops: face_loops.unwrap_or_else(|| {
-                        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new())
-                    }),
+                    loops: face_loops,
                     name: None,
                     color: None,
                     tolerance: None,
@@ -1779,6 +1806,8 @@ struct GeometricSetSources<'a, 'b> {
     exchange: &'a Exchange,
     carrier_index: &'a CarrierIndex,
     index: &'a ModelIndex<'b>,
+    /// The surfaces of the document the set's faces lie on.
+    surfaces: &'a [Surface],
     tolerance: f64,
     ctx: &'a DecodeContext<'a>,
 }
@@ -1810,9 +1839,20 @@ struct BoundarySegment {
     ends: [Point3; 2],
 }
 
+/// What a geometric-set member states of its face's boundary.
+enum CurveBoundedFace {
+    /// A surface with no boundary of its own: its face has no loop.
+    Bare,
+    /// Every boundary of a `CURVE_BOUNDED_SURFACE`, as the face's loops.
+    Stated(cadmpeg_ir::topology::FaceLoops),
+    /// The `CURVE_BOUNDED_SURFACE` boundary that does not resolve to a closed
+    /// loop.
+    Unresolved { boundary: u64 },
+}
+
 /// The loops of a `CURVE_BOUNDED_SURFACE` face: one ring per boundary
-/// composite curve, one edge per segment. `None` when a boundary is not a
-/// closed chain of bounded segments.
+/// composite curve, one edge per segment. `Unresolved` names the first
+/// boundary that is not a closed chain of bounded segments.
 fn curve_bounded_face_loops(
     face: &FaceId,
     face_tail: &IdentityKeyTail,
@@ -1820,9 +1860,9 @@ fn curve_bounded_face_loops(
     sources: CurveBoundedSources<'_, '_>,
     parts: &mut BoundedFaceParts,
     losses: &mut Vec<LossNote>,
-) -> Result<Option<cadmpeg_ir::topology::FaceLoops>, CodecError> {
+) -> Result<CurveBoundedFace, CodecError> {
     let Some(boundaries) = named_reference_values(record, "CURVE_BOUNDED_SURFACE", 2) else {
-        return Ok(None);
+        return Ok(CurveBoundedFace::Bare);
     };
     let support = entity_parameter(record, "CURVE_BOUNDED_SURFACE", 1)
         .and_then(Value::reference)
@@ -1841,7 +1881,9 @@ fn curve_bounded_face_loops(
     let mut measured = Vec::new();
     for boundary_step in boundaries.iter().filter_map(ValueExt::reference) {
         let Some(segments) = boundary_segments(boundary_step, sources)? else {
-            return Ok(None);
+            return Ok(CurveBoundedFace::Unresolved {
+                boundary: boundary_step,
+            });
         };
         let flagged = sources
             .exchange
@@ -1885,7 +1927,9 @@ fn curve_bounded_face_loops(
         let Some(loop_id) =
             stage_boundary_loop(face, &key, &segments, sources.tolerance, &mut staged)
         else {
-            return Ok(None);
+            return Ok(CurveBoundedFace::Unresolved {
+                boundary: boundary_step,
+            });
         };
         if is_outer {
             outer = Some(loop_id);
@@ -1894,14 +1938,14 @@ fn curve_bounded_face_loops(
         }
     }
     if outer.is_none() && inner.is_empty() {
-        return Ok(None);
+        return Ok(CurveBoundedFace::Bare);
     }
     parts.points.append(&mut staged.points);
     parts.vertices.append(&mut staged.vertices);
     parts.edges.append(&mut staged.edges);
     parts.coedges.append(&mut staged.coedges);
     parts.loops.append(&mut staged.loops);
-    Ok(Some(match outer {
+    Ok(CurveBoundedFace::Stated(match outer {
         Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(outer, inner),
         None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
     }))

@@ -6,6 +6,7 @@
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
@@ -16,7 +17,7 @@ pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
@@ -75,7 +76,7 @@ impl UnwrittenLosses {
 pub(crate) fn write_with_unwritten_attributes(
     ir: &CadIr,
     fidelity: &SourceFidelity,
-) -> Result<(Vec<u8>, UnwrittenLosses), CodecError> {
+) -> Result<(Vec<u8>, UnwrittenLosses), cadmpeg_ir::codec::write::EncodeError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     let losses = UnwrittenLosses::of(&plan.report().losses);
     let mut bytes = Vec::new();
@@ -87,8 +88,8 @@ pub(crate) fn write_with_unwritten_attributes(
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
-    let (ir, fidelity) = fixture_native_envelope_context(input)?;
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
+    let (ir, fidelity) = fixture_native_envelope_context(input).map_err(EncodeError::Backend)?;
     SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)), request)
 }
 
@@ -181,7 +182,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, EncodeError> {
     let plan = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
         TargetRequest::Inherit,
@@ -317,8 +318,9 @@ pub(crate) fn write_history_over_stale_solid(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<cadmpeg_ir::report::export::ExportReport, CodecError> {
-    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
+) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError> {
+    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
+        .map_err(cadmpeg_ir::codec::write::EncodeError::Backend)?;
     let report = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),

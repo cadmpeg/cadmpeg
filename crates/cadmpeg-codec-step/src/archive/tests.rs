@@ -1278,7 +1278,7 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
         .keys()
         .any(|id| id.as_str().contains(":zip-declaration#")));
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    strict.strictness.pinned = true;
     assert!(matches!(
         codec.decode(&mut Cursor::new(&bytes), &strict),
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })

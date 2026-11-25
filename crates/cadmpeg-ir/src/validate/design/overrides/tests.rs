@@ -4,7 +4,7 @@
 
 use serde_json::{json, Value};
 
-use super::super::fixture::{design_findings, document, feature};
+use super::super::fixture::{design_findings, document, feature, on_the_smallest_default_stack};
 use crate::design::configuration::FeatureStateOverride;
 use crate::design::feature::FeatureDefinition;
 use crate::document::CadIr;
@@ -102,7 +102,7 @@ fn a_dimension_at_a_place_the_base_lacks_is_not_compared() {
 }
 
 #[test]
-fn the_comparison_of_the_deepest_construction_runs_on_a_small_stack() {
+fn the_comparison_of_the_deepest_construction_runs_on_the_smallest_default_stack() {
     // A nested construction is four levels of JSON: inputs, input, reference
     // and construction, so no document holds a deeper nesting.
     let deepest = crate::bounds::MAX_DOCUMENT_DEPTH / 4;
@@ -136,13 +136,7 @@ fn the_comparison_of_the_deepest_construction_runs_on_a_small_stack() {
     };
     let mut ir = overridden(nested(12.0));
     ir.design.features[0].definition = nested(10.0);
-    let found = std::thread::Builder::new()
-        .stack_size(256 * 1024)
-        .spawn(move || d16(&ir))
-        .unwrap()
-        .join()
-        .unwrap();
-    assert!(found);
+    assert!(on_the_smallest_default_stack(move || d16(&ir)));
 }
 
 #[test]

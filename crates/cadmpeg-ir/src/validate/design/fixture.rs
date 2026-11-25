@@ -151,6 +151,7 @@ pub(in crate::validate) fn parameter(key: &str, kind: ValueKind) -> DesignParame
 /// the extrude, stored against the current state.
 pub(in crate::validate) fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
+    ir.model.product_definitions.clear();
     ir.set_scope(ContentScope::full()).unwrap();
     let body = body(&ir);
     ir.model.product_definitions.push(ProductDefinition {
@@ -254,4 +255,19 @@ pub(in crate::validate) fn assert_finding(ir: &CadIr, fragment: &str) {
         ),
         "no design error containing {fragment:?} in {findings:#?}"
     );
+}
+
+/// Runs `work` on a 1 MiB stack, the smallest default stack of a supported
+/// target (a Windows main thread). The design walk and the canonical writer
+/// recurse once per JSON level, and a Windows debug frame is larger than a
+/// Linux one.
+pub(in crate::validate) fn on_the_smallest_default_stack<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(work)
+        .unwrap()
+        .join()
+        .unwrap()
 }

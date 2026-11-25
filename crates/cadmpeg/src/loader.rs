@@ -42,7 +42,7 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 pub(crate) fn load_artifact(
     catalog: &InputCatalog,
     path: &Path,
-    options: DecodeOptions,
+    options: &DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
     let document = load(catalog, path, options, forced)?;
@@ -73,7 +73,7 @@ fn print_load_notice(document: &LoadedDocument) {
 fn load(
     catalog: &InputCatalog,
     path: &Path,
-    options: DecodeOptions,
+    options: &DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
     let companions = companions::Directory::beside(path);
@@ -93,7 +93,8 @@ fn load(
         ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
             ctx.complete_input(&mut file, &mut prefix)?;
-            let result = codec.decode_with_context(&ctx, View::over_retained(&prefix));
+            let result =
+                codec.decode_with_context(&ctx, View::over_retained(&prefix), &options.strictness);
             ctx.finish_session()?;
             let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
@@ -177,7 +178,7 @@ mod tests {
         let error = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
-            options,
+            &options,
             Some(ForcedInput::Cadir),
         )
         .expect_err("input limit");
@@ -215,7 +216,7 @@ mod tests {
         let outcome = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
-            DecodeOptions::default(),
+            &DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
         .unwrap();
@@ -226,7 +227,7 @@ mod tests {
         let outcome = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
-            DecodeOptions::default(),
+            &DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
         .expect("a stale sidecar does not refuse the load");
