@@ -4,7 +4,7 @@
 //! the writer places every other transformed body into its points, curves and
 //! surfaces (CADIR §3.4).
 
-use super::degrade::{naming, Unwritten};
+use super::degrade::{face_users, naming, Unwritten};
 use super::{
     curve_reference_span, edge_span, flatten_curve, is_decoder_free_geometry_body, lifted_pcurve,
     pcurve_orientation_context, rigid_placement, solved_curve, topology_edge_explicit_tolerance,
@@ -487,10 +487,20 @@ fn placed(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Unwritten> {
              transform is singular, so the geometry has no image of its dimension"
         ))));
     }
+    // A record of the separated document may be a copy for one body, so a
+    // failure names the faces that use it, else its body.
     let failure = |record: &str, body: &str, reason: String| {
-        naming(record)(CodecError::NotImplemented(format!(
-            "IGES writer places the transform of body {body} into its geometry, and {reason}"
-        )))
+        let faces = face_users(ir, record);
+        Unwritten {
+            error: CodecError::NotImplemented(format!(
+                "IGES writer places the transform of body {body} into its geometry, and {reason}"
+            )),
+            records: if faces.is_empty() {
+                BTreeSet::from([body.to_owned()])
+            } else {
+                faces
+            },
+        }
     };
     let mut placed = ir.clone();
     let mut losses = Vec::new();
