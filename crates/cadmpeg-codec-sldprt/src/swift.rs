@@ -1939,16 +1939,22 @@ fn project_dimension(
     dimension.nominal =
         nominal.map(|value| Dimension::Literal(PmiValue::from_parts(value, quantity)));
     dimension.tolerance = tolerance;
-    dimension.decimals = entity
-        .integers
-        .get("BlockToleranceDecimalPlaces")
-        .and_then(|places| u8::try_from(*places).ok());
+    let places = entity.integers.get("BlockToleranceDecimalPlaces").copied();
+    dimension.decimals = places
+        .filter(|_| nominal.is_some())
+        .and_then(|places| u8::try_from(places).ok());
     let mut annotation = PmiAnnotation::new(
         id,
         targets.into_iter().map(InstanceTarget::new).collect(),
         PmiDefinition::Dimension(dimension),
     );
     annotation.name = object_name(entity);
+    if let Some(places) = places.filter(|_| nominal.is_none()) {
+        annotation.native_options.insert(
+            cadmpeg_ir::codec_name!("sldprt:block_tolerance_decimal_places"),
+            NativeOption::Integer(Dimension::Literal(i64::from(places))),
+        );
+    }
     if let Some(Deviations { lower, upper }) = equal_deviations {
         for (key, value) in [
             (cadmpeg_ir::codec_name!("sldprt:lower_deviation"), lower),
