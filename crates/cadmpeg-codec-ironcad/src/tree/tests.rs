@@ -36,10 +36,7 @@ fn records_are_read_in_stored_order_at_their_depth() {
 
 #[test]
 fn another_kernel_tag_and_header_words_are_kept() {
-    let payload = node(&[
-        record(7, b""),
-        record_with(PARASOLID, [1, 2, 1, 0], b"x"),
-    ]);
+    let payload = node(&[record(7, b""), record_with(PARASOLID, [1, 2, 1, 0], b"x")]);
     let records = read(View::over_retained(&payload)).unwrap();
     assert_eq!(records[0].kernel, Kernel::Other(7));
     assert!(records[0].canonical_header);

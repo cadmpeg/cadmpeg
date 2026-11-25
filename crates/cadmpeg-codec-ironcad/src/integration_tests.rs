@@ -93,7 +93,10 @@ fn single_part_scenes_hold_two_parasolid_records() {
         let formats = layer_formats(&result);
         assert_eq!(formats[0], "ironcad");
         assert_eq!(
-            formats.iter().filter(|format| *format == "parasolid").count(),
+            formats
+                .iter()
+                .filter(|format| *format == "parasolid")
+                .count(),
             2,
             "{name}"
         );
@@ -108,7 +111,10 @@ fn mixed_kernel_scene_holds_parasolid_and_acis_records() {
     assert_eq!(count(&result, IronCadLossCode::KernelUnrecognized), 0);
     let formats = layer_formats(&result);
     assert_eq!(
-        formats.iter().filter(|format| *format == "parasolid").count(),
+        formats
+            .iter()
+            .filter(|format| *format == "parasolid")
+            .count(),
         10
     );
     assert_eq!(formats.iter().filter(|format| *format == "acis").count(), 2);
@@ -138,8 +144,12 @@ fn undecoded_scene_streams_are_named() {
         .filter(|loss| loss.code == IronCadLossCode::SceneStreamsPending.note("").code)
         .map(|loss| loss.message.as_str())
         .collect();
-    assert!(pending.iter().any(|message| message.contains("`Shape Data`")));
-    assert!(!pending.iter().any(|message| message.contains("`Brep Data`")));
+    assert!(pending
+        .iter()
+        .any(|message| message.contains("`Shape Data`")));
+    assert!(!pending
+        .iter()
+        .any(|message| message.contains("`Brep Data`")));
     assert!(!pending.iter().any(|message| message.contains("`HSF_LIB`")));
 }
 

@@ -125,9 +125,9 @@ fn classify(records: &[KernelRecord<'_>], layers: &mut DialectLayers, losses: &m
                 }) {
                     Ok(matched) => {
                         if let Err(error) = layers.insert(matched) {
-                            losses.push(IronCadLossCode::KernelUnverified.note(collision(
-                                &error, &carrier,
-                            )));
+                            losses.push(
+                                IronCadLossCode::KernelUnverified.note(collision(&error, &carrier)),
+                            );
                         }
                     }
                     Err(error) => losses.push(
@@ -138,10 +138,9 @@ fn classify(records: &[KernelRecord<'_>], layers: &mut DialectLayers, losses: &m
                 "ACIS"
             }
             Kernel::Other(tag) => {
-                losses.push(
-                    IronCadLossCode::KernelUnrecognized
-                        .note(format!("{carrier}: kernel tag {tag:#010x} is not ACIS or Parasolid")),
-                );
+                losses.push(IronCadLossCode::KernelUnrecognized.note(format!(
+                    "{carrier}: kernel tag {tag:#010x} is not ACIS or Parasolid"
+                )));
                 continue;
             }
         };
@@ -151,10 +150,9 @@ fn classify(records: &[KernelRecord<'_>], layers: &mut DialectLayers, losses: &m
             record.depth
         )));
     }
-    for message in cadmpeg_parasolid::push_extras(
-        layers,
-        cadmpeg_parasolid::extra_layers(parasolid, &[]),
-    ) {
+    for message in
+        cadmpeg_parasolid::push_extras(layers, cadmpeg_parasolid::extra_layers(parasolid, &[]))
+    {
         losses.push(IronCadLossCode::KernelUnverified.note(message));
     }
     for matched in layers.iter() {
