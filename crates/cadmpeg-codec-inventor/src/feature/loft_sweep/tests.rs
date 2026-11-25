@@ -397,7 +397,7 @@ fn record_type_validation_rejects_wrong_payload_kinds() {
 }
 
 #[test]
-fn surface_loft_class_keeps_the_native_kind_and_refuses_solid_admission() {
+fn surface_loft_class_is_its_own_family_and_refuses_solid_admission() {
     use cadmpeg_ir::features::operation_settings::BooleanOp;
     use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftGuidance};
@@ -411,7 +411,10 @@ fn surface_loft_class_keeps_the_native_kind_and_refuses_solid_admission() {
         crate::feature::native_kind(Some(class)).as_str(),
         "LoftSurface"
     );
-    assert!(crate::feature::FeatureFamily::from_class_id(class).is_none());
+    assert!(matches!(
+        crate::feature::FeatureFamily::from_class_id(class),
+        Some(crate::feature::FeatureFamily::SurfaceLoft)
+    ));
     let definition = FeatureDefinition::Operation(FeatureOperation::Loft {
         sections: ["first", "last"]
             .map(|selection| {
@@ -429,7 +432,11 @@ fn surface_loft_class_keeps_the_native_kind_and_refuses_solid_admission() {
         max_degree: None,
         allow_multi_profile_faces: None,
     });
-    assert!(crate::feature::FeatureFamily::from_definition(&definition).is_none());
+    assert!(matches!(
+        crate::feature::FeatureFamily::from_definition(&definition),
+        Some(crate::feature::FeatureFamily::SurfaceLoft)
+    ));
+    assert!(crate::feature::FeatureFamily::SurfaceLoft.admits_definition(&definition));
     assert!(!crate::feature::FeatureFamily::Loft.admits_definition(&definition));
     assert!(!controls::matches_definition(&definition));
 }
