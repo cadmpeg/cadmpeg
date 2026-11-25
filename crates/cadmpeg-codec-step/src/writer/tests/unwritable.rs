@@ -11,20 +11,13 @@ use cadmpeg_ir::transform::Transform;
 use crate::export::write_step;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
-/// The sweep vector's components are finite, and its length is past the
-/// largest finite `f64`: the sweep is not written, and the file is.
-#[test]
-fn a_linear_sweep_whose_magnitude_overflows_is_left_out() {
+/// Gives the one linear sweep of `ir` a vector whose components are finite
+/// and whose length is past the largest finite `f64`, and returns the
+/// sweep's identity.
+fn overflow_linear_sweep(ir: &mut cadmpeg_ir::CadIr) -> String {
     use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
 
-    let source = StepCodec::default()
-        .decode(
-            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap242_geometry.p21")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode procedural geometry");
-    let mut ir = source.ir().clone();
     let sweep = ir
         .geometry
         .procedural_surfaces
@@ -35,7 +28,7 @@ fn a_linear_sweep_whose_magnitude_overflows_is_left_out() {
                 ProceduralSurfaceDefinition::LinearSweep(_)
             )
         })
-        .expect("the fixture states a linear sweep");
+        .expect("the document states a linear sweep");
     let sweep_id = sweep.id.as_str().to_owned();
     sweep.edit_definition(|definition| {
         let ProceduralSurfaceDefinition::LinearSweep(construction) = definition else {
@@ -47,28 +40,213 @@ fn a_linear_sweep_whose_magnitude_overflows_is_left_out() {
         )
         .expect("finite components admit the sweep");
     });
+    sweep_id
+}
 
+fn decode_fixture() -> cadmpeg_ir::CadIr {
+    StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap242_geometry.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode procedural geometry")
+        .ir()
+        .clone()
+}
+
+fn write_ap242(ir: &cadmpeg_ir::CadIr) -> (String, cadmpeg_ir::report::export::ExportReport) {
     let mut bytes = Vec::new();
     let report = write_step(
-        &ir,
+        ir,
         &mut bytes,
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
     )
-    .expect("an overflowing sweep magnitude is left out");
-    let text = String::from_utf8(bytes.clone()).expect("STEP output is UTF-8");
+    .expect("a value Part 21 cannot state is left out");
+    (
+        String::from_utf8(bytes).expect("STEP output is UTF-8"),
+        report,
+    )
+}
+
+fn charges(report: &cadmpeg_ir::report::export::ExportReport, code: &str, name: &str) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == code && loss.message.contains(name))
+}
+
+/// The sweep vector's components are finite, and its length is past the
+/// largest finite `f64`: the sweep is not written, and the file is.
+#[test]
+fn a_linear_sweep_whose_magnitude_overflows_is_left_out() {
+    let mut ir = decode_fixture();
+    let sweep_id = overflow_linear_sweep(&mut ir);
+    let (text, report) = write_ap242(&ir);
     assert!(!text.contains('\0'), "{text}");
     assert!(!text.contains("SURFACE_OF_LINEAR_EXTRUSION"), "{text}");
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code.to_string() == "export/value.unwritable" && loss.message.contains(&sweep_id)
-        }),
+        charges(&report, "export/value.unwritable", &sweep_id),
         "{:?}",
         report.losses
     );
     StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
         .expect("decode the written file");
+}
+
+/// The entity type of each DATA instance of `text` that no instance
+/// references, with how many there are.
+fn unreferenced_types(text: &str) -> std::collections::BTreeMap<String, usize> {
+    let mut instances = Vec::new();
+    let mut referenced = std::collections::BTreeSet::new();
+    for line in text.lines() {
+        let Some((name, body)) = line.split_once(" = ") else {
+            continue;
+        };
+        let Some(name) = name.strip_prefix('#') else {
+            continue;
+        };
+        let entity = body
+            .trim_start_matches('(')
+            .split('(')
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        instances.push((name.to_owned(), entity));
+        let mut quoted = false;
+        let mut digits = None::<String>;
+        for character in body.chars().chain(std::iter::once(' ')) {
+            if let Some(name) = digits.as_mut() {
+                if character.is_ascii_digit() {
+                    name.push(character);
+                    continue;
+                }
+                referenced.insert(digits.take().unwrap_or_default());
+            }
+            match character {
+                '\'' => quoted = !quoted,
+                '#' if !quoted => digits = Some(String::new()),
+                _ => {}
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    for (name, entity) in instances {
+        if !referenced.contains(&name) {
+            *out.entry(entity).or_insert(0) += 1;
+        }
+    }
+    out
+}
+
+/// The instances a discarded sweep emitted before its vector overflowed
+/// are left out with it: the file written in its place holds no instance
+/// that nothing references beyond those the written sweep leaves.
+#[test]
+fn a_discarded_carrier_leaves_no_unreferenced_instance() {
+    let ir = decode_fixture();
+    let (written, _) = write_ap242(&ir);
+    let mut edited = ir.clone();
+    let sweep_id = overflow_linear_sweep(&mut edited);
+    let (text, report) = write_ap242(&edited);
+    assert!(
+        charges(&report, "export/value.unwritable", &sweep_id),
+        "{:?}",
+        report.losses
+    );
+    assert_eq!(
+        unreferenced_types(&text),
+        unreferenced_types(&written),
+        "{text}"
+    );
+    StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode the written file");
+}
+
+/// A sweep, its directrix circle and the representation that holds it.
+const SWEEP_EXCHANGE: &str = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=CARTESIAN_POINT('',(1.,2.,3.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#4,2.);
+#6=AXIS2_PLACEMENT_3D('',#3,#4,$);
+#7=CIRCLE('',#6,4.);
+#8=SURFACE_OF_LINEAR_EXTRUSION('linear sweep',#7,#5);
+#9=SHAPE_REPRESENTATION('',(#8),#2);";
+
+/// A document whose one record of geometry is left out for a non-finite
+/// value is written empty: the file holds no record of the document.
+#[test]
+fn a_document_whose_geometry_is_all_left_out_is_written_empty() {
+    let mut ir = crate::test_support::exchange::decode_inline(SWEEP_EXCHANGE)
+        .ir()
+        .clone();
+    let sweep_id = overflow_linear_sweep(&mut ir);
+    for surface in &mut ir.geometry.surfaces {
+        if let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache, .. } =
+            &mut surface.geometry
+        {
+            *cache = None;
+        }
+    }
+    let (text, report) = write_ap242(&ir);
+    assert!(
+        charges(&report, "export/value.unwritable", &sweep_id),
+        "{:?}",
+        report.losses
+    );
+    assert!(
+        charges(&report, "export/output.empty", ""),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        !charges(&report, "step/export.no-geometry-written", ""),
+        "{:#?}",
+        report.losses
+    );
+    for entity in ["SURFACE_OF_LINEAR_EXTRUSION", "CIRCLE"] {
+        assert!(!text.contains(entity), "{text}");
+    }
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode the written file");
+    assert!(decoded.ir().geometry.surfaces.is_empty());
+}
+
+/// Of the instances a discarded carrier emitted, the section keeps only
+/// those another instance in it references: a point interned for the
+/// carrier and reused after it stays.
+#[test]
+fn a_discarded_carrier_keeps_only_the_instances_others_reference() {
+    let mut emitter = crate::writer::Emitter::new();
+    let kept = emitter.emit("CARTESIAN_POINT", "'',(1.,0.,0.)");
+    let mark = emitter.non_finite_mark();
+    let orphan = emitter.emit("DIRECTION", "'',(0.,0.,1.)");
+    let shared = emitter.emit_interned("CARTESIAN_POINT", "'',(2.,0.,0.)");
+    let vector = emitter.emit(
+        "VECTOR",
+        &format!(
+            "'',{orphan},{}",
+            crate::writer::Emitter::real(f64::INFINITY)
+        ),
+    );
+    emitter.emit("LINE", &format!("'',{shared},{vector}"));
+    assert!(emitter.take_non_finite_since(mark));
+    let reused = emitter.emit_interned("CARTESIAN_POINT", "'',(2.,0.,0.)");
+    assert_eq!(reused, shared);
+    let user = emitter.emit("VERTEX_POINT", &format!("'',{reused}"));
+    assert!(emitter.drop_non_finite().is_empty());
+    assert_eq!(
+        emitter.into_lines(),
+        [
+            format!("{kept} = CARTESIAN_POINT('',(1.,0.,0.));"),
+            format!("{shared} = CARTESIAN_POINT('',(2.,0.,0.));"),
+            format!("{user} = VERTEX_POINT('',{shared});"),
+        ]
+    );
 }
 
 /// The section leaves out an instance that holds a non-finite number and

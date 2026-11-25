@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{asset, identifier, quoted, real, real32, Emitter, Names};
+use super::{
+    asset, cut_links, float, floats, identifier, point32, quoted, real, real32, Emitter, Names,
+};
 
 #[test]
 fn reals_read_back_to_their_value() {
@@ -22,11 +24,12 @@ fn reals_read_back_to_their_value() {
             "{text}"
         );
     }
-    // A non-finite value is a value the layer does not state (CADIR §3.4).
-    for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
-        assert_eq!(real(value), super::NON_FINITE);
-    }
-    assert_eq!(real32(f32::INFINITY), super::NON_FINITE);
+    assert_eq!(real(f64::INFINITY), "inf");
+    assert_eq!(real(f64::NEG_INFINITY), "-inf");
+    assert_eq!(real(f64::NAN), "nan");
+    assert_eq!(real32(f32::INFINITY), "inf");
+    assert_eq!(float(f64::NEG_INFINITY), "-inf");
+    assert_eq!(float(0.1), "0.1");
     assert_eq!(real32(0.1), "0.1");
     assert_eq!(real32(1e-7), "1e-7");
 }
@@ -59,16 +62,17 @@ fn long_arrays_wrap() {
     let items: Vec<String> = (0..10).map(|item| item.to_string()).collect();
     emitter.array("int[] a", &items, "");
     assert_eq!(
-        emitter.finish().0,
+        emitter.finish().text,
         "int[] a = [\n    0, 1, 2, 3, 4, 5, 6, 7,\n    8, 9\n]\n"
     );
 }
 
-/// A named prim one of whose lines holds a non-finite number is left out
-/// with its child prims and its path recorded; its siblings stay. A line
-/// outside every prim that holds one is not written.
+/// A named prim one of whose points is past the binary32 range is left out
+/// with its child prims and its path recorded; its siblings stay. An
+/// attribute whose value is past the binary32 range is left out and its
+/// prim stays.
 #[test]
-fn a_prim_with_a_non_finite_number_is_left_out() {
+fn a_prim_with_a_point_past_the_binary32_range_is_left_out() {
     let prim = |emitter: &mut Emitter, name: &str, line: &str| {
         emitter.name_next(name);
         emitter.line(&format!("def Xform {}", quoted(name)));
@@ -77,18 +81,76 @@ fn a_prim_with_a_non_finite_number_is_left_out() {
     };
     let mut emitter = Emitter::default();
     prim(&mut emitter, "A", "double a = 1");
-    prim(&mut emitter, "B", &format!("double b = {}", real(f64::NAN)));
+    prim(
+        &mut emitter,
+        "B",
+        &format!("point3f[] points = [{}]", point32(&[1e300, 0.0, 0.0])),
+    );
     prim(&mut emitter, "Inner", "double i = 2");
+    emitter.line(&format!("float j = {}", float(1e39)));
     emitter.close();
     emitter.close();
     prim(&mut emitter, "C", &format!("double c = {}", real(1.0)));
+    emitter.line(&format!("float k = {} (", float(-1e39)));
+    emitter.line("    doc = \"k\"");
+    emitter.line(")");
+    emitter.line(&format!("color3f l = {}", floats(&[1.0, 0.5, 0.25])));
     emitter.close();
     emitter.close();
-    emitter.line(&format!("float d = {}", real32(f32::INFINITY)));
-    let (text, left_out) = emitter.finish();
+    emitter.line(&format!("float d = {}", float(f64::MAX)));
+    let finished = emitter.finish();
     assert_eq!(
-        text,
-        "def Xform \"A\"\n{\n    double a = 1\n    def Xform \"C\"\n    {\n        double c = 1\n    }\n}\n"
+        finished.text,
+        "def Xform \"A\"\n{\n    double a = 1\n    def Xform \"C\"\n    {\n        double c = 1\n        color3f l = (1, 0.5, 0.25)\n    }\n}\n"
     );
-    assert_eq!(left_out, ["/A/B", "float d"]);
+    assert_eq!(finished.prims, ["/A/B"]);
+    assert_eq!(finished.values, ["/A/C.k", "d"]);
+}
+
+/// A point that binary32 rounds is counted in its prim, and the count goes
+/// with the prim when the prim is left out.
+#[test]
+fn rounded_points_are_counted_with_their_prim() {
+    let mut emitter = Emitter::default();
+    for (name, x) in [("Kept", 0.1), ("Gone", 1e300)] {
+        emitter.name_next(name);
+        emitter.line(&format!("def Mesh {}", quoted(name)));
+        emitter.open();
+        emitter.rounded_point();
+        emitter.line(&format!("point3f[] points = [{}]", point32(&[x, 0.0, 0.0])));
+        emitter.close();
+    }
+    let finished = emitter.finish();
+    assert_eq!(finished.rounded, 1);
+    assert_eq!(finished.prims, ["/Gone"]);
+}
+
+/// A link to a prim left out loses that target; a joint that names one is
+/// left out, and so are the links that name the joint.
+#[test]
+fn links_to_a_prim_left_out_are_cut() {
+    let text = "def Xform \"Rig\"\n{\n    def Mesh \"Base\"\n    {\n    }\n    \
+                def PhysicsRevoluteJoint \"Hinge\"\n    {\n        \
+                rel physics:body0 = </Rig/Base>\n        rel physics:body1 = </Rig/Arm>\n    }\n    \
+                def Xform \"User\"\n    {\n        \
+                rel a = [</Rig/Base>, </Rig/Arm/Child>]\n        \
+                rel b = </Rig/Hinge> (\n            doc = \"b\"\n        )\n        \
+                float c.connect = </Rig/Arm.outputs:x>\n        \
+                string d = \"</Rig/Arm>\"\n    }\n}\n";
+    let cut = cut_links(text, &["/Rig/Arm".to_owned()]);
+    assert_eq!(
+        cut.text,
+        "def Xform \"Rig\"\n{\n    def Mesh \"Base\"\n    {\n    }\n    \
+         def Xform \"User\"\n    {\n        rel a = [</Rig/Base>]\n        \
+         string d = \"</Rig/Arm>\"\n    }\n}\n"
+    );
+    assert_eq!(cut.joints, ["/Rig/Hinge"]);
+    assert_eq!(
+        cut.links,
+        [
+            "/Rig/User.a </Rig/Arm/Child>",
+            "/Rig/User.b </Rig/Hinge>",
+            "/Rig/User.c.connect </Rig/Arm.outputs:x>",
+        ]
+    );
 }

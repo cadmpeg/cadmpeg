@@ -387,6 +387,11 @@ fn a_mesh_point_past_the_float_range_leaves_its_prim_out() {
         .collect();
     assert_eq!(notes.len(), 1, "{:#?}", report.losses);
     assert!(
+        !emitted(&report.losses, UsdLossCode::ExportVertexPrecision),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
         notes[0].message.contains(&format!("/{name}")),
         "{}",
         notes[0].message

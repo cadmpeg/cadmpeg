@@ -35,6 +35,16 @@ pub(crate) struct DroppedInstance {
     pub(crate) tally: &'static str,
 }
 
+/// A point in the emission that [`Emitter::take_non_finite_since`] reads
+/// back from.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NonFiniteMark {
+    /// The length of [`Emitter::non_finite`] at the mark.
+    non_finite: usize,
+    /// The number of instances emitted before the mark.
+    line: usize,
+}
+
 /// Accumulates DATA instances in allocation order and counts their entity types.
 pub(crate) struct Emitter {
     schema: StepSchema,
@@ -48,6 +58,9 @@ pub(crate) struct Emitter {
     /// in emission order, with whether a [`Self::take_non_finite_since`]
     /// caller answered for it.
     non_finite: Vec<(usize, bool)>,
+    /// The index ranges in `lines` of the instances emitted for a carrier
+    /// that a [`Self::take_non_finite_since`] caller discarded.
+    discarded: Vec<std::ops::Range<usize>>,
 }
 
 impl Emitter {
@@ -63,6 +76,7 @@ impl Emitter {
             counts: BTreeMap::new(),
             interned: HashMap::new(),
             non_finite: Vec::new(),
+            discarded: Vec::new(),
         }
     }
 
@@ -84,18 +98,28 @@ impl Emitter {
     }
 
     /// A mark for [`Self::take_non_finite_since`].
-    pub(crate) fn non_finite_mark(&self) -> usize {
-        self.non_finite.len()
+    pub(crate) fn non_finite_mark(&self) -> NonFiniteMark {
+        NonFiniteMark {
+            non_finite: self.non_finite.len(),
+            line: self.lines.len(),
+        }
     }
 
     /// Whether an instance emitted since `mark` holds a non-finite number
     /// that no nested caller answered for. Every such instance is answered
     /// for from now on, so an enclosing caller does not answer for it again.
-    pub(crate) fn take_non_finite_since(&mut self, mark: usize) -> bool {
+    ///
+    /// A caller that gets `true` discards what it emitted since `mark`:
+    /// [`Self::drop_non_finite`] leaves out each of those instances that no
+    /// instance in the section references.
+    pub(crate) fn take_non_finite_since(&mut self, mark: NonFiniteMark) -> bool {
         let mut fresh = false;
-        for (_, answered) in self.non_finite.iter_mut().skip(mark) {
+        for (_, answered) in self.non_finite.iter_mut().skip(mark.non_finite) {
             fresh |= !*answered;
             *answered = true;
+        }
+        if fresh {
+            self.discarded.push(mark.line..self.lines.len());
         }
         fresh
     }
@@ -147,6 +171,21 @@ impl Emitter {
         self.lines.len()
     }
 
+    /// Whether the section holds the instance `reference`.
+    pub(crate) fn holds(&self, reference: Ref) -> bool {
+        usize::try_from(reference.0)
+            .ok()
+            .and_then(|name| name.checked_sub(1))
+            .and_then(|index| self.lines.get(index))
+            .is_some_and(Option::is_some)
+    }
+
+    /// Whether the section holds an instance emitted after the first
+    /// `count`.
+    pub(crate) fn holds_after(&self, count: usize) -> bool {
+        self.lines.iter().skip(count).any(Option::is_some)
+    }
+
     pub(crate) fn counts(&self) -> BTreeMap<String, usize> {
         self.counts
             .iter()
@@ -156,12 +195,13 @@ impl Emitter {
 
     /// Leaves out of the section every instance that holds a non-finite
     /// number and every instance that references one left out, as a record
-    /// that needs a dropped record is dropped (CADIR §3.3). The others keep
-    /// their instance names; Part 21 does not require them to be
-    /// consecutive. Returns the instances left out whose non-finite number
-    /// no [`Self::take_non_finite_since`] caller answered for, with those
-    /// that need them: a caller that answered for one discarded what it
-    /// wrote, so no kept instance references it.
+    /// that needs a dropped record is dropped (CADIR §3.3), then each
+    /// instance a discarded carrier emitted that no instance left in the
+    /// section references. The others keep their instance names; Part 21
+    /// does not require them to be consecutive. Returns the instances left
+    /// out whose non-finite number no [`Self::take_non_finite_since`] caller
+    /// answered for, with those that need them: a caller that answered for
+    /// one discarded what it wrote, so no kept instance references it.
     pub(crate) fn drop_non_finite(&mut self) -> Vec<DroppedInstance> {
         if self.non_finite.is_empty() {
             return Vec::new();
@@ -177,15 +217,9 @@ impl Emitter {
         self.non_finite.clear();
         let mut out = Vec::new();
         for index in dropped {
-            let Some((_, tally)) = self.lines[index].take() else {
+            let Some(tally) = self.remove(index) else {
                 continue;
             };
-            if let Some(count) = self.counts.get_mut(tally) {
-                *count -= 1;
-                if *count == 0 {
-                    self.counts.remove(tally);
-                }
-            }
             if reported.contains(&index) {
                 out.push(DroppedInstance {
                     name: Ref(cadmpeg_core::decode::u64_from_index(index) + 1),
@@ -193,7 +227,45 @@ impl Emitter {
                 });
             }
         }
+        self.prune_discarded();
         out
+    }
+
+    /// Leaves out each instance in a discarded range that no instance left
+    /// in the section references. An instance references only instances
+    /// emitted before it, so one pass from the last instance back sees every
+    /// reference to an instance before it reaches that instance.
+    fn prune_discarded(&mut self) {
+        let mut discarded = vec![false; self.lines.len()];
+        for range in std::mem::take(&mut self.discarded) {
+            for flag in &mut discarded[range] {
+                *flag = true;
+            }
+        }
+        let mut referenced = std::collections::BTreeSet::new();
+        for index in (0..self.lines.len()).rev() {
+            let Some((line, _)) = &self.lines[index] else {
+                continue;
+            };
+            if discarded[index] && !referenced.contains(&index) {
+                self.remove(index);
+            } else {
+                referenced.extend(instance_references(line));
+            }
+        }
+    }
+
+    /// Leaves the instance at `index` out of the section and its entity
+    /// count, and returns its entity-count key.
+    fn remove(&mut self, index: usize) -> Option<&'static str> {
+        let (_, tally) = self.lines.get_mut(index)?.take()?;
+        if let Some(count) = self.counts.get_mut(tally) {
+            *count -= 1;
+            if *count == 0 {
+                self.counts.remove(tally);
+            }
+        }
+        Some(tally)
     }
 
     /// Consume the emitter and return one encoded DATA instance per element,

@@ -123,6 +123,7 @@ pub(crate) fn write_step_outcome(
         return Err(limit.into());
     }
     b.drop_non_finite();
+    b.note_written();
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines();
 
@@ -416,6 +417,14 @@ pub(crate) struct Builder<'a> {
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
+    /// The shape items [`Self::build`] wrote for bodies and standalone
+    /// geometry.
+    model_items: Vec<Ref>,
+    /// Whether the document states a product definition.
+    states_structure: bool,
+    /// The number of instances written before the first that states a
+    /// record of the document other than its geometry and structure.
+    scaffolding: usize,
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<AppearanceBindingId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
@@ -665,6 +674,9 @@ impl<'a> Builder<'a> {
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
             tessellation_step_refs: HashMap::new(),
+            model_items: Vec::new(),
+            states_structure: false,
+            scaffolding: 0,
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             conflicted_appearance_bindings: BTreeSet::new(),
@@ -746,12 +758,12 @@ impl<'a> Builder<'a> {
         let mut emitted_items = self.emit_shape_items(context);
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
-        let has_model_items = !emitted_items.is_empty();
-        let states_structure =
+        self.model_items.clone_from(&emitted_items);
+        self.states_structure =
             cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
                 .next()
                 .is_some();
-        if states_structure {
+        if self.states_structure {
             self.emit_product_graph(context);
             if !standalone_items.is_empty() {
                 self.emit_shape_representation(
@@ -781,7 +793,7 @@ impl<'a> Builder<'a> {
         // Every instance emitted from here on writes a record of the
         // document. Before it, a document that states no structure has only
         // the writer's context and default product structure in the file.
-        let scaffolding = self.emitter.instance_count();
+        self.scaffolding = self.emitter.instance_count();
 
         self.emit_visibility();
         self.emit_tessellations(context);
@@ -790,14 +802,25 @@ impl<'a> Builder<'a> {
         self.emit_pmi(context);
         self.emit_layers();
         self.emit_layer_visibility();
-        if !has_model_items && self.tessellation_step_refs.is_empty() {
+    }
+
+    /// Charges what the section [`Self::build`] wrote leaves out of the
+    /// document, after [`Self::drop_non_finite`]: a file whose records of
+    /// the document were all left out, at any stage, is empty.
+    fn note_written(&mut self) {
+        let holds_geometry = self
+            .model_items
+            .iter()
+            .chain(self.tessellation_step_refs.values())
+            .any(|item| self.emitter.holds(*item));
+        if !holds_geometry {
             if !self.ir.geometry.bodies.is_empty() {
                 self.loss(
                     StepLossCode::NoExportableSolids,
                     "no body geometry could be placed in a STEP representation".to_string(),
                 );
             }
-            if states_structure || self.emitter.instance_count() > scaffolding {
+            if self.states_structure || self.emitter.holds_after(self.scaffolding) {
                 self.loss(
                     StepLossCode::NoGeometryWritten,
                     "no geometry was written to a STEP representation".to_string(),
