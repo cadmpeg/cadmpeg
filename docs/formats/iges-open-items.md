@@ -139,14 +139,6 @@ from a conformant file.
 
 **Need.** A tolerance basis must establish the sample count and the residual limit.
 
-### TGT-01. Write target displacement
-
-**Question.** When does a write target that differs from the source dialect charge a loss, and when is it silent?
-
-**Known.** The writer charges `iges/target.source-dialect-displaced` when the selected write target differs from the same-format source dialect (`writer/target.rs:135`). `iges.md` states the target profiles.
-
-**Need.** Cross-target writes must establish the charge condition.
-
 ### SRC-01. Unavailable preserved source image
 
 **Question.** What disposition applies when the preserved source image for byte-exact replay is unavailable?

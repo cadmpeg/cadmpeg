@@ -46,7 +46,7 @@ impl ArenaClass {
 /// requires `design`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields, try_from = "ContentScopeWire")]
+#[serde(deny_unknown_fields)]
 pub struct ContentScope {
     /// Model arenas are meaningful, including when empty.
     pub model: bool,
@@ -54,34 +54,6 @@ pub struct ContentScope {
     pub design: bool,
     /// Process arenas are meaningful, including when empty.
     pub process: bool,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct ContentScopeWire {
-    /// Model arenas are meaningful, including when empty.
-    model: bool,
-    /// Design arenas are meaningful, including when empty.
-    design: bool,
-    /// Process arenas are meaningful, including when empty.
-    process: bool,
-}
-
-impl TryFrom<ContentScopeWire> for ContentScope {
-    type Error = ScopeDependency;
-
-    fn try_from(wire: ContentScopeWire) -> Result<Self, Self::Error> {
-        let scope = Self {
-            model: wire.model,
-            design: wire.design,
-            process: wire.process,
-        };
-        match scope.unmet_requirement() {
-            Some(error) => Err(error),
-            None => Ok(scope),
-        }
-    }
 }
 
 /// A held class whose required class the scope excludes.
@@ -347,14 +319,19 @@ mod tests {
                 required: ArenaClass::Design,
             })
         );
-        assert!(serde_json::from_str::<ContentScope>(
-            r#"{"model":false,"design":true,"process":false}"#
-        )
-        .is_err());
-        assert!(serde_json::from_str::<ContentScope>(
-            r#"{"model":true,"design":false,"process":true}"#
-        )
-        .is_err());
+    }
+
+    #[test]
+    fn a_scope_that_breaks_a_requirement_reads_as_written() {
+        for scope in [
+            ContentScope::container().with(ArenaClass::Design, true),
+            ContentScope::geometry().with(ArenaClass::Process, true),
+        ] {
+            let wire = serde_json::to_string(&scope).expect("scope serializes");
+            let read = serde_json::from_str::<ContentScope>(&wire).expect("scope parses");
+            assert_eq!(read, scope);
+            assert!(read.unmet_requirement().is_some());
+        }
     }
 
     #[test]

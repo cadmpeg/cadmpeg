@@ -17,7 +17,7 @@ use crate::report::{
         CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
         SynthesisFidelity, WritePath as ReportWritePath,
     },
-    loss::LossNote,
+    loss::{LossNamespace, LossNote},
     strictness::Strictness,
     Severity,
 };
@@ -28,6 +28,7 @@ use cadmpeg_core::CodecError;
 
 pub mod approximation;
 mod cages;
+mod canonical;
 pub use cages::{cage_bodies, cage_bodies_clause, remove_cage_bodies, without_cage_bodies};
 pub mod capacity;
 mod carried;
@@ -170,8 +171,6 @@ impl<E: EncoderBackend> Encoder for E {
         let target = E::TARGET
             .resolve(input.ir, request, E::FORMAT)
             .map_err(EncodeError::from_backend)?;
-        let identity = target.export_target().cloned();
-        let synthesized_identity = target.synthesized_target().cloned();
         let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
         let restored = self
             .restore(input, &target, &mut restore_notes, &mut restore_losses)
@@ -181,7 +180,7 @@ impl<E: EncoderBackend> Encoder for E {
             None => input,
         };
         let body = self
-            .plan_resolved(input, target)
+            .plan_resolved(input, target.clone())
             .map_err(EncodeError::from_backend)?;
         let ExportBody {
             bytes,
@@ -189,9 +188,22 @@ impl<E: EncoderBackend> Encoder for E {
             write_path,
             coverage,
             native,
-            mut losses,
+            losses: body_losses,
             mut notes,
+            written_row,
         } = body;
+        let namespace = const {
+            match LossNamespace::new(E::FORMAT.as_str()) {
+                Ok(namespace) => namespace,
+                Err(_) => panic!("an encoder format is a loss namespace"),
+            }
+        };
+        let (identity, mut losses) = target.report_target(
+            namespace,
+            matches!(write_path, WritePath::Synthesized { .. }),
+            written_row,
+        );
+        losses.extend(body_losses);
         notes.extend(restore_notes);
         losses.extend(restore_losses);
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
@@ -225,10 +237,6 @@ impl<E: EncoderBackend> Encoder for E {
                 E::REQUEST
             ));
         }
-        let identity = match write_path {
-            WritePath::Synthesized { .. } => synthesized_identity,
-            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
-        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
@@ -513,6 +521,9 @@ pub struct ExportBody {
     pub losses: Vec<LossNote>,
     /// Free-form notes.
     pub notes: Vec<String>,
+    /// The catalog row the payload is, where the writer wrote another row
+    /// than the resolution names; `None` for the resolved row.
+    pub written_row: Option<target::WrittenRow>,
 }
 
 impl ExportBody {
@@ -537,6 +548,7 @@ impl ExportBody {
             native,
             losses: Vec::new(),
             notes: Vec::new(),
+            written_row: None,
         }
     }
 }
@@ -701,16 +713,20 @@ impl EncoderBackend for CadirEncoder {
         let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
             CodecError::Malformed(error.to_string())
         };
+        let (canonical, mut losses) = match canonical::canonical_form(input.ir)? {
+            Some((ir, losses)) => (Some(ir), losses),
+            None => (None, Vec::new()),
+        };
+        let source = canonical.as_ref().unwrap_or(input.ir);
         let (mut bytes, measured) =
-            crate::hash::measured_canonical_json(input.ir).map_err(malformed)?;
-        let mut losses = Vec::new();
+            crate::hash::measured_canonical_json(source).map_err(malformed)?;
         let mut native = NativeDispositions::written();
         let written;
         let ir = if measured.records.is_empty() && measured.outside.is_empty() {
-            input.ir
+            source
         } else {
-            let (ir, unwritable) = within_the_bounds(input.ir, &measured, &mut native)?;
-            losses = unwritable;
+            let (ir, unwritable) = within_the_bounds(source, &measured, &mut native)?;
+            losses.extend(unwritable);
             bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
                 .map_err(malformed)?
                 .into_bytes();

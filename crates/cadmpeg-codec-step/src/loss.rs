@@ -57,10 +57,6 @@ pub(crate) enum StepLossCode {
     HeaderMetadataNoncanonical,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
-    /// The requested write target is written as another catalog row.
-    TargetRequestDisplaced,
     /// The declared schema object identifier names a module edition that the
     /// decoder reads as a published AP edition.
     SourceSchemaEditionAssumed,
@@ -461,8 +457,6 @@ impl StepLossCode {
         Self::ImplementationLevelUnverified,
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
-        Self::SourceDialectDisplaced,
-        Self::TargetRequestDisplaced,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
@@ -660,8 +654,6 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
-            Self::TargetRequestDisplaced => "target.request-displaced",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
@@ -946,9 +938,6 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced | Self::TargetRequestDisplaced => {
-                LossTaxonomy::SourceDialectDisplaced
-            }
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -1167,8 +1156,6 @@ mod tests {
                 "parse.implementation-level-unverified",
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
-                "target.request-displaced",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",

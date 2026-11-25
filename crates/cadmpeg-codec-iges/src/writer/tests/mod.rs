@@ -68,6 +68,7 @@ use crate::{IgesCodec, IgesVersion};
 mod body_placement;
 mod cages;
 mod closed_edge_range;
+mod covered_uses;
 mod design_content;
 mod encode;
 mod exact_equivalents;

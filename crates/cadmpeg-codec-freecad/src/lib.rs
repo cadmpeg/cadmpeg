@@ -1353,7 +1353,8 @@ impl EncoderBackend for FcstdCodec {
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
+    const TARGET: Catalog =
+        Catalog::new(dialect::TARGETS, None).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
