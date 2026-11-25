@@ -25,8 +25,8 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary,
-    LoopRing, PcurveUse, Point, Region, Sense, Shell, Vertex,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop,
+    LoopBoundary, LoopRing, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
@@ -955,4 +955,95 @@ fn a_cylinder_face_that_states_no_loop_is_dropped_for_its_unbounded_domain() {
             && omitted[0].contains("states no loop has no finite domain"),
         "{omitted:#?}"
     );
+}
+
+/// A parameter line from `origin` along the unit `direction` over
+/// `[0, length]`, and its use.
+fn parameter_line(
+    ir: &mut CadIr,
+    key: &str,
+    origin: [f64; 2],
+    direction: [f64; 2],
+    length: f64,
+) -> PcurveUse {
+    let pcurve = id(PcurveId::mint, "pcurve", key);
+    ir.geometry.pcurves.push(Pcurve {
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(
+                Point2::new(origin[0], origin[1]),
+                Point2::new(direction[0], direction[1]),
+            )
+            .expect("a unit direction"),
+        ),
+        metadata: PcurveMetadata::general(None, FiniteVector::new([0.0, length]), None),
+        native_ref: None,
+    });
+    PcurveUse {
+        pcurve,
+        isoparametric: Some(true),
+        parameter_range: None,
+    }
+}
+
+/// [`sphere_lune`] whose coedges carry their parameter curves and whose loop
+/// states each pole as a vertex use with the parameter line along that pole.
+fn sphere_lune_with_pole_uses(sweep: f64) -> CadIr {
+    let mut ir = sphere_lune(sweep);
+    let half = PI / 2.0;
+    let end = parameter_line(&mut ir, "end", [sweep, -half], [0.0, 1.0], PI);
+    let start = parameter_line(&mut ir, "start", [0.0, half], [0.0, -1.0], PI);
+    let north = parameter_line(&mut ir, "north", [sweep, half], [-1.0, 0.0], sweep);
+    let south = parameter_line(&mut ir, "south", [0.0, -half], [1.0, 0.0], sweep);
+    for (key, pcurve) in [("end", end), ("start", start)] {
+        ir.geometry
+            .coedges
+            .iter_mut()
+            .find(|coedge| coedge.id == id(CoedgeId::mint, "coedge", key))
+            .expect("the lune coedge")
+            .pcurves = vec![pcurve];
+    }
+    let coedges = vec![
+        id(CoedgeId::mint, "coedge", "end"),
+        id(CoedgeId::mint, "coedge", "start"),
+    ];
+    let vertex_uses = vec![
+        AnchoredVertexUse {
+            vertex: id(VertexId::mint, "vertex", "north"),
+            after: id(CoedgeId::mint, "coedge", "end"),
+            pcurves: vec![north],
+        },
+        AnchoredVertexUse {
+            vertex: id(VertexId::mint, "vertex", "south"),
+            after: id(CoedgeId::mint, "coedge", "start"),
+            pcurves: vec![south],
+        },
+    ];
+    ir.geometry.loops[0].boundary =
+        LoopBoundary::Ring(LoopRing::new(coedges, vertex_uses).expect("a ring"));
+    ir.finalize();
+    ir
+}
+
+#[test]
+fn a_reflected_sphere_lune_moves_each_pole_use_to_the_coedge_that_arrives_at_its_pole() {
+    let mirror = Stretch {
+        scale: [-1.0, 1.0, 1.0],
+        shift: [1.0, -2.0, 0.5],
+    };
+    for stretch in [MIRROR_STRETCH, mirror] {
+        let (points, ends) = boundary(&read_back(sphere_lune_with_pole_uses(SECTOR), stretch));
+        assert_parameter_loop_closes(&ends);
+        for point in points.into_iter().map(|point| stretch.source(point)) {
+            let radius = point.x.hypot(point.y).hypot(point.z);
+            assert!(
+                (radius - SPHERE_RADIUS).abs() <= ON_SURFACE,
+                "{point:?} lies off the sphere"
+            );
+            assert!(
+                within_sector(point, SECTOR),
+                "{point:?} lies outside the lune"
+            );
+        }
+    }
 }

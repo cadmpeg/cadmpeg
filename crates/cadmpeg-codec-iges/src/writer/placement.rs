@@ -1648,3 +1648,6 @@ fn mapped_pcurve(pcurve: &Pcurve, map: UvMap) -> Result<Pcurve, String> {
         native_ref: pcurve.native_ref.clone(),
     })
 }
+
+#[cfg(test)]
+mod tests;
