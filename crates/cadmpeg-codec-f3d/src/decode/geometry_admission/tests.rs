@@ -11,7 +11,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
 use cadmpeg_ir::CadIr;
 
-fn exact_curve(offset: f64) -> CadIr {
+fn exact_curve() -> CadIr {
     let mut ir = CadIr::empty();
     for (slot, x) in [(0, -100.0), (1, 0.0), (2, 100.0)] {
         let point = PointId::mint(format!("test:brep:point#{slot}")).unwrap();
@@ -28,16 +28,8 @@ fn exact_curve(offset: f64) -> CadIr {
         });
     }
     for (slot, start, end) in [
-        (
-            0,
-            Point3::new(-100.0, 0.0, 0.0),
-            Point3::new(0.0, offset, 0.0),
-        ),
-        (
-            1,
-            Point3::new(0.0, -offset, 0.0),
-            Point3::new(100.0, 0.0, 0.0),
-        ),
+        (0, Point3::new(-100.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)),
+        (1, Point3::new(0.0, 0.0, 0.0), Point3::new(100.0, 0.0, 0.0)),
     ] {
         let curve = CurveId::mint(format!("test:brep:curve#{slot}")).unwrap();
         let construction =
@@ -121,100 +113,10 @@ fn exact_curve(offset: f64) -> CadIr {
     ir
 }
 
-fn geometry_is_valid(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr) -> bool {
-    !cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())
-        .unwrap()
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
-                && finding.severity >= cadmpeg_ir::report::Severity::Error
-        })
-}
-
-#[test]
-fn straddling_exact_cubic_endpoints_widen_the_shared_vertex_tolerance() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut ir = exact_curve(0.5);
-        let mut expected = ir.clone();
-        expected.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveLength::new(0.5);
-        let mut losses = Vec::new();
-        assert!(!geometry_is_valid(ctx, &ir));
-        let mut annotations = vec![cadmpeg_asm::brep::annotations::AnnotationRecord {
-            id: ir.geometry.vertices[1].id.as_str().to_owned(),
-            stream: "synthetic".into(),
-            offset: 0,
-            tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("vertex".into()),
-            derived_fields: Vec::new(),
-        }];
-        admit(ctx, &mut ir, &mut losses, &mut annotations).unwrap();
-        assert_eq!(annotations[0].derived_fields, ["tolerance"]);
-        assert_eq!(ir, expected);
-        assert!(geometry_is_valid(ctx, &ir));
-        assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code.local_code(),
-            "geometry.vertex-tolerance-widened"
-        );
-        assert!(losses[0].message.contains("1 vertex tolerance(s)"));
-        assert!(losses[0].message.contains("0.50000000000000000 mm"));
-        let admitted = ir.clone();
-        let mut repeated_losses = Vec::new();
-        admit(ctx, &mut ir, &mut repeated_losses, &mut []).unwrap();
-        assert_eq!(ir, admitted);
-        assert!(repeated_losses.is_empty());
-    });
-}
-
-#[test]
-fn endpoint_miss_above_body_fraction_still_fails_validation() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut ir = exact_curve(2.01);
-        let expected = ir.clone();
-        let mut losses = Vec::new();
-        admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
-        assert_eq!(ir, expected);
-        assert!(losses.is_empty());
-        assert!(!geometry_is_valid(ctx, &ir));
-    });
-}
-
-#[test]
-fn matching_cache_and_explicit_endpoint_tolerance_are_preserved() {
-    crate::test_support::with_decode_context(|ctx| {
-        for offset in [0.0, 0.5] {
-            let mut ir = exact_curve(offset);
-            if offset != 0.0 {
-                ir.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveLength::new(0.75);
-            }
-            let expected = ir.clone();
-            let mut losses = Vec::new();
-            admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
-            assert_eq!(ir, expected);
-            assert!(losses.is_empty());
-            assert!(geometry_is_valid(ctx, &ir));
-        }
-    });
-}
-
-#[test]
-fn an_unevaluable_incident_endpoint_blocks_widening() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut ir = exact_curve(0.5);
-        ir.geometry.edges[1].carrier = EdgeCarrier::new(None, None).unwrap();
-        let expected = ir.clone();
-        let mut losses = Vec::new();
-        admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
-        assert_eq!(ir, expected);
-        assert!(losses.is_empty());
-        assert!(!geometry_is_valid(ctx, &ir));
-    });
-}
-
 #[test]
 fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
     crate::test_support::with_decode_context(|ctx| {
-        let mut ir = exact_curve(0.0);
+        let mut ir = exact_curve();
         ir.geometry.surfaces.push(
             serde_json::from_value(serde_json::json!({
                 "id": "test:brep:surface#1",
@@ -239,7 +141,7 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
         let curves = ir.geometry.curves.clone();
         let surfaces = ir.geometry.surfaces.clone();
         let mut losses = Vec::new();
-        admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
+        admit(ctx, &mut ir, &mut losses).unwrap();
         assert_eq!(ir.geometry.curves, curves);
         assert_eq!(ir.geometry.surfaces, surfaces);
         let ProceduralCurveDefinition::Spring(spring) =
@@ -254,22 +156,6 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
             losses[0].code.local_code(),
             "geometry.spring-support-pcurve-unresolved"
         );
-    });
-}
-
-#[test]
-fn an_unowned_vertex_has_no_body_bound() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut ir = exact_curve(0.5);
-        ir.geometry.bodies.clear();
-        ir.geometry.regions.clear();
-        ir.geometry.shells.clear();
-        let expected = ir.clone();
-        let mut losses = Vec::new();
-        admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
-        assert_eq!(ir, expected);
-        assert!(losses.is_empty());
-        assert!(!geometry_is_valid(ctx, &ir));
     });
 }
 
@@ -322,7 +208,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
             ));
             let mut losses = Vec::new();
             let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-            admit(&ctx, &mut ir, &mut losses, &mut []).unwrap();
+            admit(&ctx, &mut ir, &mut losses).unwrap();
             assert_eq!(
                 losses.len(),
                 usize::from(pcurve_present && !surface_present)

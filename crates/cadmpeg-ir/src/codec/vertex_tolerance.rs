@@ -2,28 +2,35 @@
 //! Vertex tolerances widened to the positions part 10 compares a vertex with
 //! (§2.3).
 //!
-//! A vertex the source stores farther from the end of an edge's curve, or of
-//! a coedge's use curve, than the coincidence allowance there states its
-//! `tolerance` as its largest such distance. Only records the decoder read
-//! are measured: a record whose annotations mark it computed (any exactness
-//! but byte-exact, other than its `tolerance`) is not. A vertex is left as
-//! stored where a compared position lies more than twice as far from it as
-//! the carrier itself does, or where that carrier distance cannot be
-//! measured: there a range is off, not the vertex.
+//! The pass reads the comparisons the validator makes: an edge's curve ends,
+//! a coedge's use-curve ends, and a coedge's pcurve image on its face's
+//! surface. A vertex that a compared position misses beyond the coincidence
+//! allowance states its `tolerance` as its largest distance from the
+//! positions compared with it. Only records the decoder read are measured: a
+//! record whose annotations mark it computed (any exactness but byte-exact,
+//! other than its `tolerance`) is not. A vertex is left as stored where a
+//! missing position lies more than twice as far from it as the carrier
+//! itself does, or where that carrier distance cannot be measured: there a
+//! range is off, not the vertex.
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget};
+use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, AnnotationFieldError, Annotations};
-use crate::eval::decode::curve_point;
+use crate::eval::admission::ModelEvaluationPass;
+use crate::eval::decode::{curve_point, surface_point_solved};
 use crate::eval::finite_or_refusal;
-use crate::geometry::{Curve, SolvedCurveGeometry};
+use crate::geometry::{Curve, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::index::ModelIndex;
 use crate::math::Point3;
 use crate::provenance::Exactness;
 use crate::scalar::PositiveLength;
-use crate::topology::{Edge, IncreasingParameterInterval, Sense};
-use crate::units::{binding_allowance, coincidence_allowance, tolerance_in_force};
+use crate::topology::IncreasingParameterInterval;
+use crate::validate::geometry_consistency::{
+    pcurve_image_comparisons, ComparedCarrier, CurveEndComparisons, VertexComparison,
+};
 use crate::CadIr;
 
 /// A compared position farther from the vertex than this many times the
@@ -35,6 +42,9 @@ const CARRIER_SAMPLES: u32 = 64;
 
 /// Golden-section steps that refine the nearest sampled parameter.
 const CARRIER_REFINEMENTS: usize = 48;
+
+/// The work one NURBS surface projection may spend.
+const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 
 /// The vertices whose tolerance the pass stated, and the largest increase
 /// over the tolerance in force at each before.
@@ -48,7 +58,7 @@ impl Widened {
     /// The message of the `geometry.vertex-tolerance-widened` loss.
     pub(super) fn message(&self) -> String {
         format!(
-            "widened {} vertex tolerance(s) to each vertex's largest distance from the curve ends \
+            "widened {} vertex tolerance(s) to each vertex's largest distance from the positions \
              compared with it; the largest widening is {} mm",
             self.vertices.len(),
             self.largest
@@ -56,22 +66,7 @@ impl Widened {
     }
 }
 
-/// The ends of a carrier compared with the vertices its edge runs between:
-/// each vertex with the parameter it is compared at.
-struct Comparison<'ir> {
-    edge: &'ir Edge,
-    curve: &'ir Curve,
-    fit: Option<f64>,
-    ends: [(&'ir str, f64); 2],
-}
-
-/// One compared position beyond the coincidence allowance.
-struct Miss<'ir> {
-    distance: f64,
-    carrier: &'ir Curve,
-}
-
-/// Widens the tolerance of each vertex of `ir` that a compared curve end
+/// Widens the tolerance of each vertex of `ir` that a compared position
 /// misses, and marks that tolerance derived in `annotations`. The pass
 /// measures in a session of its own under `policy`, so a ceiling it meets
 /// refuses no part of the decode; it then widens nothing.
@@ -138,205 +133,123 @@ fn measure(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
-) -> Result<BTreeMap<String, f64>, ResourceLimit> {
-    let linear = ir.tolerances.linear;
-    let curves: HashMap<&str, &Curve> = ir
-        .geometry
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve))
-        .collect();
-    let constructions: HashMap<&str, _> = ir
-        .geometry
-        .procedural_curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve))
-        .collect();
-    let edges: HashMap<&str, &Edge> = ir
-        .geometry
-        .edges
-        .iter()
-        .map(|edge| (edge.id.as_str(), edge))
-        .collect();
-    let points: HashMap<&str, _> = ir
+) -> Result<BTreeMap<String, f64>, CodecError> {
+    let read = |id: &str| !computed(annotations, id);
+    let points: HashMap<&str, Point3> = ir
         .geometry
         .points
         .iter()
-        .map(|point| (point.id.as_str(), point))
+        .map(|point| (point.id.as_str(), point.position().get()))
         .collect();
-    // Each vertex read from the source, with its position and stated tolerance.
-    let vertices: HashMap<&str, (Point3, Option<f64>)> = ir
+    // Each vertex read from the source, with its position.
+    let vertices: HashMap<&str, Point3> = ir
         .geometry
         .vertices
         .iter()
-        .filter(|vertex| {
-            !computed(annotations, vertex.id.as_str())
-                && !computed(annotations, vertex.point.as_str())
-        })
-        .filter_map(|vertex| {
-            let point = points.get(vertex.point.as_str())?;
-            Some((
-                vertex.id.as_str(),
-                (
-                    point.position().get(),
-                    vertex.tolerance.map(PositiveLength::get),
-                ),
-            ))
-        })
+        .filter(|vertex| read(vertex.id.as_str()) && read(vertex.point.as_str()))
+        .filter_map(|vertex| Some((vertex.id.as_str(), *points.get(vertex.point.as_str())?)))
         .collect();
-    // A carrier the decoder read, with the fit of the cache it is evaluated
-    // through.
-    let carrier = |id: &str| {
-        let curve = *curves.get(id)?;
-        if computed(annotations, id) {
-            return None;
-        }
-        let construction = match curve.geometry.procedural_construction() {
-            Some(construction) => {
-                if computed(annotations, construction.as_str()) {
-                    return None;
-                }
-                constructions.get(construction.as_str()).copied()
-            }
-            None => None,
-        };
-        let fit = construction
-            .and_then(crate::geometry::ProceduralCurve::cache_fit_tolerance)
-            .map(crate::geometry::legacy_cache::FitTolerance::get);
-        Some((curve, fit))
-    };
-    // Each comparison of a carrier's ends with the vertices it runs between.
-    let mut comparisons = Vec::new();
+    let mut comparisons: Vec<VertexComparison<'_>> = Vec::new();
+    let curve_ends = CurveEndComparisons::new(ir);
     for edge in &ir.geometry.edges {
-        let (Some(curve), Some(range), Some(ends)) = (edge.curve(), edge.param_range(), &edge.ends)
-        else {
-            continue;
-        };
-        if computed(annotations, edge.id.as_str()) {
-            continue;
-        }
-        let Some((curve, fit)) = carrier(curve.as_str()) else {
-            continue;
-        };
-        let [start, end] = range.get();
-        comparisons.push(Comparison {
-            edge,
-            curve,
-            fit,
-            ends: [(ends.start.as_str(), start), (ends.end.as_str(), end)],
-        });
+        comparisons.extend(curve_ends.edge(ctx, edge)?);
     }
     for coedge in &ir.geometry.coedges {
-        let Some(use_curve) = &coedge.use_curve else {
-            continue;
-        };
-        if computed(annotations, coedge.id.as_str()) {
+        comparisons.extend(curve_ends.coedge(ctx, coedge)?);
+    }
+    let index = ModelIndex::new_model_only(ir);
+    pcurve_image_comparisons(ctx, &index, &ModelEvaluationPass::new(), |comparison| {
+        comparisons.push(comparison);
+    })?;
+    let mut largest: BTreeMap<&str, f64> = BTreeMap::new();
+    let mut misses: BTreeMap<&str, Vec<(f64, ComparedCarrier<'_>)>> = BTreeMap::new();
+    for comparison in &comparisons {
+        if !read(comparison.subject) || !comparison.records.iter().all(|record| read(record)) {
             continue;
         }
-        let Some(edge) = edges.get(coedge.edge.as_str()).copied() else {
-            continue;
-        };
-        let Some(ends) = &edge.ends else {
-            continue;
-        };
-        let Some((curve, fit)) = carrier(use_curve.curve.as_str()) else {
-            continue;
-        };
-        let (first, last) = match coedge.sense {
-            Sense::Forward => (&ends.start, &ends.end),
-            Sense::Reversed => (&ends.end, &ends.start),
-        };
-        let [start, end] = use_curve.parameter_range.endpoints();
-        comparisons.push(Comparison {
-            edge,
-            curve,
-            fit,
-            ends: [(first.as_str(), start), (last.as_str(), end)],
-        });
-    }
-    let mut misses: BTreeMap<&str, Vec<Miss<'_>>> = BTreeMap::new();
-    for Comparison {
-        edge,
-        curve,
-        fit,
-        ends,
-    } in comparisons
-    {
-        let (Some(&(start, start_tolerance)), Some(&(end, end_tolerance))) =
-            (vertices.get(ends[0].0), vertices.get(ends[1].0))
-        else {
-            continue;
-        };
-        let (Some(at_start), Some(at_end)) = (
-            finite_or_refusal(curve_point(ctx, &curve.geometry, ends[0].1))?,
-            finite_or_refusal(curve_point(ctx, &curve.geometry, ends[1].1))?,
-        ) else {
-            continue;
-        };
-        let (at_start, at_end) = (at_start.get(), at_end.get());
-        let tolerances = [
-            edge.tolerance.map(PositiveLength::get),
-            start_tolerance,
-            end_tolerance,
-        ];
-        let allowance = coincidence_allowance(
-            tolerance_in_force(linear, &tolerances),
-            &[fit],
-            magnitude(&[at_start, at_end, start, end]),
-        )
-        .max(binding_allowance(
-            linear,
-            &[tolerances[0], tolerances[1], tolerances[2], fit],
-        ));
-        for ((vertex, _), (position, at)) in
-            ends.into_iter().zip([(start, at_start), (end, at_end)])
-        {
-            let distance = Point3::distance(position, at);
-            if distance.is_finite() && distance > allowance {
-                misses.entry(vertex).or_default().push(Miss {
-                    distance,
-                    carrier: curve,
-                });
+        for end in &comparison.ends {
+            if !vertices.contains_key(end.vertex) || !end.distance.is_finite() {
+                continue;
+            }
+            let distance = largest.entry(end.vertex).or_default();
+            *distance = distance.max(end.distance);
+            if end.distance > end.allowance {
+                misses
+                    .entry(end.vertex)
+                    .or_default()
+                    .push((end.distance, comparison.carrier));
             }
         }
     }
     let mut tolerances = BTreeMap::new();
     'vertices: for (vertex, misses) in misses {
-        let Some(&(position, _)) = vertices.get(vertex) else {
+        let Some(&position) = vertices.get(vertex) else {
             continue;
         };
-        let mut largest = 0.0_f64;
-        for miss in misses {
-            let Some(carrier) = carrier_distance(ctx, miss.carrier, position)? else {
+        for (distance, carrier) in misses {
+            let carrier = match carrier {
+                ComparedCarrier::Curve(curve) => curve_distance(ctx, curve, position)?,
+                ComparedCarrier::Surface(surface) => surface_distance(ctx, surface, position)?,
+            };
+            let Some(carrier) = carrier else {
                 continue 'vertices;
             };
-            if miss.distance > CARRIER_DISTANCE_FACTOR * carrier {
+            if distance > CARRIER_DISTANCE_FACTOR * carrier {
                 continue 'vertices;
             }
-            largest = largest.max(miss.distance);
         }
-        tolerances.insert(vertex.to_owned(), largest);
+        if let Some(&tolerance) = largest.get(vertex) {
+            tolerances.insert(vertex.to_owned(), tolerance);
+        }
     }
     Ok(tolerances)
 }
 
-/// The largest magnitude of a finite coordinate of `points`.
-fn magnitude(points: &[Point3]) -> f64 {
-    points
-        .iter()
-        .flat_map(|point| [point.x, point.y, point.z])
-        .filter(|coordinate| coordinate.is_finite())
-        .fold(0.0, |largest, coordinate| largest.max(coordinate.abs()))
+/// The distance of `point` from `surface`, or `None` where the surface has
+/// no solved geometry this pass projects onto or the projection has no
+/// finite point.
+fn surface_distance(
+    ctx: &DecodeContext<'_>,
+    surface: &SurfaceGeometry,
+    point: Point3,
+) -> Result<Option<f64>, CodecError> {
+    let Some(solved) = surface.solved() else {
+        return Ok(None);
+    };
+    let parameters = match solved {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            crate::eval::nurbs_surface_closest_parameter_with_budget(
+                ctx,
+                nurbs,
+                point,
+                None,
+                &WorkBudget::new(SURFACE_PROJECTION_WORK),
+            )?
+        }
+        _ => crate::eval::analytic_surface_parameters_solved(solved, point),
+    };
+    let Some(parameters) = parameters else {
+        return Ok(None);
+    };
+    let parameters = parameters.get();
+    Ok(finite_or_refusal(surface_point_solved(
+        ctx,
+        solved,
+        parameters.u,
+        parameters.v,
+    ))?
+    .map(|at| Point3::distance(at.get(), point))
+    .filter(|distance| distance.is_finite()))
 }
 
 /// The distance of `point` from `curve` over the curve's own domain, or
 /// `None` where the curve has no domain this pass searches or no finite
 /// point in it.
-fn carrier_distance(
+fn curve_distance(
     ctx: &DecodeContext<'_>,
     curve: &Curve,
     point: Point3,
-) -> Result<Option<f64>, ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let range = curve
         .parameter_range
         .map(IncreasingParameterInterval::endpoints);
@@ -355,7 +268,7 @@ fn carrier_distance(
     let Some([low, high]) = domain else {
         return Ok(None);
     };
-    let distance_at = |parameter: f64| -> Result<Option<f64>, ResourceLimit> {
+    let distance_at = |parameter: f64| -> Result<Option<f64>, CodecError> {
         Ok(
             finite_or_refusal(curve_point(ctx, &curve.geometry, parameter))?
                 .map(|at| Point3::distance(at.get(), point))
@@ -398,7 +311,7 @@ fn line_distance(
     curve: &Curve,
     range: Option<[f64; 2]>,
     point: Point3,
-) -> Result<Option<f64>, ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let (Some(origin), Some(unit)) = (
         finite_or_refusal(curve_point(ctx, &curve.geometry, 0.0))?,
         finite_or_refusal(curve_point(ctx, &curve.geometry, 1.0))?,

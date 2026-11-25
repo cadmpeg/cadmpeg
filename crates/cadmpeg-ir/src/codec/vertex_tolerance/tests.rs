@@ -9,9 +9,13 @@ use crate::codec::loss::DecodeLossCode;
 use crate::codec::{DecodeBody, DecodeResult, Decoded, FormatId};
 use crate::examples::unit_cube;
 use crate::features::geometry::FinitePoint3;
-use crate::math::Point3;
+use crate::geometry::pcurve::{
+    Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
+};
+use crate::math::{Point3, Vector3};
 use crate::provenance::Exactness;
 use crate::source_fidelity::SourceFidelity;
+use crate::topology::PcurveUse;
 use crate::CadIr;
 
 /// The unit cube (side 10, each edge a line ranged from its start corner)
@@ -145,6 +149,162 @@ fn a_vertex_whose_point_the_decoder_computed_keeps_its_tolerance() {
     let mut builder = AnnotationBuilder::new();
     builder.exactness(point.as_str(), Exactness::Derived);
     let mut annotations = builder.build();
+    let before = ir.clone();
+    assert_eq!(
+        widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap(),
+        None
+    );
+    assert_eq!(ir, before);
+}
+
+/// The unit cube with corner 0 at `position`, each edge's curve marked
+/// computed, and on the face in the plane through the origin normal to
+/// `axis` a line
+/// pcurve per coedge from the stored corner positions of its edge.
+fn cube_with_face_pcurves(position: Point3, axis: Vector3) -> (CadIr, Annotations) {
+    let stored = unit_cube().unwrap();
+    let mut ir = cube_with_corner_at(0, position);
+    let corner = |vertex: &crate::ids::VertexId| {
+        let vertex = stored
+            .geometry
+            .vertices
+            .iter()
+            .find(|candidate| &candidate.id == vertex)
+            .unwrap();
+        stored
+            .geometry
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    // The face whose loop runs through corners on the plane through the
+    // origin normal to `axis`.
+    let on_plane = |coedge: &crate::topology::Coedge| {
+        let edge = stored
+            .geometry
+            .edges
+            .iter()
+            .find(|edge| edge.id == coedge.edge)
+            .unwrap();
+        edge.vertices().all(|vertex| {
+            let at = corner(vertex);
+            at.x * axis.x + at.y * axis.y + at.z * axis.z == 0.0
+        })
+    };
+    let face = stored
+        .geometry
+        .faces
+        .iter()
+        .find(|face| {
+            stored
+                .geometry
+                .loops
+                .iter()
+                .filter(|lp| lp.face == face.id)
+                .all(|lp| {
+                    stored
+                        .geometry
+                        .coedges
+                        .iter()
+                        .filter(|coedge| coedge.owner_loop == lp.id)
+                        .all(on_plane)
+                })
+        })
+        .unwrap();
+    let plane = stored
+        .geometry
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .unwrap()
+        .geometry
+        .solved()
+        .unwrap()
+        .clone();
+    let loops: Vec<_> = stored
+        .geometry
+        .loops
+        .iter()
+        .filter(|lp| lp.face == face.id)
+        .map(|lp| lp.id.clone())
+        .collect();
+    for coedge in &mut ir.geometry.coedges {
+        if !loops.contains(&coedge.owner_loop) {
+            continue;
+        }
+        let edge = stored
+            .geometry
+            .edges
+            .iter()
+            .find(|edge| edge.id == coedge.edge)
+            .unwrap();
+        let ends = edge.ends.as_ref().unwrap();
+        let uv = |vertex| {
+            crate::eval::analytic_surface_parameters_solved(&plane, corner(vertex))
+                .unwrap()
+                .get()
+        };
+        let pcurve: crate::ids::PcurveId =
+            format!("test:model:pcurve#{}", ir.geometry.pcurves.len())
+                .try_into()
+                .unwrap();
+        ir.geometry.pcurves.push(Pcurve {
+            id: pcurve.clone(),
+            geometry: PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    PcurveNurbsPoles::Polynomial {
+                        points: vec![uv(&ends.start), uv(&ends.end)],
+                    },
+                    false,
+                )
+                .unwrap(),
+            },
+            metadata: PcurveMetadata::default(),
+            native_ref: None,
+        });
+        coedge.pcurves.push(PcurveUse {
+            pcurve,
+            isoparametric: None,
+            parameter_range: None,
+        });
+    }
+    let mut builder = AnnotationBuilder::new();
+    for curve in &ir.geometry.curves {
+        builder.exactness(curve.id.as_str(), Exactness::Derived);
+    }
+    (ir, builder.build())
+}
+
+#[test]
+fn a_vertex_off_its_face_surface_states_its_distance_from_the_pcurve_images() {
+    // Corner 0 moved 0.03 off the bottom face: the bottom face's pcurve images
+    // end at the stored corner, 0.03 from the vertex, and the vertex lies
+    // 0.03 from that face's plane. The edge curves are computed, so only the
+    // pcurve images are compared.
+    let (mut ir, mut annotations) =
+        cube_with_face_pcurves(Point3::new(0.0, 0.0, -0.03), Vector3::new(0.0, 0.0, 1.0));
+    let widened = widen(&mut ir, &mut annotations, &DecodePolicy::default())
+        .unwrap()
+        .unwrap();
+    assert_eq!(widened.vertices.len(), 1);
+    let stated = vertex_tolerance(&ir, 0).unwrap();
+    assert!(
+        (stated - 0.03).abs() <= 16.0 * f64::EPSILON * 0.03,
+        "{stated}"
+    );
+}
+
+#[test]
+fn a_vertex_on_its_face_surface_keeps_its_tolerance_against_the_pcurve_images() {
+    // Corner 0 moved 0.03 along the side face x = 0: the images miss it by
+    // 0.03, and the vertex lies on that face's plane, so the image is off.
+    let (mut ir, mut annotations) =
+        cube_with_face_pcurves(Point3::new(0.0, 0.0, -0.03), Vector3::new(1.0, 0.0, 0.0));
     let before = ir.clone();
     assert_eq!(
         widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap(),

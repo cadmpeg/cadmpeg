@@ -707,7 +707,7 @@
           }
         },
         "severity": "info",
-        "message": "widened 1 vertex tolerance(s) to each vertex's largest distance from the curve ends compared with it; the largest widening is 9.99999 mm"
+        "message": "widened 1 vertex tolerance(s) to each vertex's largest distance from the positions compared with it; the largest widening is 9.99999 mm"
       }
     ],
     "notes": [

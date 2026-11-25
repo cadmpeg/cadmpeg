@@ -103,8 +103,6 @@ pub(crate) enum CatiaLossCode {
     GeometryPcurveCirclePlaneMismatch,
     /// A source-owned pcurve lacks a complete neutral boundary binding.
     GeometryPcurveSourceUseUntransferred,
-    /// Binary32 coordinate uncertainty widened derived vertex tolerances.
-    GeometryVertexToleranceWidened,
     /// Face-local free-form carriers retain identity without aliased geometry.
     GeometryFaceLocalFreeformNotTransferred,
     /// Revolution carriers retain profile identity without bound directrices.
@@ -235,7 +233,6 @@ impl CatiaLossCode {
         Self::GeometryPcurveRechartNonFinite,
         Self::GeometryPcurveCirclePlaneMismatch,
         Self::GeometryPcurveSourceUseUntransferred,
-        Self::GeometryVertexToleranceWidened,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
         Self::GeometryLineProfileNotTransferred,
@@ -325,7 +322,6 @@ impl CatiaLossCode {
             Self::GeometryPcurveSourceUseUntransferred => {
                 "geometry.pcurve-source-use-untransferred"
             }
-            Self::GeometryVertexToleranceWidened => "geometry.vertex-tolerance-widened",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
             }
@@ -421,7 +417,6 @@ impl CatiaLossCode {
             Self::SourceRouteFellThrough
             | Self::SourceAnnotationCollision
             | Self::SourceCatalogScanBounded
-            | Self::GeometryVertexToleranceWidened
             | Self::TopologySheetComponentsInferred
             | Self::HistoryParameterLiteralAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
@@ -555,7 +550,6 @@ mod tests {
                 "geometry.pcurve-rechart-non-finite",
                 "geometry.pcurve-circle-plane-mismatch",
                 "geometry.pcurve-source-use-untransferred",
-                "geometry.vertex-tolerance-widened",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",
                 "geometry.line-profile-not-transferred",
