@@ -107,9 +107,10 @@ const PATCH_ONLY: &str =
 
 /// Resolve the request against the source, then plan the export it names.
 ///
-/// `Explicit(id)` refuses an id outside the synthesis catalog. Otherwise the
-/// retained document is written back as the dialect its `Document.xml`
-/// declares: `id` when it declares `id`, and the declared dialect, with
+/// `Explicit(id)` refuses an id that names no row of the synthesis catalog
+/// and no replay row ([`crate::dialect::REPLAY_ROWS`]). Otherwise the retained
+/// document is written back as the dialect its `Document.xml` declares: `id`
+/// when it declares `id`, and the declared dialect, with
 /// `target.request-displaced` naming both, when it declares another.
 ///
 /// `Inherit` asks for preservation instead. This writer repacks the retained
@@ -169,7 +170,7 @@ pub(crate) fn uncarried_digest(
 }
 
 /// What [`admit_unedited`] could establish about edits since decode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Baseline {
     /// The digest matches: nothing outside [`CARRIED_NATIVE_ARENAS`] changed.
     Unedited,
@@ -178,12 +179,16 @@ enum Baseline {
     Edited,
     /// The sidecar records no digest, so the document's edits are not known.
     Unrecorded,
+    /// The document's digest is not computable, for the reason held, so its
+    /// edits are not known.
+    Uncomputable(String),
 }
 
 /// Compare the document with the digest its decode recorded.
 ///
 /// A document whose sidecar records no digest (no sidecar, or every decode
-/// below `Full`) is [`Baseline::Unrecorded`].
+/// below `Full`) is [`Baseline::Unrecorded`], and one whose digest does not
+/// compute is [`Baseline::Uncomputable`].
 fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Baseline, CodecError> {
     let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
@@ -195,7 +200,14 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let current = uncarried_digest(&ctx, ir)?;
+    let current = match uncarried_digest(&ctx, ir) {
+        Ok(current) => current,
+        Err(error) => {
+            let reason = error.to_string();
+            recover(error)?;
+            return Ok(Baseline::Uncomputable(reason));
+        }
+    };
     ctx.finish_session()?;
     Ok(if current == *expected {
         Baseline::Unedited
@@ -208,9 +220,10 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
 /// and the fidelity resolution; this writer patches the retained document and
 /// consumes no sidecar. Every write is a patch, so `untyped` retained records
 /// in `fidelity` charge both carried-source codes. A [`Baseline::Unrecorded`]
-/// document charges `export:edit.unverified`, and a [`Baseline::Edited`] one
-/// charges `export:edit.dropped` naming the document, because the digest does
-/// not isolate the edited record (§3.4, Paths item 4).
+/// or [`Baseline::Uncomputable`] document charges `export:edit.unverified`,
+/// and a [`Baseline::Edited`] one charges `export:edit.dropped` naming the
+/// document, because the digest does not isolate the edited record (§3.4,
+/// Paths item 4).
 fn finish(
     resolution: &Resolution<'_>,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
@@ -228,6 +241,11 @@ fn finish(
             "the FCStd decode sidecar records no `{UNCARRIED_DIGEST}` codec digest, so edits \
              since decode are not known; the file patches the retained Document.xml with the \
              carried native records and holds no other edit"
+        ))),
+        Baseline::Uncomputable(reason) => losses.push(edit_unverified(format!(
+            "the `{UNCARRIED_DIGEST}` codec digest of the document does not compute ({reason}), \
+             so edits since decode are not known; the file patches the retained Document.xml \
+             with the carried native records and holds no other edit"
         ))),
         Baseline::Edited => losses.extend(edit_dropped(
             EntityKind::Feature,

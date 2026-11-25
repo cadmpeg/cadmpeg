@@ -80,6 +80,42 @@ fn an_explicit_replay_row_is_written_as_the_default_and_flagged() {
     .is_err());
 }
 
+/// A catalog that declares no default resolves an explicit replay row to its
+/// newest row. A file the writer states as the requested row charges nothing;
+/// a file of any other row charges `target.request-displaced`.
+#[test]
+fn an_explicit_replay_row_of_a_catalog_with_no_default_takes_the_newest_row() {
+    const REPLAY: &[DialectId] = &[cadmpeg_core::dialect_id!("test:archive")];
+    let catalog = Catalog::new(CATALOG_WRITE_TARGETS, None).with_replay_rows(REPLAY);
+    let ir = catalog_write_ir(None);
+    let archive = || {
+        Some(WrittenRow {
+            target: cadmpeg_core::dialect_id!("test:archive"),
+            reason: "the stored envelope decides the row".into(),
+        })
+    };
+    for token in ["test:archive", "archive"] {
+        let resolved = resolve_write_request(&ir, TargetRequest::Explicit(token), catalog)
+            .expect("a replay row resolves without a catalog default");
+        assert_eq!(resolved.target_id().as_str(), "test:new");
+        assert_eq!(
+            charged(&resolved, false, archive()),
+            ("test:archive".into(), vec![])
+        );
+        let (target, losses) = charged(&resolved, false, None);
+        assert_eq!(target, "test:new");
+        let [(code, message)] = losses.as_slice() else {
+            panic!("a file of another row is displaced: {losses:?}")
+        };
+        assert_eq!(code, REQUEST_DISPLACED);
+        assert!(
+            message.contains(token) && message.contains("test:new"),
+            "{message}"
+        );
+    }
+    assert!(resolve_write_request(&ir, TargetRequest::Explicit("test:missing"), catalog).is_err());
+}
+
 #[test]
 fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
     let ir = catalog_write_ir(None);

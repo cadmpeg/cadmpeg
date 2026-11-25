@@ -70,6 +70,68 @@ fn the_stored_document_empties_the_file_name_of_a_removed_entry() {
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
 }
 
+/// A removed optional entry whose property the patch cannot write, because
+/// its span no longer holds its stored text, leaves the property as stored.
+/// The patched document reads back with the entry unresolved, the property
+/// still names the entry, and `export:native.records-omitted` names the
+/// property; no edit is reported dropped.
+#[test]
+fn a_property_left_as_stored_names_its_removed_optional_entry_as_omitted() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"/></Property></Properties></Object></ObjectData></Document>"#;
+    let mut ir = decode(&archive_entries(&[
+        ("Document.xml", xml.as_bytes()),
+        ("Payload.bin", b"payload"),
+    ]));
+    let mut entries = native_arena::<EntryRecord>(&ir, "entries");
+    entries.retain(|entry| entry.name() != "Payload.bin");
+    replace_arena(&mut ir, "entries", &entries);
+    let payload = properties_naming(&ir, "Payload.bin")
+        .pop()
+        .expect("Payload names its entry");
+    displace_spans(&mut ir, std::slice::from_ref(&payload.id));
+
+    let (report, bytes, round_trip) = write_and_read_back(&ir);
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(|dialect| dialect.dialect().to_string()),
+        Some("fcstd:schema-4".to_owned())
+    );
+    assert!(!archive_payloads(&bytes).contains_key("Payload.bin"));
+    let written = native_arena::<PropertyRecord>(round_trip.ir(), "properties")
+        .into_iter()
+        .find(|property| property.id == payload.id)
+        .expect("Payload written");
+    assert_eq!(
+        written.values()[0]
+            .attributes
+            .get("file")
+            .map(String::as_str),
+        Some("Payload.bin")
+    );
+    assert!(round_trip.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "metadata.persistence-side-entry-unresolved"
+            && loss.message.contains(payload.id.as_str())
+    }));
+    let omitted = export_messages(&report, "native.records-omitted");
+    let naming = omitted
+        .iter()
+        .filter(|message| message.contains(payload.id.as_str()))
+        .collect::<Vec<_>>();
+    let [message] = naming.as_slice() else {
+        panic!("expected one omitted line naming the property, got {omitted:?}");
+    };
+    assert!(
+        message.contains("names its entry as the source stores it")
+            && message.ends_with(payload.id.as_str()),
+        "{message}"
+    );
+    assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
+}
+
 /// A `Document.xml` entry edited so that no property span holds its stored
 /// text, beside a removed payload entry, is written as stored. Only the
 /// property whose edit the stored document does not hold is reported

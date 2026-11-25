@@ -104,8 +104,8 @@ pub enum ResolvedTarget<'a> {
         /// The document's source relative to this format.
         source: SourceIdentity,
         /// The request named a row the encoder reaches only by replaying a
-        /// source of that dialect, and `entry` is the catalog default written
-        /// in its place.
+        /// source of that dialect, and `entry` is the catalog default, or the
+        /// newest row where the catalog declares none, planned in its place.
         displaced: bool,
     },
     /// Inheritance resolved to a catalog row equal to the recorded source.
@@ -265,10 +265,13 @@ impl<'a> ResolvedWrite<'a> {
                 requested,
                 displaced: true,
                 ..
-            } => Some(format!(
-                "requested target {requested} is a row the writer reaches only by replaying a \
-                 source of that dialect; the file is written as {written}{because}"
-            )),
+            } => (!names_row(&written, requested, format.as_str())).then(|| {
+                format!(
+                    "requested target {requested} is a row the writer reaches only by \
+                     replaying a source of that dialect; the file is written as \
+                     {written}{because}"
+                )
+            }),
             ResolvedTarget::Explicit {
                 entry, requested, ..
             } if written != entry.id => Some(format!(
@@ -371,6 +374,17 @@ impl<'a> ResolvedWrite<'a> {
         };
         CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, self.available)))
     }
+}
+
+/// Whether the caller's token `requested` names `row` of `format`: its id, or
+/// the id without the `format:` prefix.
+fn names_row(row: &DialectId, requested: &str, format: &str) -> bool {
+    row.as_str() == requested
+        || row
+            .as_str()
+            .strip_prefix(format)
+            .and_then(|local| local.strip_prefix(':'))
+            == Some(requested)
 }
 
 fn source_displacement_message(source: &DialectId, written: &DialectId) -> String {
@@ -512,8 +526,10 @@ impl Catalog {
     }
 
     /// Declares dialects the encoder reaches only by replaying a source of
-    /// that dialect. An explicit request for one is written as the catalog
-    /// default and charges `target.request-displaced`.
+    /// that dialect. An explicit request for one resolves to the row an
+    /// `Inherit` request without a source dialect takes. A file the writer
+    /// states as the requested row charges nothing; any other charges
+    /// `target.request-displaced`.
     #[must_use]
     pub const fn with_replay_rows(mut self, rows: &'static [DialectId]) -> Self {
         self.replay_rows = rows;
@@ -576,26 +592,19 @@ fn resolve_write_request<'a>(
     };
     let target = match request {
         TargetRequest::Explicit(requested) => {
-            let replay_row = || {
-                replay_rows.iter().any(|row| {
-                    row.as_str() == requested
-                        || row
-                            .as_str()
-                            .strip_prefix(format)
-                            .and_then(|local| local.strip_prefix(':'))
-                            == Some(requested)
-                })
-            };
             let (index, entry, displaced) = match catalog.find(requested) {
                 Some((index, entry)) => (index, entry, false),
-                None => match catalog.default().filter(|_| replay_row()) {
-                    Some((index, entry)) => (index, entry, true),
-                    None => {
-                        return Err(refuse(TargetRefusalKind::UnknownExplicit {
-                            requested: TargetToken::new(requested),
-                        }))
-                    }
-                },
+                None if replay_rows
+                    .iter()
+                    .any(|row| names_row(row, requested, format)) =>
+                {
+                    (index, entry, true)
+                }
+                None => {
+                    return Err(refuse(TargetRefusalKind::UnknownExplicit {
+                        requested: TargetToken::new(requested),
+                    }))
+                }
             };
             ResolvedTarget::Explicit {
                 index,
