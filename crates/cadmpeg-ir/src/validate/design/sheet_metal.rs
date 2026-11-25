@@ -101,7 +101,8 @@ fn reference<'a>(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.attached-sheet-metal-reference-preceding",
                 "attached sheet-metal reference {target} requires a preceding {}",
                 if plate {
                     "attached plate"
@@ -118,7 +119,10 @@ fn selection(holder: &str, value: &OrderedSelection, findings: &mut Vec<Finding>
         super::error(
             findings,
             holder,
-            format_args!("attached sheet-metal selection requires resolved members"),
+            crate::rule!(
+                "design.attached-sheet-metal-selection-resolved",
+                "attached sheet-metal selection requires resolved members"
+            ),
         );
     }
 }
@@ -129,7 +133,10 @@ fn attachment_selection(holder: &str, value: &OrderedSelection, findings: &mut V
         super::error(
             findings,
             holder,
-            format_args!("attached sheet-metal attachment requires the input state"),
+            crate::rule!(
+                "design.attached-sheet-metal-attachment-input-state",
+                "attached sheet-metal attachment requires the input state"
+            ),
         );
     }
     if let Picks::Named(items) = &value.picks {
@@ -145,7 +152,10 @@ fn attachment_selection(holder: &str, value: &OrderedSelection, findings: &mut V
                 super::error(
                     findings,
                     holder,
-                    format_args!("attached sheet-metal attachment requires edge picks"),
+                    crate::rule!(
+                        "design.attached-sheet-metal-attachment-edge-picks",
+                        "attached sheet-metal attachment requires edge picks"
+                    ),
                 );
             }
         }
@@ -175,7 +185,10 @@ fn length<T: LengthBound>(
             super::error(
                 findings,
                 holder,
-                format_args!("attached sheet-metal length requires an unsigned dimension"),
+                crate::rule!(
+                    "design.attached-sheet-metal-length-unsigned",
+                    "attached sheet-metal length requires an unsigned dimension"
+                ),
             );
             return;
         }
@@ -187,7 +200,10 @@ fn length<T: LengthBound>(
         super::error(
             findings,
             holder,
-            format_args!("attached sheet-metal length binds a parameter of another kind"),
+            crate::rule!(
+                "design.attached-sheet-metal-length-parameter-kind",
+                "attached sheet-metal length binds a parameter of another kind"
+            ),
         );
     }
     if let Some(value) = &record.value {
@@ -196,7 +212,10 @@ fn length<T: LengthBound>(
             super::error(
                 findings,
                 holder,
-                format_args!("attached sheet-metal length is outside its permitted range"),
+                crate::rule!(
+                    "design.attached-sheet-metal-length-range",
+                    "attached sheet-metal length is outside its permitted range"
+                ),
             );
         }
     }
