@@ -165,8 +165,8 @@ impl Builder<'_> {
                 "TRIMMED_CURVE",
                 &format!(
                     "'',{trace},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
-                    self.emitter.real(low),
-                    self.emitter.real(high)
+                    crate::writer::Emitter::real(low),
+                    crate::writer::Emitter::real(high)
                 ),
             );
             let representation = self.emitter.emit(
@@ -182,8 +182,8 @@ impl Builder<'_> {
             "TRIMMED_CURVE",
             &format!(
                 "'',{curve},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
-                self.emitter.real(low),
-                self.emitter.real(high)
+                crate::writer::Emitter::real(low),
+                crate::writer::Emitter::real(high)
             ),
         );
         let seam = self.emitter.emit(

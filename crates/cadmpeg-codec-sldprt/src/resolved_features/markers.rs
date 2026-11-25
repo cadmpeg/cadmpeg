@@ -733,12 +733,14 @@ pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<FinitePoint3> {
 
 pub(super) fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
     let mut offsets = Vec::new();
-    for (offset, bytes) in payload.windows(SPATIAL_VERTEX_PREFIX.len()).enumerate() {
-        if bytes == SPATIAL_VERTEX_PREFIX
-            && payload.get(offset + 43..offset + 45) == Some(&[0x0e, 0x00])
-        {
+    let finder = memchr::memmem::Finder::new(SPATIAL_VERTEX_PREFIX);
+    let mut cursor = 0usize;
+    while let Some(relative) = payload.get(cursor..).and_then(|rest| finder.find(rest)) {
+        let offset = cursor + relative;
+        if payload.get(offset + 43..offset + 45) == Some(&[0x0e, 0x00]) {
             offsets.push(offset);
         }
+        cursor = offset + 1;
     }
     offsets
 }

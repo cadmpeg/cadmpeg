@@ -9,7 +9,7 @@ use crate::test_support::native_test::reject_changed_id;
 fn configuration_identity_scope_is_independent_of_its_source_entry_name() {
     let name = "Design/Config #1.dsgcfg";
     let valid = serde_json::json!({
-        "id": "f3d:xref/component-0/configuration:entry#Design/Config%20%231.dsgcfg",
+        "id": "f3d:component-0@configuration:entry#Design/Config%20%231.dsgcfg",
         "entry_name": name, "kind": "table", "payload": {}
     });
     let record: DesignConfiguration = serde_json::from_value(valid.clone()).unwrap();
@@ -20,7 +20,7 @@ fn configuration_identity_scope_is_independent_of_its_source_entry_name() {
         "f3d:scope:extra:entry#Design/Config%20%231.dsgcfg",
         "other:configuration:entry#Design/Config%20%231.dsgcfg",
         "f3d:configuration:other#Design/Config%20%231.dsgcfg",
-        "f3d:xref/component-0/configuration:entry#Other.dsgcfg",
+        "f3d:component-0@configuration:entry#Other.dsgcfg",
     ] {
         let mut invalid = valid.clone();
         invalid["id"] = id.into();

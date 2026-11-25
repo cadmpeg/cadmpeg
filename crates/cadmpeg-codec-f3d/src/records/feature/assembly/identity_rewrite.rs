@@ -42,10 +42,10 @@ rewrite_native_enum!(DesignAssemblyOperandQualifier, []; {
 rewrite_native_record!(DesignAssemblySolvedFrame, []; {reference_record_index, reference_offset, record_byte_offset, class_tag, transform, transform_offset});
 rewrite_native_record!(DesignQualifiedAssemblyOperand, []; {frame, qualifier});
 
-fn assembly_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+fn assembly_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &mut serde_json::Value,
-    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
         ctx,
@@ -59,10 +59,10 @@ fn assembly_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
     )
 }
 
-fn legacy_operand_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+fn legacy_operand_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &mut serde_json::Value,
-    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let serde_json::Value::Array(operands) = value else {
         return Ok(());

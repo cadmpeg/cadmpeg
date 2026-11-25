@@ -5608,7 +5608,8 @@ fn file_definition(
     let local = |occurrence: &'_ cadmpeg_ir::products::Occurrence| -> Option<&ProductDefinitionId> {
         held.get(&occurrence.prototype).copied()
     };
-    let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
+    let own =
+        |definition: &&ProductDefinitionId| !crate::ids::is_member_identity(definition.as_str());
     let root_prototypes = |stored_frame: bool| {
         model
             .occurrences

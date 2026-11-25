@@ -7,8 +7,9 @@
 //! picks whole loops, and a spine limit lies on its spine.
 //!
 //! A chain is read where every pick of the selection resolves to edges of
-//! the state. Two ends are one node where they are one vertex or lie within
-//! the linear tolerance of each other.
+//! the state, or picks a curve of one sketch whose solve is current. Two
+//! ends are one node where they are one vertex or lie within the linear
+//! tolerance of each other.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -97,33 +98,57 @@ fn chain<'a>(
             None => return None,
         }
     }
-    let mut vertices: Vec<(&'a str, Point3)> = Vec::new();
+    let mut vertices: Vec<&'a str> = Vec::new();
+    let mut points: Vec<Point3> = Vec::new();
     for vertex in ends.iter().flat_map(|&(start, end)| [start, end]) {
-        if vertices.iter().all(|(held, _)| *held != vertex) {
-            vertices.push((vertex, position(topology, vertex)?));
+        if !vertices.contains(&vertex) {
+            vertices.push(vertex);
+            points.push(position(topology, vertex)?);
         }
     }
-    let mut parent: Vec<usize> = (0..vertices.len()).collect();
-    for first in 0..vertices.len() {
-        for second in first + 1..vertices.len() {
-            if vertices[first].1.vector_from(vertices[second].1).norm() <= tolerance {
+    let slot = |vertex: &str| vertices.iter().position(|held| *held == vertex);
+    let curves: Vec<[usize; 2]> = ends
+        .iter()
+        .map(|&(start, end)| Some([slot(start)?, slot(end)?]))
+        .collect::<Option<_>>()?;
+    let linked = link(&points, &curves, tolerance);
+    Some(Chain {
+        shape: linked.shape,
+        node: vertices.into_iter().zip(linked.node).collect(),
+        degree: linked.degree,
+    })
+}
+
+/// How curves join whose ends lie at points.
+struct Linked {
+    shape: Shape,
+    /// The node of each point.
+    node: Vec<usize>,
+    /// The number of curve ends at each node.
+    degree: Vec<usize>,
+}
+
+/// How the curves join, each the pair of indices into `points` of its ends.
+/// Two points are one node where they lie within `tolerance` of each other.
+fn link(points: &[Point3], curves: &[[usize; 2]], tolerance: f64) -> Linked {
+    let mut parent: Vec<usize> = (0..points.len()).collect();
+    for first in 0..points.len() {
+        for second in first + 1..points.len() {
+            if points[first].vector_from(points[second]).norm() <= tolerance {
                 join(&mut parent, first, second);
             }
         }
     }
-    let slot = |vertex: &str| vertices.iter().position(|(held, _)| *held == vertex);
     let mut pieces = parent.clone();
-    let mut degree = vec![0; vertices.len()];
-    for &(start, end) in &ends {
-        let (start, end) = (slot(start)?, slot(end)?);
+    let mut degree = vec![0; points.len()];
+    for &[start, end] in curves {
         let (start, end) = (root(&mut parent, start), root(&mut parent, end));
         degree[start] += 1;
         degree[end] += 1;
         join(&mut pieces, start, end);
     }
-    let nodes: BTreeSet<usize> = (0..vertices.len())
-        .map(|at| root(&mut parent, at))
-        .collect();
+    let node: Vec<usize> = (0..points.len()).map(|at| root(&mut parent, at)).collect();
+    let nodes: BTreeSet<usize> = node.iter().copied().collect();
     let components: BTreeSet<usize> = nodes.iter().map(|&at| root(&mut pieces, at)).collect();
     let shape = if components.len() > 1 {
         Shape::Disconnected
@@ -134,16 +159,11 @@ fn chain<'a>(
     } else {
         Shape::Open
     };
-    let node = vertices
-        .iter()
-        .enumerate()
-        .map(|(at, (vertex, _))| (*vertex, root(&mut parent, at)))
-        .collect();
-    Some(Chain {
+    Linked {
         shape,
         node,
         degree,
-    })
+    }
 }
 
 fn root(parent: &mut [usize], mut at: usize) -> usize {
@@ -315,10 +335,13 @@ impl<'a> Probe<'_, 'a> {
 
     /// The shapes a selection's edges form across its stored states.
     fn shapes<O: MemberOrder>(&self, selection: &'a Selection<O>) -> BTreeSet<Shape> {
-        self.chains(selection)
+        let mut shapes: BTreeSet<Shape> = self
+            .chains(selection)
             .into_iter()
             .map(|(_, chain)| chain.shape)
-            .collect()
+            .collect();
+        shapes.extend(sketch::shape(self.index, selection, self.linear));
+        shapes
     }
 
     pub(super) fn chain_operation(&mut self, operation: &'a FeatureOperation) {
@@ -446,9 +469,9 @@ impl<'a> Probe<'_, 'a> {
     }
 
     /// `CornerRound::Round` occurs only with a profile whose picked curves
-    /// are all line segments (§6).
+    /// are all line segments (§6), edges or sketch curves.
     fn round_corners<O: MemberOrder>(&mut self, profile: &'a Selection<O>) {
-        let mut curved = BTreeSet::new();
+        let mut curved: BTreeSet<&str> = sketch::curved(self.index, profile).into_iter().collect();
         for state in self.states(&profile.at) {
             let Some(topology) = state.matcher.topology() else {
                 continue;
@@ -459,10 +482,10 @@ impl<'a> Probe<'_, 'a> {
                 }
             }
         }
-        for edge in curved {
+        for curve in curved {
             self.error(crate::rule!(
                 "design.round-corner-profile-not-lines",
-                "CornerRound::Round occurs with a profile that picks edge {edge}, which is no line segment"
+                "CornerRound::Round occurs with a profile that picks {curve}, which is no line segment"
             ));
         }
     }
@@ -634,7 +657,10 @@ impl<'a> Probe<'_, 'a> {
     /// `VertexBend.vertex` picks a vertex of it where two pieces meet (§6.6).
     fn contour<O: MemberOrder>(&mut self, profile: &'a Selection<O>, bends: &'a [VertexBend]) {
         let chains = self.chains(profile);
-        if chains.iter().any(|(_, chain)| chain.shape != Shape::Open) {
+        let sketched = sketch::shape(self.index, profile, self.linear);
+        if chains.iter().any(|(_, chain)| chain.shape != Shape::Open)
+            || sketched.is_some_and(|shape| shape != Shape::Open)
+        {
             self.error(crate::rule!(
                 "design.contour-flange-profile-not-open-chain",
                 "ContourFlange.profile's picks do not form one open chain"
@@ -706,3 +732,5 @@ impl<'a> Probe<'_, 'a> {
         }
     }
 }
+
+mod sketch;
