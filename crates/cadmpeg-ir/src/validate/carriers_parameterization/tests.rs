@@ -60,7 +60,6 @@ fn face_on_unknown_surface_validates_clean() {
 fn unknown_surface_without_record_is_legal() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     make_first_face_surface_unknown(&mut ir, None);
-    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),

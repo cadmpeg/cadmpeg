@@ -15,7 +15,7 @@ const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 /// Persistence vocabulary follows the numeric schema value, independently of
 /// whether its source spelling matches a catalog discriminant.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Vocabulary {
     Features,
     Objects,

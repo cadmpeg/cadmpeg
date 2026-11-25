@@ -8,9 +8,11 @@ use std::mem::discriminant;
 use super::records::{OwnerKey, ProcessRecords};
 use crate::design::ids::{MachineId, MachiningFeatureId};
 use crate::design::units::UnitSymbol;
+use crate::index::ModelIndex;
 use crate::process::feature::MachiningFeatureClass;
 use crate::process::groups::GroupKind;
 use crate::process::operation::{ProcessGeometry, Tooling};
+use crate::process::setup::{FunctionStep, ProgramStep, Step};
 use crate::report::check::Finding;
 use crate::validate::cycles::on_cycles;
 
@@ -359,6 +361,98 @@ fn check_owners(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+/// Every `native_ref` of a process record resolves (part 10, Scope and
+/// linkage), the steps of a setup's or a program's function steps included.
+pub(super) fn check_native_refs(
+    records: &ProcessRecords<'_>,
+    ids: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let ir = records.ir;
+    let mut check = |owner: &str, native_ref: Option<&String>| {
+        let Some(target) = native_ref else { return };
+        let resolves = crate::validate::annotations_native::native_link_resolves(
+            ir,
+            |target| ids.native_record_owns(target),
+            target,
+        );
+        if !resolves {
+            super::error(
+                findings,
+                owner,
+                crate::rule!(
+                    "process.native-ref-does-not-resolve",
+                    "native_ref `{target}` does not resolve"
+                ),
+            );
+        }
+    };
+    let process = &ir.process;
+    for setup in &process.setups {
+        check(setup.id.as_str(), setup.native_ref.as_ref());
+        for step in setup_functions(&setup.steps) {
+            check(setup.id.as_str(), step.native_ref.as_ref());
+        }
+    }
+    for operation in &process.operations {
+        check(operation.id.as_str(), operation.native_ref.as_ref());
+    }
+    for feature in &process.features {
+        check(feature.id.as_str(), feature.native_ref.as_ref());
+    }
+    for group in &process.groups {
+        check(group.id.as_str(), group.native_ref.as_ref());
+    }
+    for tool in &process.tools {
+        check(tool.id.as_str(), tool.native_ref.as_ref());
+    }
+    for preset in &process.presets {
+        check(preset.id.as_str(), preset.native_ref.as_ref());
+    }
+    for machine in &process.machines {
+        check(machine.id.as_str(), machine.native_ref.as_ref());
+    }
+    for program in &process.programs {
+        check(program.id.as_str(), program.native_ref.as_ref());
+        for step in program_functions(&program.steps) {
+            check(program.id.as_str(), step.native_ref.as_ref());
+        }
+    }
+    for parameter in &process.parameters {
+        check(parameter.id.as_str(), parameter.native_ref.as_ref());
+    }
+}
+
+/// The function steps of a setup's steps, folders included, walked without
+/// recursion.
+fn setup_functions(steps: &[Step]) -> Vec<&FunctionStep> {
+    let mut found = Vec::new();
+    let mut pending: Vec<&Step> = steps.iter().collect();
+    while let Some(step) = pending.pop() {
+        match step {
+            Step::Function(function) => found.push(function),
+            Step::Folder { steps, .. } => pending.extend(steps),
+            Step::Operation(_) => {}
+        }
+    }
+    found
+}
+
+/// The function steps of a program's steps, groups included, walked without
+/// recursion.
+fn program_functions(steps: &[ProgramStep]) -> Vec<&FunctionStep> {
+    let mut found = Vec::new();
+    let mut pending: Vec<&ProgramStep> = steps.iter().collect();
+    while let Some(step) = pending.pop() {
+        match step {
+            ProgramStep::Function(function) => found.push(function),
+            ProgramStep::Group { steps, .. } => pending.extend(steps),
+            ProgramStep::Setup(_) | ProgramStep::Operation(_) => {}
+        }
+    }
+    found
 }
 
 /// A unit named outside an expression is a length symbol where it states a

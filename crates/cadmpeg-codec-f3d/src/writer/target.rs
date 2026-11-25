@@ -201,8 +201,10 @@ fn synthesized_body(
                 )));
         }
     }
+    // The generator writes no cage, so the census counts no cage body (§5.6).
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
     let mut body = body(
-        input.ir,
+        cageless.as_ref().unwrap_or(input.ir),
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(generated.coverage),
         losses,
