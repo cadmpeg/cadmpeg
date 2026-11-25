@@ -1888,3 +1888,22 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         assert_eq!(actual.geometry, expected);
     }
 }
+
+#[test]
+fn appended_helix_axis_assumptions_report_one_loss_with_their_sum() {
+    let helix_axis_losses = |brep: &crate::brep::Brep| {
+        super::super::geometry_losses(brep)
+            .into_iter()
+            .filter(|loss| loss.code == crate::loss::F3dLossCode::HelixAxisAssumed.kind())
+            .collect::<Vec<_>>()
+    };
+    let mut brep = crate::brep::Brep::default();
+    assert!(helix_axis_losses(&brep).is_empty());
+    brep.asm.stats.helix_axes_assumed = 2;
+    let mut other = crate::brep::Brep::default();
+    other.asm.stats.helix_axes_assumed = 4;
+    brep.append(other);
+    let losses = helix_axis_losses(&brep);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.starts_with("6 helix curve record(s) "));
+}

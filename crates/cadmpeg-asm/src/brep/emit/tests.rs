@@ -1560,3 +1560,51 @@ fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
         }
     }
 }
+
+#[test]
+fn a_cached_helix_with_a_zero_axis_counts_the_assumed_axis_when_it_is_emitted() {
+    use super::super::ProceduralCurveSource;
+    use crate::nurbs::proc_curve::HelixDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    for (axis, cache_fit_tolerance, emitted, assumed) in [
+        (Vector3::new(0.0, 0.0, 0.0), Some(1e-6), 1, 1),
+        (Vector3::new(0.0, 1.0, 0.0), Some(1e-6), 1, 0),
+        (Vector3::new(0.0, 0.0, 0.0), Some(-1.0), 0, 0),
+    ] {
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        carriers.curve_geo.insert(
+            4,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        );
+        carriers.procedural_curve_defs.insert(
+            4,
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::Helix(HelixDefinition {
+                    angle_range: [0.0, std::f64::consts::FRAC_PI_4],
+                    center: Point3::new(1.0, 2.0, 3.0),
+                    major: Vector3::new(-0.4, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 0.0, 0.4),
+                    pitch: Vector3::new(0.0, -1e-9, 0.0),
+                    apex_factor: 0.0,
+                    axis,
+                })),
+                cache_fit_tolerance,
+                parsed_domain: Some([0.0, std::f64::consts::FRAC_PI_4]),
+                reversed: false,
+            },
+        );
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::new(),
+            &HashSet::new(),
+            crate::asm_format!("f3d"),
+        )
+        .expect("carrier emission succeeds");
+        assert_eq!(out.procedural_curves.len(), emitted);
+        assert_eq!(out.stats.helix_axes_assumed, assumed);
+    }
+}

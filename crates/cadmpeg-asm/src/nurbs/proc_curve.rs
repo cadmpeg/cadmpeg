@@ -447,10 +447,30 @@ pub struct HelixDefinition {
 }
 
 impl HelixDefinition {
+    /// Whether the record stores the zero vector as its axis.
+    #[must_use]
+    pub fn stores_zero_axis(&self) -> bool {
+        self.axis == Vector3::new(0.0, 0.0, 0.0)
+    }
+
+    /// The stored axis, or the unit normal `major x minor` of the radial plane
+    /// for a record that stores the zero vector.
+    fn stated_axis(&self) -> Vector3 {
+        if !self.stores_zero_axis() {
+            return self.axis;
+        }
+        self.major
+            .unit()
+            .zip(self.minor.unit())
+            .and_then(|(major, minor)| major.cross(minor).unit())
+            .unwrap_or(self.axis)
+    }
+
     pub(crate) fn into_definition(
         self,
     ) -> Result<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition, &'static str>
     {
+        let axis = self.stated_axis();
         Ok(
             cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(
                 cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
@@ -460,7 +480,7 @@ impl HelixDefinition {
                         major: self.major,
                         minor: self.minor,
                         pitch: self.pitch,
-                        axis: self.axis,
+                        axis,
                     },
                     self.apex_factor,
                     None,

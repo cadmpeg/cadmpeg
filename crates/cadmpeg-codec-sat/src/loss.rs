@@ -34,6 +34,9 @@ pub(crate) enum SatLossCode {
     GeometryProceduralSurfaceUntyped,
     /// A tolerant-coedge use curve has decreasing carrier endpoints.
     GeometryUseCurveIntervalInvalid,
+    /// A helix curve record stores the zero vector as its axis; the axis is
+    /// stated as the unit normal of the radial plane.
+    GeometryHelixAxisAssumed,
     /// A native support pcurve has no surface in its construction chart.
     GeometrySupportChartUnresolved,
     /// A tolerant vertex has no positive finite evaluated tolerance.
@@ -77,6 +80,7 @@ impl SatLossCode {
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
         Self::GeometryUseCurveIntervalInvalid,
+        Self::GeometryHelixAxisAssumed,
         Self::GeometrySupportChartUnresolved,
         Self::VertexToleranceUnresolved,
         Self::EdgeToleranceUnresolved,
@@ -102,6 +106,7 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
             Self::GeometryUseCurveIntervalInvalid => "geometry.use-curve-interval-invalid",
+            Self::GeometryHelixAxisAssumed => "geometry.helix-axis-assumed",
             Self::GeometrySupportChartUnresolved => "geometry.support-chart-unresolved",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
@@ -128,6 +133,7 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
             Self::GeometryProceduralSurfaceUntyped
             | Self::GeometryUseCurveIntervalInvalid
+            | Self::GeometryHelixAxisAssumed
             | Self::GeometrySupportChartUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
@@ -162,6 +168,7 @@ impl SatLossCode {
             | Self::HeaderLengthUnitUnresolved
             | Self::FramingRecordsUnread
             | Self::SourceStreamLayoutUnprojected => LossTaxonomy::GeometryNotTransferred,
+            Self::GeometryHelixAxisAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceRecordExtensionsUnprojected => LossTaxonomy::GeometryNotTransferred,
             Self::SourceConcatenatedStreamsRecovered
@@ -248,6 +255,7 @@ mod tests {
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
                 "geometry.use-curve-interval-invalid",
+                "geometry.helix-axis-assumed",
                 "geometry.support-chart-unresolved",
                 "vertex.tolerance-unresolved",
                 "edge.tolerance-unresolved",

@@ -303,6 +303,16 @@ the record grammar does not identify one construction.
 
 **Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/stats.rs:15-35`.
 
+### GC-49. Zero axis vector of a `helix_int_cur`
+
+**Question.** What does the zero axis vector of a `helix_int_cur` state, and which direction is the axis of that curve?
+
+**Known.** `asm.md` §6.3 `helix_int_cur` gives the payload and the curve `C(t)`. A current-form record stores the interval `[0, t1]` with `t1` below `π/2`, a major and a minor vector of equal magnitude, a pitch vector whose magnitude is between `1e-9` and `1e-8` of that magnitude, apex factor `0`, and the zero vector as the axis. Two `null_surface` tokens and two `nullbs` tokens follow the axis, and the record stores no cache. The pitch vector is antiparallel to `major × minor`. `C(t)` of this record is a circular arc of the major magnitude in the plane of the major and minor vectors.
+
+**Need.** Save a sheet-metal body with one bend, and a solid of the same shape that stores the bend edges as `ellipse` records. Compare the normal of each `ellipse` record with `major × minor` and with the pitch vector of the `helix_int_cur` record of the same edge. A second save with a helical edge that has a visible pitch and a zero axis vector gives the sign of the axis against the pitch vector.
+
+**Note.** The decoder states the axis of such a record as the unit vector of `major × minor` and keeps every stored field of the curve. F3D and SAT each report `geometry.helix-axis-assumed` with the count of these records. For a record whose major and minor vectors are parallel, the decoder keeps the edge with its vertices and parameter range, and F3D reports `geometry.procedural-curve-undecoded`.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution

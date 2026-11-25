@@ -6280,6 +6280,16 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
             ),
         );
     }
+    if s.helix_axes_assumed > 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::HelixAxisAssumed,
+            format_args!(
+                "{} helix curve record(s) store the zero vector as the axis; each curve keeps its stored center, radial vectors, pitch and interval, and its axis is stated as the unit normal of the radial plane.",
+                s.helix_axes_assumed
+            ),
+        );
+    }
     if s.other_records() > 0 {
         push_loss_vec(
             &mut losses,

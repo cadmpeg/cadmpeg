@@ -319,3 +319,20 @@ fn compound_layout_requires_framed_subtype_at_both_widths() {
         assert_eq!(component_parameters, [-2.0, 4.0]);
     }
 }
+
+#[test]
+fn a_zero_axis_helix_with_parallel_radial_vectors_has_no_definition() {
+    let helix = |minor| crate::nurbs::proc_curve::HelixDefinition {
+        angle_range: [0.0, 1.0],
+        center: Point3::new(0.0, 0.0, 0.0),
+        major: Vector3::new(1.0, 0.0, 0.0),
+        minor,
+        pitch: Vector3::new(0.0, 0.0, 0.0),
+        apex_factor: 0.0,
+        axis: Vector3::new(0.0, 0.0, 0.0),
+    };
+    assert!(helix(Vector3::new(1.0, 0.0, 0.0))
+        .into_definition()
+        .is_err());
+    assert!(helix(Vector3::new(0.0, 1.0, 0.0)).into_definition().is_ok());
+}

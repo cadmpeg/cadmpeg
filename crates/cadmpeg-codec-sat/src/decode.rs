@@ -552,6 +552,12 @@ fn build_result(
             stats.invalid_use_curve_intervals()
         )));
     }
+    if stats.helix_axes_assumed > 0 {
+        losses.push(SatLossCode::GeometryHelixAxisAssumed.note(format!(
+            "{} helix curve record(s) store the zero vector as the axis; stored center, radial vectors, pitch and interval retained; axis stated as the unit normal of the radial plane",
+            stats.helix_axes_assumed
+        )));
+    }
     losses.extend(unmapped_support_chart_losses(&ir));
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
