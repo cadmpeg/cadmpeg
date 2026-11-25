@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result as AnyResult};
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::write::{
-    target::TargetRequest, EncodeInput, Encoder, ExportPlan, MissingStateForm,
+    target::TargetRequest, EncodeError, EncodeInput, Encoder, ExportPlan, MissingStateForm,
 };
-use cadmpeg_ir::codec::{DecodeOptions, StrictDecodeRejection};
+use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{
     check::ValidationReport, decode::DecodeReport, export::ExportReport, strictness::Strictness,
     Severity,
@@ -439,7 +439,7 @@ impl Validation {
 
 /// Loads and validates a conversion without planning or writing it.
 ///
-/// Applies destination admission and the decode's strictness. Runs
+/// Applies destination admission. The load applies the decode's strictness. Runs
 /// validation. Plan refusals and the write's strictness apply in `plan`.
 /// Prints only the load's notices (see `loader::load_artifact`); does not
 /// print reports or write destination artifacts.
@@ -456,26 +456,7 @@ pub(crate) fn prepare(
         .resolve(source.path)
         .map_err(ApplicationError::from)?;
 
-    let loaded = loader::load_artifact(inputs, source.path, source.options, source.forced)?;
-    let strictness = policy.strictness.decode();
-    match &loaded.origin {
-        LoadOrigin::Decoded { report, .. } => {
-            if let Some(rejection) = StrictDecodeRejection::refused_by(report, &strictness) {
-                return Err(ConversionRefusal::StrictDecodeRejected { rejection }.into());
-            }
-        }
-        // A restored sidecar's report describes an earlier decode and never
-        // decides (CADIR v11 §3.5); the report of this CADIR read decides.
-        LoadOrigin::Neutral | LoadOrigin::Restored { .. } => {
-            if let Some(entry) = strictness.first_refused(&loaded.read_report, false) {
-                return Err(ConversionRefusal::StrictReadRejected {
-                    report: loaded.read_report.clone(),
-                    entry,
-                }
-                .into());
-            }
-        }
-    }
+    let loaded = loader::load_artifact(inputs, source.path, &source.options, source.forced)?;
 
     let validation = match validate_loaded(inputs, &loaded, &source.options.policy, source.work) {
         Ok(report) => Validation::Complete(report),
@@ -504,20 +485,22 @@ fn is_resource_limit(error: &ApplicationError) -> bool {
 }
 
 impl PreparedConversion {
-    /// Plans the export, charges `export:record.invalid` for each check
-    /// Error in what the output writes, and applies the write's strictness to
-    /// the completed export report.
+    /// Plans the export with the check's report and the write's strictness:
+    /// the encoder charges `export:record.invalid` for each check Error in
+    /// what the output writes and refuses where the strictness refuses.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
         // second vocabulary to keep in step with the first.
-        let mut plan = match self.encoder.plan(
-            EncodeInput::new(&self.document.ir, self.document.fidelity())
-                .with_assets(&self.assets)
-                .with_missing_states(self.missing_states),
-            self.selection.request(),
-        ) {
+        let mut input = EncodeInput::new(&self.document.ir, self.document.fidelity())
+            .with_assets(&self.assets)
+            .with_missing_states(self.missing_states)
+            .with_strictness(&self.write_strictness);
+        if let Some(report) = self.validation.report() {
+            input = input.with_validation(report);
+        }
+        let plan = match self.encoder.plan(input, self.selection.request()) {
             Ok(plan) => plan,
             Err(error) => {
                 return Err(plan_refusal(
@@ -528,19 +511,8 @@ impl PreparedConversion {
             }
         };
         let carried = self.validation.report().map_or(0, |report| {
-            plan.charge_carried_errors(&self.document.ir, report)
+            plan.carried_errors(&self.document.ir, report).len()
         });
-        let plan = match plan.refuse(&self.write_strictness) {
-            Ok(plan) => plan,
-            Err(rejection) => {
-                return Err(ConversionRefusal::StrictExportRejected {
-                    decode_report: self.document.decode_report().cloned(),
-                    validation: self.validation.report().cloned(),
-                    rejection: Box::new(rejection),
-                }
-                .into());
-            }
-        };
         Ok(PlannedConversion {
             plan,
             prepared: self,
@@ -604,25 +576,30 @@ pub(crate) enum EmittedArtifact {
     StdoutWithoutSidecar,
 }
 
-/// Restates an unsupported target as a typed refusal.
+/// Restates an unsupported target and a strictness refusal as typed
+/// refusals.
 ///
 /// Resource failures retain their typed evidence; other plan failures stay
-/// operational. The write's strictness needs a completed plan's report.
+/// operational.
 fn plan_refusal(
-    error: cadmpeg_core::CodecError,
+    error: EncodeError,
     decode_report: Option<DecodeReport>,
     validation: Option<ValidationReport>,
 ) -> ApplicationError {
     match error {
-        cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
-            ConversionRefusal::UnsupportedTarget {
-                refusal,
-                decode_report,
-                validation,
-            }
-            .into()
+        EncodeError::UnsupportedTarget(refusal) => ConversionRefusal::UnsupportedTarget {
+            refusal,
+            decode_report,
+            validation,
         }
-        _ => ApplicationError::from(error).at_stage(RefusalStage::Plan),
+        .into(),
+        EncodeError::StrictRejected(rejection) => ConversionRefusal::StrictExportRejected {
+            decode_report,
+            validation,
+            rejection: Box::new(rejection),
+        }
+        .into(),
+        error => ApplicationError::from(error).at_stage(RefusalStage::Plan),
     }
 }
 

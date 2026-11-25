@@ -118,7 +118,6 @@ fn the_context_depth_limit_stops_nesting() {
             max_recursion_depth: 0,
             ..ResourceLimits::desktop()
         },
-        ..DecodePolicy::desktop()
     };
     let walk = walk_with(&bytes, &policy);
     assert!(matches!(
