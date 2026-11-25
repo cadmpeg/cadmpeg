@@ -2,16 +2,32 @@
 
 ### DR-1010. Active partition stream and framing
 
-**Question.** Which streams contain the active Parasolid partitions, and how does each stream bound its partition bytes?
+**Question.** How does the document select active partition indices and apply paired delta streams?
 
-**Known.** `cadmpeg-parasolid` reads neutral-binary transmit headers, embedded schema edits, and primary node sequences.
+**Known.** Primary partitions use `PARASOLID/STREAM<n>.P_B`. Paired `.D_B` streams contain Parasolid delta transmit data.
 
-**Need.** Establish the stream paths, framing fields, partition boundaries, and active-state selection from native document bytes.
+**Need.** Establish the site-to-partition reference and the saved delta-state selector.
 
 ### DR-1011. Governing versions and length units
 
-**Question.** Which stored version fields govern the compound stream grammars, and which fields set the length unit of each partition?
+**Question.** Which outer version fields govern document streams, and which field declares document display units?
 
-**Known.** `cadmpeg-parasolid` reads a schema token from the transmit header and converts its supported model-space geometry from metres to millimetres.
+**Known.** The root contains `Versions`, `DocVersion2`, and `BuildVersions`. The embedded kernel token selects the Parasolid grammar. Kernel geometry uses metres, which the reader converts to CADIR millimetres.
 
-**Need.** Establish the outer version declarations and the relationship between document display units and kernel coordinates.
+**Need.** Establish the outer version record fields, version admission rules, and display-unit declaration.
+
+### DR-1013. Intersection direction without a chart
+
+**Question.** Which native rule fixes intersection-curve parameter direction when the chart supplies no usable direction?
+
+**Known.** An intersection record references two support surfaces and a chart, and carries a sense byte. A chart carries base-parameter, scale, and point fields.
+
+**Need.** Establish chart-null semantics, the effects of support order and support sense, and the native parameter gauge.
+
+### DR-1053. Swept surface with a stated scale
+
+**Question.** What does a stated `scale` of a swept surface (type 67) do to the sweep parameter?
+
+**Known.** A swept surface stores a `section` curve, a unit `sweep` direction, and `scale`. With a null `scale` the sweep parameter is the distance along the direction.
+
+**Need.** A part whose swept face stores a non-null `scale`, with its edge or pcurve parameters along the sweep.
