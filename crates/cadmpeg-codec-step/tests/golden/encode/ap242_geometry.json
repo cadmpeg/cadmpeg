@@ -67,18 +67,6 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "native.passthrough-record-omitted",
-              "kind": "passthrough_record_omitted",
-              "namespace": "step"
-            }
-          },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
-          "severity": "info"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
               "code": "appearance.reduced-to-base-color",
               "kind": "appearance_reduced",
               "namespace": "step"
@@ -186,18 +174,6 @@
         "target": "step:ap214"
       },
       "losses": [
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
-              "code": "native.passthrough-record-omitted",
-              "kind": "passthrough_record_omitted",
-              "namespace": "step"
-            }
-          },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
-          "severity": "info"
-        },
         {
           "code": {
             "kind": "namespaced",

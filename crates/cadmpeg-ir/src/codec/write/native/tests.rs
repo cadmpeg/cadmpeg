@@ -113,18 +113,21 @@ fn a_written_or_regenerated_namespace_is_not_charged() {
 }
 
 #[test]
-fn a_record_override_wins_over_its_arena_and_namespace() {
+fn a_record_drop_wins_over_its_arena_and_namespace() {
     let mut native = NativeDispositions::written();
     native
-        .arena("f3d", "history", NativeDisposition::Dropped)
-        .record("f3d", "f3d:test:history#1", NativeDisposition::Written);
+        .arena("f3d", "history", NativeDisposition::Regenerated)
+        .drop_records("f3d", "that name an omitted body", ["f3d:test:history#1"]);
     assert_eq!(
         messages(native.clone()),
-        ["the test write omits 1 native record(s) of `f3d` arena `history`: f3d:test:history#0"]
+        [
+            "the test write omits 1 native record(s) of `f3d` arena `history` that name an \
+          omitted body: f3d:test:history#1"
+        ]
     );
     assert_eq!(
-        native.disposition("f3d", "history", "f3d:test:history#1"),
-        NativeDisposition::Written
+        native.disposition("f3d", "history", "f3d:test:history#0"),
+        NativeDisposition::Regenerated
     );
     assert_eq!(
         native.disposition("nx", "records", "nx:test:record#0"),
@@ -137,14 +140,15 @@ fn drops_with_different_reasons_are_charged_apart() {
     let mut native = NativeDispositions::written();
     native
         .drop_records("f3d", "that name an omitted body", ["f3d:test:history#1"])
-        .drop_arena("nx", "records", "which the test format cannot hold")
-        .record("f3d", "f3d:test:history#0", NativeDisposition::Dropped);
+        .drop_arena("f3d", "history", "which the test format cannot hold")
+        .drop_arena("nx", "records", "which the test format cannot hold");
     assert_eq!(
         messages(native),
         [
-            "the test write omits 1 native record(s) of `f3d` arena `history`: f3d:test:history#0",
             "the test write omits 1 native record(s) of `f3d` arena `history` that name an \
              omitted body: f3d:test:history#1",
+            "the test write omits 1 native record(s) of `f3d` arena `history` which the test \
+             format cannot hold: f3d:test:history#0",
             "the test write omits 1 native record(s) of `nx` arena `records` which the test \
              format cannot hold: nx:test:record#0",
         ]

@@ -63,12 +63,6 @@ pub struct NativeDispositions {
     namespaces: BTreeMap<String, NamespaceDeclaration>,
 }
 
-impl Default for NativeDispositions {
-    fn default() -> Self {
-        Self::dropped()
-    }
-}
-
 impl NativeDispositions {
     /// A payload that states no native record but those declared.
     #[must_use]
@@ -108,19 +102,6 @@ impl NativeDispositions {
         self.entry(namespace)
             .arenas
             .insert(arena.to_owned(), Declared::new(disposition));
-        self
-    }
-
-    /// Declares the record `id` of `namespace`, in whichever arena holds it.
-    pub fn record(
-        &mut self,
-        namespace: &str,
-        id: &str,
-        disposition: NativeDisposition,
-    ) -> &mut Self {
-        self.entry(namespace)
-            .records
-            .insert(id.to_owned(), Declared::new(disposition));
         self
     }
 
