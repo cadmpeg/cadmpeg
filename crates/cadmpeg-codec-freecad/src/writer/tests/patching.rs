@@ -71,7 +71,7 @@ fn entries_follow_the_ledger_order_and_unplaced_entries_follow_them() {
 }
 
 /// The message of each `export:` loss of `report` with this local code.
-fn export_messages<'r>(
+pub(super) fn export_messages<'r>(
     report: &'r cadmpeg_ir::report::export::ExportReport,
     code: &str,
 ) -> Vec<&'r str> {
@@ -84,7 +84,7 @@ fn export_messages<'r>(
 }
 
 /// Writes `ir` through `Inherit` and decodes the file.
-fn write_and_read_back(
+pub(super) fn write_and_read_back(
     ir: &cadmpeg_ir::CadIr,
 ) -> (
     cadmpeg_ir::report::export::ExportReport,
@@ -102,7 +102,10 @@ fn write_and_read_back(
     (report, bytes, decoded)
 }
 
-fn native_arena<T: serde::de::DeserializeOwned>(ir: &cadmpeg_ir::CadIr, arena: &str) -> Vec<T> {
+pub(super) fn native_arena<T: serde::de::DeserializeOwned>(
+    ir: &cadmpeg_ir::CadIr,
+    arena: &str,
+) -> Vec<T> {
     ir.native
         .namespace("fcstd")
         .expect("namespace")
@@ -110,7 +113,11 @@ fn native_arena<T: serde::de::DeserializeOwned>(ir: &cadmpeg_ir::CadIr, arena: &
         .expect("typed arena")
 }
 
-fn replace_arena<T: serde::Serialize>(ir: &mut cadmpeg_ir::CadIr, arena: &str, records: &[T]) {
+pub(super) fn replace_arena<T: serde::Serialize>(
+    ir: &mut cadmpeg_ir::CadIr,
+    arena: &str,
+    records: &[T],
+) {
     ir.native
         .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
@@ -202,7 +209,10 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
 }
 
 /// The properties of `ir` that name the archive entry `name`.
-fn properties_naming(ir: &cadmpeg_ir::CadIr, name: &str) -> Vec<crate::native::PropertyRecord> {
+pub(super) fn properties_naming(
+    ir: &cadmpeg_ir::CadIr,
+    name: &str,
+) -> Vec<crate::native::PropertyRecord> {
     native_arena::<crate::native::PropertyRecord>(ir, "properties")
         .into_iter()
         .filter(|property| property.side_entries().iter().any(|entry| entry == name))
@@ -211,7 +221,7 @@ fn properties_naming(ir: &cadmpeg_ir::CadIr, name: &str) -> Vec<crate::native::P
 
 /// Each property in `naming` reads back naming no archive entry `name`, its
 /// object is marked for recompute, and the report names it.
-fn assert_unheld_entry_reported(
+pub(super) fn assert_unheld_entry_reported(
     report: &cadmpeg_ir::report::export::ExportReport,
     round_trip: &cadmpeg_ir::CadIr,
     naming: &[crate::native::PropertyRecord],
@@ -252,7 +262,7 @@ fn assert_unheld_entry_reported(
 }
 
 /// Names every archive entry with its payload.
-fn archive_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
+pub(super) fn archive_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
     let mut zip = zip::ZipArchive::new(Cursor::new(archive.to_vec())).expect("readable ZIP");
     (0..zip.len())
         .map(|index| {
