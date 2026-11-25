@@ -19,7 +19,9 @@ use crate::design::ops::sheet_metal::{
     SheetMetalKind, StampForm, StampOutline, VertexBend,
 };
 use crate::design::ops::surface::{Extend, ExtendLimit, Patch, PatchBounds, PatchEdge, Unsew};
-use crate::design::ops::swept::{Guide, Loft, LoftShape, Revolve};
+use crate::design::ops::swept::{
+    Guide, Loft, LoftShape, Revolve, SpineLimits, Sweep, SweepControls, SweepSection,
+};
 use crate::design::options::{
     BodyForm, CornerRound, SectionCondition, SheetOutput, SolidOutput, Support, Thickness,
     ThinWall, WallSide,
@@ -783,4 +785,49 @@ fn a_thin_wall_side_and_corners_fit_whether_its_profile_closes() {
     assert!(ruled(&ir, lines).is_empty());
     round_edge(&mut ir, three[0]);
     assert_eq!(ruled(&ir, lines).len(), 1);
+}
+
+#[test]
+fn a_spine_limit_lies_on_the_spine() {
+    let sweep = |ir: &CadIr, path: &[usize], start: EntityRef| {
+        FeatureOperation::Sweep(Box::new(Sweep {
+            section: SweepSection::Profile(current(vec![face(ir, bottom(ir))])),
+            path: current(edges(ir, path)),
+            controls: SweepControls {
+                orientation: None,
+                twist: None,
+                scaling: None,
+            },
+            guides: Vec::new(),
+            extent: None,
+            placement: None,
+            limits: SpineLimits {
+                start: Some(current(vec![start])),
+                end: None,
+            },
+            transition: None,
+            output: SolidOutput {
+                body: None,
+                boolean: None,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let rule = "design.spine-limit-off-spine";
+    let mut ir = fixture::document();
+    let around = bottom_edges(&ir);
+    let three = &around[..3];
+    let raised = ir.geometry.edges[level_edges(&ir, 10.0)[0]]
+        .start()
+        .unwrap()
+        .clone();
+    with(&mut ir, |ir| sweep(ir, three, meeting(ir, three, 1)));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| sweep(ir, three, face(ir, bottom(ir))));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| sweep(ir, three, face(ir, level(ir, 10.0))));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    with(&mut ir, |ir| sweep(ir, three, EntityRef::Vertex(raised)));
+    assert_eq!(ruled(&ir, rule).len(), 1);
 }

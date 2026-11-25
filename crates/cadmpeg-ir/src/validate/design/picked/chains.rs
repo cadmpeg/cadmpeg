@@ -3,8 +3,8 @@
 //! state: a path is one connected chain, a patch loop is closed, a contour
 //! flange's profile is open, a wall's side fits whether its profile is open,
 //! a chain's start is an end of it, a vertex bend sits where two pieces
-//! meet, a patch condition's support meets its curve, and a natural extend
-//! picks whole loops.
+//! meet, a patch condition's support meets its curve, a natural extend
+//! picks whole loops, and a spine limit lies on its spine.
 //!
 //! A chain is read where every pick of the selection resolves to edges of
 //! the state. Two ends are one node where they are one vertex or lie within
@@ -16,7 +16,7 @@ use crate::design::feature::FeatureOperation;
 use crate::design::ops::dressup::{DraftAngle, FilletSet, FilletSize, Stations};
 use crate::design::ops::sheet_metal::{SheetMetalKind, VertexBend};
 use crate::design::ops::surface::{ExtendLimit, PatchBounds, PatchEdge};
-use crate::design::ops::swept::{Spine, SweepSection};
+use crate::design::ops::swept::{Spine, SpineLimits, SweepSection};
 use crate::design::options::{
     BodyForm, CornerRound, SectionCondition, SolidOutput, Support, Thickness, WallSide,
 };
@@ -250,6 +250,49 @@ fn apart(topology: &StateTopology<'_>, face: &str, edge: &str, tolerance: f64) -
     }
 }
 
+/// The distance from `point` to the curve of `edge`, through its whole
+/// carrier. `None` where the curve is not an analytic line or circle or a
+/// body that holds the edge has a placement of its own.
+fn curve_distance(topology: &StateTopology<'_>, edge: &str, point: Point3) -> Option<f64> {
+    if edge_placed(topology, edge) {
+        return None;
+    }
+    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) =
+        &topology.edges.get(edge)?.carrier
+    else {
+        return None;
+    };
+    match topology.curves.get(curve.as_str())?.geometry.solved()? {
+        SolvedCurveGeometry::Line(line) => {
+            let offset = point.vector_from(line.origin().get());
+            Some(offset.cross(*line.direction().as_raw()).norm())
+        }
+        SolvedCurveGeometry::Circle(circle) => {
+            let axis = *circle.frame().axis().as_raw();
+            let offset = point.vector_from(circle.center().get());
+            let height = offset.dot(axis);
+            let across = offset.cross(axis).norm() - circle.radius().get();
+            Some(height.hypot(across))
+        }
+        _ => None,
+    }
+}
+
+/// The position of `vertex` where every face it lies on belongs to a held
+/// body with no placement of its own.
+fn unplaced_position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
+    let faces = topology.vertex_faces.get(vertex)?;
+    let unplaced = faces.iter().all(|face| {
+        topology
+            .face_body(face)
+            .is_some_and(|body| body.transform.is_none())
+    });
+    if faces.is_empty() || !unplaced {
+        return None;
+    }
+    position(topology, vertex)
+}
+
 impl<'a> Probe<'_, 'a> {
     /// The chains a selection's edges form in each stored state it anchors
     /// in, with the state.
@@ -286,6 +329,7 @@ impl<'a> Probe<'_, 'a> {
                     self.wall(profile, &sweep.output);
                 }
                 self.path(&sweep.path, "Sweep.path");
+                self.spine_limits(&sweep.path, &sweep.limits);
                 for guide in &sweep.guides {
                     self.path(&guide.path, "SweepGuide.path");
                 }
@@ -318,6 +362,11 @@ impl<'a> Probe<'_, 'a> {
                         self.patch_loop(edges);
                         self.patch_supports(edges);
                     }
+                }
+            }
+            FeatureOperation::ImplicitSweep(sweep) => {
+                if let Some(spine) = &sweep.spine {
+                    self.spine_limits(spine, &sweep.limits);
                 }
             }
             FeatureOperation::Extend(extend) => {
@@ -522,6 +571,60 @@ impl<'a> Probe<'_, 'a> {
             self.error(crate::rule!(
                 "design.natural-extend-edge-not-loop",
                 "ExtendLimit::Natural occurs with Extend.edges picking edge {edge}, which is an edge of a face loop it does not pick whole"
+            ));
+        }
+    }
+
+    /// `SpineLimits` targets are points or planes on the spine, where the
+    /// state exists (§6.6). A planar face is judged against the lines and
+    /// circles of the spine, and a vertex that ends no spine edge against
+    /// their carriers.
+    fn spine_limits<O: MemberOrder>(&mut self, spine: &'a Selection<O>, limits: &'a SpineLimits) {
+        let mut off = BTreeSet::new();
+        for target in [&limits.start, &limits.end].into_iter().flatten() {
+            if target.at != spine.at {
+                continue;
+            }
+            for state in self.states(&spine.at) {
+                let Some(topology) = state.matcher.topology() else {
+                    continue;
+                };
+                let Some(path) = edges(&state, topology, spine) else {
+                    continue;
+                };
+                for entity in all_entities(&state.matcher, topology, target)
+                    .into_iter()
+                    .flatten()
+                {
+                    let separate = match entity {
+                        Entity::Face(face) => path
+                            .iter()
+                            .all(|&edge| apart(topology, face, edge, self.linear) == Some(true))
+                            .then_some(face),
+                        Entity::Vertex(vertex) => {
+                            let ends = path.iter().any(|&edge| {
+                                topology.edges.get(edge).is_some_and(|record| {
+                                    record.vertices().any(|end| end.as_str() == vertex)
+                                })
+                            });
+                            let far = unplaced_position(topology, vertex).is_some_and(|point| {
+                                path.iter().all(|&edge| {
+                                    curve_distance(topology, edge, point)
+                                        .is_some_and(|distance| distance > self.linear)
+                                })
+                            });
+                            (!ends && far).then_some(vertex)
+                        }
+                        Entity::Body(_) | Entity::Edge(_) | Entity::Other => None,
+                    };
+                    off.extend(separate);
+                }
+            }
+        }
+        for target in off {
+            self.error(crate::rule!(
+                "design.spine-limit-off-spine",
+                "a SpineLimits target, {target}, does not lie on the spine"
             ));
         }
     }
