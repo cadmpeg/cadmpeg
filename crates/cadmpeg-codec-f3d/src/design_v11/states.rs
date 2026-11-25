@@ -366,14 +366,16 @@ impl<'r> Reader<'r, '_> {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        let bytes = histories
+        let scaled = histories
             .iter()
-            .map(|history| history.blob.bytes.len())
-            .fold(0_usize, usize::saturating_add);
-        let work = WorkBudget::new(
-            stored_states::MAX_STATE_WORK
-                .max(stored_states::STATE_WORK_PER_BYTE.saturating_mul(bytes)),
-        );
+            .try_fold(0_usize, |total, history| {
+                total.checked_add(history.blob.bytes.len())
+            })
+            .and_then(|bytes| bytes.checked_mul(stored_states::STATE_WORK_PER_BYTE))
+            .ok_or_else(|| {
+                CodecError::malformed("F3D model blobs with a history exceed the state work range")
+            })?;
+        let work = WorkBudget::new(stored_states::MAX_STATE_WORK.max(scaled));
         let mut reads = Vec::with_capacity(histories.len());
         for ((history, bodies), wanted) in histories.iter().zip(&held).zip(&targets) {
             let wanted = wanted.iter().flatten().copied().collect();
