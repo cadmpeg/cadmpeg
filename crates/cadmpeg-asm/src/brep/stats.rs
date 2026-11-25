@@ -29,11 +29,11 @@ pub struct Stats {
     pub undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
     /// Procedural blends for which only one of two support families resolved.
     pub partial_procedural_supports: usize,
-    /// Helix curves whose record stores the zero vector as its axis and whose
-    /// axis is stated as the unit normal of the radial plane.
-    pub helix_axes_assumed: usize,
     /// Residual record or component counts by native kind.
     pub other_record_kinds: std::collections::BTreeMap<String, usize>,
+    /// Helix curves whose record stores the zero vector as its axis and whose
+    /// axis is stated as the unit vector of the stored `major x minor`.
+    pub helix_axes_assumed: usize,
 }
 
 impl Stats {

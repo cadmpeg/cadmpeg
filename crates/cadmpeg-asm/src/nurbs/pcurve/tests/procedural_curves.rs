@@ -331,8 +331,27 @@ fn a_zero_axis_helix_with_parallel_radial_vectors_has_no_definition() {
         apex_factor: 0.0,
         axis: Vector3::new(0.0, 0.0, 0.0),
     };
-    assert!(helix(Vector3::new(1.0, 0.0, 0.0))
-        .into_definition()
-        .is_err());
+    for parallel in [
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(1.0, 3.0e-16, 0.0),
+        Vector3::new(1.0, 5.0e-11, 0.0),
+    ] {
+        assert!(helix(parallel).into_definition().is_err());
+    }
     assert!(helix(Vector3::new(0.0, 1.0, 0.0)).into_definition().is_ok());
+}
+
+#[test]
+fn a_helix_axis_below_the_unit_threshold_is_stored_and_refused() {
+    let helix = crate::nurbs::proc_curve::HelixDefinition {
+        angle_range: [0.0, 1.0],
+        center: Point3::new(0.0, 0.0, 0.0),
+        major: Vector3::new(1.0, 0.0, 0.0),
+        minor: Vector3::new(0.0, 1.0, 0.0),
+        pitch: Vector3::new(0.0, 0.0, 0.0),
+        apex_factor: 0.0,
+        axis: Vector3::new(0.0, 0.0, 1.0e-300),
+    };
+    assert!(!helix.stores_zero_axis());
+    assert!(helix.into_definition().is_err());
 }

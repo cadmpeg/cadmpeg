@@ -1120,7 +1120,19 @@ fn patch_helix_definition(
     }
     let apex_at = record.offset + layout.apex_factor;
     AsmEditSet::patch_f64_payload(bytes, apex_at, apex_factor.get())?;
-    AsmEditSet::patch_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z])?;
+    let axis_at = record.offset + layout.axis;
+    let stated_normal =
+        crate::nurbs::proc_curve::helix_radial_plane_normal(major.get(), minor.get())
+            .map(<[f64; 3]>::from);
+    let axis = [axis.x, axis.y, axis.z];
+    // A reversed record states the normal of its stored frame, which is the
+    // opposite of the normal of the definition's frame.
+    let axis_is_stated_normal = stated_normal
+        .is_some_and(|normal| axis == normal || axis == normal.map(|component| -component));
+    let stores_zero_axis = sab::vec3_le_at(bytes, axis_at) == Some([0.0; 3]);
+    if !(stores_zero_axis && axis_is_stated_normal) {
+        AsmEditSet::patch_vector_payload(bytes, axis_at, axis)?;
+    }
     Ok(())
 }
 
@@ -2056,6 +2068,100 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn a_helix_patch_keeps_a_stored_zero_axis_under_its_stated_normal() {
+        use cadmpeg_ir::geometry::helix::{HelixCurveConstruction, HelixFrame};
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let vector = |out: &mut Vec<u8>, tag: u8, values: [f64; 3]| {
+            out.push(tag);
+            for value in values {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        };
+        let double = |out: &mut Vec<u8>, value: f64| {
+            out.push(0x06);
+            out.extend_from_slice(&value.to_le_bytes());
+        };
+        let record_bytes = |axis: [f64; 3]| {
+            let mut bytes = vec![0x0f, 0x0d, 13];
+            bytes.extend_from_slice(b"helix_int_cur");
+            bytes.push(0x04);
+            bytes.extend_from_slice(&22_800_i32.to_le_bytes());
+            bytes.push(0x0a);
+            double(&mut bytes, 0.0);
+            bytes.push(0x0a);
+            double(&mut bytes, 0.5);
+            vector(&mut bytes, 0x13, [0.1, 0.2, 0.3]);
+            vector(&mut bytes, 0x14, [-0.5, 0.0, 0.0]);
+            vector(&mut bytes, 0x14, [0.0, 0.0, 0.5]);
+            vector(&mut bytes, 0x14, [0.0, 0.0, 0.0]);
+            double(&mut bytes, 0.0);
+            vector(&mut bytes, 0x14, axis);
+            bytes.push(0x10);
+            bytes
+        };
+        let definition = |minor: Vector3, axis: Vector3| {
+            HelixCurveConstruction::try_new(
+                [0.0, 0.75],
+                HelixFrame {
+                    center: Point3::new(1.0, 2.0, 3.0),
+                    major: Vector3::new(-5.0, 0.0, 0.0),
+                    minor,
+                    pitch: Vector3::new(0.0, 0.0, 0.0),
+                    axis,
+                },
+                0.0,
+                None,
+            )
+            .unwrap()
+        };
+        let forward = Vector3::new(0.0, 0.0, 5.0);
+        let reversed = Vector3::new(0.0, 0.0, -5.0);
+        for (stored_axis, minor, axis, written_axis) in [
+            ([0.0; 3], forward, Vector3::new(0.0, 1.0, 0.0), [0.0; 3]),
+            ([0.0; 3], reversed, Vector3::new(0.0, 1.0, 0.0), [0.0; 3]),
+            (
+                [0.0; 3],
+                forward,
+                Vector3::new(0.0, 0.0, 1.0),
+                [0.0, 0.0, 1.0],
+            ),
+            (
+                [0.0, -1.0, 0.0],
+                forward,
+                Vector3::new(0.0, 1.0, 0.0),
+                [0.0, 1.0, 0.0],
+            ),
+        ] {
+            let mut bytes = record_bytes(stored_axis);
+            let record = crate::sab::Record {
+                index: 0,
+                name: "intcurve-curve".into(),
+                tokens: Vec::new().into(),
+                offset: 0,
+                len: bytes.len(),
+            };
+            let layout =
+                crate::nurbs::proc_curve::helix_patch_layout(&bytes, RefWidth::Four).unwrap();
+            super::patch_helix_definition(
+                &mut bytes,
+                RefWidth::Four,
+                &record,
+                &definition(minor, axis),
+            )
+            .unwrap();
+            assert_eq!(
+                crate::sab::vec3_le_at(&bytes, layout.axis),
+                Some(written_axis)
+            );
+            assert_eq!(
+                cadmpeg_core::decode::View::f64_le_at(&bytes, layout.angle_range[1]),
+                Some(0.75)
+            );
+        }
+    }
 
     #[test]
     fn edit_framing_uses_default_subtype_depth_limit() {

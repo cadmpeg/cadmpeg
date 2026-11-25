@@ -39,6 +39,9 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
+/// Least sine of the angle between a helix major and minor vector that span a
+/// radial plane.
+const EPS_HELIX_RADIAL_PLANE_SINE: f64 = 1.0e-10;
 
 macro_rules! propagate_resource {
     ($result:expr) => {
@@ -459,11 +462,7 @@ impl HelixDefinition {
         if !self.stores_zero_axis() {
             return self.axis;
         }
-        self.major
-            .unit()
-            .zip(self.minor.unit())
-            .and_then(|(major, minor)| major.cross(minor).unit())
-            .unwrap_or(self.axis)
+        helix_radial_plane_normal(self.major, self.minor).unwrap_or(self.axis)
     }
 
     pub(crate) fn into_definition(
@@ -487,6 +486,16 @@ impl HelixDefinition {
                 )?,
             ),
         )
+    }
+}
+
+/// The unit vector of `major x minor` for vectors that span a radial plane.
+pub(crate) fn helix_radial_plane_normal(major: Vector3, minor: Vector3) -> Option<Vector3> {
+    let normal = major.unit()?.cross(minor.unit()?);
+    if normal.norm() > EPS_HELIX_RADIAL_PLANE_SINE {
+        normal.unit()
+    } else {
+        None
     }
 }
 

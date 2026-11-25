@@ -921,14 +921,7 @@ fn decode_container<'a>(
         losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail.clone()));
     }
     if !ctx.container_only() {
-        if kernel_stats.unknown_surface_faces() != 0 {
-            losses.push(
-                InventorLossCode::GeometryProceduralSurfaceNotTransferred.note(format!(
-                    "{} face(s) use procedural surfaces without a decoded carrier.",
-                    kernel_stats.unknown_surface_faces()
-                )),
-            );
-        }
+        losses.extend(kernel_stats_losses(&kernel_stats));
         if !segment_pairs.is_empty() {
             losses.push(InventorLossCode::RseSegmentPairUntyped.note(format!(
                 "Retained {} structurally paired RSe segment(s) without record semantics.",
@@ -2740,6 +2733,26 @@ fn hex(bytes: &[u8]) -> String {
         push_hex(&mut output, *byte);
     }
     output
+}
+
+/// The losses of the kernel transfer that its stats count.
+fn kernel_stats_losses(stats: &cadmpeg_asm::brep::stats::Stats) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    if stats.unknown_surface_faces() != 0 {
+        losses.push(
+            InventorLossCode::GeometryProceduralSurfaceNotTransferred.note(format!(
+                "{} face(s) use procedural surfaces without a decoded carrier.",
+                stats.unknown_surface_faces()
+            )),
+        );
+    }
+    if stats.helix_axes_assumed != 0 {
+        losses.push(InventorLossCode::GeometryHelixAxisAssumed.note(format!(
+            "{} helix curve record(s) store the zero vector as the axis; each curve keeps its stored center, major, minor and pitch vectors, apex factor and interval, and its axis is stated as the unit vector of the stored major x minor.",
+            stats.helix_axes_assumed
+        )));
+    }
+    losses
 }
 
 #[cfg(test)]

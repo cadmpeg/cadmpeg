@@ -651,3 +651,31 @@ fn a_kernel_carrier_kept_without_decoding_is_untyped_model_content() {
         )]
     );
 }
+
+#[test]
+fn kernel_stats_report_assumed_helix_axes_and_undecoded_procedural_surfaces() {
+    let codes = |stats: &cadmpeg_asm::brep::stats::Stats| {
+        super::kernel_stats_losses(stats)
+            .into_iter()
+            .map(|loss| (loss.code, loss.message))
+            .collect::<Vec<_>>()
+    };
+    let mut stats = cadmpeg_asm::brep::stats::Stats::default();
+    assert!(codes(&stats).is_empty());
+    stats.helix_axes_assumed = 3;
+    let losses = codes(&stats);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].0,
+        InventorLossCode::GeometryHelixAxisAssumed.kind()
+    );
+    assert!(losses[0].1.starts_with("3 helix curve record(s) "));
+    stats.unknown_surface_kinds.insert("spline".into(), 2);
+    let losses = codes(&stats);
+    assert_eq!(losses.len(), 2);
+    assert_eq!(
+        losses[0].0,
+        InventorLossCode::GeometryProceduralSurfaceNotTransferred.kind()
+    );
+    assert!(losses[0].1.starts_with("2 face(s) "));
+}

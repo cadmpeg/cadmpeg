@@ -554,7 +554,7 @@ fn build_result(
     }
     if stats.helix_axes_assumed > 0 {
         losses.push(SatLossCode::GeometryHelixAxisAssumed.note(format!(
-            "{} helix curve record(s) store the zero vector as the axis; stored center, radial vectors, pitch and interval retained; axis stated as the unit normal of the radial plane",
+            "{} helix curve record(s) store the zero vector as the axis; stored center, major, minor and pitch vectors, apex factor and interval retained; axis stated as the unit vector of the stored major x minor",
             stats.helix_axes_assumed
         )));
     }

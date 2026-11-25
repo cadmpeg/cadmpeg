@@ -729,9 +729,16 @@ fn history_reaches_cacheless_helix_constructions_from_face_and_wire_edges() {
 
 #[test]
 fn a_cacheless_helix_with_a_zero_axis_states_the_radial_plane_normal_and_counts_it() {
-    for (stored_axis, stated_axis, assumed) in [
-        ([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1),
-        ([0.0, -1.0, 0.0], [0.0, -1.0, 0.0], 0),
+    for (stored_axis, reversed, stated_axis, stated_minor, assumed) in [
+        ([0.0, 0.0, 0.0], false, [0.0, 1.0, 0.0], [0.0, 0.0, 5.0], 1),
+        ([0.0, 0.0, 0.0], true, [0.0, 1.0, 0.0], [0.0, 0.0, -5.0], 1),
+        (
+            [0.0, -1.0, 0.0],
+            false,
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 5.0],
+            0,
+        ),
     ] {
         let mut edge = ref_record(3, "edge", &[-1, -1, -1, 5, 0, 6, 0, -1, 4]);
         std::sync::Arc::make_mut(&mut edge.tokens)[4] = Token::Double(0.0);
@@ -743,7 +750,7 @@ fn a_cacheless_helix_with_a_zero_axis_states_the_radial_plane_normal_and_counts_
                 Token::Ref(-1),
                 Token::Long(-1),
                 Token::Ref(-1),
-                Token::False,
+                if reversed { Token::True } else { Token::False },
                 Token::SubtypeOpen,
                 Token::Ident("helix_int_cur".into()),
                 Token::Long(22800),
@@ -810,7 +817,7 @@ fn a_cacheless_helix_with_a_zero_axis_states_the_radial_plane_normal_and_counts_
             };
             assert_eq!(<[f64; 3]>::from(helix.axis().get()), stated_axis);
             assert_eq!(<[f64; 3]>::from(helix.major().get()), [-5.0, 0.0, 0.0]);
-            assert_eq!(<[f64; 3]>::from(helix.minor().get()), [0.0, 0.0, 5.0]);
+            assert_eq!(<[f64; 3]>::from(helix.minor().get()), stated_minor);
             assert_eq!(out.stats.helix_axes_assumed, assumed);
             assert!(out.stats.procedural_curve_kinds.is_empty());
         }
