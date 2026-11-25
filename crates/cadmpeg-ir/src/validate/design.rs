@@ -122,6 +122,7 @@ pub(super) fn check_design(
 ) -> Result<(), CodecError> {
     if ir.design.is_empty() {
         linkage::check_scope(ir, findings);
+        linkage::check_identities(ir, findings);
         tolerances::check_definition_general_tolerances(ir, findings);
         if !ir.process.parameters.is_empty() {
             let records = records::DesignRecords::new(ir);
