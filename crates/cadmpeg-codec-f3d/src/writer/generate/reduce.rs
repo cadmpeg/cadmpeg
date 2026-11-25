@@ -176,9 +176,6 @@ pub(super) struct Reduction<'a> {
     missing_states: MissingStateForm,
     /// The parts of the design scope's form dropped after a failure.
     fallback: super::design::Fallback,
-    /// The number of features that end the history-true run in the
-    /// fallback the document was staged with.
-    staged_ends: usize,
     /// The faces omitted from each opened body, charged at [`Self::finish`]
     /// for the bodies still written.
     opened: BTreeMap<String, Vec<String>>,
@@ -188,20 +185,14 @@ pub(super) struct Reduction<'a> {
 }
 
 impl<'a> Reduction<'a> {
-    /// The reduction of `ir`, the document staged with `fallback`.
-    pub(super) fn new(
-        ir: &'a CadIr,
-        missing_states: MissingStateForm,
-        fallback: super::design::Fallback,
-    ) -> Self {
+    pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
         Self {
             missing_states,
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
             design_dropped: false,
             neutral_dropped: false,
-            staged_ends: fallback.run_ends(),
-            fallback,
+            fallback: super::design::Fallback::default(),
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
         }
@@ -235,18 +226,6 @@ impl<'a> Reduction<'a> {
     /// them.
     pub(super) fn fallback(&self) -> &super::design::Fallback {
         &self.fallback
-    }
-
-    /// Whether a fallback ended the history-true run before the end the
-    /// document was staged for: the state at the new timeline marker is
-    /// staged from the source document again.
-    pub(super) fn restages(&self) -> bool {
-        self.fallback.run_ends() > self.staged_ends
-    }
-
-    /// The fallback, to stage the document again with.
-    pub(super) fn into_fallback(self) -> super::design::Fallback {
-        self.fallback
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -359,9 +338,11 @@ impl<'a> Reduction<'a> {
         let progressed = match stage {
             Stage::Archive => false,
             Stage::NeutralDesign => {
-                culprit.is_some_and(|culprit| self.drop_records(&reason, &culprit))
-                    || self.drop_design_part(&reason)
-                    || self.drop_neutral_design(&reason)
+                let named = match culprit {
+                    Some(culprit) => self.drop_records(&reason, &culprit)?,
+                    None => false,
+                };
+                named || self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
             }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
@@ -1436,11 +1417,60 @@ impl<'a> Reduction<'a> {
     }
 
     /// Drop the records `culprit` names, and each record that needs them.
-    fn drop_records(&mut self, reason: &str, culprit: &Culprit) -> bool {
-        self.writes_neutral_design()
-            && self
-                .fallback
-                .drop_records(&self.ir, self.missing_states, culprit, reason)
+    /// Where the history-true run ends at an item, the document keeps the
+    /// state the failed attempt wrote for the items before it.
+    fn drop_records(&mut self, reason: &str, culprit: &Culprit) -> Result<bool, CodecError> {
+        if !self.writes_neutral_design() {
+            return Ok(false);
+        }
+        let earlier = self.fallback.clone();
+        if !self
+            .fallback
+            .drop_records(&self.ir, self.missing_states, culprit, reason)
+        {
+            return Ok(false);
+        }
+        if let Some(held) =
+            super::design::held_state(&self.ir, self.missing_states, &earlier, &self.fallback)
+        {
+            self.hold(held)?;
+        }
+        Ok(true)
+    }
+
+    /// Write `held` as the current state: the bodies outside it are not
+    /// written.
+    fn hold(&mut self, held: super::design::HeldState) -> Result<(), CodecError> {
+        let reason = format!(
+            "the history-true design writes the state of the items before {} at its timeline marker",
+            held.before
+        );
+        let dropped = self
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| !held.state.bodies.contains(&body.id))
+            .map(|body| body.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let kept = held
+            .state
+            .bodies
+            .iter()
+            .map(|body| body.as_str().to_owned())
+            .collect::<Vec<_>>();
+        if let Some(scope) = self
+            .ir
+            .to_mut()
+            .design
+            .scopes
+            .iter_mut()
+            .find(|scope| scope.definition == held.scope)
+        {
+            scope.current = vec![held.state];
+        }
+        let kept = kept.iter().map(String::as_str).collect();
+        self.retain_reporting_bodies(&kept, &dropped, &reason)
     }
 
     /// Write no design scope: every design scope, container, feature and

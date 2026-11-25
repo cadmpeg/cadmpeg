@@ -19,14 +19,15 @@
 //! records and each record that needs them: a rolled-back item, a sketch, a
 //! construction plane with the sketches on it, or a sketch dimension alone;
 //! for the records or the history state of the item of a feature written
-//! with its state, the history-true form ends the run at that feature, and
-//! the geometry-true form writes the Base Feature; a dropped sketch also ends
-//! the history-true run at the first item on it; for the records of a
-//! [`Part`] that name no one record, that part. The other fallbacks, in
-//! [`Part`] order, write the sketches without their dimensions, the
-//! geometry item in the Base Feature, the design without its construction
-//! planes and the sketches on them, the design without its `Sketch` items,
-//! then no design ([`dropped_records`]).
+//! with its state, the history-true form ends the run at that feature,
+//! where the items before it keep their states and result bodies
+//! ([`held_state`]), and the geometry-true form writes the Base Feature; a
+//! dropped sketch also ends the history-true run at the first item on it;
+//! for the records of a [`Part`] that name no one record, that part. The
+//! other fallbacks, in [`Part`] order, write the sketches without their
+//! dimensions, the geometry item in the Base Feature, the design without its
+//! construction planes and the sketches on them, the design without its
+//! `Sketch` items, then no design ([`dropped_records`]).
 
 mod base_feature;
 mod expression;
@@ -60,7 +61,7 @@ use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchConstraintId;
 
@@ -148,7 +149,9 @@ thread_local! {
 #[cfg(test)]
 thread_local! {
     /// The identities whose records fail to write in every attempt on this
-    /// thread.
+    /// thread: a feature, plane or constraint; `rolled {feature}` for the
+    /// rolled-back item of a feature; `body of {feature}` and
+    /// `rolled body of {feature}` for the bodies of its item in either form.
     static FAIL_RECORDS: std::cell::RefCell<BTreeSet<String>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
 }
@@ -332,11 +335,6 @@ impl Fallback {
         self.rolled
             .get(feature)
             .map(|reason| records_reason(reason))
-    }
-
-    /// The number of features that end the run of the history-true form.
-    pub(super) fn run_ends(&self) -> usize {
-        self.ends.len()
     }
 
     /// Drop the records `culprit` names for `reason`. Returns whether the
@@ -691,15 +689,16 @@ pub(super) fn plan<'a>(
         })
         .map(|feature| {
             let mut notes = Vec::new();
+            let rolled_reason = rolled_reasons.get(*feature);
             if rolled_back.contains(*feature) {
-                notes.push(match rolled_reasons.get(*feature) {
+                notes.push(match rolled_reason {
                     Some(reason) => format!(
                         "it follows the timeline marker, and the writer writes no rolled-back item for it: {reason}"
                     ),
                     None => "it follows the timeline marker".to_owned(),
                 });
             }
-            if let Some(reason) = unstated(feature) {
+            if let Some(reason) = unstated(feature).filter(|reason| rolled_reason != Some(reason)) {
                 notes.push(format!("the writer writes it without its state: {reason}"));
             }
             if let Some(reason) = sketches.unwritten.get(*feature) {
@@ -901,11 +900,9 @@ fn run_end(
 /// an evaluation holds the state at the marker (cadir-v11.md §3.4, Features
 /// without their state; §5.4): `target` with that state as its current
 /// state, and the loss of the records of the current state the document then
-/// does not hold. The marker stands before the features `fallback` ends the
-/// run at. `None` where the form writes `target` itself.
+/// does not hold. `None` where the form writes `target` itself.
 pub(in crate::writer::generate) fn state_at_marker(
     target: &CadIr,
-    fallback: &Fallback,
 ) -> Option<(CadIr, Option<LossNote>)> {
     // A native Design names the records of the current state.
     if target.native.namespace("f3d").is_some() {
@@ -913,7 +910,7 @@ pub(in crate::writer::generate) fn state_at_marker(
     }
     let scope = root_scope(target)?;
     let features = scope_features(target, scope);
-    let (end, _) = run_end(target, scope, &features, &fallback.ends)?;
+    let (end, _) = run_end(target, scope, &features, &BTreeMap::new())?;
     let run = &features[..end];
     let [current] = scope.current.as_slice() else {
         return None;
@@ -977,6 +974,64 @@ pub(in crate::writer::generate) fn state_at_marker(
         ))
     });
     Some((staged, loss))
+}
+
+/// The state the history-true form writes at its timeline marker where a
+/// failure ends the run at an item: the state after the items before it.
+pub(super) struct HeldState {
+    /// The definition of the root scope.
+    pub(super) scope: ProductDefinitionId,
+    /// The state, as the scope's current state.
+    pub(super) state: CurrentState,
+    /// The feature the timeline marker stands before.
+    pub(super) before: FeatureId,
+}
+
+/// The state the history-true form holds at its timeline marker where
+/// `fallback` ends the run at a feature that `earlier` does not: the state
+/// after the geometry items before that feature in the attempt `earlier`
+/// plans, with the result bodies of those items, as
+/// [`NeutralDesign::history_states`] commits it (f3d.md §3.1, "History
+/// states"; cadir-v11.md §3.4, Features without their state). `None` where
+/// that attempt writes no item before the feature.
+pub(super) fn held_state(
+    target: &CadIr,
+    missing_states: MissingStateForm,
+    earlier: &Fallback,
+    fallback: &Fallback,
+) -> Option<HeldState> {
+    let before = fallback
+        .ends
+        .keys()
+        .find(|feature| !earlier.ends.contains_key(*feature))?;
+    let scope = root_scope(target)?;
+    let [current] = scope.current.as_slice() else {
+        return None;
+    };
+    let features = scope_features(target, scope);
+    let run = &features[..features.iter().position(|feature| *feature == before)?];
+    let design = plan(target, missing_states, earlier).ok().flatten()?;
+    let kept = design
+        .item
+        .items()
+        .iter()
+        .filter(|item| run.contains(&item.feature()))
+        .collect::<Vec<_>>();
+    let after = kept.last()?.feature();
+    Some(HeldState {
+        scope: scope.definition.clone(),
+        state: CurrentState {
+            at: Position::After(Member::Feature(after.clone())),
+            bodies: kept
+                .iter()
+                .filter_map(|item| item.body().cloned())
+                .collect(),
+            poses: current.poses.clone(),
+            status: EvaluationStatus::Current,
+            native_ref: None,
+        },
+        before: before.clone(),
+    })
 }
 
 impl NeutralDesign<'_> {

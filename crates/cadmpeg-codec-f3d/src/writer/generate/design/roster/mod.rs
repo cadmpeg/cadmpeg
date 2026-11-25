@@ -290,7 +290,15 @@ impl<'a> ItemRecords<'a> {
     fn write(&self, ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), RecordFailure> {
         let mut written = || {
             #[cfg(test)]
-            if let Some(error) = super::requested_record_failure(self.feature()) {
+            if let Some(error) = super::requested_record_failure(&format_args!(
+                "{}{}",
+                if self.place.rolled().is_some() {
+                    "rolled "
+                } else {
+                    ""
+                },
+                self.feature()
+            )) {
                 return Err(error);
             }
             match &self.kind {

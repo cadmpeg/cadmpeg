@@ -57,39 +57,10 @@ pub(super) fn write_new(
     missing_states: MissingStateForm,
     writer: &mut dyn Write,
 ) -> Result<Generated, CodecError> {
-    let mut fallback = design::Fallback::default();
-    let (mut staged, generated) = loop {
-        match write_staged(target, missing_states, fallback)? {
-            Pass::Written(staged, generated) => break (staged, generated),
-            Pass::Restaged(next) => fallback = next,
-        }
-    };
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, writer)?;
-    Ok(generated)
-}
-
-/// The outcome of one pass of [`write_new`].
-enum Pass {
-    /// The archive, in a temporary file, and what it holds.
-    Written(std::fs::File, Generated),
-    /// A failure ended the run of the history-true form before the end the
-    /// pass staged the document for; the next pass stages it with this
-    /// fallback.
-    Restaged(design::Fallback),
-}
-
-/// Write `target` staged for the run that `fallback` ends, taking the
-/// fallbacks of [`reduce`] from `fallback` on.
-fn write_staged(
-    target: &CadIr,
-    missing_states: MissingStateForm,
-    fallback: design::Fallback,
-) -> Result<Pass, CodecError> {
     // The history-true form writes the state at its timeline marker, which
     // an evaluation can hold in place of the current state.
     let staged = match missing_states {
-        MissingStateForm::HistoryTrue => design::state_at_marker(target, &fallback),
+        MissingStateForm::HistoryTrue => design::state_at_marker(target),
         MissingStateForm::GeometryTrue => None,
     };
     let (target, staged_loss) = match &staged {
@@ -102,10 +73,10 @@ fn write_staged(
         ir: lowered,
         unlowered,
     } = lower_subset_curves(target, |_| true);
-    let mut reduction = Reduction::new(lowered.as_ref(), missing_states, fallback);
+    let mut reduction = Reduction::new(lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
-    let (staged, mut coverage, design_losses) = loop {
+    let (mut staged, mut coverage, design_losses) = loop {
         let mut staged = tempfile::tempfile()?;
         match attempt(
             reduction.ir(),
@@ -116,17 +87,14 @@ fn write_staged(
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
-            Err(failure) => {
-                reduction.degrade(failure, writes_alone)?;
-                if reduction.restages() {
-                    return Ok(Pass::Restaged(reduction.into_fallback()));
-                }
-            }
+            Err(failure) => reduction.degrade(failure, writes_alone)?,
         }
     };
     if reduction.drops_neutral_design() {
         coverage.design = design::DROPPED;
     }
+    staged.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut staged, writer)?;
     let geometry_true = missing_states == MissingStateForm::HistoryTrue
         && reduction.drops_neutral_design()
         && !reduction.ir().geometry.bodies.is_empty()
@@ -141,14 +109,11 @@ fn write_staged(
     let mut losses = reduction.finish();
     losses.extend(staged_loss);
     losses.extend(design_losses);
-    Ok(Pass::Written(
-        staged,
-        Generated {
-            coverage,
-            losses,
-            geometry_true,
-        },
-    ))
+    Ok(Generated {
+        coverage,
+        losses,
+        geometry_true,
+    })
 }
 
 /// Whether `stage` writes `target` (one body of the document, without its

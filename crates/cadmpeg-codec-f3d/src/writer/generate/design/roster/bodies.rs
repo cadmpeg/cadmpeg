@@ -202,9 +202,10 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Re
         };
         let mut written = || {
             #[cfg(test)]
-            if let Some(error) =
-                super::super::requested_record_failure(&format_args!("body of {}", item.feature()))
-            {
+            if let Some(error) = super::super::requested_record_failure(&format_args!(
+                "rolled body of {}",
+                item.feature()
+            )) {
                 return Err(error);
             }
             let guid = super::swept::rolled_node_guid(ctx, body.node);
