@@ -7,6 +7,8 @@ use super::{
     polyline_parameters, reverse_nurbs, solved_curve, topology_edge_explicit_tolerance,
     TopologyIndex,
 };
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
@@ -30,14 +32,17 @@ use std::f64::consts::TAU;
 /// inverse frame. On a cylinder, cone, sphere or torus face whose coedges
 /// carry none, each computed curve is the parameter line of an edge line or
 /// circle that lies on one parameter line of the support. Each is exact.
-pub(super) fn state_pcurves(ir: &CadIr, admitted: impl Fn(&str) -> bool) -> Cow<'_, CadIr> {
+pub(super) fn state_pcurves(
+    ir: &CadIr,
+    admitted: impl Fn(&str) -> bool,
+) -> Result<Cow<'_, CadIr>, CodecError> {
     if ir
         .geometry
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty())
     {
-        return Cow::Borrowed(ir);
+        return Ok(Cow::Borrowed(ir));
     }
     let index = TopologyIndex::new(ir);
     let mut computed = Vec::new();
@@ -77,9 +82,13 @@ pub(super) fn state_pcurves(ir: &CadIr, admitted: impl Fn(&str) -> bool) -> Cow<
             SurfaceGeometry::Solved(geometry) => {
                 if let Some(form) = Revolved::of(geometry) {
                     if coedges.iter().all(|coedge| coedge.pcurves.is_empty()) {
-                        computed.extend(
-                            revolved_pcurves(&index, surface, &form, &loops).unwrap_or_default(),
-                        );
+                        if let Some(segments) =
+                            revolved_loop_segments(&index, surface, &form, &loops)?
+                        {
+                            computed.extend(
+                                revolved_pcurves(&index, &form, segments).unwrap_or_default(),
+                            );
+                        }
                     }
                 }
                 continue;
@@ -96,7 +105,7 @@ pub(super) fn state_pcurves(ir: &CadIr, admitted: impl Fn(&str) -> bool) -> Cow<
         }
     }
     if computed.is_empty() {
-        return Cow::Borrowed(ir);
+        return Ok(Cow::Borrowed(ir));
     }
     let mut stated = ir.clone();
     for (coedge_id, pcurve) in computed {
@@ -114,7 +123,7 @@ pub(super) fn state_pcurves(ir: &CadIr, admitted: impl Fn(&str) -> bool) -> Cow<
             stated.geometry.pcurves.push(pcurve);
         }
     }
-    Cow::Owned(stated)
+    Ok(Cow::Owned(stated))
 }
 
 /// The parameter curve of `coedge` on `plane`, in the coedge's traversal.
@@ -215,14 +224,19 @@ impl Segment<'_> {
     }
 }
 
-/// The edge line or circle of `coedge` stated on one parameter line of
-/// `form`, checked by evaluating the support at samples of the edge.
-fn revolved_segment<'ir>(
+/// The parameter lines of `form` that an edge line or circle can lie on,
+/// with the edge point at each edge parameter and the edge tolerance.
+struct Candidates<'ir> {
+    segments: Vec<Segment<'ir>>,
+    edge_point: Box<dyn Fn(f64) -> Point3>,
+    tolerance: f64,
+}
+
+fn segment_candidates<'ir>(
     index: &TopologyIndex<'ir>,
-    surface: &Surface,
     form: &Revolved,
     coedge: &'ir Coedge,
-) -> Option<Segment<'ir>> {
+) -> Option<Candidates<'ir>> {
     let edge = index.edges.get(coedge.edge.as_str()).copied()?;
     let curve = index.curves.get(edge.curve()?.as_str()).copied()?;
     let geometry = flatten_curve(solved_curve(curve).ok()?).ok()?;
@@ -270,30 +284,80 @@ fn revolved_segment<'ir>(
         _ => return None,
     };
     let mid_uv = form.parameters(at(mid))?;
-    rates.into_iter().find_map(|rate| {
-        let segment = Segment {
-            coedge,
-            range,
-            mid,
-            mid_uv,
-            rate,
-        };
-        (0..=SEGMENT_SAMPLES)
-            .all(|step| {
-                let parameter = (range[1] - range[0])
-                    .mul_add(f64::from(step) / f64::from(SEGMENT_SAMPLES), range[0]);
-                let uv = segment.at(parameter);
-                cadmpeg_ir::eval::model_surface_point(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                    index.ir,
-                    &surface.geometry,
-                    uv.u,
-                    uv.v,
-                )
-                .is_ok_and(|point| point.get().distance(at(parameter)) <= tolerance)
+    Some(Candidates {
+        segments: rates
+            .into_iter()
+            .map(|rate| Segment {
+                coedge,
+                range,
+                mid,
+                mid_uv,
+                rate,
             })
-            .then_some(segment)
+            .collect(),
+        edge_point: at,
+        tolerance,
     })
+}
+
+/// The edge line or circle of `coedge` stated on one parameter line of
+/// `form`, checked by evaluating the support at samples of the edge.
+fn revolved_segment<'ir>(
+    index: &TopologyIndex<'ir>,
+    surface: &Surface,
+    form: &Revolved,
+    coedge: &'ir Coedge,
+) -> Result<Option<Segment<'ir>>, CodecError> {
+    let Some(candidates) = segment_candidates(index, form, coedge) else {
+        return Ok(None);
+    };
+    'candidates: for segment in candidates.segments {
+        let [start, end] = segment.range;
+        for step in 0..=SEGMENT_SAMPLES {
+            let parameter =
+                (end - start).mul_add(f64::from(step) / f64::from(SEGMENT_SAMPLES), start);
+            let uv = segment.at(parameter);
+            let point = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                index.ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            ))?;
+            if !point.is_some_and(|point| {
+                point.get().distance((candidates.edge_point)(parameter)) <= candidates.tolerance
+            }) {
+                continue 'candidates;
+            }
+        }
+        return Ok(Some(segment));
+    }
+    Ok(None)
+}
+
+/// The checked parameter line of each coedge in `loops`, by loop, or none
+/// where an edge is not a parameter line of the support.
+fn revolved_loop_segments<'ir>(
+    index: &TopologyIndex<'ir>,
+    surface: &Surface,
+    form: &Revolved,
+    loops: &[&cadmpeg_ir::topology::Loop],
+) -> Result<Option<Vec<Vec<Segment<'ir>>>>, CodecError> {
+    let mut segments = Vec::new();
+    for loop_ in loops {
+        let mut loop_segments = Vec::new();
+        for coedge_id in loop_.coedges() {
+            let Some(coedge) = index.coedges.get(coedge_id.as_str()).copied() else {
+                return Ok(None);
+            };
+            let Some(segment) = revolved_segment(index, surface, form, coedge)? else {
+                return Ok(None);
+            };
+            loop_segments.push(segment);
+        }
+        segments.push(loop_segments);
+    }
+    Ok(Some(segments))
 }
 
 /// Samples per edge at which the writer checks a computed parameter line.
@@ -303,14 +367,13 @@ const SEGMENT_SAMPLES: u32 = 8;
 /// whole periods are removed. A larger step crosses a pole or a seam.
 const JOIN_LIMIT: f64 = std::f64::consts::FRAC_PI_4;
 
-/// The parameter curve of each coedge in `loops` on the revolved support,
-/// or none where an edge is not a parameter line of the support or a loop
+/// The parameter curve of each segment in `loops` on the revolved support,
+/// each moved by whole periods so that its loop joins, or none where a loop
 /// does not close in the parameter plane.
 fn revolved_pcurves(
     index: &TopologyIndex<'_>,
-    surface: &Surface,
     form: &Revolved,
-    loops: &[&cadmpeg_ir::topology::Loop],
+    loops: Vec<Vec<Segment<'_>>>,
 ) -> Option<Vec<(cadmpeg_ir::ids::CoedgeId, Pcurve)>> {
     let periods = |delta: Point2| {
         let turns = |value: f64| (value / TAU).round() * TAU;
@@ -325,11 +388,9 @@ fn revolved_pcurves(
     };
     let mut computed = Vec::new();
     let mut first_centre = None;
-    for loop_ in loops {
+    for loop_segments in loops {
         let mut segments = Vec::new();
-        for coedge_id in loop_.coedges() {
-            let coedge = index.coedges.get(coedge_id.as_str()).copied()?;
-            let mut segment = revolved_segment(index, surface, form, coedge)?;
+        for mut segment in loop_segments {
             if let Some(previous) = segments.last().map(Segment::ends) {
                 let [start, _] = segment.ends();
                 let shift = periods(Point2::new(

@@ -477,7 +477,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     let brep = has_brep_topology(ranged.as_ref());
     let dissimilar = placement::dissimilar_supports(ranged.as_ref());
     let admitted = |surface: &str| !brep || dissimilar.contains(surface);
-    let stated = exact::state_pcurves(ranged.as_ref(), admitted);
+    let stated = exact::state_pcurves(ranged.as_ref(), admitted)?;
     let restated = rational_support::rational_analytic_supports(stated.as_ref(), admitted)?;
     let (placed, placement_losses) = placement::placed_bodies(restated.as_ref())?;
     let oriented = if brep {
