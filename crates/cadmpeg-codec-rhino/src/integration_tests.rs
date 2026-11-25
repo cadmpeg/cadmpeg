@@ -170,14 +170,13 @@ fn geometry_pipeline_composes_mesh_subd_extrusion_and_connected_brep_objects() {
 
 #[test]
 fn a_rotated_extrusion_cap_pcurve_is_the_planar_projection_the_writer_checks() {
+    // A rotated cap frame whose projections differ in the last bits when the
+    // decoder and the writer compute them with different arithmetic.
+    let length = 29.0_f64.sqrt();
     let objects = vec![support::object_record(
         0x10,
         support::EXTRUSION_CLASS,
-        &crate::extrusion::tests::capped_payload_with_up([
-            0.950_744_819_175_211_1,
-            -0.309_974_658_337_573,
-            0.0,
-        ]),
+        &crate::extrusion::tests::capped_payload_with_up([2.0 / length, 5.0 / length, 0.0]),
     )];
     let result = decode(support::archive_writer("80", 202_608_010, &objects));
     assert_valid(&result);
