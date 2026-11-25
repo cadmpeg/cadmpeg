@@ -275,9 +275,15 @@ fn a_fixed_face_is_planar_and_a_bend_pick_is_not() {
 /// An extruded hole entering the bottom face, its circle centered at
 /// (5, 5, `z`).
 fn hole(ir: &CadIr, z: f64) -> FeatureOperation {
+    bore(ir, point(5.0, 5.0, z))
+}
+
+/// An extruded hole entering the bottom face, its circle centered at
+/// `center`.
+fn bore(ir: &CadIr, center: Construction<kinds::Point>) -> FeatureOperation {
     sheet(SheetMetalKind::ExtrudedHole {
         bore: StampOutline::Circle {
-            center: point(5.0, 5.0, z),
+            center,
             diameter: positive(2.0),
         },
         entry: Some(current(vec![face(ir, bottom(ir))])),
@@ -305,11 +311,6 @@ fn a_circle_outline_center_is_read_in_its_entry_face_s_frame() {
     with(&mut ir, |ir| hole(ir, 100.0));
     assert!(ruled(&ir, rule).is_empty());
     with(&mut ir, |ir| hole(ir, 0.0));
-    assert_eq!(ruled(&ir, rule).len(), 1);
-    // A face that no body holds lies in its document's frame.
-    ir.geometry.bodies.clear();
-    assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| hole(ir, 1.0));
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
@@ -351,11 +352,6 @@ fn a_stiffening_rib_point_is_read_in_its_bend_face_s_frame() {
     with(&mut ir, |ir| rib(ir, 3.0));
     assert!(ruled(&ir, rule).is_empty());
     with(&mut ir, |ir| rib(ir, 10.0));
-    assert_eq!(ruled(&ir, rule).len(), 1);
-    // A face that no body holds lies in its document's frame.
-    ir.geometry.bodies.clear();
-    assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| rib(ir, 5.0));
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
@@ -1130,28 +1126,8 @@ fn a_spine_limit_pick_of_a_stated_kind_leaves_the_target_s_other_picks_judged() 
     assert!(resolves[0].contains(ir.geometry.edges[three[1]].id.as_str()));
 }
 
-#[test]
-fn a_spine_limit_that_no_body_holds_lies_in_the_document_frame() {
-    let rule = "design.spine-limit-off-spine";
-    let mut ir = fixture::document();
-    let three = bottom_edges(&ir)[..3].to_vec();
-    let raised = ir.geometry.edges[level_edges(&ir, 10.0)[0]]
-        .start()
-        .unwrap()
-        .clone();
-    ir.geometry.bodies.clear();
-    with(&mut ir, |ir| spine_sweep(ir, &three, face(ir, bottom(ir))));
-    assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| {
-        spine_sweep(ir, &three, face(ir, level(ir, 10.0)))
-    });
-    assert_eq!(ruled(&ir, rule).len(), 1);
-    with(&mut ir, |ir| {
-        spine_sweep(ir, &three, EntityRef::Vertex(raised))
-    });
-    assert_eq!(ruled(&ir, rule).len(), 1);
-}
-
+mod frames;
 mod operands;
+mod ribs;
 mod separation;
 mod sketch_profiles;

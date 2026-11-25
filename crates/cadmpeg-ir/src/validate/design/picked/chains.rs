@@ -29,7 +29,7 @@ use crate::topology::EdgeCarrier;
 use super::super::matching::StateTopology;
 use super::super::ops::picks::{class, is_point_or_plane, Class};
 use super::apart::{apart, curve_distance, placed_position};
-use super::{all_entities, entities, picks, planar, position, Entity, InState, Probe};
+use super::{all_entities, entities, picks, planar, Entity, InState, Probe};
 
 /// How the edges of a selection join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -77,8 +77,9 @@ fn edges<'a, O: MemberOrder>(
         .collect()
 }
 
-/// The chain `edges` form. `None` where an edge or an end's position is not
-/// held, or an edge with no ends is one of several.
+/// The chain `edges` form, its ends read in the definition's frame. `None`
+/// where an edge or an end's placed position is not held, or an edge with no
+/// ends is one of several.
 fn chain<'a>(
     topology: &StateTopology<'a>,
     edges: &BTreeSet<&'a str>,
@@ -104,7 +105,7 @@ fn chain<'a>(
     for vertex in ends.iter().flat_map(|&(start, end)| [start, end]) {
         if !vertices.contains(&vertex) {
             vertices.push(vertex);
-            points.push(position(topology, vertex)?);
+            points.push(placed_position(topology, vertex)?);
         }
     }
     let slot = |vertex: &str| vertices.iter().position(|held| *held == vertex);

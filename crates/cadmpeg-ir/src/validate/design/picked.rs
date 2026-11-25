@@ -32,8 +32,10 @@ use crate::report::check::{Finding, Ruled};
 use crate::scalar::NonNegativeLength;
 use crate::topology::BodyKind;
 
+use super::frames::{self, values_frame};
 use super::index::DesignIndex;
 use super::matching::{Matcher, Matchers, StateTopology};
+use super::records::MemberKey;
 use super::selections::{anchored_states, Site};
 use super::Holder;
 use apart::{straight_length, surface_distance};
@@ -197,7 +199,7 @@ fn all_entities<'a, O: MemberOrder>(
 }
 
 /// The analytic shape of a face's surface, through every placement of an
-/// inline basis, and whether a placement was passed.
+/// inline basis, and whether each placement passed is rigid.
 fn surface_shape<'a>(
     topology: &StateTopology<'a>,
     face: &str,
@@ -208,12 +210,12 @@ fn surface_shape<'a>(
         .get(face.surface.as_str())?
         .geometry
         .solved()?;
-    let mut placed = false;
+    let mut rigid = true;
     while let SolvedSurfaceGeometry::Transformed(inner) = geometry {
+        rigid &= inner.transform().is_proper_rigid();
         geometry = inner.basis();
-        placed = true;
     }
-    Some((geometry, placed))
+    Some((geometry, rigid))
 }
 
 /// Whether a face is planar. `None` where its surface is not analytic.
@@ -232,11 +234,11 @@ fn planar(topology: &StateTopology<'_>, face: &str) -> Option<bool> {
 }
 
 /// Whether a face is cylindrical. `None` where its surface is not analytic,
-/// is a cone, or places a cylinder by an affine map.
+/// is a cone, or places a cylinder by a map that is not rigid.
 fn cylindrical(topology: &StateTopology<'_>, face: &str) -> Option<bool> {
-    let (geometry, placed) = surface_shape(topology, face)?;
+    let (geometry, rigid) = surface_shape(topology, face)?;
     match geometry {
-        SolvedSurfaceGeometry::Cylinder(_) => (!placed).then_some(true),
+        SolvedSurfaceGeometry::Cylinder(_) => rigid.then_some(true),
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Sphere(_)
         | SolvedSurfaceGeometry::Torus(_) => Some(false),
@@ -492,7 +494,10 @@ impl<'a> Probe<'_, 'a> {
             if planar(topology, face) != Some(true) {
                 continue;
             }
-            let Some(point) = self.point_in(center, state.configuration) else {
+            let Some(point) = self
+                .point_in(center, state.configuration)
+                .and_then(|point| self.in_definition(point))
+            else {
                 continue;
             };
             let tolerance = self.face_tolerance(topology, face);
@@ -523,7 +528,10 @@ impl<'a> Probe<'_, 'a> {
             let Some(face) = Self::one_face(&state, topology, bend) else {
                 continue;
             };
-            let Some(point) = self.point_in(at, state.configuration) else {
+            let Some(point) = self
+                .point_in(at, state.configuration)
+                .and_then(|point| self.in_definition(point))
+            else {
                 continue;
             };
             let tolerance = self.face_tolerance(topology, face);
@@ -538,6 +546,13 @@ impl<'a> Probe<'_, 'a> {
                 "a StiffeningRib's at does not lie on bend face {face}"
             ));
         }
+    }
+
+    /// A point the feature states, carried into its definition's frame
+    /// (§5.2).
+    fn in_definition(&self, point: Point3) -> Option<Point3> {
+        let member = MemberKey::Feature(self.feature.id.as_str());
+        frames::point(values_frame(&self.index.records, member)?, point)
     }
 
     fn face_tolerance(&self, topology: &StateTopology<'_>, face: &str) -> f64 {
