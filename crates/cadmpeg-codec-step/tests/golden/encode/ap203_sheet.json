@@ -65,7 +65,7 @@
               "namespace": "step"
             }
           },
-          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers: step:construction:curve_bounded_surface#37",
           "severity": "info"
         },
         {
@@ -157,7 +157,7 @@
               "namespace": "step"
             }
           },
-          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers: step:construction:curve_bounded_surface#37",
           "severity": "info"
         },
         {
@@ -249,7 +249,7 @@
               "namespace": "step"
             }
           },
-          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers: step:construction:curve_bounded_surface#37",
           "severity": "info"
         }
       ],

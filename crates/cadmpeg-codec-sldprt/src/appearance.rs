@@ -87,10 +87,7 @@ pub(crate) fn definitions(
     let mut definitions = Vec::new();
     for section in scan.sections() {
         let bytes = section.payload();
-        for (offset, token) in bytes.windows(VISUAL_PROPERTIES_CLASS.len()).enumerate() {
-            if token != VISUAL_PROPERTIES_CLASS {
-                continue;
-            }
+        for offset in memchr::memmem::find_iter(bytes, VISUAL_PROPERTIES_CLASS) {
             if let Some(definition) =
                 definition_at(ctx, section, offset + VISUAL_PROPERTIES_CLASS.len(), offset)?
             {
@@ -251,13 +248,11 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
     }) {
         let bytes = section.payload();
         let classes = crate::tessellation::class_intervals(bytes);
-        for marker_offset in bytes
-            .windows(feature_visual::MARKER_VALUE.len())
-            .enumerate()
-            .filter_map(|(offset, marker)| {
-                (marker == feature_visual::MARKER_VALUE).then_some(offset)
-            })
-        {
+        let finder = memchr::memmem::Finder::new(&feature_visual::MARKER_VALUE);
+        let mut cursor = 0;
+        while let Some(rel) = finder.find(&bytes[cursor..]) {
+            let marker_offset = cursor + rel;
+            cursor = marker_offset + 1;
             let Some(record_offset) = marker_offset.checked_sub(feature_visual::MARKER) else {
                 continue;
             };

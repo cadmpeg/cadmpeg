@@ -23,10 +23,15 @@ const TOOL_NATIVE: &str = "f3d:Design/BulkStream.dat:design-record#481";
 /// from 2) inserts slot 1, feature `SECOND` (state 27 from 23) inserts slot
 /// 2, and the Combine (state 30 from 27) selects target slot 1 and tool slot
 /// 2 in its input state 27 and keeps the bodies `after_combine`. With
-/// `later_update`, a later transition (state 31 from 30) updates slot 1.
+/// `second_updates_target`, the transition into state 27 also updates slot 1.
+/// With `unscoped_update`, a state 25 from 23 that no scope names updates
+/// slot 1. With `later_update`, a later transition (state 31 from 30) updates
+/// slot 1.
 fn combine_case(
     model_bodies: &[&str],
     after_combine: Vec<i64>,
+    second_updates_target: bool,
+    unscoped_update: bool,
     later_update: bool,
 ) -> (
     Feature,
@@ -99,12 +104,13 @@ fn combine_case(
             }),
         ),
     ];
-    let state = |state_id: i64, bodies: Vec<i64>, record: i64| {
+    let state = |state_id: i64, bodies: Vec<i64>, records: Vec<i64>| {
         let versions = bodies
             .iter()
-            .map(|body| AsmEntityVersion {
+            .zip(&records)
+            .map(|(body, record)| AsmEntityVersion {
                 entity_ref: *body,
-                record_ref: record,
+                record_ref: *record,
             })
             .collect();
         (
@@ -131,14 +137,24 @@ fn combine_case(
             versions,
         )
     };
+    let slot_one_before_27 = if unscoped_update { 25 } else { 23 };
+    let slot_one_at_27 = if second_updates_target {
+        27
+    } else {
+        slot_one_before_27
+    };
     let mut states = vec![
-        state(30, after_combine.clone(), 30),
-        state(27, vec![1, 2], 27),
-        state(23, vec![1], 23),
-        state(2, Vec::new(), 2),
+        state(30, after_combine.clone(), vec![30; after_combine.len()]),
+        state(27, vec![1, 2], vec![slot_one_at_27, 27]),
+        state(23, vec![1], vec![23]),
+        state(2, Vec::new(), Vec::new()),
     ];
+    if unscoped_update {
+        states.insert(2, state(25, vec![1], vec![25]));
+    }
     if later_update {
-        states.insert(0, state(31, after_combine, 31));
+        let records = vec![31; after_combine.len()];
+        states.insert(0, state(31, after_combine, records));
     }
     let histories = [crate::test_support::history::history(
         HISTORY.into(),
@@ -220,7 +236,7 @@ fn producer_unresolved(losses: &[LossNote]) -> usize {
 
 #[test]
 fn combine_operands_the_final_model_omits_are_generated_by_their_producers() {
-    let (combine, results, losses) = combine_case(&[], vec![1], false);
+    let (combine, results, losses) = combine_case(&[], vec![1], false, false, false);
     assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
     assert!(depends_on(&combine, FIRST) && depends_on(&combine, SECOND));
@@ -234,7 +250,13 @@ fn combine_operands_the_final_model_omits_are_generated_by_their_producers() {
 
 #[test]
 fn a_live_target_names_its_model_body_beside_a_generated_tool() {
-    let (combine, _, losses) = combine_case(&["f3d:brep/root.smbh/brep:entity#1"], vec![1], false);
+    let (combine, _, losses) = combine_case(
+        &["f3d:brep/root.smbh/brep:entity#1"],
+        vec![1],
+        false,
+        false,
+        false,
+    );
     let BodySelection::Resolved { bodies, native } = operands(&combine).target() else {
         panic!("resolved target: {:?}", operands(&combine).target());
     };
@@ -252,20 +274,67 @@ fn a_live_target_names_its_model_body_beside_a_generated_tool() {
 }
 
 #[test]
-fn a_live_target_that_a_later_transition_updates_stays_historical() {
-    let (combine, _, losses) = combine_case(&["f3d:brep/root.smbh/brep:entity#1"], vec![1], true);
-    assert!(matches!(
-        operands(&combine).target(),
-        BodySelection::Historical { .. }
-    ));
+fn a_live_target_that_a_later_transition_updates_names_the_feature_that_inserted_it() {
+    let (combine, results, losses) = combine_case(
+        &["f3d:brep/root.smbh/brep:entity#1"],
+        vec![1],
+        false,
+        false,
+        true,
+    );
+    assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
-    assert_eq!(producer_unresolved(&losses), 1);
+    assert!(depends_on(&combine, FIRST) && depends_on(&combine, SECOND));
+    assert!(results
+        .iter()
+        .any(|result| result.output_of.as_str() == FIRST));
+    assert_eq!(producer_unresolved(&losses), 0);
 }
 
 #[test]
 fn a_deleted_target_names_the_feature_that_inserted_it() {
-    let (combine, _, losses) = combine_case(&[], vec![1], true);
+    let (combine, _, losses) = combine_case(&[], vec![1], false, false, true);
     assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
     assert_eq!(producer_unresolved(&losses), 0);
+}
+
+#[test]
+fn a_target_that_an_earlier_feature_updates_names_that_feature() {
+    let (combine, results, losses) = combine_case(
+        &["f3d:brep/root.smbh/brep:entity#1"],
+        vec![1],
+        true,
+        false,
+        true,
+    );
+    assert_eq!(generated(operands(&combine).target()), [(SECOND, "1")]);
+    assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
+    assert!(depends_on(&combine, SECOND));
+    assert!(results.iter().any(|result| {
+        result.output_of.as_str() == SECOND
+            && result
+                .bodies()
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .eq(["1", "2"])
+    }));
+    assert_eq!(producer_unresolved(&losses), 0);
+}
+
+#[test]
+fn a_slot_whose_last_update_has_no_scope_names_its_inserting_feature() {
+    let (combine, _, losses) = combine_case(&[], vec![1], false, true, false);
+    assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
+    assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
+    assert_eq!(producer_unresolved(&losses), 0);
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureCombineOperandWriterAssumed.kind()
+            })
+            .count(),
+        1
+    );
 }
