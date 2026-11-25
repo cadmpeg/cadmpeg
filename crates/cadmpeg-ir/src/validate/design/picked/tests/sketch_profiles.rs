@@ -10,7 +10,8 @@ use crate::design::evaluation::EvaluationStatus;
 use crate::design::feature::FeatureOperation;
 use crate::design::ops::sheet_metal::SheetMetalKind;
 use crate::design::ops::sketch::{
-    EntityDefinition, PlanarCurve, Sketch, SketchEntity, SketchPlane, SketchSolve,
+    BoundedCurve, EntityDefinition, PlanarCurve, Sketch, SketchEntity, SketchPlane, SketchSolve,
+    SpatialCurve,
 };
 use crate::design::ops::swept::Revolve;
 use crate::design::options::{BodyForm, CornerRound, SolidOutput, Thickness, ThinWall, WallSide};
@@ -19,10 +20,15 @@ use crate::design::selection::{
     Selection, SketchRegion,
 };
 use crate::document::CadIr;
-use crate::math::Point2;
+use crate::features::geometry::FinitePoint3;
+use crate::geometry::analytic::LineCurve;
+use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::pcurve::PcurveNurbs;
+use crate::geometry::InlineCurve;
+use crate::math::{Point2, Point3};
 use crate::scalar::{Angle, PositiveLength};
 use crate::sketches::SketchEntityId;
-use crate::units::FinitePoint2;
+use crate::units::{FinitePoint2, UnitVector3};
 
 fn point(u: f64, v: f64) -> FinitePoint2 {
     FinitePoint2::new(Point2 { u, v }).unwrap()
@@ -222,4 +228,60 @@ fn a_contour_flange_sketch_profile_is_one_open_chain() {
     );
     with(&mut ir, |_| contour(curves(&apart)));
     assert_eq!(ruled(&ir, open).len(), 1);
+}
+
+/// The clamped quadratic NURBS curve through three control points.
+fn quadratic<P>(
+    points: [P; 3],
+    build: impl FnOnce(Vec<f64>, Vec<P>) -> PlanarCurve,
+) -> PlanarCurve {
+    build(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], points.into())
+}
+
+fn spline(points: [Point2; 3]) -> PlanarCurve {
+    quadratic(points, |knots, points| {
+        PlanarCurve::Nurbs(PcurveNurbs::from_lanes(2, knots, points, None, false).unwrap())
+    })
+}
+
+fn spatial(carrier: InlineCurve) -> PlanarCurve {
+    PlanarCurve::Spatial(SpatialCurve::Bounded(BoundedCurve {
+        carrier,
+        range: None,
+    }))
+}
+
+fn spatial_spline(points: [Point3; 3]) -> PlanarCurve {
+    quadratic(points, |knots, points| {
+        spatial(InlineCurve::Nurbs(
+            NurbsCurve::from_lanes(2, knots, points, None, false).unwrap(),
+        ))
+    })
+}
+
+#[test]
+fn round_corners_judge_spline_and_spatial_sketch_curves() {
+    let lines = "design.round-corner-profile-not-lines";
+    let round = || Some(CornerRound::Round(positive(1.0)));
+    let found = |curve: PlanarCurve| {
+        let mut ir = fixture::document();
+        let picked = sketched(&mut ir, vec![curve]);
+        with(&mut ir, |_| {
+            revolve(curves(&picked), WallSide::Left, round())
+        });
+        ruled(&ir, lines)
+    };
+    let p2 = |u, v| Point2 { u, v };
+    assert!(found(spline([p2(0.0, 0.0), p2(5.0, 0.0), p2(10.0, 0.0)])).is_empty());
+    let bent = found(spline([p2(0.0, 0.0), p2(5.0, 5.0), p2(10.0, 0.0)]));
+    assert_eq!(bent.len(), 1);
+    assert!(bent[0].contains("picks curve "), "{bent:?}");
+    let p3 = |x, y| Point3::new(x, y, 0.0);
+    assert!(found(spatial_spline([p3(0.0, 0.0), p3(5.0, 0.0), p3(10.0, 0.0)])).is_empty());
+    assert_eq!(
+        found(spatial_spline([p3(0.0, 0.0), p3(5.0, 5.0), p3(10.0, 0.0)])).len(),
+        1
+    );
+    let axis = LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS);
+    assert!(found(spatial(InlineCurve::Line(axis))).is_empty());
 }

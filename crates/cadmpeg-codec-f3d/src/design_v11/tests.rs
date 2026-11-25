@@ -622,17 +622,55 @@ fn a_referenced_design_is_a_document_of_its_own() {
 }
 
 #[test]
-fn a_referenced_design_without_a_definition_is_hosted_by_its_enclosing_scope() {
-    const OUTER: &str = "role-1/reference-0/occurrence-0@";
+fn a_member_design_without_a_scope_is_held_by_the_nearest_member_that_places_it() {
+    const OUTER: &str = "outer.f3d@";
+    let definitions = [
+        definition(
+            "f3d:xref:product-definition#outer.f3d",
+            Storage::Embedded,
+            &[],
+        ),
+        definition(
+            "f3d:outer.f3d@xref:product-definition#inner.f3d",
+            Storage::Embedded,
+            &[],
+        ),
+        definition(
+            "f3d:inner.f3d@xref:product-definition#deep.f3d",
+            Storage::Embedded,
+            &[],
+        ),
+        definition(
+            "f3d:deep.f3d@model:component#c",
+            Storage::Embedded,
+            &["f3d:deep.f3d@brep:entity#1"],
+        ),
+    ];
+    let placers = super::Placers::new(&definitions);
     let scopes = BTreeMap::from([(String::new(), 0_u8), (OUTER.to_owned(), 0)]);
-    let inner = "role-1/reference-0/occurrence-0/xref/role-2/reference-0/occurrence-1@";
-    assert_eq!(super::host(&scopes, inner), OUTER);
-    assert_eq!(super::host(&scopes, "role-3/reference-0/occurrence-0@"), "");
+    assert_eq!(super::host(&scopes, &placers, OUTER), OUTER);
+    assert_eq!(super::host(&scopes, &placers, "inner.f3d@"), OUTER);
+    assert_eq!(super::host(&scopes, &placers, "deep.f3d@"), OUTER);
+    assert_eq!(super::host(&scopes, &placers, "stray.f3d@"), "");
     assert_eq!(
-        super::host(&scopes, "role-1/reference-0/occurrence-01@"),
+        super::host(&BTreeMap::<String, u8>::new(), &placers, "deep.f3d@"),
         ""
     );
-    assert_eq!(super::host(&BTreeMap::<String, u8>::new(), OUTER), "");
+
+    let scopes = BTreeMap::from([
+        (String::new(), (crate::tree::file_root_id(), ())),
+        (
+            OUTER.to_owned(),
+            (
+                ProductDefinitionId::mint("f3d:xref:product-definition#outer.f3d").unwrap(),
+                (),
+            ),
+        ),
+    ]);
+    let spans = super::span(&definitions, &placers, &scopes);
+    assert!(spans[OUTER]
+        .bodies
+        .contains(&BodyId::mint("f3d:deep.f3d@brep:entity#1").unwrap()));
 }
 
 fn definition(id: &str, storage: Storage, bodies: &[&str]) -> ProductDefinition {
@@ -689,7 +727,7 @@ fn a_definition_and_its_bodies_belong_to_the_scope_that_spans_it() {
             (ProductDefinitionId::mint(&member).unwrap(), ()),
         ),
     ]);
-    let spans = super::span(&definitions, &scopes);
+    let spans = super::span(&definitions, &super::Placers::new(&definitions), &scopes);
     let spanned = spans
         .iter()
         .map(|(prefix, span)| (prefix.clone(), span.definitions.len()))
@@ -750,7 +788,9 @@ fn the_root_scope_is_the_root_component_where_its_record_stands_for_the_root() {
     let scope = super::scope_definition(&definitions, "").unwrap();
     assert_eq!(scope.as_str(), root);
     let scopes = BTreeMap::from([(String::new(), (scope, ()))]);
-    let span = super::span(&definitions, &scopes).remove("").unwrap();
+    let span = super::span(&definitions, &super::Placers::new(&definitions), &scopes)
+        .remove("")
+        .unwrap();
     assert_eq!(
         span.definitions
             .iter()

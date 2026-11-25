@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
+use cadmpeg_ir::codec::write::subset_lowering::UnloweredSubset;
 use cadmpeg_ir::codec::write::{
     output_empty, partial_topology_omitted, record_invalid, MissingStateForm, NativeDisposition,
     NativeDispositions,
@@ -36,7 +37,7 @@ use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, Identity, IdentityKeyTail, PointId, ShellId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::schema::EntityKind;
@@ -921,6 +922,37 @@ impl<'a> Reduction<'a> {
         Ok(())
     }
 
+    /// A subset curve that cannot be restated on the parameter of the curve
+    /// it trims is written as the solved geometry its cache holds, and the
+    /// construction is dropped.
+    pub(super) fn reduce_unlowered_subsets(&mut self, unlowered: Vec<UnloweredSubset>) {
+        if unlowered.is_empty() {
+            return;
+        }
+        let geometry = &mut self.ir.to_mut().geometry;
+        for subset in unlowered {
+            let Some(curve) = geometry
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == subset.curve)
+            else {
+                continue;
+            };
+            let Some(solved) = curve.geometry.solved_cache().cloned() else {
+                continue;
+            };
+            curve.geometry = CurveGeometry::Solved(solved);
+            geometry
+                .procedural_curves
+                .retain(|row| row.id != subset.construction);
+            self.losses
+                .push(F3dLossCode::WriterProceduralReduced.note(format!(
+                "procedural construction {} was reduced to the solved geometry of carrier {}: {}",
+                subset.construction, subset.curve, subset.error
+            )));
+        }
+    }
+
     /// A procedural carrier whose construction has no native encoding is
     /// written as the solved geometry its cache holds, and the construction is
     /// dropped. Repeats until every remaining construction encodes, since a
@@ -1119,7 +1151,7 @@ impl<'a> Reduction<'a> {
             .collect::<Vec<_>>();
         let kept = bodies.iter().map(String::as_str).collect::<BTreeSet<_>>();
         let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
-        split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched)?;
+        split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched);
         let kinds = super::preconditions::derived_body_kinds(&self.ir.geometry);
         for (body, kind) in self.ir.to_mut().geometry.bodies.iter_mut().zip(kinds) {
             if unwritable.contains_key(body.id.as_str()) {
@@ -1805,7 +1837,7 @@ fn unwritable_faces(ir: &CadIr) -> BTreeMap<String, Vec<(String, String)>> {
 fn split_disconnected_shells(
     geometry: &mut cadmpeg_ir::document::Topology,
     shells: &BTreeSet<String>,
-) -> Result<(), CodecError> {
+) {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     enum Incidence<'a> {
         Edge(&'a str),
@@ -1893,19 +1925,15 @@ fn split_disconnected_shells(
             let id = if let Some(id) = components.get(&root) {
                 ShellId::clone(id)
             } else {
-                let candidate = loop {
+                let id = loop {
                     ordinal += 1;
-                    let candidate = format!("{}/component-{ordinal}", shell.id);
-                    if used.insert(candidate.clone()) {
+                    let candidate = ShellId::from(Identity::from(shell.id.clone()).with_key_tail(
+                        &IdentityKeyTail::percent_encode(&format!("/component-{ordinal}")),
+                    ));
+                    if used.insert(candidate.to_string()) {
                         break candidate;
                     }
                 };
-                let id = ShellId::mint(candidate).map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "shell {} component identity: {error}",
-                        shell.id
-                    ))
-                })?;
                 created.push((id.clone(), shell.region.clone(), after));
                 after = id.clone();
                 components.insert(root, id.clone());
@@ -1923,7 +1951,6 @@ fn split_disconnected_shells(
         }
         geometry.shells.push(Shell::new(id, region));
     }
-    Ok(())
 }
 
 /// The root of `node`, halving the path on the way.
