@@ -165,7 +165,7 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| { loss["code"]["value"]["code"] == "export.no-geometry-written" }));
+        .any(|loss| { loss["code"]["value"]["code"] == "output.empty" }));
 }
 
 /// A container-only document converts to STEP: the writer writes what the
@@ -197,7 +197,7 @@ fn convert_writes_a_container_only_document_to_step() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
+        .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
     assert!(value["export"]["notes"]
         .as_array()
         .unwrap()
@@ -570,7 +570,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert_eq!(losses.len(), 2);
     assert!(losses
         .iter()
-        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
+        .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &{
         let mut cube = unit_cube().expect("unit cube fixture is admitted");
