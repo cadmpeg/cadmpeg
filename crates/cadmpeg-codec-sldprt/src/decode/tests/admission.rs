@@ -396,8 +396,6 @@ fn strict_reads_unrepresentable_geometry_and_reports_its_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::loss::StrictConsequence;
-
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
@@ -407,7 +405,7 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report()
         .losses
         .iter()
-        .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
+        .all(|note| !strict_options().strictness.refuses(note, false)));
 }
 
 #[test]

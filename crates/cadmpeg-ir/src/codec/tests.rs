@@ -719,10 +719,7 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
         assert_eq!(losses.len(), missing.len(), "{losses:?}");
         for (loss, class) in losses.into_iter().zip(missing) {
             assert_eq!(loss.severity, crate::report::Severity::Error);
-            assert_eq!(
-                loss.strict_consequence(),
-                crate::report::loss::StrictConsequence::Tolerate
-            );
+            assert!(!strict_options(requested).strictness.refuses(loss, false));
             assert!(loss
                 .message
                 .contains(&format!("requested {requested} depth")));

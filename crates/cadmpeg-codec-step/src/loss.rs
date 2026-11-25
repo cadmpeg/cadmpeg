@@ -1156,7 +1156,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
-    use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
+    use cadmpeg_ir::report::{strictness::Strictness, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -1399,13 +1399,20 @@ mod tests {
     fn globally_unproved_pcurve_admission_does_not_refuse_strict_decode() {
         let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!pinned().refuses(&note, false));
     }
 
     #[test]
     fn substituted_length_uncertainty_pins_no_strict_floor() {
         let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!pinned().refuses(&note, false));
+    }
+
+    fn pinned() -> Strictness {
+        Strictness {
+            pinned: true,
+            ..Strictness::default()
+        }
     }
 }

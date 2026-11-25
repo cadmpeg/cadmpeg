@@ -1714,8 +1714,10 @@ pub(crate) fn named<S: AsRef<str>>(names: &[S]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::LossTaxonomy;
     use cadmpeg_ir::report::Severity;
+
+    use crate::test_support::ir::strict_options;
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
@@ -2029,7 +2031,7 @@ mod tests {
         let note = SldprtLossCode::PmiSwiftImplicitNominalUnresolved.note("unresolved");
         assert_eq!(note.severity, Severity::Warning);
         assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 
     #[test]
@@ -2037,7 +2039,7 @@ mod tests {
         let note = SldprtLossCode::PmiSwiftPositionTargetUnresolved.note("unresolved");
         assert_eq!(note.severity, Severity::Warning);
         assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 
     #[test]
@@ -2046,6 +2048,6 @@ mod tests {
         assert_eq!(note.code.namespace(), "sldprt");
         assert_eq!(note.code.local_code(), "geometry.pcurve-ambiguous");
         assert_eq!(note.code.taxonomy(), LossTaxonomy::PcurveOmitted);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 }

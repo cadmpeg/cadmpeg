@@ -2,8 +2,9 @@
 use crate::report::{
     loss::{
         LossCategory, LossKind, LossNamespace, LossNamespaceError, LossNote, LossTaxonomy,
-        NamespacedLossKind, StrictConsequence, SHARED_LOSS_NAMESPACE,
+        NamespacedLossKind, SHARED_LOSS_NAMESPACE,
     },
+    strictness::Strictness,
     Severity,
 };
 
@@ -171,7 +172,7 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
 }
 
 #[test]
-fn strict_consequence_compares_the_severity_with_the_pinned_floor() {
+fn a_pinned_strictness_compares_the_severity_with_the_code_floor() {
     let pinned: LossKind = NamespacedLossKind::new(
         LossNamespace::new("rhino").unwrap(),
         "brep.trim-pcurve-dropped",
@@ -179,25 +180,25 @@ fn strict_consequence_compares_the_severity_with_the_pinned_floor() {
     )
     .with_strict_floor(Some(Severity::Warning))
     .into();
-    assert_eq!(
-        LossNote::new(pinned.clone(), "missing topology").strict_consequence(),
-        StrictConsequence::Reject
-    );
-    assert_eq!(
-        LossNote::new(pinned, "diagnostic")
-            .with_severity(Severity::Info)
-            .strict_consequence(),
-        StrictConsequence::Tolerate
-    );
-    assert_eq!(
-        LossNote::new(
+    assert!(refused(&LossNote::new(pinned.clone(), "missing topology")));
+    assert!(!refused(
+        &LossNote::new(pinned, "diagnostic").with_severity(Severity::Info)
+    ));
+    assert!(!refused(
+        &LossNote::new(
             LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             "missing topology"
         )
         .with_severity(Severity::Blocking)
-        .strict_consequence(),
-        StrictConsequence::Tolerate
-    );
+    ));
+}
+
+fn refused(note: &LossNote) -> bool {
+    Strictness {
+        pinned: true,
+        ..Strictness::default()
+    }
+    .refuses(note, false)
 }
 
 #[test]
@@ -251,11 +252,8 @@ fn a_taxonomy_brings_no_strict_floor_to_a_shared_or_codec_code() {
     ] {
         let shared = LossKind::shared(taxonomy);
         assert_eq!(shared.strict_floor(), None, "{taxonomy}");
-        assert_eq!(
-            LossNote::new(shared, "message")
-                .with_severity(Severity::Blocking)
-                .strict_consequence(),
-            StrictConsequence::Tolerate,
+        assert!(
+            !refused(&LossNote::new(shared, "message").with_severity(Severity::Blocking)),
             "{taxonomy}"
         );
         let local = NamespacedLossKind::new(
@@ -291,6 +289,25 @@ fn a_displaced_target_dialect_pins_no_strict_floor() {
     }
 }
 
+/// A bare shared code takes the floor §3.2 states for it, whichever codec
+/// charges it; any other code pins none.
+#[test]
+fn a_bare_shared_code_takes_the_floor_section_3_2_states() {
+    let kind = |code: &str| {
+        LossKind::namespaced(
+            LossNamespace::new("nx").unwrap(),
+            code,
+            LossTaxonomy::TopologyNotTransferred,
+        )
+    };
+    assert_eq!(kind("topology.face-boundary-unstated").strict_floor(), None);
+    assert_eq!(
+        kind("record.unreadable").strict_floor(),
+        Some(Severity::Error)
+    );
+    assert_eq!(kind("topology.face-omitted").strict_floor(), None);
+}
+
 #[test]
 fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
     let kind: LossKind = NamespacedLossKind::new(
@@ -305,10 +322,6 @@ fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
     assert_eq!(roundtrip.local_code(), "geometry.pcurve-ambiguous");
     assert_eq!(roundtrip.taxonomy(), LossTaxonomy::PcurveOmitted);
     assert_eq!(roundtrip.strict_floor(), None);
-    assert_eq!(
-        LossNote::new(roundtrip, "ambiguous").strict_consequence(),
-        StrictConsequence::Tolerate
-    );
 }
 
 #[test]
