@@ -2961,7 +2961,9 @@ pub(crate) struct ComponentPathCarrier {
 
 /// Parse a component-path carrier of any length whose elements are local
 /// records without an inline type. The matrix is orthonormal; determinant
-/// `-1` states a mirrored placement.
+/// `-1` states a mirrored placement. A stream with the current serializer
+/// magic stores the closing reference run either with or without the tagged
+/// u32 run; the byte after the counted references selects the form.
 pub(crate) fn component_path_carrier(
     body: &[u8],
     serializer_magic: Option<u32>,
@@ -2981,7 +2983,9 @@ pub(crate) fn component_path_carrier(
         return None;
     }
     let ClosedPlacement { transform, .. } =
-        placement_matrix_and_tail_with(body, at + 1, serializer_magic, decode_orthonormal_matrix)?;
+        [serializer_magic, None].into_iter().find_map(|magic| {
+            placement_matrix_and_tail_with(body, at + 1, magic, decode_orthonormal_matrix)
+        })?;
     Some(ComponentPathCarrier {
         carrier_record_index: View::u64_le_at(body, 7)?,
         elements,

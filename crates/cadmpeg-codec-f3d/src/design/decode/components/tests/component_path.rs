@@ -9,6 +9,17 @@ use crate::test_support::{cross_document_reference, local_reference};
 
 /// A `CommonData` component-path carrier with the given local path elements.
 fn path_carrier(entity_id: u64, elements: &[(u64, u32)], transform: [[f64; 4]; 4]) -> Vec<u8> {
+    path_carrier_with_tail(entity_id, elements, transform, true)
+}
+
+/// A carrier whose closing reference run has the tagged u32 run, or the two
+/// closing references alone.
+fn path_carrier_with_tail(
+    entity_id: u64,
+    elements: &[(u64, u32)],
+    transform: [[f64; 4]; 4],
+    tagged: bool,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(b"297");
@@ -27,10 +38,12 @@ fn path_carrier(entity_id: u64, elements: &[(u64, u32)], transform: [[f64; 4]; 4
     }
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend(local_reference(8));
-    bytes.push(2);
-    bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.extend_from_slice(&42_u32.to_le_bytes());
-    bytes.extend(local_reference(8));
+    if tagged {
+        bytes.push(2);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&42_u32.to_le_bytes());
+        bytes.extend(local_reference(8));
+    }
     bytes.extend(local_reference(3));
     bytes.extend(local_reference(6));
     bytes
@@ -68,6 +81,27 @@ fn a_path_of_any_length_keeps_each_element_and_its_discriminator() {
         assert_eq!(carrier.elements, elements);
         assert_eq!(carrier.transform, Some(translation(0.5)));
     }
+}
+
+#[test]
+fn a_current_stream_admits_the_closing_run_with_or_without_the_tagged_run() {
+    let elements = [(578, 0), (582, 0), (592, 1), (624, 0)];
+    let modern = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    for tagged in [true, false] {
+        let bytes = path_carrier_with_tail(11, &elements, translation(0.5), tagged);
+        let carrier = crate::xref::component_path_carrier(&bytes, modern).expect("path");
+        assert_eq!(carrier.elements, elements);
+        assert_eq!(carrier.transform, Some(translation(0.5)));
+        assert!(!crate::xref::local_component_path_unadmitted(
+            &bytes, modern
+        ));
+    }
+    // The tagged run belongs to the current serializer magic alone.
+    let tagged = path_carrier_with_tail(11, &elements, translation(0.5), true);
+    assert!(crate::xref::component_path_carrier(&tagged, Some(1)).is_none());
+    assert!(crate::xref::component_path_carrier(&tagged, None).is_none());
+    let untagged = path_carrier_with_tail(11, &elements, translation(0.5), false);
+    assert!(crate::xref::component_path_carrier(&untagged, Some(1)).is_some());
 }
 
 #[test]

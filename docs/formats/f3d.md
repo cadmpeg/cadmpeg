@@ -340,6 +340,8 @@ A component-path record whose path is exactly two local elements, a Component re
 
 The first counted reference run after the identity flag or matrix carries an occurrence chain when its references form the complete containing chain and end at the target occurrence carrier. A local occurrence chain uses same-segment references without inline types and lists the containing carriers from outermost to innermost, followed by the target. This complete chain identifies the expanded instance. Its target and containing carriers agree with the initial element list. The chain is scoped to the Design stream of the record.
 
+A component-path record of a Design stream with serializer magic `1234` closes in one of two forms after the counted references. The tagged form stores a tag byte other than `0` and `1`, a u32 count, that many u32 values, and one reference, followed by the two closing references. The plain form stores the two closing references directly. The byte after the counted references selects the form: `0` or `1` is the presence byte of the first closing reference.
+
 A local component path can contain a local reference to the Design stream's `rootInstance` record in any position. That record binds the stream's unique root component and names the root frame. The remaining elements identify the target and its containing carriers.
 
 The stored matrix is the instance's world pose in centimetres. The instance's local placement is `inverse(W(parent)) * pose`, where `W(parent)` is the world transform of the containing instance. Parent and child world poses share the same Design frame. A target in the document's root component has an identity parent frame.
