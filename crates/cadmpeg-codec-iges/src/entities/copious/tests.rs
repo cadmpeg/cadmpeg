@@ -482,14 +482,14 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 }
 
 #[test]
-fn strict_decode_reads_and_reports_an_unusable_required_copious_geometry_record() {
+fn a_pinned_decode_admits_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let decoded = IgesCodec
+    let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &options)
-        .expect("the not-projected code pins no strict floor");
-    assert!(decoded
+        .expect("an unprojected geometry record pins no strict floor");
+    assert!(result
         .report()
         .losses
         .iter()

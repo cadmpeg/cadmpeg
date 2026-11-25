@@ -11,8 +11,8 @@ use tempfile::tempdir;
 use crate::support::fixture;
 #[cfg(all(feature = "creo", any(feature = "step", feature = "iges")))]
 use crate::support::geometryless_creo;
-#[cfg(feature = "iges")]
-use crate::support::iges_with_unverified_version;
+#[cfg(feature = "rhino")]
+use crate::support::rhino_archive_with_unreadable_point;
 
 #[test]
 fn garbage_reports_supported_formats() {
@@ -101,11 +101,11 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         .success();
 }
 
-#[cfg(feature = "iges")]
+#[cfg(feature = "rhino")]
 #[test]
 fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
     let dir = tempdir().unwrap();
-    let input = iges_with_unverified_version();
+    let input = rhino_archive_with_unreadable_point(dir.path(), "unreadable.3dm");
 
     for (command, extra) in [
         ("dump", Vec::<&str>::new()),
@@ -135,8 +135,8 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .unwrap()
             .iter()
             .any(|loss| {
-                loss["code"]["value"]["namespace"] == "iges"
-                    && loss["code"]["value"]["code"] == "source.dialect-unverified"
+                loss["code"]["value"]["namespace"] == "rhino"
+                    && loss["code"]["value"]["code"] == "object.framing-undecodable"
             }));
     }
 }

@@ -4,7 +4,6 @@ use crate::report::{
         LossCategory, LossKind, LossNamespace, LossNamespaceError, LossNote, LossTaxonomy,
         NamespacedLossKind, SHARED_LOSS_NAMESPACE,
     },
-    strictness::Strictness,
     Severity,
 };
 
@@ -79,7 +78,7 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
     .to_string();
     assert!(error.contains("strict_floor"), "{error}");
 
-    let namespaced: LossKind = NamespacedLossKind::new(
+    let namespaced = LossKind::namespaced(
         const {
             match LossNamespace::new("rhino") {
                 Ok(namespace) => namespace,
@@ -88,17 +87,14 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
         },
         "brep.trim-pcurve-dropped",
         LossTaxonomy::TopologyNotTransferred,
-    )
-    .with_strict_floor(Some(Severity::Warning))
-    .into();
+    );
     let wire = serde_json::to_value(&namespaced).expect("serializes");
     assert_eq!(
         wire,
         serde_json::json!({"kind": "namespaced", "value": {
             "namespace": "rhino",
             "code": "brep.trim-pcurve-dropped",
-            "kind": "topology_not_transferred",
-            "strict_floor": "warning"
+            "kind": "topology_not_transferred"
         }})
     );
     assert_eq!(
@@ -171,34 +167,21 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
     }
 }
 
+/// §3.2 states no strict floor for a shared taxonomy code.
 #[test]
-fn a_pinned_strictness_compares_the_severity_with_the_code_floor() {
-    let pinned: LossKind = NamespacedLossKind::new(
-        LossNamespace::new("rhino").unwrap(),
-        "brep.trim-pcurve-dropped",
+fn a_shared_taxonomy_code_pins_no_strict_floor() {
+    for taxonomy in [
         LossTaxonomy::TopologyNotTransferred,
-    )
-    .with_strict_floor(Some(Severity::Warning))
-    .into();
-    assert!(refused(&LossNote::new(pinned.clone(), "missing topology")));
-    assert!(!refused(
-        &LossNote::new(pinned, "diagnostic").with_severity(Severity::Info)
-    ));
-    assert!(!refused(
-        &LossNote::new(
-            LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            "missing topology"
-        )
-        .with_severity(Severity::Blocking)
-    ));
-}
-
-fn refused(note: &LossNote) -> bool {
-    Strictness {
-        pinned: true,
-        ..Strictness::default()
+        LossTaxonomy::NoncanonicalSourceSyntax,
+        LossTaxonomy::IntegrityFailure,
+        LossTaxonomy::PassthroughRecordOmitted,
+    ] {
+        assert_eq!(
+            LossKind::shared(taxonomy).strict_floor(),
+            None,
+            "{taxonomy}"
+        );
     }
-    .refuses(note, false)
 }
 
 #[test]
@@ -232,44 +215,26 @@ fn process_losses_belong_to_the_process_category() {
     );
 }
 
-/// §3.2 states no floor for a `shared/` kind, and a codec's code pins one
-/// only where its format specification states it, so no taxonomy brings one.
 #[test]
-fn a_taxonomy_brings_no_strict_floor_to_a_shared_or_codec_code() {
-    for taxonomy in [
-        LossTaxonomy::MissingGeometryStream,
-        LossTaxonomy::TopologyNotTransferred,
-        LossTaxonomy::GeometryNotTransferred,
-        LossTaxonomy::GeometryAgreementSampled,
-        LossTaxonomy::ReferenceGraphNotClosed,
-        LossTaxonomy::CurvelessEdgeOmitted,
-        LossTaxonomy::UnknownSurfaceFaceOmitted,
-        LossTaxonomy::SubdOmitted,
-        LossTaxonomy::NoncanonicalSourceSyntax,
-        LossTaxonomy::SourceDialectUnverified,
-        LossTaxonomy::IntegrityFailure,
-        LossTaxonomy::NoExportableSolids,
-    ] {
-        let shared = LossKind::shared(taxonomy);
-        assert_eq!(shared.strict_floor(), None, "{taxonomy}");
-        assert!(
-            !refused(&LossNote::new(shared, "message").with_severity(Severity::Blocking)),
-            "{taxonomy}"
-        );
-        let local = NamespacedLossKind::new(
-            LossNamespace::new("synthetic").unwrap(),
-            "local.code",
-            taxonomy,
-        );
-        let owned = NamespacedLossKind::new_owned(
-            "synthetic".to_owned(),
-            "local.code".to_owned(),
-            taxonomy,
-        )
-        .unwrap();
-        assert_eq!(LossKind::from(local).strict_floor(), None, "{taxonomy}");
-        assert_eq!(LossKind::from(owned).strict_floor(), None, "{taxonomy}");
-    }
+fn noncanonical_source_syntax_is_an_other_category_warning() {
+    let kind = LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax);
+    assert_eq!(
+        kind.to_string(),
+        format!("{SHARED_LOSS_NAMESPACE}/noncanonical_source_syntax")
+    );
+    assert_eq!(kind.category(), LossCategory::Other);
+    assert_eq!(kind.default_severity(), Severity::Warning);
+}
+
+#[test]
+fn integrity_failure_is_an_other_category_error() {
+    let kind = LossKind::shared(LossTaxonomy::IntegrityFailure);
+    assert_eq!(
+        kind.to_string(),
+        format!("{SHARED_LOSS_NAMESPACE}/integrity_failure")
+    );
+    assert_eq!(kind.category(), LossCategory::Other);
+    assert_eq!(kind.default_severity(), Severity::Error);
 }
 
 /// §3.2 states no strict floor for `target.source-dialect-displaced` or
@@ -290,7 +255,7 @@ fn a_displaced_target_dialect_pins_no_strict_floor() {
 }
 
 /// A bare shared code takes the floor §3.2 states for it, whichever codec
-/// charges it; any other code pins none.
+/// charges it. Any other code pins the floor its owner states.
 #[test]
 fn a_bare_shared_code_takes_the_floor_section_3_2_states() {
     let kind = |code: &str| {

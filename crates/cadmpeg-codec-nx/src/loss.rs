@@ -182,6 +182,15 @@ loss_codes! {
 }
 
 impl NxLossCode {
+    /// The strict floor `siemens_nx.md` §10 states: a given-up native object
+    /// model pins Error.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::NativeAttachmentFailed => Some(Severity::Error),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
@@ -195,6 +204,7 @@ impl NxLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
         .into()
     }
 
@@ -307,10 +317,21 @@ mod tests {
         }
     }
 
+    /// `siemens_nx.md` §10 states a strict floor for an attachment failure
+    /// and for no other code.
     #[test]
-    fn no_nx_code_pins_a_strict_floor() {
+    fn only_an_attachment_failure_pins_a_strict_floor() {
         for code in NxLossCode::ALL {
-            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
+            let expected = match code {
+                NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
+                _ => None,
+            };
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
         }
+        assert!(cadmpeg_ir::report::strictness::Strictness {
+            pinned: true,
+            ..Default::default()
+        }
+        .refuses(&NxLossCode::NativeAttachmentFailed.note("x"), false));
     }
 }

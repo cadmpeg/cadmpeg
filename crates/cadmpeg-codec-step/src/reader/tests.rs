@@ -805,14 +805,14 @@ fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() 
 }
 
 #[test]
-fn strict_decode_reads_and_reports_an_unverified_implementation_level() {
+fn a_pinned_decode_admits_an_unverified_implementation_level() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let decoded = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect("the implementation-level code pins no strict floor");
-    assert!(decoded
+        .expect("a guessed implementation grammar pins no strict floor");
+    assert!(result
         .report()
         .losses
         .iter()
@@ -855,35 +855,37 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
 }
 
 #[test]
-fn strict_decode_reads_and_reports_noncanonical_complex_partial_order() {
+fn strict_decode_rejects_noncanonical_complex_partial_order() {
     let bytes = include_bytes!("../../tests/fixtures/noncanonical_solid_angle.p21");
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let decoded = StepCodec::default()
+    let error = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &options)
-        .expect("the noncanonical-syntax code pins no strict floor");
+        .expect_err("strict mode rejects noncanonical source order");
 
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
+    ));
 }
 
 #[test]
-fn strict_decode_reads_and_reports_omitted_entity_name_recovery() {
+fn strict_decode_rejects_omitted_entity_name_recovery() {
+    // The schema is a declared dialect so that the refusal this test asserts is
+    // the omitted-name one. A bare 'AP242' declares no registry row and would
+    // refuse first on `source.dialect-unverified`.
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let decoded = StepCodec::default()
+    let error = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect("the noncanonical-syntax code pins no strict floor");
+        .expect_err("strict mode rejects omitted-name recovery");
 
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
+    ));
+    assert!(error.to_string().contains("parse.noncanonical-syntax"));
 }
 
 #[test]

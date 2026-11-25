@@ -330,6 +330,9 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
 }
 
+/// Strict decode keeps a finitely admitted pcurve: the relation transfers the
+/// source data with its verification status, and strict decode refuses only
+/// CADIR-introduced substitution, salvage, and malformed structure.
 #[test]
 fn strict_decode_accepts_a_finitely_admitted_pcurve() {
     let mut options = DecodeOptions::default();

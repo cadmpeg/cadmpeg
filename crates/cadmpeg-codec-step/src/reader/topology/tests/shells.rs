@@ -329,17 +329,16 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
 }
 
 #[test]
-fn strict_decode_reads_and_reports_an_oriented_shell_missing_its_derived_slot() {
+fn a_pinned_decode_admits_an_oriented_shell_missing_its_derived_slot() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let decoded = StepCodec::default()
+    let result = StepCodec::default()
         .decode(
             &mut Cursor::new(oriented_closed_shell_source(false)),
             &options,
         )
-        .expect("the oriented-shell code pins no strict floor");
-
-    assert!(decoded
+        .expect("a noncanonical oriented shell pins no strict floor");
+    assert!(result
         .report()
         .losses
         .iter()
@@ -731,7 +730,7 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
 }
 
 #[test]
-fn strict_decode_reads_and_reports_a_destroyed_solid() {
+fn a_pinned_decode_admits_a_destroyed_solid() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
@@ -740,10 +739,10 @@ fn strict_decode_reads_and_reports_a_destroyed_solid() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
 
-    let decoded = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect("the root-rejection code pins no strict floor");
-    assert!(decoded
+        .expect("a rejected topology root pins no strict floor");
+    assert!(result
         .report()
         .losses
         .iter()

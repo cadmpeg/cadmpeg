@@ -572,7 +572,7 @@ fn face_on_untyped_surface_keeps_topology() {
 }
 
 #[test]
-fn strict_reads_and_reports_topology_resting_on_an_untyped_surface() {
+fn a_pinned_decode_admits_topology_resting_on_an_untyped_surface() {
     use cadmpeg_ir::report::loss::LossTaxonomy;
 
     let mut body = Vec::new();
@@ -597,15 +597,18 @@ fn strict_reads_and_reports_topology_resting_on_an_untyped_surface() {
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage keeps the topology decode");
     assert_eq!(salvaged.ir().geometry.faces.len(), 1);
-    let strict = SldprtCodec
-        .decode(&mut Cursor::new(fixture), &strict_options())
-        .expect("the census code pins no strict floor");
-    assert_eq!(strict.ir().geometry.faces.len(), 1);
-    assert!(strict
+    let census = salvaged
         .report()
         .losses
         .iter()
-        .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
+        .find(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred)
+        .expect("untyped support surface raises a census note");
+    assert!(!strict_options().strictness.refuses(census, false));
+
+    let pinned = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("the untyped-surface census pins no strict floor");
+    assert_eq!(pinned.ir().geometry.faces.len(), 1);
 }
 
 #[test]

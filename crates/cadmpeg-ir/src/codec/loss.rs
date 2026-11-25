@@ -27,8 +27,7 @@ pub(crate) enum DecodeLossCode {
         class: ArenaClass,
     },
     /// A decoder emitted one id more than once in an arena, and the copies
-    /// differ. The first copy it emitted is kept and the others dropped
-    /// (interim: §2.8 states no copy, which needs the shared give-up pass).
+    /// differ. The wrapper states no copy and gives the id up as a part.
     IdRepeated,
     /// The normalizer gave up records part way, which keep spellings the
     /// decoder stated.
@@ -72,8 +71,20 @@ impl DecodeLossCode {
         }
     }
 
+    /// The strict floor §3.2 states: a given-up id refuses a pinned decode.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::IdRepeated => Some(Severity::Error),
+            Self::DepthNotDelivered { .. }
+            | Self::NormalizeIncomplete
+            | Self::ContentDigestUnavailable => None,
+        }
+    }
+
     fn kind(self) -> LossKind {
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy()).into()
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

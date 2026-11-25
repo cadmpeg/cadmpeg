@@ -363,7 +363,7 @@ fn a_container_decode_states_no_model_record() {
 }
 
 #[test]
-fn strict_reads_unrepresentable_geometry_and_reports_its_loss_codes() {
+fn a_pinned_decode_admits_unrepresentable_geometry_and_records_its_loss_codes() {
     use crate::loss::SldprtLossCode;
     use cadmpeg_ir::report::loss::LossTaxonomy;
 
@@ -383,11 +383,10 @@ fn strict_reads_unrepresentable_geometry_and_reports_its_loss_codes() {
         .losses
         .iter()
         .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyNotTransferred));
-
-    let strict = SldprtCodec
+    let pinned = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
-        .expect("the geometry codes pin no strict floor");
-    assert!(strict
+        .expect("no SLDPRT code pins a strict floor");
+    assert!(pinned
         .report()
         .losses
         .iter()
@@ -396,7 +395,13 @@ fn strict_reads_unrepresentable_geometry_and_reports_its_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    let fixture = sldprt_with_body_and_history(&triangle_body());
+    // The fixture declares a `swVersion` so this test keeps asserting what it
+    // is about. A part that declares nothing classifies as `sldprt:unknown`
+    // and charges `source.dialect-unverified`, whose strict floor rejects; the
+    // invariant here is that a *gauge substitution* stays tolerable, which a
+    // missing version declaration would mask.
+    let mut fixture = sldprt_with_body_and_history(&triangle_body());
+    add_solidworks_version(&mut fixture, 13100);
     let strict = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect("strict decode accepts a tolerable-loss geometry result");
@@ -409,7 +414,7 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
 }
 
 #[test]
-fn strict_reads_and_reports_a_residual_parasolid_schema() {
+fn a_pinned_decode_admits_and_reports_a_residual_parasolid_schema() {
     use crate::loss::SldprtLossCode;
 
     let mut fixture = outer_header();
@@ -429,10 +434,10 @@ fn strict_reads_and_reports_a_residual_parasolid_schema() {
             && note.message.contains("SCH_TEST_1_9999")
     }));
 
-    let strict = SldprtCodec
+    let pinned = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
-        .expect("the kernel-dialect code pins no strict floor");
-    assert!(strict
+        .expect("a residual kernel layer pins no strict floor");
+    assert!(pinned
         .report()
         .losses
         .iter()

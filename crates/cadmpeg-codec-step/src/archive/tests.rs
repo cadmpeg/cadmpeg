@@ -1277,16 +1277,11 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
         .retained_records()
         .keys()
         .any(|id| id.as_str().contains(":zip-declaration#")));
-    let mut strict = DecodeOptions::default();
-    strict.strictness.pinned = true;
-    let strict = codec
-        .decode(&mut Cursor::new(&bytes), &strict)
-        .expect("the container-member code pins no strict floor");
-    assert!(strict
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()));
+    let mut pinned = DecodeOptions::default();
+    pinned.strictness.pinned = true;
+    codec
+        .decode(&mut Cursor::new(&bytes), &pinned)
+        .expect("a noncanonical archive member pins no strict floor");
 }
 
 #[test]

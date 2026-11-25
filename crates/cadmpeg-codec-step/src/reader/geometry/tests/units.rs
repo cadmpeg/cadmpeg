@@ -638,22 +638,23 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
+/// A kept default replaces the source value and reports it. Its code pins no
+/// strict floor, so a pinned decode admits the substitution.
 #[test]
-fn strict_decode_reads_and_reports_a_substituted_length_uncertainty() {
+fn a_pinned_decode_admits_a_substituted_length_uncertainty() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let decoded = StepCodec::default()
+    let result = StepCodec::default()
         .decode(
             &mut Cursor::new(DISTINCT_CONTEXT_UNCERTAINTY_SOURCE.as_bytes()),
             &options,
         )
-        .expect("the length-uncertainty code pins no strict floor");
-
-    assert!(decoded
+        .expect("a substituted default tolerance pins no strict floor");
+    assert!(result
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind()));
+        .any(|loss| loss.code == crate::loss::StepLossCode::UncertaintyLengthAmbiguous.kind()));
 }
 
 #[test]

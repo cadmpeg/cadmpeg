@@ -164,7 +164,8 @@
           "value": {
             "code": "parse.noncanonical-syntax",
             "kind": "noncanonical_source_syntax",
-            "namespace": "step"
+            "namespace": "step",
+            "strict_floor": "warning"
           }
         },
         "message": "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)",

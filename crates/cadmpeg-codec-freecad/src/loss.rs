@@ -498,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn no_fcstd_code_pins_a_strict_floor() {
+    fn no_code_pins_a_strict_floor() {
         for code in FreecadLossCode::ALL {
             assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
         }

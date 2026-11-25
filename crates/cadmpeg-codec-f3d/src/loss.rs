@@ -3642,7 +3642,8 @@ impl F3dLossCode {
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven
             | Self::ReferenceImageFlagAssumed
-            | Self::DecalMappingAssumed => Severity::Info,
+            | Self::DecalMappingAssumed
+            | Self::VertexToleranceWidened => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -4335,7 +4336,6 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
-            | Self::VertexToleranceWidened
             | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
@@ -5212,6 +5212,31 @@ impl F3dLossCode {
         }
     }
 
+    /// The strict floor `f3d.md` §4 states: each code that records a given-up
+    /// Design record pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::DesignIntentUndecoded
+            | Self::SketchCurveUndecoded
+            | Self::SketchSurfaceUndecoded
+            | Self::SketchTextUndecoded
+            | Self::SketchRelationUndecoded
+            | Self::SketchFolderUndecoded
+            | Self::SketchOrdinalCollectionUndecoded
+            | Self::SketchContainerUndecoded
+            | Self::SketchGeometryGroupUndecoded
+            | Self::FeatureTimelineUndecoded
+            | Self::PrimaryRecordUndecoded
+            | Self::ConfigurationProjectionNative
+            | Self::SketchOwnerConflict
+            | Self::SketchRelationOwnerUnresolved
+            | Self::ConfigurationDocumentUndecoded
+            | Self::BendSettingsUndecoded
+            | Self::DesignBodyBoundsUndecoded => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
@@ -5220,6 +5245,7 @@ impl F3dLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
         .into()
     }
 
@@ -5265,10 +5291,10 @@ mod tests {
     ];
 
     #[test]
-    fn unread_design_records_pin_no_strict_floor() {
+    fn unread_design_records_keep_strict_refusal() {
         for code in UNREAD_DESIGN_RECORD_CODES {
             assert!(
-                !cadmpeg_ir::report::strictness::Strictness {
+                cadmpeg_ir::report::strictness::Strictness {
                     pinned: true,
                     ..Default::default()
                 }

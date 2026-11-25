@@ -56,8 +56,9 @@ impl fmt::Display for LossCategory {
 /// Shared cross-codec loss taxonomy.
 ///
 /// Category and default severity live here. Codec-local loss enums map into a
-/// taxonomy variant for subsystem reporting. A taxonomy pins no strict floor:
-/// a floor belongs to the code that states it (§3.2).
+/// taxonomy variant for subsystem reporting; strict-mode floors on a
+/// [`LossKind`] are pinned at construction so a later local→taxonomy remap in
+/// source does not silently change rejection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -301,8 +302,8 @@ pub const BARE_SHARED_CODES: [(&str, Option<Severity>); 6] = [
     ("target.request-displaced", None),
 ];
 
-/// The strict floor §3.2 states for a bare shared code. Any other code pins
-/// a floor only through [`NamespacedLossKind::with_strict_floor`].
+/// The strict floor §3.2 states for a bare shared code. Any other code has
+/// the floor its owner pins with [`NamespacedLossKind::with_strict_floor`].
 #[must_use]
 pub fn code_strict_floor(code: &str) -> Option<Severity> {
     BARE_SHARED_CODES
@@ -486,7 +487,8 @@ impl LossKind {
         self.taxonomy().default_severity()
     }
 
-    /// Returns the pinned strict-mode severity floor. A `shared/` kind pins none.
+    /// Returns the strict floor the code pins (§3.2). A shared taxonomy
+    /// code pins none.
     pub const fn strict_floor(&self) -> Option<Severity> {
         match self {
             Self::Shared { .. } => None,
@@ -527,7 +529,8 @@ impl NamespacedLossKind {
         })
     }
 
-    /// Pins the strict-mode severity floor the code's specification states.
+    /// Pins the strict floor that §3.2 or the codec's format specification
+    /// states for the code.
     #[must_use]
     pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
         self.strict_floor = floor;

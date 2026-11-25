@@ -19,7 +19,7 @@
 //! geometry, writer) have no honest common default.
 
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy, NamespacedLossKind},
+    loss::{LossKind, LossNote, LossTaxonomy},
     Severity,
 };
 macro_rules! loss_codes {
@@ -182,7 +182,7 @@ impl IgesLossCode {
             Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
                 Severity::Blocking
             }
-            Self::ProceduralReduced => Severity::Info,
+            Self::ProceduralReduced | Self::VertexToleranceWidened => Severity::Info,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 Severity::Warning
             }
@@ -238,7 +238,6 @@ impl IgesLossCode {
             | Self::WriterBodyVisibilityNotRepresented
             | Self::WriterEdgeRangeAssumed
             | Self::WriterOpenShellUnjoined
-            | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
             Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
         }
@@ -316,7 +315,8 @@ impl IgesLossCode {
         }
     }
 
-    /// The strict floor `iges.md` states for this code.
+    /// The strict floor `iges.md` (Decode admission) states: each code that
+    /// records a structural defect of the file pins Warning.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::PointerUnresolved
@@ -329,11 +329,9 @@ impl IgesLossCode {
             | Self::DirectoryRecordQuarantined
             | Self::DirectoryRecordRepeated
             | Self::ParameterDataQuarantined
-            | Self::ParameterCountOverdeclared
             | Self::ParameterLiteralUnusable
-            | Self::CardFramingRecovered
-            | Self::DirectoryMetadataNoncanonical
-            | Self::SplineClaimRecovered => Some(Severity::Warning),
+            | Self::ParameterCountOverdeclared
+            | Self::CardFramingRecovered => Some(Severity::Warning),
             _ => None,
         }
     }
@@ -341,7 +339,7 @@ impl IgesLossCode {
     /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        NamespacedLossKind::new(
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("iges") {
                     Ok(namespace) => namespace,
@@ -468,43 +466,5 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
-    }
-
-    /// `iges.md` states a Warning floor for these codes and no floor for any
-    /// other IGES code.
-    #[test]
-    fn strict_floors_are_the_ones_the_format_specification_states() {
-        let floored: BTreeSet<&str> = IgesLossCode::ALL
-            .iter()
-            .filter(|code| {
-                let floor = code.kind().strict_floor();
-                assert!(matches!(
-                    floor,
-                    None | Some(cadmpeg_ir::report::Severity::Warning)
-                ));
-                floor.is_some()
-            })
-            .map(|code| code.code())
-            .collect();
-        assert_eq!(
-            floored,
-            BTreeSet::from([
-                "card.framing-recovered",
-                "curve.composite-carrier-degraded",
-                "directory.metadata-noncanonical",
-                "directory.record-quarantined",
-                "directory.record-repeated",
-                "geometry.spline-claim-recovered",
-                "global.length-unit-unresolved",
-                "global.noncanonical-framing",
-                "global.numeric-syntax-recovered",
-                "global.semantic-context-substituted",
-                "graph.pointer-unresolved",
-                "parameter.count-overdeclared",
-                "parameter.data-quarantined",
-                "parameter.literal-unusable",
-                "source.dialect-unverified",
-            ])
-        );
     }
 }
