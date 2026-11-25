@@ -81,7 +81,7 @@ impl From<f64> for TokenValue {
 #[test]
 fn finite_real_token_keeps_native_json_shape() {
     assert_eq!(
-        serde_json::to_string(&TokenValue::real(1.5)).expect("token JSON"),
+        cadmpeg_core::serde_erase::json::to_string(&TokenValue::real(1.5)).expect("token JSON"),
         r#"{"kind":"real","value":1.5}"#
     );
 }

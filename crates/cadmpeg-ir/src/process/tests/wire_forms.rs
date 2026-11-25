@@ -104,7 +104,10 @@ fn sets_are_sorted_arrays_and_refuse_a_repeated_member() {
     assert!(message.contains("out of order"), "{message}");
     let sorted = r#"{"id":"test:process:machine#1","linear_axes":["x","z"],"pockets":[]}"#;
     let machine: Machine = serde_json::from_str(sorted).expect("sorted axes read");
-    assert_eq!(serde_json::to_string(&machine).expect("writes"), sorted);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&machine).expect("writes"),
+        sorted
+    );
 }
 
 #[test]
@@ -121,7 +124,7 @@ fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     assert_eq!(empty["heights"], json!({}));
     assert_eq!(empty["configuration_states"], json!({}));
 
-    let text = serde_json::to_string(&operation).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&operation).unwrap();
     assert!(text.contains(r#""bottom":{}"#), "{text}");
     let text = text.replacen(r#""heights":{"#, r#""heights":{"bottom":{},"#, 1);
     let message = refuses::<Operation>(&text);
@@ -143,7 +146,7 @@ fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     let value = to_value(&cycle);
     assert!(value["parameters"].is_object(), "{value}");
     assert!(value["feeds"].is_array(), "{value}");
-    let mut text = serde_json::to_string(&cycle).unwrap();
+    let mut text = cadmpeg_core::serde_erase::json::to_string(&cycle).unwrap();
     let parameter = r#""accumulatedDepth":{"kind":"real","value":6.0}"#;
     assert!(text.contains(parameter), "{text}");
     text = text.replacen(parameter, &format!("{parameter},{parameter}"), 1);

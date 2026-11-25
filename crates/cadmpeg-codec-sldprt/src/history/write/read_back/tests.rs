@@ -21,12 +21,13 @@ fn edited() -> (CadIr, CadIr, FeatureId) {
         if feature.name.is_none() {
             continue;
         }
-        let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
         let Some(leaf) = first_real(&mut wire) else {
             continue;
         };
         *leaf = serde_json::json!(leaf.as_f64().unwrap() + 1.0);
-        if let Ok(definition) = serde_json::from_value(wire) {
+        if let Ok(definition) = cadmpeg_core::serde_erase::json::from_value(wire) {
             feature.evaluation.set_definition(definition);
             let id = feature.id.clone();
             return (source, input, id);
@@ -247,16 +248,17 @@ fn a_moved_sketch_is_a_difference_of_that_sketch() {
         .sketches
         .iter()
         .position(|sketch| {
-            serde_json::to_value(sketch)
+            cadmpeg_core::serde_erase::json::to_value(sketch)
                 .unwrap()
                 .pointer(pointer)
                 .is_some()
         })
         .expect("a planar sketch states its origin");
-    let mut wire = serde_json::to_value(&written.model.sketches[index]).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(&written.model.sketches[index]).unwrap();
     let origin = wire.pointer_mut(pointer).unwrap();
     *origin = serde_json::json!(origin.as_f64().unwrap() + 1.0);
-    written.model.sketches[index] = serde_json::from_value(wire).unwrap();
+    written.model.sketches[index] = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     let (stated, read) = (
         Document::of(&source).unwrap(),
         Document::of(&written).unwrap(),
@@ -294,14 +296,16 @@ fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
         .features
         .iter_mut()
         .find(|feature| {
-            let wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+            let wire =
+                cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
             super::settled_travel(&wire) == Some("/value/value/direction")
                 && wire.pointer("/value/value/direction/kind")
                     == Some(&serde_json::json!("profile_normal"))
                 && !crate::history::extrude_direction::reversal_flag(&feature.source_properties)
         })
         .expect("an extrusion along its profile normal");
-    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
     *wire.pointer_mut("/value/value/direction").unwrap() =
         serde_json::json!({"kind": "reversed_profile_normal"});
     if other {
@@ -310,7 +314,7 @@ fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
     }
     feature
         .evaluation
-        .set_definition(serde_json::from_value(wire).unwrap());
+        .set_definition(cadmpeg_core::serde_erase::json::from_value(wire).unwrap());
     let id = feature.id.clone();
     (source, input, id)
 }

@@ -26,7 +26,7 @@ fn folded(edges: [usize; 4]) -> CadIr {
         .enumerate()
         .map(|(key, edge)| edge_pick(&ir, key, *edge))
         .collect();
-    ir.design.features[0].definition.operation = serde_json::from_value(json!({"kind": "datum", "value": {
+    ir.design.features[0].definition.operation = cadmpeg_core::serde_erase::json::from_value(json!({"kind": "datum", "value": {
         "element": {"kind": "frame", "value": {
             "inputs": [{
                 "role": {"subject": "whole", "relation": {"kind": "fold"}},

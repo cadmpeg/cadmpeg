@@ -21,7 +21,7 @@ fn the_direction_selector_is_stored_once_on_the_curve_form() {
             direction,
             trailing_flags: [false, true],
         };
-        let wire = serde_json::to_value(&tail).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&tail).unwrap();
         assert!(wire.get("selector").is_none());
         if selector == 0 {
             assert_eq!(wire["direction"]["kind"], "vector");
@@ -30,13 +30,13 @@ fn the_direction_selector_is_stored_once_on_the_curve_form() {
             assert_eq!(wire["direction"]["selector"], selector);
         }
         assert_eq!(
-            serde_json::from_value::<CompoundLoftTail>(wire.clone()).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<CompoundLoftTail>(wire.clone()).unwrap(),
             tail
         );
 
         let mut zero = wire;
         zero["direction"]["selector"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<CompoundLoftTail>(zero).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<CompoundLoftTail>(zero).is_err());
     }
 }
 
@@ -50,12 +50,13 @@ fn a_scaled_direction_keeps_its_exact_nonzero_selector() {
             selector: std::num::NonZeroI64::new(-4).unwrap(),
         },
     };
-    let mut wire = serde_json::to_value(&branch).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&branch).unwrap();
     assert_eq!(wire["direction"]["selector"], -4);
     assert_eq!(
-        serde_json::from_value::<ScaledCompoundLoftBranch>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ScaledCompoundLoftBranch>(wire.clone())
+            .unwrap(),
         branch
     );
     wire["direction"]["selector"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<ScaledCompoundLoftBranch>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<ScaledCompoundLoftBranch>(wire).is_err());
 }

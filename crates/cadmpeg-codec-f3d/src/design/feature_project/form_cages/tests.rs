@@ -1422,7 +1422,7 @@ fn form_missing_sources_preserve_native_parameters_metadata_and_repeated_binding
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
     use std::io::Cursor;
     let scope = form_scope(201, vec![205, 207]);
-    let row: Feature = serde_json::from_value(serde_json::json!({
+    let row: Feature = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id":"f3d:model:feature#form", "ordinal":7, "name":"Form", "suppressed":true,
         "dependencies":["f3d:model:feature#previous"], "source_properties":{"reference:0":"205"},
         "outputs":["f3d:model:body#result"], "native_ref":scope.id,
@@ -1512,7 +1512,7 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         ),
         (Some(scopes[1].id.clone()), vec![208, 209]),
     ] {
-        let mut feature: Feature = serde_json::from_value(serde_json::json!({
+        let mut feature: Feature = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id":crate::ids::neutral_feature_id(&scopes[0]), "ordinal":7, "suppressed":true,
             "outputs":["f3d:model:body#result"],
             "definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{"extra":"sin(angle)"}}}},
@@ -1763,7 +1763,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
         ctx.retain_bytes(1, "Form test fuse"),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
-    let mut rows = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
+    let mut rows = vec![cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
     let original = rows.clone();
     let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {

@@ -61,7 +61,8 @@ fn branches() -> [Branch; 3] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match FcstdCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect summary"),
+            Ok(summary) => cadmpeg_core::serde_erase::json::to_value(&summary)
+                .expect("serialize inspect summary"),
             Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
@@ -78,14 +79,15 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
+            let mut ir =
+                cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = elided_native(&result.ir().native);
             }
             elide_authoring_paths(&mut ir);
             serde_json::json!({
                 "ir": ir,
-                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "report": cadmpeg_core::serde_erase::json::to_value(result.report()).expect("serialize report"),
                 "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }
@@ -225,7 +227,7 @@ fn encode_snapshot(bytes: &[u8]) -> String {
             );
             serde_json::json!({
                 "entries": archive_entries(&archive),
-                "report": serde_json::to_value(&report).expect("serialize export report"),
+                "report": cadmpeg_core::serde_erase::json::to_value(&report).expect("serialize export report"),
             })
         }
         Err(error) => serde_json::json!({ "encode_error": error }),
@@ -662,7 +664,8 @@ mod native_elision {
             assert_eq!(before["__arena_counts"]["fcstd"][arena], 1);
             assert_eq!(
                 before["__arena_values"]["fcstd"][arena],
-                serde_json::to_value(&native.0["fcstd"].arenas()[arena]).unwrap()
+                cadmpeg_core::serde_erase::json::to_value(&native.0["fcstd"].arenas()[arena])
+                    .unwrap()
             );
             let mut after = before.clone();
             after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] =

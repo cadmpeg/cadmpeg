@@ -560,8 +560,8 @@ fn a_faceless_part_keeps_its_swift_annotations() {
             .map(|annotation| {
                 (
                     annotation.id.clone(),
-                    serde_json::to_value(&annotation.definition).unwrap(),
-                    serde_json::to_value(&annotation.targets).unwrap(),
+                    cadmpeg_core::serde_erase::json::to_value(&annotation.definition).unwrap(),
+                    cadmpeg_core::serde_erase::json::to_value(&annotation.targets).unwrap(),
                 )
             })
             .collect::<Vec<_>>()

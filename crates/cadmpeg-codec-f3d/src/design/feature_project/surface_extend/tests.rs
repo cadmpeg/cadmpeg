@@ -82,7 +82,7 @@ fn operand_with(
     if let Some(state) = state {
         value["recipe_state_id"] = state.into();
     }
-    serde_json::from_value(value).expect("edge operand fixture")
+    cadmpeg_core::serde_erase::json::from_value(value).expect("edge operand fixture")
 }
 
 fn project(scope: &DesignParameterScope, operands: &[DesignEdgeOperand]) -> FaceSelection {

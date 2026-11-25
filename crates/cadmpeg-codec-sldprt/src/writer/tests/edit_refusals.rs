@@ -39,9 +39,12 @@ fn decode(bytes: Vec<u8>) -> DecodeResult {
         .unwrap()
 }
 
-fn decode_read_back(bytes: &[u8]) -> DecodeResult {
-    crate::decode::decode_for_read_back(bytes, cadmpeg_core::decode::ResourceLimits::desktop())
-        .unwrap()
+fn decode_read_back(bytes: &[u8]) -> std::sync::Arc<DecodeResult> {
+    crate::decode::decode_for_read_back_cached(
+        bytes,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap()
 }
 
 fn messages(report: &ExportReport, code: SldprtLossCode) -> Vec<&str> {
@@ -653,11 +656,12 @@ fn is_fillet(feature: &Feature) -> bool {
 
 /// Edits the wire form of `feature`'s definition.
 fn edit_definition(feature: &mut Feature, edit: impl FnOnce(&mut serde_json::Value)) {
-    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
     edit(&mut wire);
     feature
         .evaluation
-        .set_definition(serde_json::from_value(wire).unwrap());
+        .set_definition(cadmpeg_core::serde_erase::json::from_value(wire).unwrap());
 }
 
 /// Adds one to the first nonzero real number under `value`, depth first.
@@ -798,7 +802,7 @@ fn a_kept_fillet_does_not_name_the_radius_its_parameter_carries() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some(name.as_str()))
         .unwrap();
-    let wire = serde_json::to_value(fillet.evaluation.definition()).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(fillet.evaluation.definition()).unwrap();
     assert!((wire.pointer(RADIUS).unwrap().as_f64().unwrap() - EDITED).abs() <= 1.0e-9);
 }
 
@@ -844,7 +848,8 @@ fn a_fillet_radius_definition_edit_is_written() {
         edit_definition(fillet, |wire| {
             assert!(bump_first_real(wire.pointer_mut(RADIUS).unwrap()));
         });
-        let wire = serde_json::to_value(fillet.evaluation.definition()).unwrap();
+        let wire =
+            cadmpeg_core::serde_erase::json::to_value(fillet.evaluation.definition()).unwrap();
         (
             fillet.name.clone().unwrap(),
             wire.pointer(RADIUS).unwrap().clone(),
@@ -863,7 +868,7 @@ fn a_fillet_radius_definition_edit_is_written() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some(name.as_str()))
         .unwrap();
-    let wire = serde_json::to_value(fillet.evaluation.definition()).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(fillet.evaluation.definition()).unwrap();
     assert_eq!(wire.pointer(RADIUS), Some(&radius));
 }
 
@@ -1279,12 +1284,13 @@ fn edit_definition_at(
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some(name))
         .unwrap();
-    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
     let pointer = place(&wire, "", suffix).unwrap();
     change(wire.pointer_mut(&pointer).unwrap());
     feature
         .evaluation
-        .set_definition(serde_json::from_value(wire).unwrap());
+        .set_definition(cadmpeg_core::serde_erase::json::from_value(wire).unwrap());
     (feature.id.clone(), pointer)
 }
 
@@ -1336,7 +1342,9 @@ fn a_held_back_edit_names_only_its_own_feature() {
         .features
         .iter()
         .find(|feature| feature.id == extrusion)
-        .map(|feature| serde_json::to_value(feature.evaluation.definition()).unwrap())
+        .map(|feature| {
+            cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap()
+        })
         .unwrap();
 
     let (report, output) = write(&decoded);
@@ -1361,7 +1369,9 @@ fn a_held_back_edit_names_only_its_own_feature() {
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Boss-Extrude1"))
-        .map(|feature| serde_json::to_value(feature.evaluation.definition()).unwrap())
+        .map(|feature| {
+            cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap()
+        })
         .unwrap();
     assert_eq!(read.pointer(&pointer), edited.pointer(&pointer));
 }
@@ -1498,7 +1508,7 @@ fn a_depth_edit_beside_a_removed_hole_is_carried() {
     let (report, output) = write(&decoded);
 
     let written = decode_read_back(&output);
-    let mut wire = serde_json::to_value(
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(
         named_feature(written.ir(), "Boss-Extrude1")
             .evaluation
             .definition(),

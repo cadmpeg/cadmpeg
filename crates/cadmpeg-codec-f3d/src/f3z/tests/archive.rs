@@ -643,9 +643,10 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         "{:?}",
         decoded.report().losses
     );
-    let admitted: cadmpeg_ir::CadIr =
-        serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap())
-            .expect("complete merged CADIR admission");
+    let admitted: cadmpeg_ir::CadIr = cadmpeg_core::serde_erase::json::from_slice(
+        &cadmpeg_core::serde_erase::json::to_vec(decoded.ir()).unwrap(),
+    )
+    .expect("complete merged CADIR admission");
     for ir in [decoded.ir(), &admitted] {
         assert_eq!(ir.model.occurrences.len(), 2);
         let outer_id =

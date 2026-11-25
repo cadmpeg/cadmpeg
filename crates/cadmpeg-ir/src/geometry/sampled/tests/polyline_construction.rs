@@ -80,8 +80,10 @@ fn polyline_construction_accepts_both_lanes_and_either_parameter_direction() {
     for parameters in [None, Some([0., 1., 2.]), Some([2., 1., 0.])] {
         let curve = PolylineCurve::new(raw(parameters), 0.25).expect("valid");
         assert_eq!(
-            serde_json::from_str::<PolylineCurve>(&serde_json::to_string(&curve).expect("wire"))
-                .expect("context-free serde"),
+            serde_json::from_str::<PolylineCurve>(
+                &cadmpeg_core::serde_erase::json::to_string(&curve).expect("wire")
+            )
+            .expect("context-free serde"),
             curve
         );
     }

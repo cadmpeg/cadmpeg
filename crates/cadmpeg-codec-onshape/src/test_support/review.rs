@@ -34,9 +34,9 @@ pub(crate) fn edit(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<
             path.rsplit_once('.')
                 .is_some_and(|(_, extension)| extension == "json")
         }) {
-            let mut value = serde_json::from_slice(bytes).unwrap();
+            let mut value = cadmpeg_core::serde_erase::json::from_slice(bytes).unwrap();
             edit(path, &mut value);
-            *bytes = serde_json::to_vec(&value).unwrap();
+            *bytes = cadmpeg_core::serde_erase::json::to_vec(&value).unwrap();
         }
     })
 }
@@ -80,7 +80,7 @@ pub(crate) fn variable(name: &str, id: &str, kind: &str, expression: &str) -> Va
 pub(crate) fn two_body_step() -> Vec<u8> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let geometry = serde_json::to_value(&ir.geometry).unwrap();
+    let geometry = cadmpeg_core::serde_erase::json::to_value(&ir.geometry).unwrap();
     let mut other = geometry.clone();
     rename_geometry(&mut other);
     let mut geometry = geometry;
@@ -90,7 +90,7 @@ pub(crate) fn two_body_step() -> Vec<u8> {
             .unwrap()
             .extend(values.as_array().unwrap().iter().cloned());
     }
-    ir.geometry = serde_json::from_value(geometry).unwrap();
+    ir.geometry = cadmpeg_core::serde_erase::json::from_value(geometry).unwrap();
     let plan = cadmpeg_codec_step::StepCodec::default()
         .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("step:ap214")))
         .unwrap();

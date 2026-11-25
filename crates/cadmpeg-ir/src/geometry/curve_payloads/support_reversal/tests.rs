@@ -154,10 +154,12 @@ fn context_families_reverse_about_zero_and_back() {
                     }) if interval == [FiniteReal::new(-4.0), FiniteReal::new(-1.0)]
                 ));
                 assert_eq!(payload.direction(), &0);
-                let restored: ProceduralCurveDefinition = serde_json::from_value(
-                    serde_json::to_value(&reversed).expect("serialize spring"),
-                )
-                .expect("deserialize spring");
+                let restored: ProceduralCurveDefinition =
+                    cadmpeg_core::serde_erase::json::from_value(
+                        cadmpeg_core::serde_erase::json::to_value(&reversed)
+                            .expect("serialize spring"),
+                    )
+                    .expect("deserialize spring");
                 assert_eq!(restored, reversed);
             }
             ProceduralCurveDefinition::SurfaceOffset(payload) => {

@@ -80,8 +80,9 @@ fn a_silhouette_split_is_a_split_along_its_direction() {
         native_value(picks),
         Some(&NativeNameValue::Text(NonBlankString::new(SCOPE).unwrap()))
     );
-    let wire = serde_json::to_value(FeatureOperation::Split(split.clone())).unwrap();
-    let back: FeatureOperation = serde_json::from_value(wire).unwrap();
+    let wire =
+        cadmpeg_core::serde_erase::json::to_value(FeatureOperation::Split(split.clone())).unwrap();
+    let back: FeatureOperation = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     assert_eq!(back, FeatureOperation::Split(split));
 }
 

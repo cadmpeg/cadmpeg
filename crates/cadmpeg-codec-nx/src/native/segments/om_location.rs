@@ -65,8 +65,12 @@ mod tests {
             let wire = serde_json::json!({
                 "source_offset": 10, "separator_byte_len": separator_byte_len
             });
-            let location: OmLocation = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(location).unwrap(), wire);
+            let location: OmLocation =
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(location).unwrap(),
+                wire
+            );
             assert_eq!(
                 location.section_offset(),
                 10 + u64::from(separator_byte_len)
@@ -76,6 +80,6 @@ mod tests {
         let wire = serde_json::json!({
             "source_offset": u64::MAX, "separator_byte_len": 1
         });
-        assert!(serde_json::from_value::<OmLocation>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<OmLocation>(wire).is_err());
     }
 }

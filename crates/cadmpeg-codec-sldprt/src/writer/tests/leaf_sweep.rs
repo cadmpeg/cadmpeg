@@ -148,6 +148,7 @@ fn run(
     part: &DecodeResult,
     part_doc: &crate::history::write::read_back::document::Document,
     baseline: &[Entry],
+    unedited_bytes: Option<&[u8]>,
     job: &Job,
 ) -> Result<Outcome, String> {
     let label = format!("{} {}", job.feature, job.pointer);
@@ -198,7 +199,7 @@ fn run(
         .filter(|loss| loss.code == SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .filter(|loss| loss.message.contains(&format!("\"{}\"", job.feature)))
         .count();
-    let written = crate::decode::decode_for_read_back(
+    let written = crate::decode::decode_for_read_back_cached(
         &output,
         cadmpeg_core::decode::ResourceLimits::desktop(),
     )
@@ -207,11 +208,6 @@ fn run(
     let [read] = read.as_slice() else {
         return Err(format!("{label}: the feature does not read back once"));
     };
-    let read_leaf = cadmpeg_core::serde_erase::to_json_value(read.evaluation.definition())
-        .unwrap()
-        .pointer(&job.pointer)
-        .cloned()
-        .unwrap_or(Value::Null);
     // A stale-solid note names the edited feature as written, so it names
     // no difference of the read-back.
     let messages = report
@@ -245,19 +241,31 @@ fn run(
                 "{label}: a loss names the edit, and a stale note calls it written"
             ));
         }
-        let differences = readback::unnamed(
-            readback::beyond(
-                readback::diff_with_left(part.ir(), part_doc, written.ir()),
-                baseline,
-            ),
-            &messages,
-        )
-        .into_iter()
-        .map(|entry| format!("{entry:?}"))
-        .collect::<Vec<_>>();
+        // When the written part is byte-for-byte identical to the unedited
+        // semantic write, its read-back diff against `part` equals `baseline`
+        // by construction, so `beyond(..., baseline)` is empty.
+        let differences = if unedited_bytes == Some(output.as_slice()) {
+            Vec::new()
+        } else {
+            readback::unnamed(
+                readback::beyond(
+                    readback::diff_with_left(part.ir(), part_doc, written.ir()),
+                    baseline,
+                ),
+                &messages,
+            )
+            .into_iter()
+            .map(|entry| format!("{entry:?}"))
+            .collect::<Vec<_>>()
+        };
         (differences, Outcome::Named)
     };
     if !differences.is_empty() {
+        let read_leaf = cadmpeg_core::serde_erase::to_json_value(read.evaluation.definition())
+            .unwrap()
+            .pointer(&job.pointer)
+            .cloned()
+            .unwrap_or(Value::Null);
         return Err(format!(
             "{label}: {} loss names the edit; the leaf reads back as {read_leaf} (source {}, edit {}); stale notes {stale}; {differences:?}",
             if unwritten == 0 { "no" } else { "a" },
@@ -278,7 +286,7 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
     let jobs = jobs(part);
     let part_doc =
         crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
-    let baseline = readback::baseline(part);
+    let (baseline, unedited_bytes) = readback::baseline_with_bytes(part);
     let next = AtomicUsize::new(0);
     let results = Mutex::new((Vec::new(), [0_usize; 3]));
     let workers = std::thread::available_parallelism().map_or(4, |count| count.get().min(6));
@@ -289,7 +297,7 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
                 let Some(job) = jobs.get(index) else {
                     break;
                 };
-                let result = run(part, &part_doc, &baseline, job);
+                let result = run(part, &part_doc, &baseline, unedited_bytes.as_deref(), job);
                 let mut results = results.lock().unwrap();
                 match result {
                     Ok(Outcome::Invalid) => results.1[0] += 1,
@@ -356,10 +364,11 @@ fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
     let part = ftc_06();
     let part_doc =
         crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
+    let (baseline, unedited_bytes) = readback::baseline_with_bytes(part);
     let job = job(part, "Boss-Extrude1", |pointer| {
         pointer.ends_with("/length") && !pointer.contains("second")
     });
-    let outcome = run(part, &part_doc, &readback::baseline(part), &job);
+    let outcome = run(part, &part_doc, &baseline, unedited_bytes.as_deref(), &job);
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",
@@ -376,10 +385,11 @@ fn a_linear_pattern_first_direction_edit_is_carried() {
     let part = ftc_08();
     let part_doc =
         crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
+    let (baseline, unedited_bytes) = readback::baseline_with_bytes(part);
     let job = job(part, "LPattern1", |pointer| {
         pointer.ends_with("/pattern/direction/y")
     });
-    let outcome = run(part, &part_doc, &readback::baseline(part), &job);
+    let outcome = run(part, &part_doc, &baseline, unedited_bytes.as_deref(), &job);
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",

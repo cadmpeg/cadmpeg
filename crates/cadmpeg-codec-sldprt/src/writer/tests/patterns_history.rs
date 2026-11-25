@@ -1501,7 +1501,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         SketchInputKind::LineOrCircle
     );
     assert_eq!(
-        serde_json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
+        cadmpeg_core::serde_erase::json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
         r#""line_or_circle""#
     );
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json as json_wire;
 use std::fmt::Write as _;
 
 mod graphics;
@@ -18,7 +19,7 @@ fn parameter_discriminator_preserves_wire_and_rejects_partial_location() {
         let wire = format!("{prefix}{fields}{suffix}");
         let value: crate::records::parameters::DesignParameter =
             serde_json::from_str(&wire).expect("parameter frame");
-        assert_eq!(serde_json::to_string(&value).expect("parameter wire"), wire);
+        assert_eq!(json_wire::to_string(&value).expect("parameter wire"), wire);
     }
     for fields in [
         ",\"family_discriminator\":0",
@@ -47,10 +48,10 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
             };
             let encoded = if prefix == "{" {
                 let value: crate::records::feature::hole::DesignHoleFaceSelection = serde_json::from_str(&wire).expect("hole selection");
-                serde_json::to_string(&value).expect("hole selection wire")
+                json_wire::to_string(&value).expect("hole selection wire")
             } else {
                 let value: crate::records::topology::entity_selection::DesignEntitySelectionOperand = serde_json::from_str(&wire).expect("entity selection");
-                serde_json::to_string(&value).expect("entity selection wire")
+                json_wire::to_string(&value).expect("entity selection wire")
             };
             assert_eq!(encoded, wire);
         }
@@ -101,7 +102,7 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
                 wire.push('}');
                 let parsed: crate::records::references::DesignMaterialAssignment =
                     serde_json::from_str(&wire).expect("material token");
-                assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
+                assert_eq!(json_wire::to_string(&parsed).expect("material wire"), wire);
             }
         }
         let wire = format!("{prefix},\"{field}\":\"Prism-002\"}}");
@@ -122,11 +123,11 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
     let wire = format!("{prefix}}}");
     let parsed: crate::records::references::DesignMaterialAssignment =
         serde_json::from_str(&wire).expect("absent tokens");
-    assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
+    assert_eq!(json_wire::to_string(&parsed).expect("material wire"), wire);
     let padded = wire.replace("0_985", "0_+00985");
     let parsed: crate::records::references::DesignMaterialAssignment =
         serde_json::from_str(&padded).expect("preserved numeric spelling");
-    assert_eq!(serde_json::to_string(&parsed).unwrap(), padded);
+    assert_eq!(json_wire::to_string(&parsed).unwrap(), padded);
 }
 
 #[test]
@@ -140,13 +141,13 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
             wire.push_str(suffix);
             let parsed: crate::records::recipes::ConstructionRecipe =
                 serde_json::from_str(&wire).expect("recipe id");
-            assert_eq!(serde_json::to_string(&parsed).expect("recipe wire"), wire);
+            assert_eq!(json_wire::to_string(&parsed).expect("recipe wire"), wire);
         }
     }
     let wire = format!("{prefix}{suffix}");
     let parsed: crate::records::recipes::ConstructionRecipe =
         serde_json::from_str(&wire).expect("body-less recipe");
-    assert_eq!(serde_json::to_string(&parsed).expect("recipe wire"), wire);
+    assert_eq!(json_wire::to_string(&parsed).expect("recipe wire"), wire);
     let wire = format!("{prefix},\"design_id_offset\":4{suffix}");
     let error = serde_json::from_str::<crate::records::recipes::ConstructionRecipe>(&wire)
         .expect_err("orphan design id offset")
@@ -180,7 +181,7 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
                 }
             };
             assert_eq!(parsed.base_type_guid, expected);
-            assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
+            assert_eq!(json_wire::to_string(&parsed).expect("segment wire"), wire);
         }
     }
     let wire = format!("{prefix}{suffix}");
@@ -190,7 +191,7 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
         parsed.base_type_guid,
         crate::records::entity_header::BaseTypeGuid::Absent
     );
-    assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
+    assert_eq!(json_wire::to_string(&parsed).expect("segment wire"), wire);
     let wire = format!("{prefix},\"base_type_guid_offset\":44{suffix}");
     let error = serde_json::from_str::<crate::records::entity_header::SegmentType>(&wire)
         .expect_err("orphan base GUID offset")
@@ -213,17 +214,11 @@ fn parameter_unit_preserves_source_and_authored_wire() {
     let wire = format!("{prefix},\"unit\":\"mm\",\"unit_offset\":70{suffix}");
     let parsed: crate::records::parameters::DesignParameter =
         serde_json::from_str(&wire).expect("parameter unit");
-    assert_eq!(
-        serde_json::to_string(&parsed).expect("parameter wire"),
-        wire
-    );
+    assert_eq!(json_wire::to_string(&parsed).expect("parameter wire"), wire);
     let wire = format!("{prefix}{suffix}");
     let parsed: crate::records::parameters::DesignParameter =
         serde_json::from_str(&wire).expect("dimensionless parameter");
-    assert_eq!(
-        serde_json::to_string(&parsed).expect("parameter wire"),
-        wire
-    );
+    assert_eq!(json_wire::to_string(&parsed).expect("parameter wire"), wire);
     let wire = format!("{prefix},\"unit_offset\":70{suffix}");
     let error = serde_json::from_str::<crate::records::parameters::DesignParameter>(&wire)
         .expect_err("orphan unit offset")
@@ -240,7 +235,7 @@ fn timeline_items_preserve_wire_and_reject_unequal_offsets() {
         let timeline: crate::records::entity_header::DesignFeatureTimeline =
             serde_json::from_str(&wire).expect("timeline items");
         assert_eq!(
-            serde_json::to_string(&timeline).expect("timeline wire"),
+            json_wire::to_string(&timeline).expect("timeline wire"),
             wire
         );
         for invalid_offsets in ["[]", "[245]", "[245,256,267]"] {
@@ -265,10 +260,7 @@ fn annotation_return_members_preserve_wire_and_reject_unequal_offsets() {
     let wire = r#"{"id":"annotation","governing_companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":120,"operands":[{"geometry_record_index":10,"geometry_reference_offset":125,"role":1,"role_offset":135},{"geometry_record_index":11,"geometry_reference_offset":140,"role":2,"role_offset":150}],"entity_genesis":0,"annotation_bytes":"","annotation_byte_offset":211,"governing_owner_record_index":4,"governing_owner_reference_offset":212,"return_members":[10,11],"return_member_offsets":[227,238],"paired_class_tag":"259","paired_byte_offset":220,"owner_reference":5,"owner_reference_offset":240}"#;
     let frame: crate::records::dimensions::DesignDimensionAnnotationFrame =
         serde_json::from_str(wire).expect("annotation return members");
-    assert_eq!(
-        serde_json::to_string(&frame).expect("annotation wire"),
-        wire
-    );
+    assert_eq!(json_wire::to_string(&frame).expect("annotation wire"), wire);
     for offsets in ["[]", "[227]", "[227,238,249]"] {
         let invalid = wire.replace(
             "\"return_member_offsets\":[227,238]",
@@ -304,7 +296,7 @@ fn dimension_locus_rows_preserve_return_order_and_derive_state_views() {
         let group: crate::records::dimensions::DesignDimensionLocusGroup =
             serde_json::from_str(&wire).expect("locus group rows");
         assert_eq!(
-            serde_json::to_string(&group).expect("locus group wire"),
+            json_wire::to_string(&group).expect("locus group wire"),
             wire
         );
         assert_eq!(group.loci[0].geometry_record_index, 11);
@@ -313,7 +305,7 @@ fn dimension_locus_rows_preserve_return_order_and_derive_state_views() {
         for field in ["loci", "return_members", "return_member_offsets"] {
             let mut invalid = value.clone();
             invalid[field].as_array_mut().expect("locus array").pop();
-            let error = serde_json::from_value::<
+            let error = json_wire::from_value::<
                 crate::records::dimensions::DesignDimensionLocusGroup,
             >(invalid)
             .expect_err("unequal locus arrays")
@@ -326,7 +318,7 @@ fn dimension_locus_rows_preserve_return_order_and_derive_state_views() {
         ] {
             let mut invalid = value.clone();
             invalid[field] = replacement;
-            let error = serde_json::from_value::<
+            let error = json_wire::from_value::<
                 crate::records::dimensions::DesignDimensionLocusGroup,
             >(invalid)
             .expect_err("inconsistent state projection")
@@ -349,7 +341,7 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
         );
         let entry: crate::records::entity_header::SegmentType =
             serde_json::from_str(&wire).expect("type entity run");
-        assert_eq!(serde_json::to_string(&entry).expect("type wire"), wire);
+        assert_eq!(json_wire::to_string(&entry).expect("type wire"), wire);
     }
     for (ids, offsets) in [("[]", "[80]"), ("[10,11]", "[80]"), ("[10]", "[80,88]")] {
         let wire = format!(
@@ -384,7 +376,7 @@ fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
         let wire = format!("{prefix}{fields},\"reference_indices\":{references},\"reference_offsets\":{offsets}{members}}}");
         let header: crate::records::entity_header::DesignEntityHeader =
             serde_json::from_str(&wire).expect("header runs");
-        assert_eq!(serde_json::to_string(&header).expect("header wire"), wire);
+        assert_eq!(json_wire::to_string(&header).expect("header wire"), wire);
     }
     for suffix in [
         r#","declared_reference_count":1,"reference_indices":[],"reference_offsets":[]}"#,
@@ -415,14 +407,14 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
                 "\"auxiliary_references\":[]",
                 &format!(
                     "\"auxiliary_references\":{}",
-                    serde_json::to_string(&values).unwrap()
+                    json_wire::to_string(&values).unwrap()
                 ),
             )
             .replace(
                 "\"auxiliary_reference_offsets\":[]",
                 &format!(
                     "\"auxiliary_reference_offsets\":{}",
-                    serde_json::to_string(&offsets).unwrap()
+                    json_wire::to_string(&offsets).unwrap()
                 ),
             );
         let relation: crate::records::sketch_relations::SketchRelation =
@@ -443,7 +435,7 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
                 .collect::<Vec<_>>(),
             offsets
         );
-        assert_eq!(serde_json::to_string(&relation).unwrap(), expected);
+        assert_eq!(json_wire::to_string(&relation).unwrap(), expected);
     }
     for (values, offsets) in [
         (vec![2], vec![]),
@@ -455,7 +447,7 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
         wire["auxiliary_references"] = serde_json::json!(values);
         wire["auxiliary_reference_offsets"] = serde_json::json!(offsets);
         assert!(
-            serde_json::from_value::<crate::records::sketch_relations::SketchRelation>(wire)
+            json_wire::from_value::<crate::records::sketch_relations::SketchRelation>(wire)
                 .unwrap_err()
                 .to_string()
                 .contains("auxiliary_reference")
@@ -479,7 +471,7 @@ fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
         let expected = base.replace("\"weights\":[]", &format!("\"weights\":{weights}"));
         let curve: crate::records::sketch_geometry::SketchCurveGeometry =
             serde_json::from_str(&expected).unwrap();
-        assert_eq!(serde_json::to_string(&curve).unwrap(), expected);
+        assert_eq!(json_wire::to_string(&curve).unwrap(), expected);
     }
     for weights in ["[1.0]", "[1.0,0.5,1.0]"] {
         let wire = base.replace("\"weights\":[]", &format!("\"weights\":{weights}"));
@@ -503,7 +495,7 @@ fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
         )
         .unwrap(),
     );
-    let wire = serde_json::to_string(&empty).unwrap();
+    let wire = json_wire::to_string(&empty).unwrap();
     assert_eq!(
         serde_json::from_str::<crate::records::sketch_geometry::SketchCurveGeometry>(&wire)
             .unwrap(),
@@ -525,7 +517,7 @@ fn native_sketch_nurbs_refuses_decreasing_knots_and_negative_weight() {
     let mut decreasing = wire.clone();
     decreasing["knots"] = serde_json::json!([1.0, 0.0, 1.0, 1.0]);
     assert!(
-        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(decreasing)
+        json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(decreasing)
             .unwrap_err()
             .to_string()
             .contains("nondecreasing")
@@ -533,7 +525,7 @@ fn native_sketch_nurbs_refuses_decreasing_knots_and_negative_weight() {
     let mut negative_weight = wire;
     negative_weight["weights"] = serde_json::json!([-1.0, 1.0]);
     assert!(
-        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(
+        json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(
             negative_weight
         )
         .unwrap_err()
@@ -556,7 +548,7 @@ fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
     let mut wrong_count = wire.clone();
     wrong_count["degree"] = serde_json::json!(2);
     assert!(
-        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(wrong_count)
+        json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(wrong_count)
             .unwrap_err()
             .to_string()
             .contains("knot count")
@@ -564,12 +556,10 @@ fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
     let mut negative_fit = wire;
     negative_fit["fit_tolerance"] = serde_json::json!(-0.125);
     assert!(
-        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(
-            negative_fit
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("fit_tolerance")
+        json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(negative_fit)
+            .unwrap_err()
+            .to_string()
+            .contains("fit_tolerance")
     );
 }
 
@@ -592,7 +582,7 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
             let parameter: crate::records::parameters::DesignParameter =
                 serde_json::from_str(&wire).unwrap();
             assert_eq!(parameter.source_kind(), source_kind);
-            assert_eq!(serde_json::to_string(&parameter).unwrap(), wire);
+            assert_eq!(json_wire::to_string(&parameter).unwrap(), wire);
             let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
             if kind != "user" {
                 let mut wrong_kind = value.clone();
@@ -602,7 +592,7 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
                     "feature"
                 });
                 assert!(
-                    serde_json::from_value::<crate::records::parameters::DesignParameter>(
+                    json_wire::from_value::<crate::records::parameters::DesignParameter>(
                         wrong_kind
                     )
                     .unwrap_err()
@@ -614,7 +604,7 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
             if kind == "user" {
                 changed_owner["owner_record_index"] = serde_json::json!(2);
                 assert!(
-                    serde_json::from_value::<crate::records::parameters::DesignParameter>(
+                    json_wire::from_value::<crate::records::parameters::DesignParameter>(
                         changed_owner
                     )
                     .unwrap_err()
@@ -627,14 +617,14 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
                     .unwrap()
                     .remove("owner_record_index");
                 let ownerless: crate::records::parameters::DesignParameter =
-                    serde_json::from_value(changed_owner.clone()).unwrap();
+                    json_wire::from_value(changed_owner.clone()).unwrap();
                 assert_eq!(ownerless.owner_record_index(), None);
-                assert_eq!(serde_json::to_value(&ownerless).unwrap(), changed_owner);
+                assert_eq!(json_wire::to_value(&ownerless).unwrap(), changed_owner);
             }
             let mut invalid_discriminator = value.clone();
             invalid_discriminator["family_discriminator"] = serde_json::json!(7);
             assert!(
-                serde_json::from_value::<crate::records::parameters::DesignParameter>(
+                json_wire::from_value::<crate::records::parameters::DesignParameter>(
                     invalid_discriminator
                 )
                 .unwrap_err()
@@ -653,8 +643,8 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
             // Typed compact document parameters and compact owned parameters
             // both store no family discriminator.
             let parameter: crate::records::parameters::DesignParameter =
-                serde_json::from_value(no_discriminator.clone()).unwrap();
-            assert_eq!(serde_json::to_value(parameter).unwrap(), no_discriminator);
+                json_wire::from_value(no_discriminator.clone()).unwrap();
+            assert_eq!(json_wire::to_value(parameter).unwrap(), no_discriminator);
         }
     }
     assert!(
@@ -672,7 +662,7 @@ fn a_construction_recipe_record_index_and_its_offset_occur_together() {
     let recipe: crate::records::recipes::ConstructionRecipe =
         serde_json::from_str(&complete).expect("complete record index");
     assert_eq!(
-        serde_json::to_string(&recipe).expect("recipe wire"),
+        json_wire::to_string(&recipe).expect("recipe wire"),
         complete
     );
 
@@ -680,7 +670,7 @@ fn a_construction_recipe_record_index_and_its_offset_occur_together() {
     let recipe: crate::records::recipes::ConstructionRecipe =
         serde_json::from_str(&absent).expect("recipe stating no record index");
     assert_eq!(recipe.record_index, None);
-    assert_eq!(serde_json::to_string(&recipe).expect("recipe wire"), absent);
+    assert_eq!(json_wire::to_string(&recipe).expect("recipe wire"), absent);
 
     for orphan in [
         format!(r#"{prefix}{suffix},"record_index":7}}"#),
@@ -704,7 +694,7 @@ fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
     ] {
         let wire = format!("{prefix}\"{fields}{suffix}");
         let recipe: crate::records::recipes::ConstructionRecipe = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&recipe).unwrap(), wire);
+        assert_eq!(json_wire::to_string(&recipe).unwrap(), wire);
     }
     let wire = format!("{prefix}\",\"design_selector\":{{\"value\":2,\"byte_offset\":15}}{suffix}");
     let error = serde_json::from_str::<crate::records::recipes::ConstructionRecipe>(&wire)
@@ -733,14 +723,14 @@ fn companion_payload_absence_is_distinct_from_an_empty_payload() {
     let companion: crate::records::parameters::DesignParameterCompanion =
         serde_json::from_str(&unbound).unwrap();
     assert!(companion.payload().is_none());
-    assert_eq!(serde_json::to_string(&companion).unwrap(), unbound);
+    assert_eq!(json_wire::to_string(&companion).unwrap(), unbound);
 
     let companion: crate::records::parameters::DesignParameterCompanion =
         serde_json::from_str(&empty).unwrap();
     let payload = companion.payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
     assert_eq!(payload.byte_length(), 0);
-    assert_eq!(serde_json::to_string(&companion).unwrap(), empty);
+    assert_eq!(json_wire::to_string(&companion).unwrap(), empty);
 
     for (invalid, field) in [
         (
@@ -769,13 +759,13 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
     let wire = r#"{"id":"companion","byte_offset":0,"class_tag":"123","record_index":3,"owner_record_index":2,"timestamp_micros":1,"timestamp_micros_offset":42,"payload_byte_offset":58,"payload_byte_length":0}"#;
     let companion: crate::records::parameters::DesignParameterCompanion =
         serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
+    assert_eq!(json_wire::to_string(&companion).unwrap(), wire);
     let legacy = wire
         .replace("timestamp_micros_offset", "opaque_value_offset")
         .replace("timestamp_micros", "opaque_value");
     let companion: crate::records::parameters::DesignParameterCompanion =
         serde_json::from_str(&legacy).unwrap();
-    assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
+    assert_eq!(json_wire::to_string(&companion).unwrap(), wire);
     for invalid in [
         wire.replace("\"timestamp_micros\":1", "\"timestamp_micros\":0"),
         legacy.replace("\"opaque_value\":1", "\"opaque_value\":0"),
@@ -800,7 +790,7 @@ fn dimension_operands_preserve_null_and_required_index_wires() {
             operand.geometry_record_index,
             std::num::NonZeroU32::new(index)
         );
-        assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
+        assert_eq!(json_wire::to_string(&operand).unwrap(), wire);
         if index == 0 {
             let error = serde_json::from_str::<
                 crate::records::dimensions::DesignDimensionPresentationOperand,
@@ -812,7 +802,7 @@ fn dimension_operands_preserve_null_and_required_index_wires() {
             let operand: crate::records::dimensions::DesignDimensionPresentationOperand =
                 serde_json::from_str(&wire).unwrap();
             assert_eq!(operand.geometry_record_index.get(), index);
-            assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
+            assert_eq!(json_wire::to_string(&operand).unwrap(), wire);
         }
     }
 }
@@ -832,11 +822,11 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
         assert_eq!(id.suffix(), suffix);
         let wire = serde_json::json!({"entity_id": name, "entity_suffix": suffix, "entity_reference_offset": 20});
         let binding: crate::records::feature::scope::DesignSketchEntityBinding =
-            serde_json::from_value(wire.clone()).expect("matching suffix");
-        assert_eq!(serde_json::to_value(binding).unwrap(), wire);
+            json_wire::from_value(wire.clone()).expect("matching suffix");
+        assert_eq!(json_wire::to_value(binding).unwrap(), wire);
         let mut mismatch = wire;
         mismatch["entity_suffix"] = (suffix ^ 1).into();
-        let error = serde_json::from_value::<
+        let error = json_wire::from_value::<
             crate::records::feature::scope::DesignSketchEntityBinding,
         >(mismatch)
         .expect_err("contradictory suffix");
@@ -864,11 +854,11 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
         "paired_class_tag": "301", "paired_byte_offset": 40
     });
     let profile: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
-        serde_json::from_value(wire.clone()).expect("valid profile ID");
-    assert_eq!(serde_json::to_value(profile).unwrap(), wire);
+        json_wire::from_value(wire.clone()).expect("valid profile ID");
+    assert_eq!(json_wire::to_value(profile).unwrap(), wire);
     let mut mismatch = wire.clone();
     mismatch["entity_suffix"] = 18.into();
-    assert!(serde_json::from_value::<
+    assert!(json_wire::from_value::<
         crate::records::topology::sketch_profile::DesignSketchProfileOperand,
     >(mismatch)
     .expect_err("mismatched profile suffix")
@@ -876,7 +866,7 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
     .contains("entity_suffix"));
     let mut invalid_asset = wire;
     invalid_asset["asset_id"] = "asset".into();
-    assert!(serde_json::from_value::<
+    assert!(json_wire::from_value::<
         crate::records::topology::sketch_profile::DesignSketchProfileOperand,
     >(invalid_asset)
     .expect_err("non-GUID profile asset identity")
@@ -895,19 +885,21 @@ fn sketch_placement_preserves_identity_wire() {
         "paired_class_tag": "301", "paired_byte_offset": 211
     });
     let placement: crate::records::sketch_placement::DesignSketchPlacement =
-        serde_json::from_value(wire.clone()).expect("matching identity");
+        json_wire::from_value(wire.clone()).expect("matching identity");
     assert_eq!(placement.entity_id.suffix(), 7);
-    assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+    assert_eq!(json_wire::to_value(placement).unwrap(), wire);
     for field in ["class_tag", "paired_class_tag"] {
         for invalid in ["", "12", "1234", "1a3", "１２３"] {
             let mut invalid_wire = wire.clone();
             invalid_wire[field] = invalid.into();
-            assert!(serde_json::from_value::<
-                crate::records::sketch_placement::DesignSketchPlacement,
-            >(invalid_wire)
-            .unwrap_err()
-            .to_string()
-            .contains(field));
+            assert!(
+                json_wire::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
+                    invalid_wire
+                )
+                .unwrap_err()
+                .to_string()
+                .contains(field)
+            );
         }
     }
 }
@@ -918,12 +910,12 @@ fn entity_header_identity_preserves_wire_spelling() {
     let header: crate::records::entity_header::DesignEntityHeader =
         serde_json::from_str(wire).expect("matching identity");
     assert_eq!(header.entity_id.suffix(), 1);
-    assert_eq!(serde_json::to_string(&header).unwrap(), wire);
+    assert_eq!(json_wire::to_string(&header).unwrap(), wire);
     for class_tag in ["", "25", "25x", "2560", "٢٥٦"] {
-        let mut invalid = serde_json::to_value(&header).unwrap();
+        let mut invalid = json_wire::to_value(&header).unwrap();
         invalid["class_tag"] = class_tag.into();
         assert!(
-            serde_json::from_value::<crate::records::entity_header::DesignEntityHeader>(invalid)
+            json_wire::from_value::<crate::records::entity_header::DesignEntityHeader>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("class_tag")
@@ -937,7 +929,7 @@ fn sketch_visibility_derives_flag_offset_and_rejects_invalid_wire() {
         r#"{"stream_ordinal":1,"stream_ordinal_offset":30,"visible_offset":35,"visible":false}"#;
     let visibility: crate::records::sketch_placement::DesignSketchVisibility =
         serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&visibility).unwrap(), wire);
+    assert_eq!(json_wire::to_string(&visibility).unwrap(), wire);
     for (invalid, field) in [
         (
             wire.replace("\"stream_ordinal\":1", "\"stream_ordinal\":0"),
@@ -985,26 +977,26 @@ fn sketch_visibility_derives_flag_offset_and_rejects_invalid_wire() {
 fn lost_edge_reference_derives_offsets_and_rejects_inconsistent_wire() {
     let wire = r#"{"id":"edge","record_byte_offset":152,"class_tag_offset":156,"class_tag":"419","record_index":299,"record_index_offset":159,"byte_offset":181,"next_byte_offset":200,"next_class_tag":"326","next_record_index":300}"#;
     let record: crate::records::references::LostEdgeReference = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    assert_eq!(json_wire::to_string(&record).unwrap(), wire);
     for field in [
         "class_tag_offset",
         "record_index_offset",
         "byte_offset",
         "next_byte_offset",
     ] {
-        let mut invalid = serde_json::to_value(&record).unwrap();
+        let mut invalid = json_wire::to_value(&record).unwrap();
         invalid[field] = serde_json::json!(0);
         assert!(
-            serde_json::from_value::<crate::records::references::LostEdgeReference>(invalid)
+            json_wire::from_value::<crate::records::references::LostEdgeReference>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains(field)
         );
     }
-    let mut invalid = serde_json::to_value(&record).unwrap();
+    let mut invalid = json_wire::to_value(&record).unwrap();
     invalid["record_byte_offset"] = serde_json::json!(u64::MAX - 47);
     assert!(
-        serde_json::from_value::<crate::records::references::LostEdgeReference>(invalid)
+        json_wire::from_value::<crate::records::references::LostEdgeReference>(invalid)
             .unwrap_err()
             .to_string()
             .contains("record_byte_offset")
@@ -1045,9 +1037,9 @@ fn lost_edge_reference_requires_three_digit_class_tags() {
         .unwrap_err()
         .contains("next_class_tag"));
         assert!(
-            serde_json::from_value::<crate::records::references::DesignClassTag>(
-                serde_json::json!(invalid)
-            )
+            json_wire::from_value::<crate::records::references::DesignClassTag>(serde_json::json!(
+                invalid
+            ))
             .unwrap_err()
             .to_string()
             .contains("class_tag")
@@ -1055,9 +1047,9 @@ fn lost_edge_reference_requires_three_digit_class_tags() {
     }
     for value in ["000", "019", "999"] {
         let tag: crate::records::references::DesignClassTag =
-            serde_json::from_value(serde_json::json!(value)).unwrap();
+            json_wire::from_value(serde_json::json!(value)).unwrap();
         assert_eq!(tag.as_str(), value);
-        assert_eq!(serde_json::to_value(tag).unwrap(), serde_json::json!(value));
+        assert_eq!(json_wire::to_value(tag).unwrap(), serde_json::json!(value));
     }
 }
 
@@ -1092,12 +1084,12 @@ fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
             wire["transform_offset"] = (100 + delta).into();
         }
         let placement: crate::records::sketch_placement::DesignSketchPlacement =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+            json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(placement).unwrap(), wire);
         let mut invalid = wire.clone();
         invalid["transform_offset"] = 99.into();
         assert!(
-            serde_json::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
+            json_wire::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
                 invalid
             )
             .unwrap_err()
@@ -1107,7 +1099,7 @@ fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
         let mut invalid = wire.clone();
         invalid["member_run_head"] = (!member).into();
         assert!(
-            serde_json::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
+            json_wire::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
                 invalid
             )
             .unwrap_err()
@@ -1117,7 +1109,7 @@ fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
         let mut invalid = wire.clone();
         invalid["transform"][0][0] = 2.0.into();
         assert!(
-            serde_json::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
+            json_wire::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
                 invalid
             )
             .unwrap_err()
@@ -1127,12 +1119,14 @@ fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
         if !member {
             let mut invalid = wire;
             invalid["paired_byte_offset"] = 50.into();
-            assert!(serde_json::from_value::<
-                crate::records::sketch_placement::DesignSketchPlacement,
-            >(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("paired_byte_offset"));
+            assert!(
+                json_wire::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
+                    invalid
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("paired_byte_offset")
+            );
         }
     }
 }
@@ -1251,7 +1245,7 @@ fn timeline_frame_rejects_invalid_source_spans() {
         let mut invalid = wire.clone();
         invalid[field] = bad;
         let error =
-            serde_json::from_value::<crate::records::entity_header::DesignFeatureTimeline>(invalid)
+            json_wire::from_value::<crate::records::entity_header::DesignFeatureTimeline>(invalid)
                 .unwrap_err()
                 .to_string();
         assert!(error.contains(diagnostic), "{field}: {error}");
@@ -1324,11 +1318,11 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
     let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":"0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}"#;
     let relation: crate::records::sketch_relations::SketchRelation =
         serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
+    assert_eq!(json_wire::to_string(&relation).unwrap(), wire);
     let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
     invalid["pattern"] = serde_json::Value::Null;
     assert!(
-        serde_json::from_value::<crate::records::sketch_relations::SketchRelation>(invalid)
+        json_wire::from_value::<crate::records::sketch_relations::SketchRelation>(invalid)
             .unwrap_err()
             .to_string()
             .contains("pattern")
@@ -1401,7 +1395,7 @@ fn glyph_transform_preserves_finite_matrix_wire_without_an_affine_restriction() 
     ] {
         let transform: crate::records::sketch_relations::SketchGlyphTransform =
             serde_json::from_str(wire).unwrap();
-        assert_eq!(serde_json::to_string(&transform).unwrap(), wire);
+        assert_eq!(json_wire::to_string(&transform).unwrap(), wire);
         assert_eq!(
             crate::records::sketch_relations::SketchGlyphTransform::try_from(transform.rows())
                 .unwrap(),
@@ -1432,7 +1426,7 @@ fn sketch_text_layout_preserves_flat_wire_pairs_and_independent_references() {
     let alignment = r#","horizontal_alignment":3,"vertical_alignment":7"#;
     let txt = format!("{prefix}{color}{placement},\"raw_bytes\":\"\"}}");
     let decoded: SketchText = serde_json::from_str(&txt).expect("txt placement");
-    assert_eq!(serde_json::to_string(&decoded).unwrap(), txt);
+    assert_eq!(json_wire::to_string(&decoded).unwrap(), txt);
     for placement in ["", placement] {
         for alignment in ["", alignment] {
             for first_reference in ["", ",\"first_reference\":0", ",\"first_reference\":12"] {
@@ -1441,7 +1435,7 @@ fn sketch_text_layout_preserves_flat_wire_pairs_and_independent_references() {
                     let wire = format!("{prefix},\"width_factor\":1.0{color}{placement}{alignment}{first_reference}{second_reference},\"raw_bytes\":\"\"}}");
                     let decoded: SketchText =
                         serde_json::from_str(&wire).expect("textex member pairs");
-                    assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+                    assert_eq!(json_wire::to_string(&decoded).unwrap(), wire);
                 }
             }
         }
@@ -1467,7 +1461,7 @@ fn sketch_text_layout_rejects_partial_placement_and_alignment() {
     ] {
         let mut wire = base.clone();
         wire[field] = value;
-        let error = serde_json::from_value::<SketchText>(wire).unwrap_err();
+        let error = json_wire::from_value::<SketchText>(wire).unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
 }
@@ -1506,8 +1500,8 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
             base["persistent_id"] = json!(4);
             base["closure"] = json!({"selector": 0, "state": 0});
         }
-        let point: SketchPoint = serde_json::from_value(base.clone()).expect("omitted zero flags");
-        assert_eq!(serde_json::to_value(point).unwrap(), base);
+        let point: SketchPoint = json_wire::from_value(base.clone()).expect("omitted zero flags");
+        assert_eq!(json_wire::to_value(point).unwrap(), base);
         for prefix_present_zero in [false, true] {
             let mut wire = base.clone();
             wire["companion"] = json!({"incident_curves": [7, 2]});
@@ -1516,21 +1510,20 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
             } else if prefix_present_zero {
                 continue;
             }
-            let point =
-                serde_json::from_value::<SketchPoint>(wire.clone()).expect("companion wire");
+            let point = json_wire::from_value::<SketchPoint>(wire.clone()).expect("companion wire");
             let companion = point.companion();
             assert_eq!(companion.prefix_present_zero, prefix_present_zero);
             assert_eq!(companion.incident_curves, [7, 2]);
-            assert_eq!(serde_json::to_value(point).unwrap(), wire);
+            assert_eq!(json_wire::to_value(point).unwrap(), wire);
         }
         for depth in [-7.5, 2.5] {
             let mut wire = base.clone();
             wire["depth"] = json!(depth);
-            let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
+            let decoded = json_wire::from_value::<SketchPoint>(wire.clone());
             if count > 1 {
                 let point = decoded.expect("three-dimensional point form");
                 assert_eq!(point.depth(), depth);
-                assert_eq!(serde_json::to_value(point).unwrap(), wire);
+                assert_eq!(json_wire::to_value(point).unwrap(), wire);
             } else {
                 let error = decoded.unwrap_err();
                 assert!(error.to_string().contains("depth"), "{error}");
@@ -1539,11 +1532,11 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
         for genesis in [0, 9, u64::MAX] {
             let mut wire = base.clone();
             wire["entity_genesis"] = json!(genesis);
-            let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
+            let decoded = json_wire::from_value::<SketchPoint>(wire.clone());
             if count == 8 {
                 let point = decoded.expect("version-11 genesis");
                 assert_eq!(point.entity_genesis(), Some(genesis));
-                assert_eq!(serde_json::to_value(point).unwrap(), wire);
+                assert_eq!(json_wire::to_value(point).unwrap(), wire);
             } else {
                 let error = decoded.unwrap_err();
                 assert!(error.to_string().contains("entity_genesis"), "{error}");
@@ -1555,10 +1548,10 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
                 let mut flags = [0; 8];
                 flags[lane] = value;
                 wire["flags"] = json!(cadmpeg_ir::native::bytes::NativeBytes::from(flags));
-                let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
+                let decoded = json_wire::from_value::<SketchPoint>(wire.clone());
                 if lane < count && value == 1 {
                     assert_eq!(
-                        serde_json::to_value(decoded.expect("boolean flag")).unwrap(),
+                        json_wire::to_value(decoded.expect("boolean flag")).unwrap(),
                         wire
                     );
                 } else {
@@ -1610,7 +1603,7 @@ fn empty_reference_runs_have_one_representation() {
         .unwrap(),
     };
     let wire = r#"{"id":"header","byte_offset":10,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
-    assert_eq!(serde_json::to_string(&header).unwrap(), wire);
+    assert_eq!(json_wire::to_string(&header).unwrap(), wire);
     assert_eq!(
         serde_json::from_str::<crate::records::entity_header::DesignEntityHeader>(wire).unwrap(),
         header
@@ -1647,7 +1640,7 @@ fn dimension_locus_pairs_preserve_both_frame_forms_and_reject_a_stray_opaque_ind
             serde_json::from_str::<crate::records::dimensions::DesignDimensionLocusPair>(&wire);
         if valid {
             assert_eq!(
-                serde_json::to_string(&parsed.expect("dimension locus pair")).expect("pair wire"),
+                json_wire::to_string(&parsed.expect("dimension locus pair")).expect("pair wire"),
                 wire
             );
         } else {
@@ -1661,7 +1654,7 @@ fn null_locus_arena_preserves_base_wire_fields_and_order() {
     let entry = r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"null_reference_offset":35,"null_role":0,"null_role_offset":45,"geometry_record_index":41,"geometry_reference_offset":50,"geometry_role":1,"geometry_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#;
     let wire = format!(r#"{{"design_dimension_null_locus_pairs":[{entry}]}}"#);
     let native: crate::native::F3dNative = serde_json::from_str(&wire).unwrap();
-    let encoded = serde_json::to_string(&native).unwrap();
+    let encoded = json_wire::to_string(&native).unwrap();
     assert!(encoded.contains(&format!(r#""design_dimension_null_locus_pairs":[{entry}]"#)));
     let decoded: crate::native::F3dNative = serde_json::from_str(&encoded).unwrap();
     assert_eq!(decoded, native);
@@ -1675,7 +1668,7 @@ fn null_locus_arena_preserves_base_wire_fields_and_order() {
     let arena: Vec<crate::records::dimension_null_locus_wire::Wire> = namespace
         .arena_as("design_dimension_null_locus_pairs")
         .unwrap();
-    assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));
+    assert_eq!(json_wire::to_string(&arena).unwrap(), format!("[{entry}]"));
     assert_eq!(
         crate::native::F3dNative::load_inner(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -1696,7 +1689,7 @@ fn segment_type_guid_preserves_relaxed_text_and_rejects_invalid_text() {
         if guid == "bad" {
             assert!(decoded.is_err());
         } else {
-            assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), wire);
+            assert_eq!(json_wire::to_string(&decoded.unwrap()).unwrap(), wire);
         }
     }
 }
@@ -1716,7 +1709,7 @@ fn material_assignment_sidecar_rejects_invalid_visual_guid() {
         "entity_suffix_offset": 20, "entity_id": "0_985",
         "entity_id_offset": 30, "visual_guid": "not-a-guid", "visual_guid_offset": 40
     });
-    assert!(serde_json::from_value::<super::references::DesignMaterialAssignment>(wire).is_err());
+    assert!(json_wire::from_value::<super::references::DesignMaterialAssignment>(wire).is_err());
 }
 
 #[test]
@@ -1727,8 +1720,8 @@ fn visual_token_wire_preserves_revision_spelling() {
     ] {
         let wire = serde_json::json!(text);
         let token: super::references::DesignVisualToken =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(token).unwrap(), wire);
+            json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(token).unwrap(), wire);
     }
     for text in [
         "",
@@ -1736,7 +1729,7 @@ fn visual_token_wire_preserves_revision_spelling() {
         "abcdef01-2222-3333-4444-555555555555_post2015",
     ] {
         assert!(
-            serde_json::from_value::<super::references::DesignVisualToken>(serde_json::json!(text))
+            json_wire::from_value::<super::references::DesignVisualToken>(serde_json::json!(text))
                 .is_err()
         );
     }
@@ -1747,7 +1740,7 @@ fn sketch_link_sidecar_rejects_present_sentinels() {
     for sense in [-1, super::sketch_links::SKETCH_LINK_SENSE_UNCONSTRAINED] {
         let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
             "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
-        assert!(serde_json::from_value::<super::sketch_links::SketchCurveLink>(wire).is_err());
+        assert!(json_wire::from_value::<super::sketch_links::SketchCurveLink>(wire).is_err());
     }
 }
 
@@ -1757,8 +1750,8 @@ fn sketch_link_sidecar_preserves_all_non_sentinel_senses() {
         let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
             "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
         let record: super::sketch_links::SketchCurveLink =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(record).unwrap(), wire);
     }
 }
 
@@ -1767,7 +1760,7 @@ fn sketch_pattern_count_enforces_both_bounds() {
     for value in [0, 100_001, u32::MAX] {
         assert!(super::sketch_relations::SketchPatternCount::try_from(value).is_err());
         let error =
-            serde_json::from_value::<super::sketch_relations::SketchPatternCount>(value.into())
+            json_wire::from_value::<super::sketch_relations::SketchPatternCount>(value.into())
                 .unwrap_err();
         assert!(error.to_string().contains("evaluated_count"));
     }
@@ -1775,7 +1768,7 @@ fn sketch_pattern_count_enforces_both_bounds() {
         let count = super::sketch_relations::SketchPatternCount::try_from(value).unwrap();
         assert_eq!(count.get(), value);
         assert_eq!(
-            serde_json::to_value(count).unwrap(),
+            json_wire::to_value(count).unwrap(),
             serde_json::json!(value)
         );
     }
@@ -1789,18 +1782,18 @@ fn sketch_identity_sidecar_rejects_zero() {
         "persistent_id": 0, "closure": {"selector": 0, "state": 0},
         "companion": {"incident_curves": []}});
     assert!(
-        serde_json::from_value::<super::sketch_geometry::SketchPoint>(point)
+        json_wire::from_value::<super::sketch_geometry::SketchPoint>(point)
             .unwrap_err()
             .to_string()
             .contains("persistent_id")
     );
     let curve = serde_json::json!({"id": "curve", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "geometry_offset": 0, "primary_id": 0, "secondary_id": 0});
-    assert!(serde_json::from_value::<super::sketch_geometry::SketchCurveIdentity>(curve).is_err());
+    assert!(json_wire::from_value::<super::sketch_geometry::SketchCurveIdentity>(curve).is_err());
     let surface = serde_json::json!({"id": "surface", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "persistent_id": 0, "u_degree": 0, "v_degree": 0,
         "u_knots": [], "v_knots": [], "control_points": []});
-    assert!(serde_json::from_value::<super::sketch_geometry::SketchSurface>(surface).is_err());
+    assert!(json_wire::from_value::<super::sketch_geometry::SketchSurface>(surface).is_err());
 }
 
 #[test]
@@ -1864,19 +1857,19 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         "persistent_id": 1, "closure": {"selector": 0, "state": 0},
         "companion": {"incident_curves": []}});
     let original: super::sketch_geometry::SketchPoint =
-        serde_json::from_value(wire.clone()).unwrap();
+        json_wire::from_value(wire.clone()).unwrap();
     assert!(original.companion().incident_curves.is_empty());
-    assert_eq!(serde_json::to_value(&original).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&original).unwrap(), wire);
     wire["companion"]["incident_curves"] = serde_json::json!([7, 7]);
     assert!(
-        serde_json::from_value::<super::sketch_geometry::SketchPoint>(wire.clone())
+        json_wire::from_value::<super::sketch_geometry::SketchPoint>(wire.clone())
             .unwrap_err()
             .to_string()
             .contains("incident_curves")
     );
     wire.as_object_mut().unwrap().remove("companion");
     assert!(
-        serde_json::from_value::<super::sketch_geometry::SketchPoint>(wire)
+        json_wire::from_value::<super::sketch_geometry::SketchPoint>(wire)
             .unwrap_err()
             .to_string()
             .contains("companion")
@@ -1909,8 +1902,8 @@ fn body_bounds_admit_only_ordered_finite_cache_frames() {
         "record_indices": [11, 12, 13], "record_byte_offsets": [20, 40, 60],
         "value_byte_offsets": [21, 41, 61], "maximum": {"x": 1.0, "y": 0.0, "z": 0.0},
         "minimum": {"x": 0.0, "y": 0.0, "z": 0.0}});
-    let record: super::bodies::DesignBodyBounds = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+    let record: super::bodies::DesignBodyBounds = json_wire::from_value(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(&record).unwrap(), wire);
     for (field, value) in [
         ("entity_suffix", serde_json::json!(u64::MAX)),
         ("entity_suffix", serde_json::json!(u32::MAX)),
@@ -1926,7 +1919,7 @@ fn body_bounds_admit_only_ordered_finite_cache_frames() {
         let mut invalid = wire.clone();
         invalid[field] = value;
         assert!(
-            serde_json::from_value::<super::bodies::DesignBodyBounds>(invalid).is_err(),
+            json_wire::from_value::<super::bodies::DesignBodyBounds>(invalid).is_err(),
             "{field}"
         );
     }
@@ -1942,8 +1935,8 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
     let wire = serde_json::json!({"id": "f3d:Design/BulkStream.dat:design-body-binding#10", "stream": "Design/BulkStream.dat",
         "pair_count": 1, "pair_ordinal": 0, "asm_body_key": 0, "asm_body_key_offset": 10,
         "entity_suffix": 0, "entity_suffix_offset": 18, "blob_name": "BREP.", "blob_name_offset": 19});
-    let record: super::bodies::DesignBodyBinding = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    let record: super::bodies::DesignBodyBinding = json_wire::from_value(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(record).unwrap(), wire);
     for (field, value) in [
         ("pair_count", serde_json::json!(0)),
         ("pair_ordinal", serde_json::json!(1)),
@@ -1955,7 +1948,7 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
         let mut invalid = wire.clone();
         invalid[field] = value;
         assert!(
-            serde_json::from_value::<super::bodies::DesignBodyBinding>(invalid).is_err(),
+            json_wire::from_value::<super::bodies::DesignBodyBinding>(invalid).is_err(),
             "{field}"
         );
     }
@@ -1963,7 +1956,7 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
     overflow["asm_body_key_offset"] = u64::MAX.into();
     overflow["entity_suffix_offset"] = u64::MAX.into();
     overflow["blob_name_offset"] = u64::MAX.into();
-    assert!(serde_json::from_value::<super::bodies::DesignBodyBinding>(overflow).is_err());
+    assert!(json_wire::from_value::<super::bodies::DesignBodyBinding>(overflow).is_err());
 }
 
 mod act_entities;

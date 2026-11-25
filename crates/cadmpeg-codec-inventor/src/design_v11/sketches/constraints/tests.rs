@@ -15,7 +15,7 @@ fn established_constraints_keep_parameter_bindings() {
     use cadmpeg_ir::features::ParameterId;
     let parameter = ParameterId::mint("inventor:design:parameter#radius").expect("parameter");
     let relation = project(
-        &serde_json::from_value(serde_json::json!({
+        &cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id":"inventor:design:constraint#radius", "sketch":sketch_id(),
             "definition": {"kind":"radius", "entity":entity_id("circle"), "parameter":parameter}
         }))
@@ -36,7 +36,7 @@ fn established_constraints_keep_parameter_bindings() {
     }
     .try_into()
     .expect("definition");
-    let source: cadmpeg_ir::sketches::SketchConstraint = serde_json::from_value(serde_json::json!({
+    let source: cadmpeg_ir::sketches::SketchConstraint = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id":"inventor:design:constraint#horizontal", "sketch":sketch_id(), "definition":definition
     })).expect("constraint");
     assert_eq!(
@@ -59,7 +59,7 @@ fn native_dimensions_keep_binding_state_flags_and_operands() {
         ("angle_dimension", Quantity::ANGLE),
         ("axis_distance_dimension", Quantity::LENGTH),
     ] {
-        let source: LegacyConstraint = serde_json::from_value(serde_json::json!({
+        let source: LegacyConstraint = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id":"inventor:design:constraint#native", "sketch":sketch_id(), "orientation": 7,
             "definition": {"kind":"native", "native_kind":kind, "native_state":5, "native_flags":u64::MAX,
                 "native_properties":{"control":""}, "entities":[entity_id("first"),entity_id("second")], "parameter":parameter,

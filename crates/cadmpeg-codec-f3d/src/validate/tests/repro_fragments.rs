@@ -5,7 +5,7 @@ use cadmpeg_ir::{report::check::Check, CadIr};
 
 #[test]
 fn repro_fragment_skips_external_body_keys_and_checks_local_binding_frames() {
-    let binding = serde_json::from_value(serde_json::json!({
+    let binding = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id":"f3d:Design1/BulkStream.dat:design-body-binding#16",
         "stream":"Design1/BulkStream.dat", "pair_count":1, "pair_ordinal":0,
         "asm_body_key":1, "asm_body_key_offset":16,

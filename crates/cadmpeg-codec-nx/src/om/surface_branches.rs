@@ -511,7 +511,10 @@ mod tests {
             let wire = byte.to_string();
             let decoded = serde_json::from_str::<SurfaceFamily>(&wire);
             if matches!(byte, 0x14 | 0x50) {
-                assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), wire);
+                assert_eq!(
+                    cadmpeg_core::serde_erase::json::to_string(&decoded.unwrap()).unwrap(),
+                    wire
+                );
             } else {
                 assert!(decoded.unwrap_err().to_string().contains("family"));
             }
@@ -528,7 +531,10 @@ mod tests {
             "\"ff00010203\"",
         ] {
             let decoded: SurfaceSuffix = serde_json::from_str(wire).unwrap();
-            assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&decoded).unwrap(),
+                wire
+            );
             assert!((1..=5).contains(&decoded.into_vec().len()));
         }
         for wire in ["\"\"", "\"000102030405\""] {

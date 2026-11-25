@@ -34,7 +34,7 @@ fn sweep_bundle(operation: &str, control: Option<&str>) -> Vec<u8> {
             leaves.iter().map(|leaf| format!("%{leaf}")).collect()
         };
         let queries: Vec<_> = compact_queries.iter().map(|compact| {
-            json!({"queryString":format!("query=qCompressed(1.0,{},id);", serde_json::to_string(compact).unwrap())})
+            json!({"queryString":format!("query=qCompressed(1.0,{},id);", cadmpeg_core::serde_erase::json::to_string(compact).unwrap())})
         }).collect();
         let mut sweep = json!({"featureId":"swept-body", "featureType":"sweep", "name":"Sweep", "parameters":[
             {"parameterId":"bodyType","value":"SOLID"},
@@ -228,7 +228,7 @@ fn sweep_lock_queries_retain_native_with_named_loss() {
 
 fn path_query(entity: &str) -> Value {
     let compact = format!("%B5$QueryM5Sa$entityTypeBa$EntityTypeS4$EDGESb$historyTypeS8$CREATIONSb$operationIdB2$IdA1S{:x}$path-sketch.wireOpS9$queryTypeB9$QueryTypeSd$SKETCH_ENTITYSe$sketchEntityIdS{:x}${entity}", "path-sketch.wireOp".len(), entity.len());
-    json!({"queryString":format!("query=qCompressed(1.0,{},id);", serde_json::to_string(&compact).unwrap())})
+    json!({"queryString":format!("query=qCompressed(1.0,{},id);", cadmpeg_core::serde_erase::json::to_string(&compact).unwrap())})
 }
 
 #[test]

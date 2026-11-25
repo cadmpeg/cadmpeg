@@ -303,8 +303,8 @@ mod tests {
         }
 
         assert_eq!(
-            serde_json::to_vec(token).unwrap(),
-            serde_json::to_vec(&old_wire).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(token).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&old_wire).unwrap()
         );
         let expected = serde_json::json!({"id": id, "value": old_wire});
         TOKEN_INTO_WIRE_COUNT.with(|count| count.set(0));

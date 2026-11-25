@@ -901,18 +901,19 @@ mod tests {
         assert_eq!(inline.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
         assert_eq!(inline.data(), Some([1, 2, 3].as_slice()));
 
-        let wire = serde_json::to_value(&inline).expect("serializes");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&inline).expect("serializes");
         assert_eq!(wire["bytes"]["kind"], "inline");
         assert!(wire["bytes"].get("byte_len").is_none());
         assert!(wire["bytes"].get("sha256").is_none());
         assert_eq!(
-            serde_json::from_value::<RetainedSourceRecord>(wire.clone()).expect("round trip"),
+            cadmpeg_core::serde_erase::json::from_value::<RetainedSourceRecord>(wire.clone())
+                .expect("round trip"),
             inline
         );
 
         let mut restated = wire;
         restated["bytes"]["byte_len"] = serde_json::json!(3);
-        let error = serde_json::from_value::<RetainedSourceRecord>(restated)
+        let error = cadmpeg_core::serde_erase::json::from_value::<RetainedSourceRecord>(restated)
             .unwrap_err()
             .to_string();
         assert!(error.contains("byte_len"), "{error}");
@@ -925,13 +926,14 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
         for attach in [false, true] {
-            let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
-                "id": "synthetic:model:unknown#0",
-                "offset": 7,
-                "retention": {"kind": "inline", "data": "AQID"},
-                "links": []
-            }))
-            .unwrap();
+            let unknown: UnknownRecord =
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                    "id": "synthetic:model:unknown#0",
+                    "offset": 7,
+                    "retention": {"kind": "inline", "data": "AQID"},
+                    "links": []
+                }))
+                .unwrap();
             let mut fidelity = fidelity();
             if attach {
                 fidelity
@@ -1014,7 +1016,8 @@ mod tests {
         );
         assert_eq!(
             sidecar.to_canonical_json().expect("the sidecar writes"),
-            serde_json::to_string_pretty(&sidecar).expect("an independent writer writes it too")
+            cadmpeg_core::serde_erase::json::to_string_pretty(&sidecar)
+                .expect("an independent writer writes it too")
         );
 
         let refused =
@@ -1103,7 +1106,7 @@ mod tests {
             report(),
             fidelity(),
         );
-        let mut value = serde_json::to_value(sidecar).unwrap();
+        let mut value = cadmpeg_core::serde_erase::json::to_value(sidecar).unwrap();
         value.as_object_mut().unwrap().remove("report");
 
         let error = DecodeSidecar::from_json(&value.to_string())
@@ -1125,7 +1128,7 @@ mod tests {
             report(),
             fidelity,
         );
-        let mut value = serde_json::to_value(sidecar).unwrap();
+        let mut value = cadmpeg_core::serde_erase::json::to_value(sidecar).unwrap();
         value["fidelity"]["retained_records"]["synthetic:source:record#record"]["bytes"]
             ["byte_len"] = 1.into();
         let json = value.to_string();

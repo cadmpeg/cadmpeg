@@ -17,7 +17,7 @@ fn operation(ir: &CadIr, name: &str) -> Value {
         .iter()
         .find(|feature| feature.name.as_deref() == Some(name))
         .unwrap_or_else(|| panic!("missing feature {name}"));
-    let definition = serde_json::to_value(feature.evaluation.definition())
+    let definition = cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition())
         .unwrap_or_else(|error| panic!("serialize {name}: {error}"));
     definition["value"]["value"].clone()
 }

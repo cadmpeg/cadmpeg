@@ -221,7 +221,7 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = serde_json::to_vec(&table_document(
+    let payload = cadmpeg_core::serde_erase::json::to_vec(&table_document(
         "1",
         &[("P", property_target("Part Number"))],
         &[("wide", "Wide", vec![("P", string_cell("W-1"))])],

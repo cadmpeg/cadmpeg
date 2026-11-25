@@ -71,8 +71,9 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     procedural.edit_definition(|definition| {
         *definition = ProceduralSurfaceDefinition::Sweep(replacement);
     });
-    let json = serde_json::to_value(&*ir).unwrap();
-    let decoded: CadIr = serde_json::from_value(json).expect("document serde admission");
+    let json = cadmpeg_core::serde_erase::json::to_value(&*ir).unwrap();
+    let decoded: CadIr =
+        cadmpeg_core::serde_erase::json::from_value(json).expect("document serde admission");
     assert_eq!(layout(&decoded), layout(ir));
 }
 

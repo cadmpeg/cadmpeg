@@ -74,24 +74,38 @@ fn primitive_cores_require_complete_wire_and_owning_classes() {
         ),
     ] {
         let value = wire(kind, bytes.clone());
-        let core: OperationCore = serde_json::from_value(value.clone()).unwrap();
+        let core: OperationCore =
+            cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
         assert_eq!(core.as_bytes(), bytes);
         assert_eq!(core.boolean_property(), Some((key, mode)));
-        assert_eq!(serde_json::to_value(core).unwrap(), value);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(core).unwrap(),
+            value
+        );
         for end in 0..bytes.len() {
             assert!(
-                serde_json::from_value::<OperationCore>(wire(kind, bytes[..end].to_vec())).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
+                    kind,
+                    bytes[..end].to_vec()
+                ))
+                .is_err(),
                 "{kind} prefix {end}"
             );
         }
         for (offset, replacement) in [(0, 0), (bytes.len() - 3, 7), (bytes.len() - 2, 255)] {
             let mut malformed = bytes.clone();
             malformed[offset] = replacement;
-            assert!(serde_json::from_value::<OperationCore>(wire(kind, malformed)).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(kind, malformed))
+                    .is_err()
+            );
         }
         let mut extra = bytes.clone();
         extra.push(0);
-        assert!(serde_json::from_value::<OperationCore>(wire(kind, extra)).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(kind, extra))
+                .is_err()
+        );
         let mut classes: Vec<_> = [owner, "UGS::OM::MethodicObject", "UGS::CM_BREF_DATA"]
             .into_iter()
             .enumerate()
@@ -124,9 +138,18 @@ fn sphere_inherited_states_require_nonempty_endpoints_and_duplicate_agreement() 
             .unwrap();
         let mut short = bytes.clone();
         short[at + 4] = 1;
-        assert!(serde_json::from_value::<OperationCore>(wire("sphere", short)).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire("sphere", short))
+                .is_err()
+        );
         let mut disagreement = bytes;
         disagreement[at + 5] = 9;
-        assert!(serde_json::from_value::<OperationCore>(wire("sphere", disagreement)).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
+                "sphere",
+                disagreement
+            ))
+            .is_err()
+        );
     }
 }

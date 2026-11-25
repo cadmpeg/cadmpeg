@@ -128,14 +128,14 @@ pub(crate) fn agreement(
         Source::Decoded(baseline) => baseline,
         Source::Image(image) => {
             decoded =
-                crate::decode::decode_for_read_back(image, limits).map_err(
-                    |failure| match failure {
+                crate::decode::decode_for_read_back_cached(image, limits).map_err(|failure| {
+                    match failure {
                         cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
                         other => CodecError::malformed(format_args!(
                             "SLDPRT retained source cannot be decoded: {other}"
                         )),
-                    },
-                )?;
+                    }
+                })?;
             decoded.ir()
         }
     };

@@ -333,7 +333,7 @@ fn mirror_unique_match_preserves_zero_one_and_many() {
 #[test]
 fn a_mirror_without_a_body_or_face_group_takes_its_ordinal_one_role_0x10_group_as_seed() {
     let group = |record_index: u32, ordinal: u32, role: u64, members: &[u32]| {
-        serde_json::from_value::<
+        cadmpeg_core::serde_erase::json::from_value::<
             crate::records::topology::construction::DesignConstructionOperandGroup,
         >(serde_json::json!({
             "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),

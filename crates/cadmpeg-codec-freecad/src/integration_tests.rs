@@ -569,7 +569,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
     let drifted = decode(rewrite_schema_version(CORE_OPERATIONS, "5"));
 
     let model = |result: &cadmpeg_ir::codec::DecodeResult| {
-        serde_json::to_string(&(&result.ir().geometry, &result.ir().model))
+        cadmpeg_core::serde_erase::json::to_string(&(&result.ir().geometry, &result.ir().model))
             .expect("serialize model")
     };
     assert_eq!(model(&drifted), model(&baseline));

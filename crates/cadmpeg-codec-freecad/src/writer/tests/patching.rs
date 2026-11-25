@@ -40,13 +40,15 @@ fn entries_follow_the_ledger_order_and_unplaced_entries_follow_them() {
         )
     };
     let span = |id: &str, name: &str, start: u64| {
-        serde_json::from_value::<crate::native::ArchiveSpan>(serde_json::json!({
-            "id": id,
-            "start": start,
-            "end": start + 4,
-            "role": "local-signature",
-            "entry": name,
-        }))
+        cadmpeg_core::serde_erase::json::from_value::<crate::native::ArchiveSpan>(
+            serde_json::json!({
+                "id": id,
+                "start": start,
+                "end": start + 4,
+                "role": "local-signature",
+                "entry": name,
+            }),
+        )
         .expect("ledger span fixture")
     };
     let entries = [
@@ -287,7 +289,7 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
     .expect_err("constructor refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": ""});
-    let error = serde_json::from_value::<crate::native::EntryRecord>(wire)
+    let error = cadmpeg_core::serde_erase::json::from_value::<crate::native::EntryRecord>(wire)
         .expect_err("native entry refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";

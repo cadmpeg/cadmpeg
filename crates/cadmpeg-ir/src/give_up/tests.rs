@@ -255,7 +255,7 @@ fn feature(name: &str, operation: serde_json::Value) -> Feature {
         name: None,
         suppressed: None,
         definition: FeatureDefinition {
-            operation: serde_json::from_value(operation).unwrap(),
+            operation: cadmpeg_core::serde_erase::json::from_value(operation).unwrap(),
             assembly: None,
             refine: None,
             fuzzy_tolerance: None,
@@ -463,8 +463,10 @@ fn a_pick_of_a_lost_record_with_a_native_name_states_its_target_native() {
         BTreeSet::from([plane.id.as_str().to_owned()])
     );
     let native =
-        serde_json::to_value(crate::design::selection::PickTarget::Native { within: None })
-            .unwrap();
+        cadmpeg_core::serde_erase::json::to_value(crate::design::selection::PickTarget::Native {
+            within: None,
+        })
+        .unwrap();
     assert_eq!(
         plane_picks(&ir.design.features[0]),
         json!([{"target": native, "native": native_name("Plane1")}])
@@ -478,7 +480,8 @@ fn an_unordered_selection_loses_only_the_pick_of_a_lost_record() {
     let base = unresolved("base");
     let other = unresolved("other");
     let picks: Vec<crate::design::selection::Picked> =
-        serde_json::from_value(json!([datum_pick(&base), datum_pick(&other)])).unwrap();
+        cadmpeg_core::serde_erase::json::from_value(json!([datum_pick(&base), datum_pick(&other)]))
+            .unwrap();
     let picks =
         crate::design::selection::Members::<_, crate::design::selection::Unordered>::new(picks)
             .unwrap();
@@ -514,7 +517,7 @@ fn an_expression_that_names_a_lost_parameter_states_it_source() {
     use crate::design::expr::{Expression, ExpressionDialect};
     use crate::design::parameter::{DesignParameter, ParameterDefinition};
     let parameter = |name: &str, definition: serde_json::Value| -> DesignParameter {
-        serde_json::from_value(json!({
+        cadmpeg_core::serde_erase::json::from_value(json!({
             "id": format!("test:design:parameter#{name}"),
             "scope": "test:model:definition#part",
             "kind": {"kind": "integer"},
@@ -554,11 +557,12 @@ fn an_expression_that_names_a_lost_parameter_states_it_source() {
 fn a_procedural_curve_on_a_lost_surface_states_its_definition_unknown() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let surface = ir.geometry.surfaces[0].id.as_str().to_owned();
-    let spine: crate::geometry::ProceduralCurve = serde_json::from_value(json!({
-        "id": "test:geometry:procedural-curve#spine",
-        "definition": {"kind": "blend_spine", "blend_surface": surface}
-    }))
-    .unwrap();
+    let spine: crate::geometry::ProceduralCurve =
+        cadmpeg_core::serde_erase::json::from_value(json!({
+            "id": "test:geometry:procedural-curve#spine",
+            "definition": {"kind": "blend_spine", "blend_surface": surface}
+        }))
+        .unwrap();
     let owner = ir.geometry.curves.last_mut().unwrap();
     let crate::geometry::CurveGeometry::Solved(solved) = owner.geometry.clone() else {
         panic!("the unit cube's curves are solved");
@@ -591,7 +595,7 @@ fn a_name_of_a_lost_feature_keeps_its_native_name_or_is_released() {
     ir.design.features = vec![base.clone()];
     let generated =
         json!({"kind": "generated", "value": {"kind": "face", "feature": base.id.as_str()}});
-    ir.design.names = serde_json::from_value(json!([
+    ir.design.names = cadmpeg_core::serde_erase::json::from_value(json!([
         [{"kind": "face", "value": "test:geometry:face#1"},
          {"name": generated, "native": native_name("Face1")}],
         [{"kind": "face", "value": "test:geometry:face#2"}, {"name": generated}]
@@ -660,11 +664,12 @@ fn the_schema_states_each_definition_a_partial_form_keys_on() {
 #[test]
 fn a_construction_goes_with_the_carrier_that_owns_it() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let spine: crate::geometry::ProceduralCurve = serde_json::from_value(json!({
-        "id": "test:geometry:procedural-curve#spine",
-        "definition": {"kind": "unknown"}
-    }))
-    .unwrap();
+    let spine: crate::geometry::ProceduralCurve =
+        cadmpeg_core::serde_erase::json::from_value(json!({
+            "id": "test:geometry:procedural-curve#spine",
+            "definition": {"kind": "unknown"}
+        }))
+        .unwrap();
     let owner = ir.geometry.curves.last_mut().unwrap();
     let crate::geometry::CurveGeometry::Solved(solved) = owner.geometry.clone() else {
         panic!("the unit cube's curves are solved");

@@ -196,7 +196,7 @@ fn part_in_order(
         .take(revolves.len())
         .map(|name| id(name))
         .collect::<Vec<_>>();
-    ir.model.sketch_entities = serde_json::from_value(Value::Array(
+    ir.model.sketch_entities = cadmpeg_core::serde_erase::json::from_value(Value::Array(
         lines
             .iter()
             .map(|line| {
@@ -209,7 +209,7 @@ fn part_in_order(
             .collect(),
     ))
     .unwrap();
-    ir.model.sketches = serde_json::from_value(json!([{
+    ir.model.sketches = cadmpeg_core::serde_erase::json::from_value(json!([{
         "id": SKETCH, "name": "Sketch1",
         "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
@@ -236,7 +236,7 @@ fn part_in_order(
         } else {
             continue;
         };
-        let definition = serde_json::from_value(definition).unwrap();
+        let definition = cadmpeg_core::serde_erase::json::from_value(definition).unwrap();
         feature.evaluation.edit(|current, _| *current = definition);
     }
     (ir, native)
@@ -314,12 +314,12 @@ fn a_full_turn_about_a_centreline_picks_it_and_binds_its_angle() {
         panic!("the profile names its pick");
     };
     assert!(matches!(picks.as_slice(),
-        [pick] if pick.target == PickTarget::Sketch(serde_json::from_value(json!(SKETCH)).unwrap())));
+        [pick] if pick.target == PickTarget::Sketch(cadmpeg_core::serde_erase::json::from_value(json!(SKETCH)).unwrap())));
     assert_eq!(axis_pick(revolve), (Some(entity("axis")), None));
     assert_eq!(
         revolve.axis.as_ref().unwrap().resolved,
         Some(
-            serde_json::from_value::<AxisValue>(json!({
+            cadmpeg_core::serde_erase::json::from_value::<AxisValue>(json!({
             "origin": {"x": 0.0, "y": 0.0, "z": 0.0}, "direction": {"x": 0.0, "y": 1.0, "z": 0.0}}))
             .unwrap()
         )
@@ -727,7 +727,7 @@ fn a_feature_profile_picks_the_sketch_of_that_feature() {
         panic!("the profile names its pick");
     };
     assert!(matches!(picks.as_slice(),
-        [pick] if pick.target == PickTarget::Sketch(serde_json::from_value(json!(SKETCH)).unwrap())));
+        [pick] if pick.target == PickTarget::Sketch(cadmpeg_core::serde_erase::json::from_value(json!(SKETCH)).unwrap())));
 }
 
 #[test]

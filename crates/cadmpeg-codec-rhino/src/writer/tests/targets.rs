@@ -86,7 +86,7 @@ fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
 fn inherit_writes_a_source_that_records_no_dialect_as_the_default() {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "rhino"},
             "attributes": {},
         }))

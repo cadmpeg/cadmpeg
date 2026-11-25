@@ -110,12 +110,14 @@ fn assembly_decode_states_one_root_with_local_and_virtual_body_owners() {
         );
     }
     assert!(ir.design.scopes.is_empty());
-    assert!(!serde_json::to_string(ir)
+    assert!(!cadmpeg_core::serde_erase::json::to_string(ir)
         .expect("serialize IR references")
         .contains(PART_ROOT));
-    assert!(!serde_json::to_string(decoded.source_fidelity())
-        .expect("serialize source fidelity references")
-        .contains(PART_ROOT));
+    assert!(
+        !cadmpeg_core::serde_erase::json::to_string(decoded.source_fidelity())
+            .expect("serialize source fidelity references")
+            .contains(PART_ROOT)
+    );
     assert_eq!(
         decoded.source_fidelity().decode_digest,
         Sha256Digest::digest(&source)

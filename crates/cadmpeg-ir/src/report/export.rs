@@ -82,8 +82,9 @@ enum ExportIdentity {
 mod schema_tests {
     #[test]
     fn the_native_export_payload_schema_requires_its_target() {
-        let schema = serde_json::to_value(schemars::schema_for!(super::ExportIdentity))
-            .expect("export identity schema serializes");
+        let schema =
+            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(super::ExportIdentity))
+                .expect("export identity schema serializes");
         let native = schema["oneOf"]
             .as_array()
             .expect("export identity schema is a tagged union")

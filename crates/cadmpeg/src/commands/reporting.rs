@@ -409,8 +409,9 @@ pub(crate) fn write_report_text(
     let mut bytes = if value["command"].as_str() == Some("check")
         && value["check_report"]["findings"].is_array()
     {
-        value["input_path"] = serde_json::to_value(std::fs::canonicalize(input)?)?;
-        serde_json::to_vec_pretty(&value)?
+        value["input_path"] =
+            cadmpeg_core::serde_erase::json::to_value(std::fs::canonicalize(input)?)?;
+        cadmpeg_core::serde_erase::json::to_vec_pretty(&value)?
     } else {
         text.as_bytes().to_vec()
     };
@@ -508,19 +509,19 @@ mod tests {
     #[test]
     fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
         assert_eq!(
-            serde_json::to_value(FidelitySummary::None).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::None).unwrap(),
             serde_json::Value::Null
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::OnlyLeft).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyLeft).unwrap(),
             serde_json::json!({ "present": "left_only" })
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::OnlyRight).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyRight).unwrap(),
             serde_json::json!({ "present": "right_only" })
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::Both(FidelityDiff {
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
             }))
@@ -535,7 +536,7 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::Both(FidelityDiff {
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
             }))

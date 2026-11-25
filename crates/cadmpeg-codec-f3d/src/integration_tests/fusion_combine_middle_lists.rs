@@ -21,7 +21,7 @@ fn combine_operation(bytes: &[u8]) -> (Value, Vec<String>) {
         .iter()
         .map(|loss| loss.code.local_code().to_owned())
         .collect::<Vec<_>>();
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize the IR");
     let mut combines = ir["native"]["f3d"]["design_parameter_scopes"]
         .as_array()
         .expect("scope list")

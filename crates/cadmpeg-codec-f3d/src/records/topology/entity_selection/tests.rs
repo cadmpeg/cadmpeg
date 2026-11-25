@@ -34,11 +34,12 @@ fn entity_selection_borrowed_wire_matches_owned_wire_bytes() {
             wire["secondary_identity_offset"] = offset.into();
             wire["next_record_index"] = 11.into();
         }
-        let record: DesignEntitySelectionOperand = serde_json::from_value(wire).unwrap();
+        let record: DesignEntitySelectionOperand =
+            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
         let owned = super::DesignEntitySelectionOperandWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -46,21 +47,31 @@ fn entity_selection_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn entity_selection_serialization_form_validates_wire() {
     let mut wire = entity_selection_wire_for_borrowed();
-    let default: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(default).unwrap(), wire);
+    let default: DesignEntitySelectionOperand =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(default).unwrap(),
+        wire
+    );
 
     wire["serialization_form"] = 1.into();
-    let operand: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(operand).unwrap(), wire);
+    let operand: DesignEntitySelectionOperand =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(operand).unwrap(),
+        wire
+    );
 
     wire["serialization_form"] = 2.into();
-    assert!(serde_json::from_value::<DesignEntitySelectionOperand>(wire).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignEntitySelectionOperand>(wire).is_err()
+    );
 }
 
 #[test]
 fn entity_selection_native_retained_limit_refuses_before_clone() {
     let record: DesignEntitySelectionOperand =
-        serde_json::from_value(entity_selection_wire_for_borrowed()).unwrap();
+        cadmpeg_core::serde_erase::json::from_value(entity_selection_wire_for_borrowed()).unwrap();
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
         &record,
         "design_entity_selection_operands",
@@ -91,8 +102,8 @@ fn loft_legacy_body_carrier_borrowed_wire_matches_owned_wire_bytes() {
     ] {
         let owned = super::DesignLoftLegacyBodyCarrierSerde::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -120,7 +131,7 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         let value: super::DesignLoftLegacyBodyCarrier =
             serde_json::from_str(&wire).expect("loft carrier");
         assert_eq!(
-            serde_json::to_string(&value).expect("loft carrier wire"),
+            cadmpeg_core::serde_erase::json::to_string(&value).expect("loft carrier wire"),
             wire
         );
     }
@@ -147,20 +158,25 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         let mut invalid = base.clone();
         invalid[field] = value;
         assert!(
-            serde_json::from_value::<super::DesignLoftLegacyBodyCarrier>(invalid)
-                .expect_err("invalid derived field")
-                .to_string()
-                .contains(field)
+            cadmpeg_core::serde_erase::json::from_value::<super::DesignLoftLegacyBodyCarrier>(
+                invalid
+            )
+            .expect_err("invalid derived field")
+            .to_string()
+            .contains(field)
         );
     }
     for ordinal in [0, 255, 256, u32::MAX] {
         let mut wire = base.clone();
         wire["opaque_index"] = ordinal.into();
         wire["repeated_opaque_index"] = ordinal.into();
-        let parsed = serde_json::from_value::<super::DesignLoftLegacyBodyCarrier>(wire.clone());
+        let parsed = cadmpeg_core::serde_erase::json::from_value::<
+            super::DesignLoftLegacyBodyCarrier,
+        >(wire.clone());
         if ordinal == 255 {
             assert_eq!(
-                serde_json::to_value(parsed.expect("maximum ordinal")).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(parsed.expect("maximum ordinal"))
+                    .unwrap(),
                 wire
             );
         } else {
@@ -216,9 +232,13 @@ fn paired_entity_selection_retains_independent_successor_index() {
         wire["secondary_identity_offset"] = 337.into();
         wire["next_byte_offset"] = 345.into();
         wire["next_record_index"] = next_record_index.into();
-        let operand: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
+        let operand: DesignEntitySelectionOperand =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(operand.next_record_index(), next_record_index);
-        assert_eq!(serde_json::to_value(&operand).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&operand).unwrap(),
+            wire
+        );
         rejects_changed_fields::<DesignEntitySelectionOperand>(
             wire,
             &[

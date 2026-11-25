@@ -60,11 +60,18 @@ fn graph_wire() -> Value {
 #[test]
 fn aggregate_admission_preserves_native_json() {
     let wire = graph_wire();
-    let graph: DisplayJtGraph = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&graph).unwrap(), wire);
-    let namespace: NativeNamespace = serde_json::from_value(wire.clone()).unwrap();
+    let graph: DisplayJtGraph = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&graph).unwrap(),
+        wire
+    );
+    let namespace: NativeNamespace =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(namespace.admit::<DisplayJtGraph>().unwrap(), graph);
-    assert_eq!(serde_json::to_value(&namespace).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&namespace).unwrap(),
+        wire
+    );
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert(cadmpeg_ir::codec_id!("nx"), namespace);
     assert!(validate_native(&ir).is_empty());
@@ -74,7 +81,7 @@ fn aggregate_admission_preserves_native_json() {
 fn graph_rejection_names_the_unresolved_identity() {
     let mut wire = graph_wire();
     wire["display_jt_segments"][0]["document"] = json!("nx:display-jt:document#missing");
-    let raw: DisplayJtGraphWire = serde_json::from_value(wire).unwrap();
+    let raw: DisplayJtGraphWire = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     let error = DisplayJtGraph::from_wire(raw).unwrap_err();
     assert!(
         matches!(error, cadmpeg_ir::native::NativeConvertError::InvalidCollection(message)
@@ -183,7 +190,8 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
     ] {
         let mut wire = graph_wire();
         *wire.pointer_mut(path).unwrap() = value;
-        let raw: DisplayJtGraphWire = serde_json::from_value(wire.clone()).unwrap();
+        let raw: DisplayJtGraphWire =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert!(
             DisplayJtGraph::try_from(raw)
                 .unwrap_err()
@@ -192,13 +200,13 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
             "{path}"
         );
         assert!(
-            serde_json::from_value::<DisplayJtGraph>(wire.clone())
+            cadmpeg_core::serde_erase::json::from_value::<DisplayJtGraph>(wire.clone())
                 .unwrap_err()
                 .to_string()
                 .contains(field),
             "{path}"
         );
-        let namespace: NativeNamespace = serde_json::from_value(wire).unwrap();
+        let namespace: NativeNamespace = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
         assert!(
             namespace
                 .admit::<DisplayJtGraph>()
@@ -236,9 +244,11 @@ fn compressed_element_wire_rejects_invalid_lengths_and_tail_hash() {
     ] {
         let mut wire = graph_wire();
         *wire.pointer_mut(path).unwrap() = value;
-        assert!(serde_json::from_value::<DisplayJtGraph>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains(field));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DisplayJtGraph>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field)
+        );
     }
 }

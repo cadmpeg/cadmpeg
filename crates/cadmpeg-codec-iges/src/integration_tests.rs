@@ -906,8 +906,8 @@ fn repeated_decode_is_canonical() {
         second.ir().to_canonical_json().unwrap()
     );
     assert_eq!(
-        serde_json::to_vec(first.report()).unwrap(),
-        serde_json::to_vec(second.report()).unwrap()
+        cadmpeg_core::serde_erase::json::to_vec(first.report()).unwrap(),
+        cadmpeg_core::serde_erase::json::to_vec(second.report()).unwrap()
     );
     assert_eq!(first.source_fidelity(), second.source_fidelity());
 }

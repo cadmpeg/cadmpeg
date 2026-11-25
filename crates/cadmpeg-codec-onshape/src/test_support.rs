@@ -31,7 +31,8 @@ pub(crate) fn fixture(name: &str) -> Vec<u8> {
         .compression_method(zip::CompressionMethod::Deflated);
     for (path, value) in members.as_object().unwrap() {
         zip.start_file(path, options).unwrap();
-        zip.write_all(&serde_json::to_vec(value).unwrap()).unwrap();
+        zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(value).unwrap())
+            .unwrap();
     }
     zip.start_file("partstudios/studio/export.step", options)
         .unwrap();

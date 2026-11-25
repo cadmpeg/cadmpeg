@@ -132,7 +132,7 @@ fn native_feature(key: u32, operation: FeatureOperation) -> Feature {
 }
 
 fn operation(key: u32, kind: &serde_json::Value) -> Operation {
-    serde_json::from_value(json!({
+    cadmpeg_core::serde_erase::json::from_value(json!({
         "id": operation_id(key).as_str(),
         "kind": kind,
         "native_kind": {"codec": "test", "value": {"kind": "text", "value": "op"}},
@@ -156,7 +156,7 @@ fn machining(key: u32) -> Operation {
 }
 
 fn setup(key: u32, steps: &[u32]) -> Setup {
-    serde_json::from_value(json!({
+    cadmpeg_core::serde_erase::json::from_value(json!({
         "id": setup_id(key).as_str(),
         "scope": definition().as_str(),
         "steps": steps
@@ -372,7 +372,7 @@ fn an_unrelated_design_edit_leaves_the_process_alone() {
 fn a_choice_selected_by_a_dependent_parameter_loses_its_value() {
     let mut document = machined();
     document.process.operations[1].cycle = Some(
-        serde_json::from_value(json!({
+        cadmpeg_core::serde_erase::json::from_value(json!({
             "kind": {"value": {"kind": "drill"}, "parameters": [process_parameter_id(1).as_str()]},
         }))
         .unwrap(),

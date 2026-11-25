@@ -93,9 +93,10 @@ fn renamed(value: &mut Value, kinds: &[&str], suffix: &str) {
 
 /// `records` with `suffix` appended to each identity of a kind in `kinds`.
 fn copied<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str], suffix: &str) -> Vec<T> {
-    let mut value = serde_json::to_value(records).expect("the records serialize");
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(records).expect("the records serialize");
     renamed(&mut value, kinds, suffix);
-    serde_json::from_value(value).expect("the renamed records deserialize")
+    cadmpeg_core::serde_erase::json::from_value(value).expect("the renamed records deserialize")
 }
 
 /// `records` with each identity of a kind in `kinds` renamed for the second

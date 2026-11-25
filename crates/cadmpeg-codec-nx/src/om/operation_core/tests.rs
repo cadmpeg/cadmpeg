@@ -69,13 +69,17 @@ fn complete_native_cores_admit_each_boolean_mode_and_exact_scalar_width() {
         for null in [false, true] {
             let bytes = cylinder(tuple, null);
             let value = wire("cylinder", bytes.clone());
-            let core: OperationCore = serde_json::from_value(value.clone()).unwrap();
+            let core: OperationCore =
+                cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
             assert_eq!(core.as_bytes(), bytes);
             assert_eq!(
                 core.boolean_property(),
                 Some(("cylinder.boolean_mode", expected))
             );
-            assert_eq!(serde_json::to_value(&core).unwrap(), value);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(&core).unwrap(),
+                value
+            );
             let record = Record {
                 id: "nx:feature:core#0",
                 core,
@@ -86,7 +90,7 @@ fn complete_native_cores_admit_each_boolean_mode_and_exact_scalar_width() {
             );
             for end in 0..bytes.len() {
                 assert!(
-                    serde_json::from_value::<OperationCore>(wire(
+                    cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
                         "cylinder",
                         bytes[..end].to_vec()
                     ))
@@ -96,16 +100,32 @@ fn complete_native_cores_admit_each_boolean_mode_and_exact_scalar_width() {
             }
             let mut extra = bytes.clone();
             extra.push(0);
-            assert!(serde_json::from_value::<OperationCore>(wire("cylinder", extra)).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
+                    "cylinder", extra
+                ))
+                .is_err()
+            );
             let mut broken = bytes;
             broken[6 + 4] = 0xff;
-            assert!(serde_json::from_value::<OperationCore>(wire("cylinder", broken)).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
+                    "cylinder", broken
+                ))
+                .is_err()
+            );
         }
     }
     let mut disagreement = cylinder([2, 0, 0], false);
     let at = disagreement.len() - 11; // mode precedes four zeros and four terminal bytes.
     disagreement[at..at + 3].copy_from_slice(&[3, 0, 0]);
-    assert!(serde_json::from_value::<OperationCore>(wire("cylinder", disagreement)).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
+            "cylinder",
+            disagreement
+        ))
+        .is_err()
+    );
 }
 
 #[test]
@@ -113,10 +133,14 @@ fn object_motion_null_terminal_bounds_the_following_lane_and_checks_registry() {
     for null in [false, true] {
         let bytes = motion(null);
         let value = wire("move_object", bytes.clone());
-        let core: OperationCore = serde_json::from_value(value.clone()).unwrap();
+        let core: OperationCore =
+            cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
         assert_eq!(core.as_bytes(), bytes);
         assert_eq!(core.boolean_property(), None);
-        assert_eq!(serde_json::to_value(core).unwrap(), value);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(core).unwrap(),
+            value
+        );
         let mut classes: Vec<_> = [
             "UGS::ModlFeature::MoveObjectParms",
             "UGS::Modl::MotionOptions",
@@ -147,7 +171,11 @@ fn object_motion_null_terminal_bounds_the_following_lane_and_checks_registry() {
             classes[3].name = "UGS::OTHER";
             assert!(read(&classes).is_none());
             assert!(
-                serde_json::from_value::<OperationCore>(wire("move_object", following)).is_err()
+                cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
+                    "move_object",
+                    following
+                ))
+                .is_err()
             );
             classes[3].name = "UGS::OM::MethodicObject";
             classes[1].name = "UGS::OTHER";
@@ -159,8 +187,11 @@ fn object_motion_null_terminal_bounds_the_following_lane_and_checks_registry() {
         });
         for end in 0..bytes.len() {
             assert!(
-                serde_json::from_value::<OperationCore>(wire("move_object", bytes[..end].to_vec()))
-                    .is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(
+                    "move_object",
+                    bytes[..end].to_vec()
+                ))
+                .is_err(),
                 "prefix {end}"
             );
         }

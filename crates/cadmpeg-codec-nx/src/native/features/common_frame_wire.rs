@@ -337,10 +337,14 @@ mod tests {
     fn common_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
         let json = COMMON.replace("\"id\":\"common\"", "\"id\":\"nx:feature:common#0\"");
         let record: FeatureOperationCommonFrame = serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&CommonFrameWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            json.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&CommonFrameWire::from(record.clone()))
+                .unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -352,10 +356,14 @@ mod tests {
     fn terminal_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
         let json = r#"{"id":"nx:feature:terminal#0","operation_record":"record","local_ordinal":128,"raw_local_ordinal":"8080","object_index":null,"raw_object_index":"ff","source_offset":100,"object_index_source_offset":104}"#;
         let record: FeatureOperationTerminalFrame = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&TerminalFrameWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            json.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&TerminalFrameWire::from(record.clone()))
+                .unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -366,7 +374,10 @@ mod tests {
     #[test]
     fn common_frame_preserves_exact_wire_and_checks_every_derived_column() {
         let frame: FeatureOperationCommonFrame = serde_json::from_str(COMMON).unwrap();
-        assert_eq!(serde_json::to_string(&frame).unwrap(), COMMON);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&frame).unwrap(),
+            COMMON
+        );
         for (field, value) in [
             ("indices", serde_json::json!([0, 4098, 0])),
             ("marker", serde_json::json!("010101")),
@@ -386,9 +397,10 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(COMMON).unwrap();
             wire[field] = value;
-            let error = serde_json::from_value::<FeatureOperationCommonFrame>(wire)
-                .unwrap_err()
-                .to_string();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<FeatureOperationCommonFrame>(wire)
+                    .unwrap_err()
+                    .to_string();
             assert!(
                 error.contains(field) || (field == "indices" && error.contains("index")),
                 "{error}"
@@ -419,8 +431,12 @@ mod tests {
         wire["object_index"] = serde_json::json!(0);
         wire["raw_object_index"] = serde_json::json!("00");
         wire["data_block"] = serde_json::json!("block");
-        let frame: FeatureOperationCommonFrame = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&frame).unwrap(), wire);
+        let frame: FeatureOperationCommonFrame =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&frame).unwrap(),
+            wire
+        );
     }
 
     #[test]
@@ -430,14 +446,19 @@ mod tests {
                 r#"{{"id":"terminal","operation_record":"record","local_ordinal":128,"raw_local_ordinal":"8080","object_index":{value},"raw_object_index":{raw},"source_offset":100,"object_index_source_offset":104}}"#
             );
             let frame: FeatureOperationTerminalFrame = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&frame).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&frame).unwrap(),
+                wire
+            );
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid["object_index_source_offset"] = serde_json::json!(103);
             assert!(
-                serde_json::from_value::<FeatureOperationTerminalFrame>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("object_index_source_offset")
+                cadmpeg_core::serde_erase::json::from_value::<FeatureOperationTerminalFrame>(
+                    invalid
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("object_index_source_offset")
             );
         }
     }

@@ -29,23 +29,26 @@ fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
                 .map(crate::units::FiniteVector::get),
             Some(range)
         );
-        assert_eq!(serde_json::to_value(&general).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<PcurveMetadata>(wire).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(&general).unwrap(),
+            wire
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(wire).unwrap(),
             general
         );
         let inline =
             PcurveInlineForm::try_new(false, [true, false, true, false], range, 2.0).unwrap();
         assert_eq!(inline.uv_offset().get(), range);
         let metadata = PcurveMetadata::AsmInline { form: inline };
-        let wire = serde_json::to_value(&metadata).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&metadata).unwrap();
         assert_eq!(
-            serde_json::from_value::<PcurveMetadata>(wire).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(wire).unwrap(),
             metadata
         );
     }
     assert_eq!(
-        serde_json::to_value(PcurveMetadata::default()).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(PcurveMetadata::default()).unwrap(),
         serde_json::json!({"kind": "general", "form": {}})
     );
     let error = serde_json::from_str::<PcurveMetadata>(r#"{"kind": "general"}"#)
@@ -190,7 +193,7 @@ fn pcurve_metadata_wire_rejects_invalid_ranges_and_incomplete_inline_forms() {
         serde_json::json!({"kind": "asm_inline", "form": {"wrapper_reversed": false, "native_tail_flags": [false, false, false, false], "uv_offset": [0.0, 1.0]}}),
         serde_json::json!({"kind": "asm_inline", "form": {"wrapper_reversed": false, "native_tail_flags": [false, false, false, false], "uv_offset": [0.0, null], "fit_tolerance": 0.0}}),
     ] {
-        assert!(serde_json::from_value::<PcurveMetadata>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(wire).is_err());
     }
     assert!(serde_json::from_str::<PcurveInlineForm>(r#"{"wrapper_reversed":false,"native_tail_flags":[false,false,false,false],"uv_offset":[null,1.0],"fit_tolerance":0.0}"#).is_err());
     assert!(
@@ -241,27 +244,43 @@ fn pcurve_fit_tolerance_wire_rejects_negative_values_and_keeps_numeric_tokens() 
             "uv_offset": [1.0, 0.0],
             "fit_tolerance": value,
         });
-        let general_form: PcurveGeneralForm = serde_json::from_value(general.clone()).unwrap();
-        let inline_form: PcurveInlineForm = serde_json::from_value(inline.clone()).unwrap();
-        assert_eq!(serde_json::to_value(general_form).unwrap(), general);
-        assert_eq!(serde_json::to_value(inline_form).unwrap(), inline);
+        let general_form: PcurveGeneralForm =
+            cadmpeg_core::serde_erase::json::from_value(general.clone()).unwrap();
+        let inline_form: PcurveInlineForm =
+            cadmpeg_core::serde_erase::json::from_value(inline.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(general_form).unwrap(),
+            general
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(inline_form).unwrap(),
+            inline
+        );
         for (source, mut form) in [("general", general), ("asm_inline", inline)] {
             let wire = serde_json::json!({"kind": source, "form": form});
-            let metadata: PcurveMetadata = serde_json::from_value(wire.clone()).unwrap();
+            let metadata: PcurveMetadata =
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
             assert_eq!(
                 metadata
                     .fit_tolerance()
                     .map(crate::geometry::legacy_cache::FitTolerance::get),
                 Some(value)
             );
-            assert_eq!(serde_json::to_value(metadata).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(metadata).unwrap(),
+                wire
+            );
             form["fit_tolerance"] = serde_json::json!(-1.0);
             let wire = serde_json::json!({"kind": source, "form": form.clone()});
-            assert!(serde_json::from_value::<PcurveMetadata>(wire).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(wire).is_err());
             if form.get("native_tail_flags").is_some() {
-                assert!(serde_json::from_value::<PcurveInlineForm>(form).is_err());
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<PcurveInlineForm>(form).is_err()
+                );
             } else {
-                assert!(serde_json::from_value::<PcurveGeneralForm>(form).is_err());
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<PcurveGeneralForm>(form).is_err()
+                );
             }
         }
     }
@@ -272,7 +291,7 @@ fn pcurve_metadata_states_its_source_and_denies_the_other_arm_s_keys() {
     let cross = serde_json::json!({
         "kind": "general", "form": {"native_tail_flags": [true, true, true, true]}
     });
-    let error = serde_json::from_value::<PcurveMetadata>(cross)
+    let error = cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(cross)
         .unwrap_err()
         .to_string();
     assert!(error.contains("native_tail_flags"), "{error}");
@@ -280,7 +299,7 @@ fn pcurve_metadata_states_its_source_and_denies_the_other_arm_s_keys() {
     let partial = serde_json::json!({
         "kind": "asm_inline", "form": {"wrapper_reversed": true}
     });
-    let error = serde_json::from_value::<PcurveMetadata>(partial)
+    let error = cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(partial)
         .unwrap_err()
         .to_string();
     assert!(error.contains("native_tail_flags"), "{error}");
@@ -294,11 +313,13 @@ fn pcurve_metadata_states_its_source_and_denies_the_other_arm_s_keys() {
         },
         "metadata": {"kind": "general", "form": {}},
     });
-    serde_json::from_value::<crate::geometry::pcurve::Pcurve>(pcurve.clone()).unwrap();
+    cadmpeg_core::serde_erase::json::from_value::<crate::geometry::pcurve::Pcurve>(pcurve.clone())
+        .unwrap();
     pcurve["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::geometry::pcurve::Pcurve>(pcurve)
-        .unwrap_err()
-        .to_string();
+    let error =
+        cadmpeg_core::serde_erase::json::from_value::<crate::geometry::pcurve::Pcurve>(pcurve)
+            .unwrap_err()
+            .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 }
 
@@ -341,10 +362,10 @@ fn pcurve_uv_offsets_are_independent_of_trim_intervals() {
     let general = PcurveMetadata::General { form };
     assert_eq!(general.uv_offset(), Some(offset));
     assert_eq!(general.parameter_range().unwrap().get(), [0.0, 1.0]);
-    let wire = serde_json::to_value(&general).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&general).unwrap();
     assert_eq!(wire["form"]["uv_offset"], serde_json::json!([3.0, -2.0]));
     assert_eq!(
-        serde_json::from_value::<PcurveMetadata>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(wire).unwrap(),
         general
     );
     for value in [
@@ -353,7 +374,7 @@ fn pcurve_uv_offsets_are_independent_of_trim_intervals() {
         serde_json::json!([0.0, null]),
     ] {
         let wire = serde_json::json!({"kind": "general", "form":{"uv_offset": value}});
-        let error = serde_json::from_value::<PcurveMetadata>(wire)
+        let error = cadmpeg_core::serde_erase::json::from_value::<PcurveMetadata>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("uv_offset"), "{error}");
