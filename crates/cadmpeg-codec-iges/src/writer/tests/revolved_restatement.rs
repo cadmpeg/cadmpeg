@@ -15,6 +15,7 @@ use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, SphereSurface, TorusSurface,
 };
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -1025,6 +1026,61 @@ fn sphere_lune_with_pole_uses(sweep: f64) -> CadIr {
     ir
 }
 
+/// The parameter-space start and end of each parameter curve use on the
+/// loop of the one face of `read`, in loop order: each coedge's uses, then
+/// the uses of the vertex uses anchored after it.
+fn ordered_uses(read: &CadIr) -> Vec<[Point2; 2]> {
+    let geometry = &read.geometry;
+    let face = &geometry.faces[0];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    let ends = |pcurve_use: &PcurveUse| {
+        let pcurve = geometry
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+            .expect("the parameter curve reads back");
+        let range = pcurve_use.parameter_range.map_or_else(
+            || {
+                pcurve
+                    .parameter_range()
+                    .expect("a bounded parameter curve")
+                    .get()
+            },
+            DirectedParameterRange::endpoints,
+        );
+        range.map(|parameter| {
+            pcurve_uv(&ctx, &pcurve.geometry, parameter)
+                .expect("a parameter point")
+                .get()
+        })
+    };
+    let mut ordered = Vec::new();
+    for loop_ in face
+        .loops
+        .stated()
+        .filter_map(|id| geometry.loops.iter().find(|loop_| loop_.id == *id))
+    {
+        for coedge_id in loop_.coedges() {
+            let coedge = geometry
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *coedge_id)
+                .expect("the loop coedge reads back");
+            ordered.extend(coedge.pcurves.iter().map(ends));
+            for vertex_use in loop_
+                .anchored_vertex_uses()
+                .iter()
+                .filter(|vertex_use| vertex_use.after == *coedge_id)
+            {
+                ordered.extend(vertex_use.pcurves.iter().map(ends));
+            }
+        }
+    }
+    ordered
+}
+
 #[test]
 fn a_reflected_sphere_lune_moves_each_pole_use_to_the_coedge_that_arrives_at_its_pole() {
     let mirror = Stretch {
@@ -1032,8 +1088,17 @@ fn a_reflected_sphere_lune_moves_each_pole_use_to_the_coedge_that_arrives_at_its
         shift: [1.0, -2.0, 0.5],
     };
     for stretch in [MIRROR_STRETCH, mirror] {
-        let (points, ends) = boundary(&read_back(sphere_lune_with_pole_uses(SECTOR), stretch));
-        assert_parameter_loop_closes(&ends);
+        let read = read_back(sphere_lune_with_pole_uses(SECTOR), stretch);
+        let uses = ordered_uses(&read);
+        assert_eq!(uses.len(), 4, "{uses:?}");
+        for (position, [_, end]) in uses.iter().enumerate() {
+            let [next, _] = uses[(position + 1) % uses.len()];
+            assert!(
+                (next.u - end.u).abs() <= JOINED && (next.v - end.v).abs() <= JOINED,
+                "use {position} ends at {end:?} and the next starts at {next:?}: {uses:?}"
+            );
+        }
+        let (points, _) = boundary(&read);
         for point in points.into_iter().map(|point| stretch.source(point)) {
             let radius = point.x.hypot(point.y).hypot(point.z);
             assert!(

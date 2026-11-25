@@ -2211,13 +2211,15 @@ fn brep_entities(
         .values()
         .flat_map(stored_pcurve_ids)
         .collect::<BTreeSet<_>>();
-    stored_pcurves.extend(
-        topology
-            .loops
-            .values()
-            .flat_map(|loop_| loop_.vertex_pcurves())
-            .map(|pcurve_use| pcurve_use.pcurve.as_str()),
-    );
+    stored_pcurves.extend(topology.loops.values().flat_map(|loop_| {
+        let face = index.faces.get(loop_.face.as_str()).map(|face| face.sense);
+        loop_
+            .vertex_pcurves()
+            .filter(move |pcurve_use| {
+                face.is_none_or(|face| pole_use_entity(face, pcurve_use) == CarrierEntity::Stored)
+            })
+            .map(|pcurve_use| pcurve_use.pcurve.as_str())
+    }));
 
     let mut pcurve_indices = BTreeMap::new();
     for (pcurve_id, pcurve) in topology.pcurves {
@@ -2485,15 +2487,14 @@ fn brep_entities(
                             vertex_use.pcurves.len()
                         )
                         .map_err(CodecError::malformed)?;
-                        for pcurve_use in pole_use_order(&vertex_use.pcurves, face.sense) {
-                            write!(
-                                parameters,
-                                ",{},{}",
-                                isoparametric_flag(pcurve_use, index),
-                                reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
-                            )
-                            .map_err(CodecError::malformed)?;
-                        }
+                        write_pole_uses(
+                            &mut parameters,
+                            index,
+                            &vertex_use.pcurves,
+                            face.sense,
+                            &pcurve_indices,
+                            &mut entities,
+                        )?;
                     }
                 }
                 if let Some((vertex, pcurves)) = loop_.singular_vertex() {
@@ -2507,15 +2508,14 @@ fn brep_entities(
                         pcurves.len()
                     )
                     .map_err(CodecError::malformed)?;
-                    for pcurve_use in pole_use_order(pcurves, face.sense) {
-                        write!(
-                            parameters,
-                            ",{},{}",
-                            isoparametric_flag(pcurve_use, index),
-                            reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
-                        )
-                        .map_err(CodecError::malformed)?;
-                    }
+                    write_pole_uses(
+                        &mut parameters,
+                        index,
+                        pcurves,
+                        face.sense,
+                        &pcurve_indices,
+                        &mut entities,
+                    )?;
                 }
                 parameters.push(';');
                 let index = entities.len();
@@ -2691,6 +2691,55 @@ fn pole_use_order(uses: &[PcurveUse], face: Sense) -> Vec<&PcurveUse> {
         Sense::Forward => uses.iter().collect(),
         Sense::Reversed => uses.iter().rev().collect(),
     }
+}
+
+/// The entity that a pole-vertex use on a face of sense `face` references.
+/// Type 508 states no direction for a pole use: its parameter curve runs in
+/// the written direction of the loop.
+fn pole_use_entity(face: Sense, pcurve_use: &PcurveUse) -> CarrierEntity {
+    if takes_reversed_copy(Sense::Forward, face, pcurve_use) {
+        CarrierEntity::ReversedCopy
+    } else {
+        CarrierEntity::Stored
+    }
+}
+
+/// Writes the parameter-curve references of one pole-vertex use. A reversed
+/// copy is appended to `entities`.
+fn write_pole_uses(
+    parameters: &mut String,
+    records: &TopologyIndex<'_>,
+    uses: &[PcurveUse],
+    face: Sense,
+    pcurve_indices: &BTreeMap<String, usize>,
+    entities: &mut Vec<Entity>,
+) -> Result<(), CodecError> {
+    for pcurve_use in pole_use_order(uses, face) {
+        let id = pcurve_use.pcurve.as_str();
+        let entity = match pole_use_entity(face, pcurve_use) {
+            CarrierEntity::Stored => pcurve_indices.get(id).copied(),
+            CarrierEntity::ReversedCopy => {
+                let pcurve = records.pcurves.get(id).copied().ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "IGES pole-vertex use references missing pcurve {id}"
+                    ))
+                })?;
+                entities.push(oriented_pcurve_entity(records, pcurve)?);
+                Some(entities.len() - 1)
+            }
+        }
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("IGES pcurve {id} has no stored entity"))
+        })?;
+        write!(
+            parameters,
+            ",{},{}",
+            isoparametric_flag(pcurve_use, records),
+            reference_marker(entity)
+        )
+        .map_err(CodecError::malformed)?;
+    }
+    Ok(())
 }
 
 /// The ring positions of a loop in Type 508 edge-use order.
