@@ -283,12 +283,105 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
             );
         }
     }
+    check_cage_shells(ir, findings);
+}
+
+/// A subdivision cage belongs to at most one shell, and a shell whose
+/// `members` name a cage names nothing else, holds no face, and is the only
+/// shell of its body's only region (§5.6).
+fn check_cage_shells(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let cage_owners = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            for cage in shell.subds() {
+                add(cage.as_str(), ());
+            }
+        }
+    });
+    for cage in &ir.geometry.subds {
+        if cage_owners.match_count(cage.id.as_str()) > 1 {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                Some(cage.id.as_str()),
+                crate::rule!(
+                    "topology.cage-belongs-more-one-shell",
+                    "subdivision cage belongs to more than one shell"
+                ),
+            );
+        }
+    }
+    let face_shells = BorrowedIdentities::build(|add| {
+        for face in &ir.geometry.faces {
+            add(face.shell.as_str(), ());
+        }
+    });
+    let region_shells = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            add(shell.region.as_str(), ());
+        }
+    });
+    let region_bodies = BorrowedIdentities::build(|add| {
+        for region in &ir.geometry.regions {
+            add(region.id.as_str(), region.body.as_str());
+        }
+    });
+    let body_regions = BorrowedIdentities::build(|add| {
+        for region in &ir.geometry.regions {
+            add(region.body.as_str(), ());
+        }
+    });
+    for shell in &ir.geometry.shells {
+        if shell.subds().next().is_none() {
+            continue;
+        }
+        let owner = Some(shell.id.as_str());
+        if shell.members.len() > 1 {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-holds-other-members",
+                    "shell holding a subdivision cage holds other members"
+                ),
+            );
+        }
+        if face_shells.contains(shell.id.as_str()) {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-holds-faces",
+                    "shell holding a subdivision cage holds faces"
+                ),
+            );
+        }
+        let only_region = region_bodies
+            .get(shell.region.as_str())
+            .is_none_or(|body| body_regions.match_count(body) == 1);
+        if region_shells.match_count(shell.region.as_str()) > 1 || !only_region {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-not-only-shell-body",
+                    "shell holding a subdivision cage is not the only shell of its body's only region"
+                ),
+            );
+        }
+    }
 }
 
 /// Each stored child list names children whose parent pointer names its
 /// owner, and each child is listed by the owner its parent pointer names: a
 /// region's `shells`, a face's `loops`, and a loop ring's `coedges` (D29). A
-/// shell's `members` name each wire edge and free vertex once.
+/// shell's `members` name each wire edge, free vertex, and cage once.
 pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &mut Vec<Finding>) {
     let shell_regions = BorrowedIdentities::build(|add| {
         for shell in &ir.geometry.shells {
@@ -379,9 +472,9 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
         }
         let mut seen = BorrowedIdentities::new();
         for member in shell
-            .wire_edges()
-            .map(crate::ids::EdgeId::as_str)
-            .chain(shell.free_vertices().map(crate::ids::VertexId::as_str))
+            .members
+            .iter()
+            .map(crate::topology::ShellMember::as_str)
         {
             if seen.insert(member, ()).is_some() {
                 record_finding(
