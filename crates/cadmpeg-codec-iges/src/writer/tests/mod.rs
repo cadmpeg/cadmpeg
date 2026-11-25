@@ -65,6 +65,7 @@ use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod cages;
 mod closed_edge_range;
 mod design_content;
 mod encode;

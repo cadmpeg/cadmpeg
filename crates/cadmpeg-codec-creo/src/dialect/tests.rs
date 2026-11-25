@@ -277,7 +277,7 @@ fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
         cadmpeg_ir::report::loss::LossTaxonomy::SourceDialectUnverified
     );
     // The shared taxonomy carries a strict floor of `Warning`, so
-    // `DecodeMode::Strict` now means "classified layouts only" for Creo.
+    // a pinned decode strictness admits classified layouts only for Creo.
     assert_eq!(
         note.code.strict_floor(),
         Some(cadmpeg_ir::report::Severity::Warning)

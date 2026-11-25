@@ -71,6 +71,11 @@ impl From<anyhow::Error> for ApplicationError {
         {
             return cadmpeg_core::CodecError::ResourceLimit(*limit).into();
         }
+        if let Some(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)) =
+            error.downcast_ref::<cadmpeg_ir::codec::write::EncodeError>()
+        {
+            return cadmpeg_core::CodecError::ResourceLimit(*limit).into();
+        }
         Self::Operational(error)
     }
 }
@@ -101,6 +106,21 @@ impl From<cadmpeg_core::CodecError> for ApplicationError {
                 stage: RefusalStage::Decode,
             }
             .into(),
+            error => Self::Operational(error.into()),
+        }
+    }
+}
+
+impl From<cadmpeg_ir::codec::write::EncodeError> for ApplicationError {
+    fn from(error: cadmpeg_ir::codec::write::EncodeError) -> Self {
+        match error {
+            cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) => {
+                ConversionRefusal::ResourceLimit {
+                    limit,
+                    stage: RefusalStage::Plan,
+                }
+                .into()
+            }
             error => Self::Operational(error.into()),
         }
     }

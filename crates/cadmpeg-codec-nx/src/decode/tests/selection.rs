@@ -16,7 +16,7 @@ use cadmpeg_core::decode::ResourceDimension;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::decode::tests::options_in;
+use crate::decode::tests::options_at;
 use crate::test_support::extract_streams;
 use crate::test_support::test_bytes::put_f64;
 use crate::test_support::test_bytes::put_ref;
@@ -66,7 +66,7 @@ use std::{collections::BTreeSet, io::Cursor};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
@@ -1137,10 +1137,7 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
 #[test]
 fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
-    let opts = options_in(
-        DecodeMode::Salvage,
-        cadmpeg_core::decode::DecodeDepth::Container,
-    );
+    let opts = options_at(cadmpeg_core::decode::DecodeDepth::Container);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report().geometry_transferred());
     assert!(result.report().container_only());
@@ -1151,10 +1148,7 @@ fn container_only_preserves_streams_without_geometry() {
 #[test]
 fn container_only_does_not_decode_bounded_object_model_records() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
-    let opts = options_in(
-        DecodeMode::Salvage,
-        cadmpeg_core::decode::DecodeDepth::Container,
-    );
+    let opts = options_at(cadmpeg_core::decode::DecodeDepth::Container);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
 
     assert_eq!(result.ir().entity_count(), 0);
@@ -1337,10 +1331,7 @@ fn container_only_retains_typed_saved_toggle_payload() {
         NxCodec
             .decode(
                 &mut Cursor::new(file),
-                &options_in(
-                    DecodeMode::Salvage,
-                    cadmpeg_core::decode::DecodeDepth::Container,
-                ),
+                &options_at(cadmpeg_core::decode::DecodeDepth::Container),
             )
             .unwrap(),
     );

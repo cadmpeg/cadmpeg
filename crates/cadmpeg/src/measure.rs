@@ -58,17 +58,6 @@ pub(crate) struct MeasureCommand<'a> {
     pub(crate) reject_empty: bool,
 }
 
-impl MeasureCommand<'_> {
-    /// The measurement's strictness.
-    fn strictness(&self) -> Strictness {
-        if self.reject_empty {
-            Strictness::default().with_code("measure:output.empty")
-        } else {
-            Strictness::default()
-        }
-    }
-}
-
 /// Where the measured document came from.
 #[derive(Serialize)]
 struct InputSummary<'a> {
@@ -118,7 +107,7 @@ pub(crate) fn measure(
                 anyhow!("--tsv prints one table; select one of faces, edges or surfaces").into(),
             );
         }
-        let loaded = loader::load_artifact(inputs, command.path, command.options, command.forced)?;
+        let loaded = loader::load_artifact(inputs, command.path, &command.options, command.forced)?;
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
         }
@@ -131,18 +120,12 @@ pub(crate) fn measure(
                 options: &command.options,
                 profile: command.profile,
                 density: command.density,
+                reject_empty: command.reject_empty,
             },
             &loaded,
             &selection,
             geometry_transferred,
         )?;
-        if let Some(entry) = command.strictness().first_refused(report.losses(), false) {
-            return Err(ConversionRefusal::StrictMeasureRejected {
-                decode_report: loaded.decode_report().cloned(),
-                loss: Box::new(report.losses()[entry].clone()),
-            }
-            .into());
-        }
         for loss in report.losses() {
             eprintln!(
                 "{}: {}: {}",
@@ -188,6 +171,19 @@ struct Session<'a> {
     options: &'a DecodeOptions,
     profile: WorkProfile,
     density: Option<cadmpeg_measure::Density>,
+    /// Refuse a measurement that charges `measure:output.empty`.
+    reject_empty: bool,
+}
+
+impl Session<'_> {
+    /// The measurement's strictness.
+    fn strictness(self) -> Strictness {
+        if self.reject_empty {
+            Strictness::default().with_code("measure:output.empty")
+        } else {
+            Strictness::default()
+        }
+    }
 }
 
 /// Refuse a document that holds no geometry, for `diff --geometry`.
@@ -225,6 +221,7 @@ fn run(
         MeasureOptions {
             work: session.profile,
             density: session.density,
+            strictness: session.strictness(),
         },
     )
     .measure(&ctx, selection);
@@ -233,6 +230,13 @@ fn run(
         Ok(report) => report,
         Err(MeasureError::Codec(error)) => {
             return Err(ApplicationError::from(error).at_stage(RefusalStage::Measure))
+        }
+        Err(MeasureError::StrictRejected { report, entry }) => {
+            return Err(ConversionRefusal::StrictMeasureRejected {
+                decode_report: loaded.decode_report().cloned(),
+                loss: Box::new(report.losses()[entry].clone()),
+            }
+            .into())
         }
         Err(MeasureError::OutsideScope { entity }) => {
             return Err(anyhow!("{entity} is not in the --body scope").into())
