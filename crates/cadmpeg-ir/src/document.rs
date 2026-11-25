@@ -2074,6 +2074,7 @@ impl Topology {
         self.shells.push(cage_shell);
         self.regions
             .push(Region::new(region, body.clone(), vec![shell]));
+        let index = self.bodies.len();
         self.bodies.push(Body {
             id: body,
             kind,
@@ -2084,7 +2085,7 @@ impl Topology {
             unstated: None,
             native_ref: None,
         });
-        self.bodies.last_mut().expect("the body was just pushed")
+        &mut self.bodies[index]
     }
 
     /// Returns the unique surface that carries `construction`.
