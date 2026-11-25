@@ -2141,6 +2141,40 @@ impl<'a> DecodeContext<'a> {
         Ok(false)
     }
 
+    /// Removes the links this expansion added to source records that point at entities the
+    /// expansion omitted again. A link to an omitted entity cannot resolve, and the dangling
+    /// link made IR admission reject the whole instance.
+    fn drop_expansion_links(
+        &mut self,
+        omitted: &std::collections::HashSet<String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let Some(undo) = &mut self.expansion_undo else {
+            return Ok(());
+        };
+        let mut dropped = Vec::new();
+        undo.links.retain(|(record, link)| {
+            let omit = omitted.contains(link);
+            if omit {
+                dropped.push((*record, link.clone()));
+            }
+            !omit
+        });
+        dropped.sort_unstable();
+        for group in dropped.chunk_by(|left, right| left.0 == right.0) {
+            let Some((record, _)) = group.first() else {
+                continue;
+            };
+            if let Some((_, target)) = self.session.unknown_links_mut(*record)? {
+                target.retain(|link| {
+                    group
+                        .binary_search_by(|(_, omitted)| omitted.as_str().cmp(link))
+                        .is_err()
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Removes the links and outcomes a rejected expansion added. Links were
     /// only inserted, each once, into sorted lists, so removing them restores
     /// every touched record exactly.
@@ -2366,6 +2400,20 @@ impl<'a> DecodeContext<'a> {
             let id = curve.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let procedural_owners: Vec<(cadmpeg_ir::ids::SurfaceId, String)> = ir.geometry.surfaces
+            [before.arena_len::<Surface>()..]
+            .iter()
+            .filter_map(|surface| {
+                Some((
+                    surface.id.clone(),
+                    surface
+                        .geometry
+                        .procedural_construction()?
+                        .as_str()
+                        .to_owned(),
+                ))
+            })
+            .collect();
         for surface in before
             .added_mut::<Surface>(ir)
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
@@ -2468,12 +2516,37 @@ impl<'a> DecodeContext<'a> {
         if ir.geometry.procedural_curves.len() > procedural_curve_start
             || ir.geometry.procedural_surfaces.len() > procedural_surface_start
         {
+            // A rigid placement keeps revolution and sum surfaces what they are: move their
+            // axis or base point and re-attach them. Other constructions are not re-derived;
+            // their exact solved carrier is retained instead.
+            let kept = if transform.is_proper_rigid() {
+                let mut kept = Vec::new();
+                for procedure in &ir.geometry.procedural_surfaces[procedural_surface_start..] {
+                    let Some((owner, _)) = procedural_owners
+                        .iter()
+                        .find(|(_, id)| id == procedure.id.as_str())
+                    else {
+                        continue;
+                    };
+                    if let Some(moved) = place_procedural_surface(procedure, transform) {
+                        kept.push((owner.clone(), moved));
+                    }
+                }
+                kept
+            } else {
+                Vec::new()
+            };
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
+            let mut omitted = std::collections::HashSet::new();
             for procedure in &ir.geometry.procedural_curves[procedural_curve_start..] {
                 annotations.remove_entity(procedure.id.as_str());
+                omitted.insert(procedure.id.as_str().to_owned());
             }
             for procedure in &ir.geometry.procedural_surfaces[procedural_surface_start..] {
-                annotations.remove_entity(procedure.id.as_str());
+                if !kept.iter().any(|(_, moved)| moved.id == procedure.id) {
+                    annotations.remove_entity(procedure.id.as_str());
+                    omitted.insert(procedure.id.as_str().to_owned());
+                }
             }
             self.annotations = annotations.build();
             ir.geometry
@@ -2482,7 +2555,21 @@ impl<'a> DecodeContext<'a> {
             ir.geometry
                 .procedural_surfaces
                 .truncate(procedural_surface_start);
-            self.report.phase_warnings.push(format_args!("instance: transformed procedural definition omitted; exact solved carrier retained"));
+            let mut admission =
+                cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
+            for (owner, moved) in kept {
+                let id = moved.id.as_str().to_owned();
+                if admission
+                    .add_surface(&mut ir.geometry, &owner, moved)?
+                    .is_err()
+                {
+                    omitted.insert(id);
+                }
+            }
+            if !omitted.is_empty() {
+                self.report.phase_warnings.push(format_args!("instance: transformed procedural definition omitted; exact solved carrier retained"));
+                self.drop_expansion_links(&omitted)?;
+            }
         }
         for id in derived_ids {
             annotate_derived(&mut self.annotations, &id);
@@ -6371,6 +6458,43 @@ fn transform_curve(
         }
     };
     Ok(())
+}
+
+/// Moves a revolution or sum surface by a proper rigid transform: the directrix and base
+/// curves are copies the instance already moved, so only the axis or base point is left.
+fn place_procedural_surface(
+    procedure: &ProceduralSurface,
+    transform: Transform,
+) -> Option<ProceduralSurface> {
+    use ProceduralSurfaceDefinition as Definition;
+    let mut definition = procedure.definition().clone();
+    match &mut definition {
+        Definition::Revolution(revolution) => {
+            revolution.set_axis_origin(transform.apply_point(revolution.axis_origin().get())?);
+            revolution
+                .set_axis_direction(transform.apply_unit_normal(revolution.axis_direction())?);
+        }
+        Definition::AxisRevolution(revolution) => {
+            revolution.set_axis_origin(transform.apply_point(revolution.axis_origin().get())?);
+            revolution
+                .set_axis_direction(transform.apply_unit_normal(revolution.axis_direction())?);
+        }
+        Definition::Sum(sum) => {
+            let base = sum.basepoint().get();
+            let moved = transform
+                .apply_point(Point3::new(base.x, base.y, base.z))?
+                .get();
+            sum.set_basepoint(cadmpeg_ir::features::geometry::FiniteVector3::new(
+                cadmpeg_ir::math::Vector3::new(moved.x, moved.y, moved.z),
+            )?);
+        }
+        _ => return None,
+    }
+    Some(ProceduralSurface::new(
+        procedure.id.clone(),
+        definition,
+        procedure.record_bounds(),
+    ))
 }
 
 fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), ReferenceFailure> {

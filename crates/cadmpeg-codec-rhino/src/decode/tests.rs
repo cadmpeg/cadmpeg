@@ -1814,3 +1814,51 @@ fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 mod brep;
+
+#[test]
+fn rigid_placement_moves_revolution_axes() {
+    use super::place_procedural_surface;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction;
+    use cadmpeg_ir::geometry::ProceduralSurface;
+    use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
+    use cadmpeg_ir::transform::Transform;
+
+    // A quarter turn about z, then a shift of (10, 0, 5).
+    let rigid = Transform::affine([
+        [0.0, -1.0, 0.0, 10.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 5.0],
+    ])
+    .expect("finite rows");
+    assert!(rigid.is_proper_rigid());
+    let curve = CurveId::mint("rhino:object:curve#directrix").expect("valid identity");
+
+    let revolution = AxisRevolutionSurfaceConstruction::try_new(
+        curve.clone(),
+        Point3::new(1.0, 0.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("axis");
+    let surface = ProceduralSurface::new(
+        ProceduralSurfaceId::mint("rhino:object:procedural-surface#rev").expect("valid identity"),
+        ProceduralSurfaceDefinition::AxisRevolution(revolution),
+        None,
+    );
+    let placed = place_procedural_surface(&surface, rigid).expect("revolution is placed");
+    let ProceduralSurfaceDefinition::AxisRevolution(moved) = placed.definition() else {
+        panic!("still an axis revolution");
+    };
+    let origin = moved.axis_origin().get();
+    assert!(
+        (origin.x - 10.0).abs() < 1e-12
+            && (origin.y - 1.0).abs() < 1e-12
+            && (origin.z - 5.0).abs() < 1e-12
+    );
+    let axis = moved.axis_direction();
+    let direction = axis.as_raw();
+    assert!(
+        direction.x.abs() < 1e-12 && (direction.y - 1.0).abs() < 1e-12 && direction.z.abs() < 1e-12
+    );
+    assert_eq!(placed.id, surface.id);
+}
