@@ -42,6 +42,9 @@ use smbh::encode_smbh;
 pub(super) struct Generated {
     pub(super) coverage: ArenaDispositions,
     pub(super) losses: Vec<LossNote>,
+    /// Whether the file holds the current geometry in the geometry-true
+    /// form where the request names the history-true form.
+    pub(super) geometry_true: bool,
 }
 
 /// Write a source-less F3D archive of everything in `target` the generator
@@ -77,9 +80,24 @@ pub(super) fn write_new(
     }
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
+    let geometry_true = missing_states == MissingStateForm::HistoryTrue
+        && reduction.drops_neutral_design()
+        && !reduction.ir().geometry.bodies.is_empty()
+        && design::plan(
+            reduction.ir(),
+            MissingStateForm::HistoryTrue,
+            &design::Fallback::default(),
+        )
+        .ok()
+        .flatten()
+        .is_some_and(|design| design.rolls_back());
     let mut losses = reduction.finish();
     losses.extend(design_losses);
-    Ok(Generated { coverage, losses })
+    Ok(Generated {
+        coverage,
+        losses,
+        geometry_true,
+    })
 }
 
 /// Whether `stage` writes `target` (one body of the document, without its

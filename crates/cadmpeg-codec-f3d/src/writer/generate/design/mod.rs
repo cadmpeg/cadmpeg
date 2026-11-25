@@ -72,9 +72,9 @@ const MM_PER_CM: f64 = 10.0;
 
 #[cfg(test)]
 thread_local! {
-    /// Makes the next attempt that writes the design scope on this thread
-    /// fail in the design module.
-    static FAIL_NEXT_PLAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The number of next attempts that write the design scope on this
+    /// thread and fail in the design module.
+    static FAIL_NEXT_PLAN: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -143,11 +143,15 @@ fn requested_item_failure() -> Option<cadmpeg_core::CodecError> {
     })
 }
 
-/// The failure [`FAIL_NEXT_PLAN`] requests, once.
+/// The failure [`FAIL_NEXT_PLAN`] requests, once per requested attempt.
 #[cfg(test)]
 pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
-    FAIL_NEXT_PLAN.with(|fail| fail.replace(false)).then(|| {
-        cadmpeg_core::CodecError::NotImplemented("a test failure of the design module".into())
+    FAIL_NEXT_PLAN.with(|fail| {
+        let left = fail.get().checked_sub(1)?;
+        fail.set(left);
+        Some(cadmpeg_core::CodecError::NotImplemented(
+            "a test failure of the design module".into(),
+        ))
     })
 }
 
@@ -247,6 +251,9 @@ pub(super) struct NeutralDesign<'a> {
     /// B-rep stream (f3d.md §3.1, "Records of a design whose timeline holds
     /// no body").
     body_less: bool,
+    /// Whether the timeline marker stands before a feature of the scope:
+    /// the history-true form then differs from the geometry-true form.
+    rolls_back: bool,
     losses: Vec<LossNote>,
 }
 
@@ -354,18 +361,16 @@ pub(super) fn plan<'a>(
         .iter()
         .position(|planned| rolled_back.contains(planned.feature))
         .unwrap_or(sketches.items.len());
+    let writes_rolled =
+        |feature: &FeatureId| rolled_items.iter().any(|item| item.feature() == feature);
     let written_marker = features.get(rolled).copied().map(|before| Marker {
         before,
-        first_item: match rolled_items.first() {
-            Some(first) if first.after() <= marker => first.feature() == before,
-            _ => sketches.items.get(marker).is_some_and(|planned| {
+        first_item: writes_rolled(before)
+            || sketches.items.get(marker).is_some_and(|planned| {
                 planned.feature == before
                     && !sketches.planes.iter().any(|plane| plane.first == marker)
             }),
-        },
     });
-    let writes_rolled =
-        |feature: &FeatureId| rolled_items.iter().any(|item| item.feature() == feature);
     let unstated = |feature: &FeatureId| match &body_less {
         Some(Some((decided, reason))) if *decided == feature => Some(reason.as_str()),
         _ => None,
@@ -454,6 +459,7 @@ pub(super) fn plan<'a>(
         marker,
         base_feature,
         body_less: body_less.is_some(),
+        rolls_back: written_marker.is_some(),
         losses,
     }))
 }
@@ -542,6 +548,11 @@ impl NeutralDesign<'_> {
     /// Base Feature's names and history.
     pub(super) fn has_bodies(&self) -> bool {
         self.base_feature.has_item()
+    }
+
+    /// Whether the timeline marker stands before a feature of the scope.
+    pub(super) fn rolls_back(&self) -> bool {
+        self.rolls_back
     }
 
     /// Whether the design writes the roster of a timeline: a design with a

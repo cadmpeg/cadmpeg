@@ -344,7 +344,7 @@ impl<'a> Swept<'a> {
     pub(super) fn tail(&self, out: &mut DesignRecords, start: u32) -> Result<(), CodecError> {
         let scope = self.scope;
         let ([current, preceding], flag) = if self.rolled_back {
-            ([0, 0], 1)
+            ([u32::MAX, u32::MAX], 1)
         } else {
             ([HEAD_STATE, ROOT_STATE], 0)
         };
