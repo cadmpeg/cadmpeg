@@ -153,36 +153,31 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
     assert!(result.ir().geometry.vertices.is_empty());
 }
 
-fn assert_writes_an_empty_file(ir: &CadIr) {
-    let generated = super::super::synthesize(ir, IgesVersion::V5_3)
-        .expect("a model with nothing to transfer writes an empty file");
-    assert!(
-        generated
-            .losses
-            .iter()
-            .any(|loss| cadmpeg_ir::report::strictness::code_name(&loss.code)
-                == "export:output.empty"),
-        "{:?}",
-        generated.losses
-    );
-}
-
 #[test]
-fn support_only_surface_export_writes_an_empty_file() {
+fn support_only_surface_export_writes_the_empty_file() {
     let mut ir = rectangle();
     ir.geometry.surfaces[0].source_object = Some(support_association());
-    assert_writes_an_empty_file(&ir);
+    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    assert!(synthesis.counts.is_empty());
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty"));
 }
 
 #[test]
-fn support_only_point_export_writes_an_empty_file() {
+fn support_only_point_export_writes_the_empty_file() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
         cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    assert_writes_an_empty_file(&ir);
+    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty"));
 }
 
 #[test]
@@ -246,7 +241,7 @@ fn support_curve_without_topology_is_withheld_with_loss() {
 }
 
 #[test]
-fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
+fn dependent_iges_curve_is_withheld_and_the_empty_file_is_written() {
     let mut file = crate::test_support::test_curves_and_surfaces::line_file(0);
     let directory = file
         .chunks_exact_mut(81)
@@ -258,7 +253,12 @@ fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
         .unwrap();
     assert_eq!(decoded.ir().geometry.curves.len(), 1);
     assert!(decoded.ir().geometry.edges.is_empty());
-    assert_writes_an_empty_file(decoded.ir());
+    let synthesis = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+    assert!(!synthesis.counts.contains_key("110_line"));
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty"));
 }
 
 #[test]

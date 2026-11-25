@@ -68,7 +68,7 @@
             "strict_floor": "warning"
           }
         },
-        "message": "the IGES output holds no entity: the document states no record the IGES writer writes",
+        "message": "the written IGES file holds no entity: the document states no geometry this writer encodes",
         "severity": "warning"
       },
       {

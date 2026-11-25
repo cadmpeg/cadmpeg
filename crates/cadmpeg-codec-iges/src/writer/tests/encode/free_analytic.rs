@@ -7,7 +7,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::strictness::code_name;
 use cadmpeg_ir::CadIr;
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -16,7 +15,7 @@ use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_f
 use crate::{IgesCodec, IgesVersion};
 
 #[test]
-fn a_model_of_free_analytic_surfaces_writes_an_empty_file_and_names_them() {
+fn encode_writes_a_model_of_free_analytic_surfaces_as_the_empty_file_and_names_them() {
     let mut ir = CadIr::empty();
     ir.geometry.surfaces.extend([
         Surface {
@@ -80,27 +79,30 @@ fn a_model_of_free_analytic_surfaces_writes_an_empty_file_and_names_them() {
         },
     ]);
 
-    let plan = plan_at(IgesVersion::V5_3, &ir, None)
-        .expect("a model whose only surfaces are free analytic ones writes an empty file");
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     let losses = &plan.report().losses;
     assert!(
         losses
             .iter()
-            .any(|loss| code_name(&loss.code) == "export:output.empty"),
-        "{losses:?}"
+            .any(|loss| loss.code.to_string() == "export/output.empty"),
+        "{losses:#?}"
     );
-    let message = &losses
+    let withheld = losses
         .iter()
         .find(|loss| {
-            loss.message
-                .starts_with("4 analytic surface record(s) on no face were withheld")
+            loss.code.to_string() == "iges/writer.free-geometry-omitted"
+                && loss
+                    .message
+                    .starts_with("4 analytic surface record(s) on no face were withheld")
         })
-        .unwrap_or_else(|| panic!("the withheld surfaces are named: {losses:?}"))
-        .message;
+        .unwrap_or_else(|| panic!("{losses:#?}"));
     for name in ["cylinder", "cone", "sphere", "torus"] {
         assert!(
-            message.contains(&format!("test:model:surface#{name}")),
-            "{message}"
+            withheld
+                .message
+                .contains(&format!("test:model:surface#{name}")),
+            "{}",
+            withheld.message
         );
     }
 }

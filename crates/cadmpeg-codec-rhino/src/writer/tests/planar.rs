@@ -370,29 +370,30 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
 }
 
 #[test]
-fn open_planar_solid_is_rejected_before_output() {
+fn open_planar_solid_is_written_as_an_open_brep_and_named() {
     let mut ir = adjacent_quad_sheet();
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("incidence"));
-    assert_eq!(output, [0xaa]);
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert_eq!(
+        decoded.geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/record.invalid")
+                && loss.contains("written as an open Brep")),
+        "{losses:?}"
+    );
 }
 
 /// A stated tolerance finer than the Rhino Brep write route resolves.
 const EPS_BELOW_WRITE_BOUND: f64 = 1.0e-12;
 
-/// Decimal rendering of `EPS_BELOW_WRITE_BOUND` in a refusal message.
-const EPS_BELOW_WRITE_BOUND_TEXT: &str = "0.000000000001";
-
 #[test]
-fn sub_resolution_edge_tolerance_is_refused_before_output() {
+fn sub_resolution_edge_tolerance_is_written_unchanged() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -402,26 +403,14 @@ fn sub_resolution_edge_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveLength::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(
-        &error,
-        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::InvalidInput(_))
-    ));
-    let message = error.to_string();
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("edge#polygon.0"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let (decoded, _) = super::written(&ir);
+    assert!(decoded.geometry.edges.iter().any(|edge| edge
+        .tolerance
+        .is_some_and(|tolerance| tolerance.get() == EPS_BELOW_WRITE_BOUND)));
 }
 
 #[test]
-fn sub_resolution_face_tolerance_is_refused_before_output() {
+fn sub_resolution_face_tolerance_is_written_unchanged() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -431,22 +420,8 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveLength::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(
-        &error,
-        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::InvalidInput(_))
-    ));
-    let message = error.to_string();
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("face#polygon"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let (decoded, _) = super::written(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 1);
 }
 
 #[test]
