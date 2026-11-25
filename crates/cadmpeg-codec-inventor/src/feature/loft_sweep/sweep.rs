@@ -19,6 +19,7 @@ use super::{projection, SWEEP_MODE_TYPE, SWEEP_ORIENTATION_TYPE, SWEEP_SCALING_T
 pub(crate) enum NativeReason {
     Slots,
     Slot(usize),
+    OrientationMajor(u8),
     ResultCollection,
     Angle,
     Dimension,
@@ -37,6 +38,9 @@ impl NativeReason {
         let reason = match self {
             Self::Slots => "property vector lacks the sweep operand slots".to_owned(),
             Self::Slot(slot) => format!("property slot {slot} differs from the solid sweep form"),
+            Self::OrientationMajor(major) => format!(
+                "the type of the slot 9 orientation enumeration at segment major {major} is not read"
+            ),
             Self::ResultCollection => "slot 15 does not select one result body".to_owned(),
             Self::Angle => {
                 "slot 3 does not resolve to zero nominal and model angular values".to_owned()
@@ -146,7 +150,7 @@ pub(crate) fn operands<'a>(
         (10, SWEEP_SCALING_TYPE, Some(2)),
     ] {
         let Some(expected_type) = expected_type else {
-            return Err(NativeReason::Slot(slot));
+            return Err(NativeReason::OrientationMajor(source.save_version_major));
         };
         if !projection::zero_control(
             property(slots[slot]).ok_or(NativeReason::Slot(slot))?,

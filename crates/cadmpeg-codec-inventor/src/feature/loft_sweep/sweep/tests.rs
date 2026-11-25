@@ -286,6 +286,7 @@ fn native_sweep_refusal_notes_pin_each_reason_and_the_existing_loss_code() {
     for (reason, text) in [
         (NativeReason::Slots, "property vector"),
         (NativeReason::Slot(9), "slot 9"),
+        (NativeReason::OrientationMajor(28), "major 28"),
         (NativeReason::ResultCollection, "slot 15"),
         (NativeReason::Angle, "slot 3"),
         (NativeReason::Dimension, "slot 7"),
