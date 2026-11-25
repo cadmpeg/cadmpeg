@@ -101,6 +101,11 @@ use cadmpeg_ir::ContainerSummary;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CatiaCodec;
 
+pub use container::body_metadata::{
+    decode_v5_body_metadata, decode_v5_prtcont_bodies, CatiaBodyContainerKind, CatiaBodyMetadata,
+    CatiaPrtContBody,
+};
+
 impl CodecBackend for CatiaCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
     fn detect_impl(

@@ -1628,6 +1628,7 @@ struct StandardPopulationSelection {
     supports: Vec<crate::families::standard::records::StandardCurveSupport>,
     edge_table_form: EdgeTableForm,
     vertex_roster_compatible: bool,
+    body_metadata: Option<crate::container::body_metadata::CatiaBodyMetadata>,
 }
 
 fn standard_population_selections(
@@ -1651,10 +1652,19 @@ fn standard_population_selections(
     else {
         return Ok(None);
     };
+    let mut fbb_starts = Vec::with_capacity(1 + pairs.rest.len());
+    fbb_starts.push(pairs.first.0.face_run.face_start());
+    for (layout, _) in &pairs.rest {
+        fbb_starts.push(layout.face_run.face_start());
+    }
+    let mut resolved_metadata =
+        crate::container::body_metadata::resolve_standard_populations(scan, &fbb_starts)
+            .into_iter();
     let select = |(layout, population): (
         fbb::FbbPopulationLayout,
         crate::families::standard::records::StandardSurfacePopulation,
-    )|
+    ),
+                  body_metadata: Option<crate::container::body_metadata::CatiaBodyMetadata>|
      -> Result<Option<StandardPopulationSelection>, CodecError> {
         let Some(spine) = fbb::population_spine(standard_spine, &layout) else {
             return Ok(None);
@@ -1670,14 +1680,15 @@ fn standard_population_selections(
                 layout.vertex_count,
             )
             .is_some(),
+            body_metadata,
         }))
     };
-    let Some(first) = select(pairs.first)? else {
+    let Some(first) = select(pairs.first, resolved_metadata.next().flatten())? else {
         return Ok(None);
     };
     let mut rest = Vec::new();
     for pair in pairs.rest {
-        let Some(selection) = select(pair)? else {
+        let Some(selection) = select(pair, resolved_metadata.next().flatten())? else {
             return Ok(None);
         };
         rest.push(selection);
@@ -2773,6 +2784,50 @@ fn try_decode_standard_population(
             Ok(()) => {}
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
             Err(_) => return None,
+        }
+    }
+    let fallback_body_metadata = if selection.is_none() && scan.main_data_stream().is_some() {
+        let run = match edge_table_form {
+            EdgeTableForm::FbbOnly => fbb::largest_fbb_run(default_spine),
+            EdgeTableForm::Standard => match fbb::selected_standard_run(ctx, default_spine) {
+                Ok(run) => run,
+                Err(error) => return Some(Err(error)),
+            },
+        };
+        run.and_then(|run| {
+            crate::container::body_metadata::resolve_standard_populations(
+                scan,
+                &[run.face_start()],
+            )
+            .into_iter()
+            .next()
+            .flatten()
+        })
+    } else {
+        None
+    };
+    if let Some(meta) = selection
+        .and_then(|selection| selection.body_metadata.as_ref())
+        .or(fallback_body_metadata.as_ref())
+    {
+        if let Some(body) = ir
+            .geometry
+            .bodies
+            .iter_mut()
+            .find(|body| body.id.as_str() == "catia:standard:body#0")
+        {
+            if let Some(name) = meta.name.as_deref() {
+                body.name = Some(name.to_owned());
+                admitted!(annotations
+                    .derived(&body.id, "name")
+                    .map_err(cadmpeg_core::CodecError::from));
+            }
+            if let Some(visible) = meta.visible {
+                body.visible = Some(visible);
+                admitted!(annotations
+                    .derived(&body.id, "visible")
+                    .map_err(cadmpeg_core::CodecError::from));
+            }
         }
     }
     let (bound_revolution_face_surface_count, resolved_revolution_seam_curve_count) =

@@ -12,6 +12,7 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
+pub(crate) mod body_metadata;
 pub(crate) mod body_selection;
 
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
