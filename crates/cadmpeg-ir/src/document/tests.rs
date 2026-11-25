@@ -589,25 +589,73 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     let canonical = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
-        (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
-        (Some(serde_json::Value::String("8".into())), "Some(\"8\")"),
-        (Some(serde_json::Value::String("9".into())), "Some(\"9\")"),
-        (Some(serde_json::Value::String("12".into())), "Some(\"12\")"),
-        (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
-        (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
-        (Some(serde_json::Value::String("35".into())), "Some(\"35\")"),
-        (Some(serde_json::Value::String("34".into())), "Some(\"34\")"),
-        (Some(serde_json::Value::String("33".into())), "Some(\"33\")"),
-        (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
-        (Some(serde_json::Value::String("14".into())), "Some(\"14\")"),
-        (Some(serde_json::Value::String("15".into())), "Some(\"15\")"),
-        (Some(serde_json::Value::String("16".into())), "Some(\"16\")"),
-        (Some(serde_json::Value::String("17".into())), "Some(\"17\")"),
-        (Some(serde_json::Value::String("29".into())), "Some(\"29\")"),
-        (None, "None"),
-        (Some(serde_json::Value::Number(1.into())), "None"),
+        (
+            Some(serde_json::Value::String("7".into())),
+            "unsupported ir_version \"7\"",
+        ),
+        (
+            Some(serde_json::Value::String("8".into())),
+            "unsupported ir_version \"8\"",
+        ),
+        (
+            Some(serde_json::Value::String("9".into())),
+            "unsupported ir_version \"9\"",
+        ),
+        (
+            Some(serde_json::Value::String("12".into())),
+            "unsupported ir_version \"12\"",
+        ),
+        (
+            Some(serde_json::Value::String("37".into())),
+            "unsupported ir_version \"37\"",
+        ),
+        (
+            Some(serde_json::Value::String("36".into())),
+            "unsupported ir_version \"36\"",
+        ),
+        (
+            Some(serde_json::Value::String("35".into())),
+            "unsupported ir_version \"35\"",
+        ),
+        (
+            Some(serde_json::Value::String("34".into())),
+            "unsupported ir_version \"34\"",
+        ),
+        (
+            Some(serde_json::Value::String("33".into())),
+            "unsupported ir_version \"33\"",
+        ),
+        (
+            Some(serde_json::Value::String("0".into())),
+            "unsupported ir_version \"0\"",
+        ),
+        (
+            Some(serde_json::Value::String("14".into())),
+            "unsupported ir_version \"14\"",
+        ),
+        (
+            Some(serde_json::Value::String("15".into())),
+            "unsupported ir_version \"15\"",
+        ),
+        (
+            Some(serde_json::Value::String("16".into())),
+            "unsupported ir_version \"16\"",
+        ),
+        (
+            Some(serde_json::Value::String("17".into())),
+            "unsupported ir_version \"17\"",
+        ),
+        (
+            Some(serde_json::Value::String("29".into())),
+            "unsupported ir_version \"29\"",
+        ),
+        (None, "no `ir_version`"),
+        (
+            Some(serde_json::Value::Number(1.into())),
+            "unsupported ir_version 1",
+        ),
     ] {
-        let expected = format!("unsupported ir_version {found}; expected {expected_version}");
+        let expected = format!("{found}; expected {expected_version}");
         let mut value = canonical.clone();
         let object = value.as_object_mut().unwrap();
         match version {
@@ -1216,7 +1264,7 @@ fn a_solver_setting_of_a_joint_reads_the_design() {
 }
 
 #[test]
-fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
+fn an_arena_out_of_order_is_written_sorted_and_the_strict_reader_refuses_it() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let sorted = serde_json::to_value(&ir).expect("a sorted document writes");
     assert!(ir.geometry.points.len() >= 2);
@@ -1243,16 +1291,14 @@ fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
     assert_eq!(points.len(), ir.geometry.points.len() + 1);
     assert_eq!(points[0]["native_ref"], "the later copy");
 
-    // Reading adds no refusal and no repair of its own (item Q).
+    // The strict reader refuses an arena out of order and a repeated id.
     let mut swapped = sorted;
     swapped["geometry"]["points"]
         .as_array_mut()
         .unwrap()
         .swap(0, 1);
-    let read = CadIr::from_json(&swapped.to_string()).expect("an arena out of order reads");
-    assert_eq!(read.geometry.points, unsorted.geometry.points);
-    let read = CadIr::from_json(&wire.to_string()).expect("a repeated id reads");
-    assert_eq!(read.geometry.points.len(), ir.geometry.points.len() + 1);
+    assert!(CadIr::from_json(&swapped.to_string()).is_err());
+    assert!(CadIr::from_json(&wire.to_string()).is_err());
 }
 
 /// The wire writes every `model` arena but those the registry marks omitted,

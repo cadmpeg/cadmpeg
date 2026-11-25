@@ -202,6 +202,7 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
         (None, false) => {}
     }
     check_active_arrangements(index, id, id, &scope.active_arrangements, findings);
+    let spanned = index.spanned_definitions(id);
     for (occurrence, design) in &scope.occurrences {
         let key = occurrence.as_str();
         if !index.occurrences.contains_key(key) {
@@ -215,6 +216,7 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
             );
             continue;
         }
+        check_spanned_owner(index, &spanned, id, key, findings);
         let prototype = index.prototype(key);
         if let Some(configuration) = &design.configuration {
             check_configuration_ref(index, configuration, prototype, id, findings);
@@ -576,7 +578,9 @@ fn check_overrides(
     for (feature, state) in &overrides.features {
         check_feature_override(index, holder, feature.as_str(), state, findings);
     }
+    let spanned = index.spanned_definitions(scope);
     for (occurrence, value) in &overrides.occurrences {
+        check_spanned_owner(index, &spanned, holder, occurrence.as_str(), findings);
         check_occurrence_override(index, holder, occurrence.as_str(), value, kind, findings);
     }
     if matches!(kind, Holder::Arrangement) && !overrides.definitions.is_empty() {
@@ -589,10 +593,6 @@ fn check_overrides(
             ),
         );
     }
-    if overrides.definitions.is_empty() {
-        return;
-    }
-    let spanned = index.spanned_definitions(scope);
     for (definition, value) in &overrides.definitions {
         check_definition_override(
             index,
@@ -696,6 +696,29 @@ fn check_feature_override(
                 findings,
                 holder,
                 crate::rule!("design.definition-override-names-sketch-feature-does", "definition override of {feature} names sketch {sketch}, which the feature does not own"),
+            );
+        }
+    }
+}
+
+/// An occurrence key of a scope's `occurrences` or of an `overrides` names
+/// an occurrence owned by a definition the scope spans (§5.1).
+fn check_spanned_owner(
+    index: &DesignRecords<'_>,
+    spanned: &BTreeSet<&str>,
+    holder: &str,
+    occurrence: &str,
+    findings: &mut Vec<Finding>,
+) {
+    if let Some(owner) = index.occurrence_owner(occurrence) {
+        if !spanned.contains(owner) {
+            super::error(
+                findings,
+                holder,
+                crate::rule!(
+                    "design.occurrence-key-owner-not-spanned-scope",
+                    "{occurrence} is owned by {owner}, which the scope does not span"
+                ),
             );
         }
     }

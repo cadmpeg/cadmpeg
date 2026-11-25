@@ -831,3 +831,6 @@ fn a_spine_limit_lies_on_the_spine() {
     with(&mut ir, |ir| sweep(ir, three, EntityRef::Vertex(raised)));
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
+
+mod operands;
+mod sketch_profiles;

@@ -9,6 +9,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::OrthonormalFrame3;
@@ -833,6 +834,107 @@ pub(crate) fn remap_nurbs_domain(
     curve
         .with_knots(remapped)
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+}
+
+/// Gives each piece of a polycurve the parameter interval the polycurve maps
+/// onto it, so the pieces laid end to end carry the polycurve's parameter.
+/// `children` holds each piece with its start parameter, and `end` closes the
+/// last interval. A NURBS piece takes its interval by an affine knot map, a
+/// nested polycurve by an affine map of its own parameters, and a circle
+/// whose interval is its own domain `[0, 2π]` stays as it is. Any other piece
+/// takes its exact NURBS form over the interval; a piece with no such form
+/// stays as it is.
+pub(crate) fn fit_polycurve_pieces(
+    ctx: &DecodeContext<'_>,
+    children: &mut [(FiniteReal, DecodedCurve)],
+    end: FiniteReal,
+    offset: usize,
+) -> Result<(), GeometryError> {
+    let starts = children.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+    for (index, (_, child)) in children.iter_mut().enumerate() {
+        let target = [starts[index], starts.get(index + 1).copied().unwrap_or(end)];
+        if target[0] >= target[1] {
+            return Err(error(offset, "polycurve segment domain is invalid"));
+        }
+        fit_polycurve_piece(ctx, child, target, offset)?;
+    }
+    Ok(())
+}
+
+fn fit_polycurve_piece(
+    ctx: &DecodeContext<'_>,
+    piece: &mut DecodedCurve,
+    target: [FiniteReal; 2],
+    offset: usize,
+) -> Result<(), GeometryError> {
+    let replacement = match piece {
+        DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let Some(first) = children.first().map(|(start, _)| start.get()) else {
+                return Ok(());
+            };
+            let last = end_parameter.get();
+            if [first, last] == target.map(FiniteReal::get) {
+                return Ok(());
+            }
+            let map = |parameter: f64| {
+                if parameter == first {
+                    Some(target[0])
+                } else if parameter == last {
+                    Some(target[1])
+                } else {
+                    cadmpeg_ir::math::parameter_fraction(parameter, first, last).and_then(
+                        |fraction| {
+                            cadmpeg_ir::math::interpolate(
+                                target[0].get(),
+                                target[1].get(),
+                                fraction.get(),
+                            )
+                        },
+                    )
+                }
+            };
+            for (start, _) in children.iter_mut() {
+                *start = map(start.get())
+                    .ok_or_else(|| error(offset, "polycurve parameter remap overflowed"))?;
+            }
+            *end_parameter = target[1];
+            return Ok(());
+        }
+        DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+            ..
+        } => {
+            let degree = usize::try_from(nurbs.degree())
+                .map_err(|_| error(offset, "curve degree is too large"))?;
+            let domain = [
+                nurbs.knots().get(degree).copied(),
+                nurbs.knots().get(nurbs.pole_count()).copied(),
+            ];
+            if domain == target.map(|value| Some(value.get())) {
+                return Ok(());
+            }
+            remap_nurbs_domain(nurbs.clone(), target, offset)?
+        }
+        DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
+            ..
+        } if target.map(FiniteReal::get) == [0.0, TAU] => {
+            return Ok(());
+        }
+        DecodedCurve::Leaf { .. } => match exact_nurbs(ctx, piece, offset) {
+            Ok(nurbs) => remap_nurbs_domain(nurbs, target, offset)?,
+            Err(GeometryError::Codec(error)) => return Err(GeometryError::Codec(error)),
+            Err(_) => return Ok(()),
+        },
+    };
+    if let DecodedCurve::Leaf { geometry, .. } = piece {
+        *geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(replacement));
+    }
+    Ok(())
 }
 
 /// Exact joined curve and recoverable join diagnostics.
@@ -1990,7 +2092,7 @@ fn arc_nurbs(
                 * cadmpeg_core::convert::f64_from_index(span + 1)
                     .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         let amid = (a0 + a1) * 0.5;
-        let weight = ((a1 - a0) * 0.5).cos();
+        let weight = ((a1 - a0) * 0.5).portable_cos();
         let p0 = circle_point(circle, a0);
         let pm = circle_point_scaled(circle, amid, 1.0 / weight);
         let p1 = circle_point(circle, a1);
@@ -2037,9 +2139,9 @@ fn circle_point(circle: &Circle, angle: f64) -> Point3 {
 
 fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3 {
     let radial = Vector3::new(
-        circle.xaxis.x * angle.cos() + circle.yaxis.x * angle.sin(),
-        circle.xaxis.y * angle.cos() + circle.yaxis.y * angle.sin(),
-        circle.xaxis.z * angle.cos() + circle.yaxis.z * angle.sin(),
+        circle.xaxis.x * angle.portable_cos() + circle.yaxis.x * angle.portable_sin(),
+        circle.xaxis.y * angle.portable_cos() + circle.yaxis.y * angle.portable_sin(),
+        circle.xaxis.z * angle.portable_cos() + circle.yaxis.z * angle.portable_sin(),
     );
     let center = circle.center.get();
     let radius = circle.radius.get();

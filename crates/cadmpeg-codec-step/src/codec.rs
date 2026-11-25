@@ -37,7 +37,7 @@ impl EncoderBackend for StepCodec {
     /// reported as omitted, not read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(2));
+    const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(StepSchema::DEFAULT_INDEX));
 
     /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
     /// because every emitted schema stamps object-identifier arcs.

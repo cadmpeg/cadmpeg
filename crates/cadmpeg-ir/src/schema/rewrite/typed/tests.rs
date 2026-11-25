@@ -90,10 +90,10 @@ fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
         ) -> Result<(), CodecError> {
             self.0.visit_identity_references(ctx, visitor)
         }
-        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_identities(
             self,
             ctx: &DecodeContext<'_>,
-            map: &mut IdentityMap<'_, F>,
+            map: &mut IdentityMap<'_>,
         ) -> Result<Self, CodecError> {
             self.0.rewrite_identities(ctx, map).map(Self)
         }
