@@ -33,7 +33,7 @@ fn every_text_fixture_reads_the_same_as_its_crate_form() {
         let text = std::str::from_utf8(&bytes).expect("text");
         let crate_bytes = with_context(text.as_bytes(), |ctx| {
             let layer = parse_layer(ctx, text.as_bytes()).expect("parse");
-            write(&layer).expect("write")
+            write(&layer).expect("write").0
         });
         let from_text = decode(text);
         let from_crate = decode_bytes(&crate_bytes);
@@ -105,7 +105,7 @@ def Xform "World" (
 "#;
     let crate_bytes = with_context(text.as_bytes(), |ctx| {
         let layer = parse_layer(ctx, text.as_bytes()).expect("parse");
-        write(&layer).expect("write")
+        write(&layer).expect("write").0
     });
     let read = crate::test_support::with_root(&crate_bytes, |ctx, root| {
         crate::usdc::read(ctx, root).expect("read")
@@ -128,4 +128,39 @@ def Xform "World" (
     let from_crate = decode_bytes(&crate_bytes);
     assert_eq!(from_text.ir().geometry, from_crate.ir().geometry);
     assert_eq!(from_text.ir().model, from_crate.ir().model);
+}
+
+/// A `.default` relationship target is written as the target path the reader
+/// takes it as, and no field is left out.
+#[test]
+fn a_default_relationship_target_is_written_as_its_target_path() {
+    use crate::text::syntax::{PathList, PropertySpec, RelationshipField};
+    let text = "#usda 1.0\ndef Xform \"World\"\n{\n    rel binding.default = </World/Template>\n    def Xform \"Template\"\n    {\n    }\n}\n";
+    let (crate_bytes, left_out) = with_context(text.as_bytes(), |ctx| {
+        let layer = parse_layer(ctx, text.as_bytes()).expect("parse");
+        write(&layer).expect("write")
+    });
+    assert!(left_out.is_empty(), "{left_out:?}");
+    let (layer, _) = crate::test_support::with_root(&crate_bytes, |ctx, root| {
+        crate::usdc::read(ctx, root).expect("read")
+    });
+    let targets: Vec<_> = layer.prims[0]
+        .body
+        .properties
+        .iter()
+        .filter_map(|property| match property {
+            PropertySpec::Relationship(relationship) => Some(&relationship.field),
+            PropertySpec::Attribute(_) => None,
+        })
+        .collect();
+    assert_eq!(
+        targets,
+        [&RelationshipField::Targets(PathList::Paths(vec![
+            "/World/Template".to_owned()
+        ]))]
+    );
+    assert_eq!(
+        decode(text).ir().model,
+        decode_bytes(&crate_bytes).ir().model
+    );
 }

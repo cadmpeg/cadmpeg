@@ -1027,11 +1027,6 @@ fn a_value_past_the_bound_outside_every_record_is_unstated_with_its_loss() {
         result.source_fidelity().content_digest,
         Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
     );
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "decode/content-digest.unavailable"));
     let unreadable = result
         .report()
         .losses

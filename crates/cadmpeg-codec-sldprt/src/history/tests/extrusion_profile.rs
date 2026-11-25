@@ -221,16 +221,10 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     edited.model.configurations[1]
         .feature_states
         .insert(feature_id, replacement);
-    let error = crate::test_support::plan_inherited_write(
-        &edited,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let error =
+        crate::test_support::plan_inherited_write_declined(&edited, decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("configuration design-state edit has no complete native lane encoding"),
+        error.contains("configuration design-state edit has no complete native lane encoding"),
         "unexpected error: {error}"
     );
 }

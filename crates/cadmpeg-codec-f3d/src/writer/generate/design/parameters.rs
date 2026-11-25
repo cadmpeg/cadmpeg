@@ -53,6 +53,7 @@ const NATIVE_PARAMETER_COLLECTION: u32 = 19;
 const OWNED_STEM: &str = "d";
 
 /// The parameters written as Fusion user parameters, and the losses taken.
+#[derive(Clone)]
 pub(in crate::writer::generate) struct ParameterPlan {
     written: Vec<PlannedParameter>,
     /// The parameters taken out of the user parameters by the feature that
@@ -67,6 +68,7 @@ pub(in crate::writer::generate) struct ParameterPlan {
 }
 
 /// A `Driven` parameter (the parameter of a driven dimension).
+#[derive(Clone)]
 struct DrivenParameter {
     source: ParameterId,
     name: String,
@@ -123,6 +125,7 @@ pub(super) struct Driven {
 /// What the record of a written parameter does not hold of its source, each
 /// an entry of its loss: a source name other than the written one, a
 /// container or attribute owner, and a display presentation.
+#[derive(Clone)]
 struct Unheld {
     renamed: Option<String>,
     unbound: Option<String>,
@@ -177,6 +180,7 @@ pub(super) struct OwnedParameter {
 }
 
 /// One user parameter as the record holds it.
+#[derive(Clone)]
 struct PlannedParameter {
     source: ParameterId,
     name: String,

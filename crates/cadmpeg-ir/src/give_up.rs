@@ -22,8 +22,9 @@ use serde::Serialize;
 
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
-use crate::design::refs::Member;
+use crate::design::refs::{EntityRef, Member, RecordRef};
 use crate::document::{ArenaHome, ArenaName, CadIr};
+use crate::ids::{BodyId, ProductDefinitionId};
 use crate::report::loss::LossNote;
 use crate::schema::ArenaRecord;
 use crate::source_fidelity::SourceFidelity;
@@ -107,6 +108,14 @@ pub(crate) struct Released {
     pub(crate) dropped: BTreeSet<String>,
     /// The records kept in a partial form or with a mark, sorted.
     pub(crate) marked: BTreeSet<String>,
+    /// The records of the delta of each stored state that the delta dropped
+    /// and marked, by the state's path. A record of a delta is the state's
+    /// own: the document's record of the same id keeps its own outcome.
+    pub(crate) states: BTreeMap<String, Released>,
+    /// The stored states dropped whole, each with the occurrences whose
+    /// member entry names a removed definition: no delta states that an
+    /// occurrence leaves a state (§5.4, §6.7).
+    pub(crate) unstatable: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// The part a given-up seed leaves.
@@ -119,24 +128,58 @@ pub(crate) struct Retained {
 }
 
 impl Released {
+    fn new(path: String) -> Self {
+        Self {
+            path,
+            dropped: BTreeSet::new(),
+            marked: BTreeSet::new(),
+            states: BTreeMap::new(),
+            unstatable: BTreeMap::new(),
+        }
+    }
+
     /// The `dropped=[..]; marked=[..]` tail of the loss, `prefix` naming the
-    /// records dropped before the cascade, such as the given-up id itself.
+    /// records dropped before the cascade, such as the given-up id itself,
+    /// followed by the [`Self::stated`] entries.
     pub(crate) fn tail(&self, prefix: &[&str]) -> String {
         let dropped: BTreeSet<&str> = prefix
             .iter()
             .copied()
             .chain(self.dropped.iter().map(String::as_str))
             .collect();
-        format!(
-            "dropped=[{}]; marked=[{}]",
-            dropped.into_iter().collect::<Vec<_>>().join(", "),
-            self.marked
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+        let mut parts = vec![
+            format!("dropped=[{}]", list(dropped)),
+            format!("marked=[{}]", list(self.marked.iter().map(String::as_str))),
+        ];
+        parts.extend(self.stated());
+        parts.join("; ")
     }
+
+    /// One `delta of <state>: dropped=[..]; marked=[..]` entry for the delta
+    /// of each stored state that changed, and one entry for each state
+    /// dropped because its delta cannot state what leaves it.
+    pub(crate) fn stated(&self) -> Vec<String> {
+        let mut parts = Vec::new();
+        for (path, state) in &self.states {
+            parts.push(format!(
+                "delta of {path}: dropped=[{}]; marked=[{}]",
+                list(state.dropped.iter().map(String::as_str)),
+                list(state.marked.iter().map(String::as_str))
+            ));
+        }
+        for (state, occurrences) in &self.unstatable {
+            parts.push(format!(
+                "state {state} dropped: its delta cannot state that [{}] leave it",
+                list(occurrences.iter().map(String::as_str))
+            ));
+        }
+        parts
+    }
+}
+
+/// The ids of `ids`, separated by commas.
+fn list<'a>(ids: impl IntoIterator<Item = &'a str>) -> String {
+    ids.into_iter().collect::<Vec<_>>().join(", ")
 }
 
 /// One record that names an id the document no longer holds, with each path
@@ -407,13 +450,22 @@ pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed
         .collect()
 }
 
-/// The state of one batch of removals: the document's references, the
-/// CADIR schema once a record needs it, and the carriers no record reached
-/// before the batch.
+/// The state of one batch of removals: the document's references, what
+/// the batch reads once a record needs it, and the carriers no record
+/// reached before the batch.
 struct Cascade {
     references: References,
-    schema: OnceCell<Option<Schema>>,
+    lazy: Lazy,
     unreached: BTreeSet<String>,
+}
+
+/// What a batch of removals reads of the document once a record needs it.
+#[derive(Default)]
+struct Lazy {
+    /// The CADIR schema.
+    schema: OnceCell<Option<Schema>>,
+    /// The stored states whose delta names each id, by id.
+    stated: OnceCell<HashMap<String, BTreeSet<String>>>,
 }
 
 impl Cascade {
@@ -423,7 +475,7 @@ impl Cascade {
         ir.finalize();
         Ok(Self {
             references: ir.references(),
-            schema: OnceCell::new(),
+            lazy: Lazy::default(),
             unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
         })
     }
@@ -443,7 +495,7 @@ impl Cascade {
         }
         Ok(Self {
             references: ir.references_from(named),
-            schema: OnceCell::new(),
+            lazy: Lazy::default(),
             unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
         })
     }
@@ -460,7 +512,7 @@ fn remove(
 ) -> Result<Option<Released>, CodecError> {
     let Cascade {
         references,
-        schema,
+        lazy,
         unreached,
     } = cascade;
     let parents = parents(ir, &seed.arena, &seed.id);
@@ -469,18 +521,14 @@ fn remove(
     if copies == 0 {
         return Ok(None);
     }
-    let mut released = Released {
-        path: format!("{}/{}", seed.arena, seed.id),
-        dropped: BTreeSet::new(),
-        marked: BTreeSet::new(),
-    };
+    let mut released = Released::new(format!("{}/{}", seed.arena, seed.id));
     mark_parents(ir, &parents, &mut released.marked);
     let gone = references.release(&seed.id, copies);
     release(
         ctx,
         ir,
         references,
-        schema,
+        lazy,
         gone.then(|| seed.id.clone()).into_iter().collect(),
         owned,
         &mut released,
@@ -492,8 +540,8 @@ fn remove(
             ..
         }
     );
-    if geometric || !released.dropped.is_empty() {
-        drop_orphans(ctx, ir, references, schema, unreached, &mut released)?;
+    if geometric || !released.dropped.is_empty() || !released.states.is_empty() {
+        drop_orphans(ctx, ir, references, lazy, unreached, &mut released)?;
     }
     Ok(Some(released))
 }
@@ -516,7 +564,7 @@ pub(crate) fn release_lost(
     let mut cascade = Cascade::naming(ctx, ir, ids)?;
     let Cascade {
         references,
-        schema,
+        lazy,
         unreached,
     } = &mut cascade;
     let mut released_ids = Vec::new();
@@ -524,22 +572,18 @@ pub(crate) fn release_lost(
         if references.holds(id) {
             continue;
         }
-        let mut released = Released {
-            path: id.clone(),
-            dropped: BTreeSet::new(),
-            marked: BTreeSet::new(),
-        };
+        let mut released = Released::new(id.clone());
         release(
             ctx,
             ir,
             references,
-            schema,
+            lazy,
             BTreeSet::from([id.clone()]),
             Vec::new(),
             &mut released,
         )?;
-        if !released.dropped.is_empty() {
-            drop_orphans(ctx, ir, references, schema, unreached, &mut released)?;
+        if !released.dropped.is_empty() || !released.states.is_empty() {
+            drop_orphans(ctx, ir, references, lazy, unreached, &mut released)?;
         }
         released_ids.push((id.clone(), released));
     }
@@ -552,7 +596,7 @@ fn drop_orphans(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     references: &mut References,
-    schema: &OnceCell<Option<Schema>>,
+    lazy: &Lazy,
     unreached: &BTreeSet<String>,
     released: &mut Released,
 ) -> Result<(), CodecError> {
@@ -565,7 +609,7 @@ fn drop_orphans(
             ctx,
             ir,
             references,
-            schema,
+            lazy,
             BTreeSet::new(),
             orphans,
             released,
@@ -586,21 +630,7 @@ fn orphans(
     if orphans.is_empty() {
         return Ok(Vec::new());
     }
-    let stated: Vec<&StateDelta> = ir
-        .design
-        .evaluations
-        .iter()
-        .filter_map(|evaluation| evaluation.content.as_ref())
-        .map(|content| &content.delta)
-        .chain(
-            ir.process
-                .states
-                .iter()
-                .filter_map(|state| state.content.as_ref())
-                .map(|content| &content.delta),
-        )
-        .collect();
-    for delta in stated {
+    for (_, delta) in stored(ir) {
         if let Ok(delta) = crate::hash::finite_json::to_json_value(delta) {
             unname(&delta, &mut orphans);
         }
@@ -863,22 +893,29 @@ fn mark_parents(ir: &mut CadIr, parents: &[String], marked: &mut BTreeSet<String
 /// and marks each record that holds it in a form that keeps the rest,
 /// recording both in `released`. A stored state loses only what of its
 /// delta needs an id of `gone` that the delta does not hold itself. Then
-/// removes every id it dropped from the collections keyed by id, from the
-/// stubs' links, and from the native-record links, marking each native
-/// record that loses a link, and returns every id that no record holds
-/// after. `schema` holds the CADIR schema once a record needs
-/// it.
+/// A scope that loses a root keeps its other roots, and is dropped once it
+/// holds no root and no record names it (§5.1, §5.2). Then
+/// removes every id it dropped from the collections keyed by id and from
+/// the stubs' links, which no record needs, and returns every id that no
+/// record holds after.
 fn release(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     references: &mut References,
-    schema: &OnceCell<Option<Schema>>,
+    lazy: &Lazy,
     mut gone: BTreeSet<String>,
     mut carried: Vec<(Arena, String)>,
     released: &mut Released,
 ) -> Result<BTreeSet<String>, CodecError> {
     let mut all_gone = gone.clone();
-    while !gone.is_empty() || !carried.is_empty() {
+    let mut scopes = BTreeSet::new();
+    loop {
+        if gone.is_empty() && carried.is_empty() {
+            carried = emptied(ir, &mut scopes);
+            if carried.is_empty() {
+                break;
+            }
+        }
         let mut drops: BTreeMap<Arena, BTreeSet<String>> = BTreeMap::new();
         for (arena, id) in carried.drain(..) {
             drops.entry(arena).or_default().insert(id);
@@ -900,7 +937,13 @@ fn release(
                 .iter()
                 .any(|(path, _)| under(path, STATE_DELTA))
             {
-                let changed = release_states(ctx, ir, references, schema, &holder, here, released)?;
+                let unstatable = unstatable_members(ir, &holder, here);
+                if !unstatable.is_empty() {
+                    released.unstatable.insert(holder.id.clone(), unstatable);
+                    drops.entry(holder.arena).or_default().insert(holder.id);
+                    continue;
+                }
+                let changed = release_states(ctx, ir, references, lazy, &holder, here, released)?;
                 holder.names.retain(|(path, _)| !under(path, STATE_DELTA));
                 if holder.names.is_empty() {
                     if changed {
@@ -909,11 +952,21 @@ fn release(
                     continue;
                 }
             }
-            if clear_native_refs(ir, &mut holder)
-                || keep_topology(ir, &holder)
-                || restate(ir, &holder, here, schema)
-                || keep_unresolved(ir, &holder)
-            {
+            let kept = match keep_roots(ir, &holder) {
+                Some(kept) => {
+                    if kept {
+                        scopes.insert(holder.id.clone());
+                    }
+                    kept
+                }
+                None => {
+                    clear_native_refs(ir, &mut holder)
+                        || keep_topology(ir, &holder)
+                        || restate(ir, &holder, here, &lazy.schema)
+                        || keep_unresolved(ir, &holder)
+                }
+            };
+            if kept {
                 released.marked.insert(holder.id);
             } else {
                 drops.entry(holder.arena).or_default().insert(holder.id);
@@ -940,6 +993,24 @@ fn release(
         .marked
         .retain(|record| !released.dropped.contains(record));
     Ok(all_gone)
+}
+
+/// The occurrences whose member entry, in the delta of a copy of `holder`,
+/// names an id of `gone` while the occurrence stays. A state holds no
+/// occurrence without its owner (§8.1), and no delta states that an
+/// occurrence leaves a state (§5.4, §6.7), so such a state has no form.
+fn unstatable_members(ir: &CadIr, holder: &Holder, gone: &BTreeSet<String>) -> BTreeSet<String> {
+    deltas(ir, &holder.arena, &holder.id)
+        .into_iter()
+        .flat_map(|delta| &delta.members)
+        .filter(|(occurrence, owner)| {
+            !gone.contains(occurrence.as_str())
+                && owner
+                    .as_ref()
+                    .is_some_and(|owner| gone.contains(owner.as_str()))
+        })
+        .map(|(occurrence, _)| occurrence.as_str().to_owned())
+        .collect()
 }
 
 /// The path in a stored state of its delta.
@@ -1003,45 +1074,263 @@ fn stated_ids(ir: &CadIr, arena: &Arena, id: &str) -> BTreeSet<String> {
 }
 
 /// Releases `here` in the delta of each copy of `holder`, a stored state,
-/// and returns whether a delta changed.
+/// records what each delta dropped and marked under the state's path in
+/// `released`, and returns whether a delta changed.
 fn release_states(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     references: &References,
-    schema: &OnceCell<Option<Schema>>,
+    lazy: &Lazy,
     holder: &Holder,
     here: &BTreeSet<String>,
     released: &mut Released,
 ) -> Result<bool, CodecError> {
+    let naming = lazy.stated.get_or_init(|| states_naming(ir));
+    let elsewhere = |id: &str| {
+        naming
+            .get(id)
+            .is_some_and(|states| states.iter().any(|state| *state != holder.id))
+    };
+    let path = format!("{}/{}", holder.arena, holder.id);
+    let mut state = released
+        .states
+        .remove(&path)
+        .unwrap_or_else(|| Released::new(path.clone()));
+    let plans: Vec<Withdrawn> = deltas(ir, &holder.arena, &holder.id)
+        .into_iter()
+        .map(|delta| withdrawn(ir, &holder.id, delta, here))
+        .collect::<Result<_, _>>()?;
     let mut changed = false;
-    for delta in deltas_mut(ir, &holder.arena, &holder.id) {
-        changed |= release_delta(ctx, references, schema, delta, here, released)?;
+    for (delta, plan) in deltas_mut(ir, &holder.arena, &holder.id)
+        .into_iter()
+        .zip(&plans)
+    {
+        changed |= release_delta(ctx, references, lazy, &elsewhere, delta, plan, &mut state)?;
+    }
+    if !state.dropped.is_empty() || !state.marked.is_empty() {
+        released.states.insert(path, state);
     }
     Ok(changed)
 }
 
-/// Drops, transitively, each record of `delta` that needs an id of `gone`,
-/// as [`release`] drops a record of the document, and marks each that holds
-/// one in a form that keeps the rest. A record the delta drops is gone for
-/// it where no record of the document, as `references` counts them, holds
-/// its id. Then removes each removal, name, owner, member, instance body,
-/// and pose of the delta that names a gone id: each is an entry of a
+/// What a stored state withdraws because an owner entry of its delta names
+/// a gone definition: the state holds no body without its owner (§8.1).
+struct Withdrawn {
+    /// The gone ids with the withdrawn ids.
+    gone: BTreeSet<String>,
+    /// The withdrawn ids: the bodies and the records only they reach.
+    ids: BTreeSet<String>,
+    /// The withdrawn records that the document geometry or another stored
+    /// state holds, which the delta lists as removed.
+    removed: Vec<RecordRef>,
+    /// The name entries of withdrawn entities that a base can hold.
+    names: Vec<EntityRef>,
+    /// The owner entries of withdrawn bodies that a base can hold.
+    owners: Vec<BodyId>,
+}
+
+/// The plan of what `delta`, of the stored state `holder`, withdraws. A
+/// body whose owner entry names an id of `gone` is withdrawn with the
+/// records it reaches that no other body reaches (§5.6), in the document
+/// geometry and the records of every stored state, as `remove_member`
+/// removes an extent (§8.1). A base entry is cleared where the document's
+/// name table or another stored state holds an entry of its key.
+fn withdrawn(
+    ir: &CadIr,
+    holder: &str,
+    delta: &StateDelta,
+    gone: &BTreeSet<String>,
+) -> Result<Withdrawn, CodecError> {
+    use crate::design::edit::states::{ids, reached, record_refs, select, upsert};
+
+    let named = |owner: Option<&ProductDefinitionId>| {
+        owner.is_some_and(|owner| gone.contains(owner.as_str()))
+    };
+    let bodies: BTreeSet<String> = delta
+        .owners
+        .iter()
+        .filter(|(_, owner)| named(owner.as_ref()))
+        .map(|(body, _)| body.as_str().to_owned())
+        .collect();
+    let mut plan = Withdrawn {
+        gone: gone.clone(),
+        ids: BTreeSet::new(),
+        removed: Vec::new(),
+        names: Vec::new(),
+        owners: Vec::new(),
+    };
+    if bodies.is_empty() {
+        return Ok(plan);
+    }
+    let others: Vec<&StateDelta> = stored(ir)
+        .filter(|(state, _)| *state != holder)
+        .map(|(_, delta)| delta)
+        .collect();
+    let mut every = ir.geometry.clone();
+    for other in &others {
+        upsert(&mut every, other.records.clone());
+    }
+    let outside = ids(&every);
+    upsert(&mut every, delta.records.clone());
+    let (leaving, staying): (Vec<BodyId>, Vec<BodyId>) = every
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .partition(|body| bodies.contains(body.as_str()));
+    let malformed =
+        |error: crate::design::edit::EditError| CodecError::Malformed(error.to_string());
+    let kept = reached(&every, &staying).map_err(malformed)?;
+    let leaving: BTreeSet<String> = reached(&every, &leaving)
+        .map_err(malformed)?
+        .into_iter()
+        .filter(|id| !kept.contains(id))
+        .collect();
+    let held: BTreeSet<String> = leaving.intersection(&outside).cloned().collect();
+    plan.removed = record_refs(&select(&every, &held));
+    for record in record_refs(&select(&every, &leaving)) {
+        let entity = match record {
+            RecordRef::Body(id) => EntityRef::Body(id),
+            RecordRef::Face(id) => EntityRef::Face(id),
+            RecordRef::Edge(id) => EntityRef::Edge(id),
+            RecordRef::Vertex(id) => EntityRef::Vertex(id),
+            RecordRef::Surface(id) => EntityRef::Surface(id),
+            RecordRef::Curve(id) => EntityRef::Curve(id),
+            RecordRef::Subd(id) => EntityRef::Subd(id),
+            _ => continue,
+        };
+        if ir.design.names.entries().contains_key(&entity)
+            || others.iter().any(|delta| delta.names.contains_key(&entity))
+        {
+            plan.names.push(entity);
+        }
+    }
+    plan.owners = delta
+        .owners
+        .keys()
+        .filter(|body| bodies.contains(body.as_str()))
+        .filter(|body| others.iter().any(|delta| delta.owners.contains_key(*body)))
+        .cloned()
+        .collect();
+    plan.ids = bodies;
+    plan.ids.extend(leaving);
+    plan.gone.extend(plan.ids.iter().cloned());
+    Ok(plan)
+}
+
+/// Whether the JSON of `value` names an id of `gone`.
+fn mentions<T: Serialize + ?Sized>(value: &T, gone: &BTreeSet<String>) -> bool {
+    crate::hash::finite_json::to_json_value(value).is_ok_and(|value| names(&value, gone))
+}
+
+/// The stored states of `ir` whose delta names each id, as a value or as a
+/// key, by id.
+fn states_naming(ir: &CadIr) -> HashMap<String, BTreeSet<String>> {
+    let mut naming: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for (state, delta) in stored(ir) {
+        let Ok(delta) = crate::hash::finite_json::to_json_value(delta) else {
+            continue;
+        };
+        let mut ids = BTreeSet::new();
+        named(&delta, &mut ids);
+        for id in ids {
+            naming.entry(id).or_default().insert(state.to_owned());
+        }
+    }
+    naming
+}
+
+/// The id and delta of each stored state of `ir`: each evaluation and process
+/// state with content.
+fn stored(ir: &CadIr) -> impl Iterator<Item = (&str, &StateDelta)> {
+    let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
+        let content = evaluation.content.as_ref()?;
+        Some((evaluation.id.as_str(), &content.delta))
+    });
+    let states = ir.process.states.iter().filter_map(|state| {
+        let content = state.content.as_ref()?;
+        Some((state.id.as_str(), &content.delta))
+    });
+    evaluations.chain(states)
+}
+
+/// Adds to `ids` each text `value` holds, as a value or as a key.
+fn named(value: &serde_json::Value, ids: &mut BTreeSet<String>) {
+    match value {
+        serde_json::Value::String(text) => {
+            ids.insert(text.clone());
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                named(item, ids);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (key, item) in map {
+                ids.insert(key.clone());
+                named(item, ids);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
+}
+
+/// Drops, transitively, each record of `delta` that needs a gone or
+/// withdrawn id of `plan`, as [`release`] drops a record of the document,
+/// and marks each that holds one in a form that keeps the rest, recording
+/// both in `state`. Each record of the delta that `plan` withdraws is dropped with
+/// them. A record the delta drops is gone for it where no record of the
+/// document, as `references` counts them, holds its id. Then drops each
+/// carrier of the delta that the drops leave with no user, other than one
+/// the document holds or another stored state names (`elsewhere`). Then
+/// removes each removal, name, owner, member, instance body, and pose of
+/// the delta that names a gone or withdrawn id: each is an entry of a
 /// collection keyed by its members' own ids (§3.3). An entry of the name
-/// table whose name names one keeps its native name alone (§5.7). Returns
-/// whether the delta changed.
+/// table whose name names one keeps its native name alone (§5.7). Then
+/// lists the records `plan` withdraws as removed and clears the base
+/// entries it names (§5.4). Returns whether the delta changed.
 fn release_delta(
     ctx: &DecodeContext<'_>,
     references: &References,
-    schema: &OnceCell<Option<Schema>>,
+    lazy: &Lazy,
+    elsewhere: &dyn Fn(&str) -> bool,
     delta: &mut StateDelta,
-    gone: &BTreeSet<String>,
-    released: &mut Released,
+    plan: &Withdrawn,
+    state: &mut Released,
 ) -> Result<bool, CodecError> {
     let mut stated = CadIr::empty();
     stated.geometry = std::mem::take(&mut delta.records);
     stated.geometry.finalize();
+    let unreached = crate::validate::carriers_parameterization::unreached_carriers(ctx, &stated)?;
+    let mut assigned = Vec::new();
+    for field in [
+        "bodies",
+        "regions",
+        "shells",
+        "faces",
+        "loops",
+        "coedges",
+        "edges",
+        "vertices",
+        "points",
+        "surfaces",
+        "curves",
+        "subds",
+        "pcurves",
+        "procedural_surfaces",
+        "procedural_curves",
+    ] {
+        let arena = Arena::Home {
+            home: "geometry",
+            field,
+        };
+        for id in &plan.ids {
+            if text(&stated, &arena, id).is_some() {
+                assigned.push((arena.clone(), id.clone()));
+            }
+        }
+    }
     let mut local = References::default();
-    for id in gone {
+    for id in &plan.gone {
         local.name(id);
     }
     for id in stated.geometry.identities() {
@@ -1050,25 +1339,53 @@ fn release_delta(
         }
     }
     let mut local = stated.references_from(local);
-    let mut inner = Released {
-        path: String::new(),
-        dropped: BTreeSet::new(),
-        marked: BTreeSet::new(),
-    };
-    let gone = release(
+    let mut inner = Released::new(String::new());
+    let mut all_gone = release(
         ctx,
         &mut stated,
         &mut local,
-        schema,
-        gone.clone(),
-        Vec::new(),
+        lazy,
+        plan.gone.clone(),
+        assigned.clone(),
         &mut inner,
     )?;
+    loop {
+        let mut orphans = orphans(ctx, &stated, &unreached)?;
+        orphans.retain(|(_, id)| !references.holds(id) && !elsewhere(id));
+        if orphans.is_empty() {
+            break;
+        }
+        all_gone.extend(release(
+            ctx,
+            &mut stated,
+            &mut local,
+            lazy,
+            BTreeSet::new(),
+            orphans,
+            &mut inner,
+        )?);
+    }
     delta.records = stated.geometry;
-    let changed = !inner.dropped.is_empty() || !inner.marked.is_empty();
-    released.dropped.extend(inner.dropped);
-    released.marked.extend(inner.marked);
-    Ok(prune(delta, &gone) || changed)
+    let changed = !inner.dropped.is_empty() || !inner.marked.is_empty() || !plan.ids.is_empty();
+    state.dropped.extend(inner.dropped);
+    state.marked.extend(inner.marked);
+    let pruned = prune(delta, &all_gone);
+    for record in &plan.removed {
+        delta.removed.push(record.clone());
+        state
+            .dropped
+            .insert(crate::design::edit::states::record_ref_id(record).to_owned());
+    }
+    delta
+        .names
+        .extend(plan.names.iter().map(|entity| (entity.clone(), None)));
+    delta
+        .owners
+        .extend(plan.owners.iter().map(|body| (body.clone(), None)));
+    state
+        .marked
+        .retain(|record| !state.dropped.contains(record));
+    Ok(pruned || changed)
 }
 
 /// Removes each entry of `delta` outside its records that names an id of
@@ -1076,9 +1393,6 @@ fn release_delta(
 /// name table whose name names one keeps its native name alone, and is
 /// removed where it has none.
 fn prune(delta: &mut StateDelta, gone: &BTreeSet<String>) -> bool {
-    fn mentions<T: Serialize + ?Sized>(value: &T, gone: &BTreeSet<String>) -> bool {
-        crate::hash::finite_json::to_json_value(value).is_ok_and(|value| names(&value, gone))
-    }
     let before = [
         delta.removed.len(),
         delta.names.len(),
@@ -1106,12 +1420,10 @@ fn prune(delta: &mut StateDelta, gone: &BTreeSet<String>) -> bool {
         renamed = true;
         true
     });
-    delta
-        .owners
-        .retain(|body, owner| !mentions(body, gone) && !mentions(owner, gone));
+    delta.owners.retain(|body, _| !gone.contains(body.as_str()));
     delta
         .members
-        .retain(|occurrence, owner| !mentions(occurrence, gone) && !mentions(owner, gone));
+        .retain(|occurrence, _| !gone.contains(occurrence.as_str()));
     delta
         .instance_bodies
         .retain(|path, bodies| !mentions(path, gone) && !mentions(bodies, gone));
@@ -1216,6 +1528,47 @@ fn restate(
     ir.rewrite_records(&holder.arena, &holder.id, |record| {
         restate.record(home, field, record)
     })
+}
+
+/// Removes from `holder`, a scope that names a lost id only as a root, each
+/// lost root, and keeps its other roots in their order (§5.2). Returns
+/// whether the scope still holds a root or a record names it (§5.1), or
+/// `None` where `holder` is no such scope.
+fn keep_roots(ir: &mut CadIr, holder: &Holder) -> Option<bool> {
+    if holder.arena
+        != (Arena::Home {
+            home: "design",
+            field: "scopes",
+        })
+        || !holder.names_only_under(&["roots"])
+    {
+        return None;
+    }
+    let lost: BTreeSet<&str> = holder
+        .names
+        .iter()
+        .map(|(_, target)| target.as_str())
+        .collect();
+    for scope in records_mut(&mut ir.design.scopes, &holder.id) {
+        scope.roots.retain(|root| !lost.contains(root.as_str()));
+    }
+    Some(!owned(ir, &holder.arena, &holder.id).is_empty())
+}
+
+/// Each scope of `kept` that the document holds with no root and no record
+/// that names it, which it removes from `kept`.
+fn emptied(ir: &CadIr, kept: &mut BTreeSet<String>) -> Vec<(Arena, String)> {
+    let arena = Arena::Home {
+        home: "design",
+        field: "scopes",
+    };
+    let empty: Vec<String> = kept
+        .iter()
+        .filter(|id| !records(&ir.design.scopes, id).is_empty() && owned(ir, &arena, id).is_empty())
+        .cloned()
+        .collect();
+    kept.retain(|id| !empty.contains(id));
+    empty.into_iter().map(|id| (arena.clone(), id)).collect()
 }
 
 /// States the operation of `holder`, a design feature that names a lost id

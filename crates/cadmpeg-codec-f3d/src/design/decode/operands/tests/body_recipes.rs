@@ -183,7 +183,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
+            id: "f3d:Other/occurrence-0@design:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Face(
                 FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
             ),

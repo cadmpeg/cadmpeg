@@ -459,3 +459,52 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
         "{named:?}"
     );
 }
+
+/// A parameter that no feature record can hold, in a document with no
+/// `SolidWorks` feature history, is left out with a loss that names it, and
+/// the part is written (§3.4, Content the target cannot hold).
+#[test]
+fn a_parameter_without_a_feature_record_is_dropped_with_a_loss() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+
+    let mut ir = cube();
+    let parameter =
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#global").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: parameter.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "Global".into(),
+        expression: "1".into(),
+        display: None,
+        value: Some(ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+
+    let mut output = Vec::new();
+    let report = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut output)
+        .unwrap();
+
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(parameter.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    let decoded = SldprtCodec
+        .decode(&mut std::io::Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.parameters.is_empty());
+}

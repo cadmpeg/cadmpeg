@@ -228,6 +228,8 @@ pub struct GivenUpPart {
 struct Tail {
     dropped: Vec<String>,
     marked: Option<Vec<String>>,
+    /// The outcome of each stored state that the release changed.
+    stated: Vec<String>,
     lost: Vec<String>,
 }
 
@@ -241,6 +243,10 @@ fn message(head: &str, tail: Option<&Tail>) -> String {
         message.push_str("; marked=[");
         message.push_str(&marked.join(", "));
         message.push(']');
+    }
+    for stated in &tail.stated {
+        message.push_str("; ");
+        message.push_str(stated);
     }
     if !tail.lost.is_empty() {
         message.push_str("; lost=[");
@@ -455,8 +461,9 @@ impl GivenUpPart {
     }
 
     /// Names in the loss the records that a release drops and marks because
-    /// they need the part's record, for a decoder that releases them after
-    /// it gave the part up (§3.3).
+    /// they need the part's record, and the `stated` outcome of each stored
+    /// state it changed, for a decoder that releases them after it gave the
+    /// part up (§3.3).
     ///
     /// # Errors
     ///
@@ -466,10 +473,12 @@ impl GivenUpPart {
         ctx: &DecodeContext<'_>,
         dropped: impl IntoIterator<Item = String>,
         marked: impl IntoIterator<Item = String>,
+        stated: impl IntoIterator<Item = String>,
     ) -> Result<(), CodecError> {
         let tail = self.tail.get_or_insert_with(Tail::default);
         join_sorted(&mut tail.dropped, dropped);
         join_sorted(tail.marked.get_or_insert_with(Vec::new), marked);
+        tail.stated.extend(stated);
         let restated = message(&self.head, Some(tail));
         ctx.retain_bytes(u64_from_index(restated.len()), "given-up part loss")?;
         self.loss.message = restated;
@@ -652,6 +661,7 @@ impl DecodeParts for DecodeContext<'_> {
         let tail = Tail {
             dropped: dropped.into_iter().map(str::to_owned).collect(),
             marked: None,
+            stated: Vec::new(),
             lost: part.lost.clone(),
         };
         let message = message(&head, Some(&tail));

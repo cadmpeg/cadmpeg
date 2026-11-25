@@ -374,8 +374,9 @@ impl Reader<'_, '_> {
                     given
                         .name_released(
                             self.ctx,
-                            std::iter::once(id).chain(release.dropped),
-                            release.marked,
+                            std::iter::once(id).chain(release.dropped.iter().cloned()),
+                            release.marked.iter().cloned(),
+                            release.stated(),
                         )
                         .map_err(|error| session_failure(&error))?;
                     self.report[entry] = given.loss();

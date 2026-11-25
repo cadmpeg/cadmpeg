@@ -5,12 +5,10 @@ macro_rules! rewrite_scalar {
     ($type:ty) => {
         impl crate::schema::rewrite::typed::RewriteIdentities for $type {
             const HAS_IDENTITY_FIELDS: bool = false;
-            fn rewrite_native_value<
-                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
-            >(
+            fn rewrite_native_value(
                 _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 _value: &mut serde_json::Value,
-                _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+                _map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
             ) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
@@ -21,14 +19,11 @@ macro_rules! rewrite_scalar {
             ) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
-            fn rewrite_identities<RewriteMapFn>(
+            fn rewrite_identities(
                 self,
                 _rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>,
-                _identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
-            ) -> Result<Self, cadmpeg_core::CodecError>
-            where
-                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
-            {
+                _identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
                 Ok(self)
             }
         }
@@ -93,7 +88,7 @@ macro_rules! rewrite_native_record_field {
 macro_rules! rewrite_record {
     ($type:ty, [$($generic:ident $(: $bound:path)?),*]; {$($field:ident),* $(,)?}; literal {$($literal:ident),* $(,)?}) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk identity fields")?;
                 $(rewrite_native_record_field!($field, ctx, value, map, Self)?;)*
                 Ok(())
@@ -103,7 +98,7 @@ macro_rules! rewrite_record {
                 $(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite identity fields")?;
                 let Self { $($field,)* $($literal,)* } = self;
                 Ok(Self { $($field: rewrite_record_field!($field, $field, ctx, map)?,)* $($literal,)* })
@@ -112,7 +107,7 @@ macro_rules! rewrite_record {
     };
     ($type:ty, [$($generic:ident $(: $bound:path)?),*]; {$($field:ident),* $(,)?}) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk native typed fields")?;
                 $(rewrite_native_record_field!($field, ctx, value, map, Self)?;)*
                 Ok(())
@@ -127,8 +122,7 @@ macro_rules! rewrite_record {
                 $(crate::schema::rewrite::typed::RewriteIdentities::visit_local_members(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
-            where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = rewrite_context.enter_nested("typed rewrite record")?;
                 let Self { $($field),* } = self;
                 Ok(Self { $($field: rewrite_record_field!($field, $field, rewrite_context, identity_map)?),* })
@@ -149,8 +143,7 @@ macro_rules! rewrite_record {
                 $(crate::schema::rewrite::typed::RewriteIdentities::visit_local_members($field, ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
-            where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = rewrite_context.enter_nested("typed rewrite tuple")?;
                 let Self($($field),*) = self;
                 Ok(Self($(crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities($field, rewrite_context, identity_map)?),*))
@@ -187,8 +180,7 @@ macro_rules! rewrite_enum {
                     },)*
                 }
             }
-            fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
-            where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = rewrite_context.enter_nested("typed rewrite variant")?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
