@@ -24,8 +24,6 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashMap;
 use std::io::Cursor;
 
-mod face_connectivity;
-
 fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
     values.map(|value| FiniteReal::new(value).expect("finite test endpoint"))
 }

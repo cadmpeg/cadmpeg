@@ -2930,6 +2930,9 @@ pub(crate) mod tests;
 mod admission_tests;
 
 #[cfg(test)]
+mod face_connectivity_tests;
+
+#[cfg(test)]
 mod numerical_range_tests;
 
 #[cfg(test)]
