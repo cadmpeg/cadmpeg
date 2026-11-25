@@ -92,7 +92,10 @@ impl MemberKeys {
             .filter_map(|(read_at, scopes)| {
                 let mut placers = scopes
                     .into_iter()
-                    .map(|scope| scope.map(|scope| keys.get(scope).cloned()))
+                    .map(|scope| match scope {
+                        None => Some(None),
+                        Some(scope) => keys.get(scope).cloned().map(Some),
+                    })
                     .collect::<Option<Vec<_>>>()?;
                 placers.sort_unstable();
                 Some((read_at, placers.into_iter().next()?))
