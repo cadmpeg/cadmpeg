@@ -454,13 +454,20 @@ impl<'r> Reader<'r, '_> {
                         }
                     },
                 };
-                step(
+                if let Err(reason) = step(
                     records,
                     next,
                     &reads[index].head_records,
                     current.records(),
                     &mut delta,
-                );
+                ) {
+                    unread = Some(format!(
+                        "state {} of {}: {reason}",
+                        target.map_or_else(|| "empty".to_owned(), |target| target.to_string()),
+                        history.blob.stream
+                    ));
+                    break;
+                }
                 let before = records
                     .bodies
                     .iter()
@@ -651,14 +658,15 @@ fn sort(topology: &mut Topology) {
 /// of one blob: each record of `after` that `before` does not hold as it is,
 /// and the removal of each record of `before` that `after` does not hold. A
 /// record that the blob's head holds as it is takes the current geometry's
-/// version.
+/// version. The error names a procedural construction of the change whose
+/// owner `after` does not state.
 fn step(
     before: &Topology,
     after: &Topology,
     head: &Topology,
     current: &Topology,
     delta: &mut StateDelta,
-) {
+) -> Result<(), String> {
     macro_rules! diff {
         ($($field:ident $arm:ident),*) => {$({
             let earlier = before.$field.iter()
@@ -691,4 +699,90 @@ fn step(
         })*};
     }
     topology_arenas!(diff);
+    carry_owners(after, head, current, delta)
+}
+
+/// Adds to `delta` the owning surface or curve, from `after`, of each
+/// procedural construction that it holds without its owner: a record states
+/// its procedural construction together with its owner.
+fn carry_owners(
+    after: &Topology,
+    head: &Topology,
+    current: &Topology,
+    delta: &mut StateDelta,
+) -> Result<(), String> {
+    let mut surfaces = Vec::new();
+    for procedural in &delta.records.procedural_surfaces {
+        if delta
+            .records
+            .procedural_surface_owner(&procedural.id)
+            .is_some()
+        {
+            continue;
+        }
+        let owner = after
+            .procedural_surface_owner(&procedural.id)
+            .and_then(|owner| after.surfaces.iter().find(|surface| surface.id == *owner))
+            .ok_or_else(|| {
+                format!(
+                    "the procedural surface {} has no unique owning surface",
+                    procedural.id
+                )
+            })?;
+        if delta
+            .records
+            .surfaces
+            .iter()
+            .any(|held| held.id == owner.id)
+        {
+            return Err(format!(
+                "the surface {} of the change does not own its procedural surface {}",
+                owner.id, procedural.id
+            ));
+        }
+        surfaces.push(version(owner, &head.surfaces, &current.surfaces).clone());
+    }
+    let mut curves = Vec::new();
+    for procedural in &delta.records.procedural_curves {
+        if delta
+            .records
+            .procedural_curve_owner(&procedural.id)
+            .is_some()
+        {
+            continue;
+        }
+        let owner = after
+            .procedural_curve_owner(&procedural.id)
+            .and_then(|owner| after.curves.iter().find(|curve| curve.id == *owner))
+            .ok_or_else(|| {
+                format!(
+                    "the procedural curve {} has no unique owning curve",
+                    procedural.id
+                )
+            })?;
+        if delta.records.curves.iter().any(|held| held.id == owner.id) {
+            return Err(format!(
+                "the curve {} of the change does not own its procedural curve {}",
+                owner.id, procedural.id
+            ));
+        }
+        curves.push(version(owner, &head.curves, &current.curves).clone());
+    }
+    delta.records.surfaces.extend(surfaces);
+    delta.records.curves.extend(curves);
+    Ok(())
+}
+
+/// The version of `record` of a state that a delta states: the current
+/// geometry's record where the head holds `record` as it is.
+fn version<'t, R: ArenaRecord + PartialEq>(record: &'t R, head: &[R], current: &'t [R]) -> &'t R {
+    let id = record.record_identity();
+    let held = head.iter().find(|held| held.record_identity() == id);
+    match (
+        held,
+        current.iter().find(|found| found.record_identity() == id),
+    ) {
+        (Some(held), Some(found)) if held == record => found,
+        _ => record,
+    }
 }

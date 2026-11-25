@@ -33,7 +33,7 @@ fn a_step_adds_the_changed_and_new_records_and_removes_the_absent_ones() {
     let head = points(vec![point("3", 3.0)]);
     let current = points(vec![point("3", 5.0)]);
     let mut delta = StateDelta::default();
-    step(&before, &after, &head, &current, &mut delta);
+    step(&before, &after, &head, &current, &mut delta).expect("the step");
     assert_eq!(delta.records.points, [point("2", 2.0), point("3", 5.0)]);
     assert_eq!(delta.removed, [RecordRef::Point(point("4", 0.0).id)]);
 }
@@ -42,6 +42,6 @@ fn a_step_adds_the_changed_and_new_records_and_removes_the_absent_ones() {
 fn a_step_between_equal_states_is_empty() {
     let state = points(vec![point("1", 0.0), point("2", 1.0)]);
     let mut delta = StateDelta::default();
-    step(&state, &state, &state, &Topology::default(), &mut delta);
+    step(&state, &state, &state, &Topology::default(), &mut delta).expect("the step");
     assert_eq!(delta, StateDelta::default());
 }
