@@ -888,7 +888,9 @@ fn edge_heights(index: &TopologyIndex<'_>, face: &Face, form: &Revolved) -> Opti
 /// α_u + p x` and `θ_v / 2 = α_v + q x`, and `tan(α + n x)` is a rational
 /// function of `w = tan x` of degree `|n|`: with `(1 + i w)^n = D + i N`, it is
 /// `(N cos α + D sin α) / (D cos α - N sin α)`. Each piece between span
-/// boundaries is therefore a rational Bézier curve of degree `|p| + q`.
+/// boundaries is therefore a rational Bézier curve of degree `|p| + q`. Its
+/// knots are the parameters of the line at the piece ends, and its middle is
+/// at the line parameter of the piece middle.
 fn rational_line(
     u_arc: &UnitArc,
     v_arc: &UnitArc,
@@ -930,15 +932,11 @@ fn rational_line(
     }
     let degree = slope.degree()?;
     let last = pieces.len().checked_sub(1)?;
-    let count = cadmpeg_core::convert::f64_from_index(pieces.len())?;
-    let knot = |piece: usize| {
-        let piece = cadmpeg_core::convert::f64_from_index(piece).unwrap_or(f64::NAN);
-        (range[1] - range[0]).mul_add(piece / count, range[0])
-    };
-    let mut knots = std::iter::repeat_n(knot(0), degree + 1).collect::<Vec<_>>();
+    let knot = |s: f64| (range[1] - range[0]).mul_add(s, range[0]);
+    let mut knots = std::iter::repeat_n(range[0], degree + 1).collect::<Vec<_>>();
     let mut points = Vec::new();
     let mut weights = Vec::new();
-    for (position, (piece_points, piece_weights)) in pieces.into_iter().enumerate() {
+    for (position, ([_, s1], piece_points, piece_weights)) in pieces.into_iter().enumerate() {
         let scale = weights
             .last()
             .map_or(1.0, |previous: &f64| previous / piece_weights[0]);
@@ -950,8 +948,11 @@ fn rational_line(
                 .skip(skip)
                 .map(|weight| weight * scale),
         );
-        let multiplicity = if position == last { degree + 1 } else { degree };
-        knots.extend(std::iter::repeat_n(knot(position + 1), multiplicity));
+        if position == last {
+            knots.extend(std::iter::repeat_n(range[1], degree + 1));
+        } else {
+            knots.extend(std::iter::repeat_n(knot(s1), degree));
+        }
     }
     PcurveNurbs::from_lanes(
         u32::try_from(degree).ok()?,
@@ -962,6 +963,10 @@ fn rational_line(
     )
     .ok()
 }
+
+/// One rational Bézier piece of the image of a line: its interval of the
+/// line parameter, its poles and its weights.
+type Piece = ([f64; 2], Vec<Point2>, Vec<f64>);
 
 /// A parameter line `start + s delta` with `delta = k (p, q)`.
 struct Line {
@@ -981,11 +986,11 @@ impl Line {
         v_arc: &UnitArc,
         [s0, s1]: [f64; 2],
         splits: u32,
-        pieces: &mut Vec<(Vec<Point2>, Vec<f64>)>,
+        pieces: &mut Vec<Piece>,
     ) -> Option<()> {
         let middle = 0.5 * (s0 + s1);
-        if let Some(piece) = self.piece(u_arc, v_arc, [s0, s1]) {
-            pieces.push(piece);
+        if let Some((points, weights)) = self.piece(u_arc, v_arc, [s0, s1]) {
+            pieces.push(([s0, s1], points, weights));
             return Some(());
         }
         let splits = splits.checked_sub(1)?;

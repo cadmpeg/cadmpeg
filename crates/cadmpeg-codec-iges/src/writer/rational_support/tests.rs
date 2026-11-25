@@ -61,3 +61,47 @@ fn the_image_of_a_parameter_line_of_whole_slope_stays_on_the_line() {
         }
     }
 }
+
+#[test]
+fn the_image_of_a_parameter_line_meets_the_line_parameter_at_its_knots_and_piece_middles() {
+    let u_arc = UnitArc::new([0.0, 2.5]).expect("a u arc");
+    let v_arc = UnitArc::new([-FRAC_PI_2, FRAC_PI_2]).expect("a v arc");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    let range = [3.0, 5.0];
+    let mut largest_piece_count = 0;
+    for (p, q, start, end) in [
+        (1, 1, [0.2, -1.2], [1.2, -0.2]),
+        (-2, 1, [2.3, -1.0], [0.3, 0.0]),
+        (1, 3, [0.5, -1.4], [1.3, 1.0]),
+    ] {
+        let (start, end) = (Point2::new(start[0], start[1]), Point2::new(end[0], end[1]));
+        let nurbs = rational_line(&u_arc, &v_arc, start, end, Slope { p, q }, range)
+            .expect("the line has an exact image");
+        let mut knots = nurbs.knots().as_slice().to_vec();
+        knots.dedup();
+        largest_piece_count = largest_piece_count.max(knots.len() - 1);
+        let middles = knots
+            .windows(2)
+            .map(|pair| 0.5 * (pair[0] + pair[1]))
+            .collect::<Vec<_>>();
+        let geometry = PcurveGeometry::Nurbs { nurbs };
+        for parameter in knots.into_iter().chain(middles) {
+            let point = pcurve_uv(&ctx, &geometry, parameter)
+                .expect("a parameter point")
+                .get();
+            let s = (parameter - range[0]) / (range[1] - range[0]);
+            let expected = Point2::new(
+                (end.u - start.u).mul_add(s, start.u),
+                (end.v - start.v).mul_add(s, start.v),
+            );
+            let (u, v) = (angle(&u_arc, point.u), angle(&v_arc, point.v));
+            assert!(
+                (u - expected.u).abs() <= ON_LINE && (v - expected.v).abs() <= ON_LINE,
+                "slope {p}/{q}: the image at {parameter} is ({u}, {v}), the line {expected:?}"
+            );
+        }
+    }
+    assert!(largest_piece_count > 1, "no image has a second piece");
+}
