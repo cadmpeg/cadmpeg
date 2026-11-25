@@ -270,6 +270,96 @@ fn cadir_encoder_writes_a_repeated_id_once() {
     assert_eq!(kept, &original);
 }
 
+/// A native-record link to a record of an arena the CADIR wire omits names
+/// no written record: the write states the native record without that link,
+/// keeps its other links, and names the cleared link. The output checks with
+/// the Errors of the fixture it extends only.
+#[test]
+fn cadir_encoder_clears_a_native_link_to_an_omitted_record() {
+    use crate::features::{
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+        SketchFeatureBinding,
+    };
+
+    const FEATURE: &str = "synthetic:test:feature#detail-view";
+    const ANNOTATION: &str = "test:native:annotation#1";
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let face = ir.geometry.faces[0].id.as_str().to_owned();
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint(FEATURE).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Unresolved,
+            }),
+        ),
+        native_ref: None,
+    });
+    let links = |record: &crate::native::NativeRecord| record.field("links");
+    let annotation = crate::native::NativeRecord::new(
+        crate::ids::Identity::new(ANNOTATION).unwrap(),
+        serde_json::json!({"links": [FEATURE, face]})
+            .as_object()
+            .cloned()
+            .unwrap(),
+    )
+    .unwrap();
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("annotations"),
+            vec![annotation],
+        );
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan CADIR export");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        unwritable,
+        [format!(
+            "the cadir write writes each native record without its link to a record of an \
+             arena the CADIR wire omits (1): {ANNOTATION} -> {FEATURE}"
+        )]
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    let records = &written.native.namespace("test").unwrap().arenas()["annotations"];
+    assert_eq!(links(&records[0]), Some(serde_json::json!([face])));
+    let errors = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .unwrap()
+            .findings
+            .into_iter()
+            .filter(|finding| finding.severity == Severity::Error)
+            .collect::<Vec<_>>()
+    };
+    let found = errors(&written);
+    assert!(
+        found
+            .iter()
+            .all(|finding| finding.check != Check::NativeLinks),
+        "{found:?}"
+    );
+    assert_eq!(found, errors(&unit_cube().unwrap()));
+}
+
 #[test]
 fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum().unwrap();

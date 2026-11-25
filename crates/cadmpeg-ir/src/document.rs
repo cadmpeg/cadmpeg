@@ -1514,6 +1514,18 @@ macro_rules! declare_arena_name {
                 ids
             }
 
+            /// The ids of `among` that a record of an arena the CADIR wire
+            /// carries has.
+            pub(crate) fn written_among<'b>(self, among: &std::collections::BTreeSet<&'b str>) -> std::collections::BTreeSet<&'b str> {
+                let mut written = std::collections::BTreeSet::new();
+                $(if !ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    written.extend(self.$home.$field.iter().filter_map(|record| {
+                        among.get(crate::schema::ArenaRecord::record_identity(record)).copied()
+                    }));
+                })*
+                written
+            }
+
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {

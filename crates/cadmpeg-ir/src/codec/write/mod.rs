@@ -505,10 +505,7 @@ fn drop_records_past_the_bounds(
         .iter()
         .filter_map(|(place, bound)| ir.record_at(place).map(|seed| (seed, *bound)))
         .collect();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let removed = crate::give_up::drop_records(&ctx, &mut ir, bounds.keys().cloned().collect())?;
+    let removed = crate::give_up::drop_records(&mut ir, bounds.keys().cloned().collect())?;
     let losses = removed
         .into_iter()
         .filter_map(|(seed, released)| {

@@ -852,6 +852,18 @@ impl JsonSchema for NativeRecord {
     }
 }
 
+/// The native-record links of `record` of the arena `arena`: its `links`
+/// member where that is an array in `unknowns` and an array of strings in
+/// another arena, as validation reads them.
+fn record_links(arena: &str, record: &NativeRecord) -> Vec<Value> {
+    match record.field("links") {
+        Some(Value::Array(links)) if arena == "unknowns" || links.iter().all(Value::is_string) => {
+            links
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Serialize codec-owned typed records into one arena in canonical record order.
 ///
 /// The arena is returned rather than stored, so a caller that only needs the
@@ -1193,6 +1205,75 @@ impl Native {
                 .flatten()
                 .any(|record| record.id() == id)
         })
+    }
+
+    /// The ids of `among` that a record of a namespace arena has.
+    pub(crate) fn held_among<'a>(
+        &self,
+        among: &std::collections::BTreeSet<&'a str>,
+    ) -> std::collections::BTreeSet<&'a str> {
+        self.0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+            .filter_map(|record| among.get(record.id()).copied())
+            .collect()
+    }
+
+    /// The ids of `among` that a native-record link names.
+    pub(crate) fn linked_among<'a>(
+        &self,
+        among: &std::collections::BTreeSet<&'a str>,
+    ) -> std::collections::BTreeSet<&'a str> {
+        let mut linked = std::collections::BTreeSet::new();
+        for namespace in self.0.values() {
+            for (arena, records) in &namespace.arenas {
+                for record in records {
+                    linked.extend(
+                        record_links(arena.as_str(), record)
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .filter_map(|link| among.get(link).copied()),
+                    );
+                }
+            }
+        }
+        linked
+    }
+
+    /// Removes each id of `gone` from the native-record links of every
+    /// record, and returns each record id with the link it lost (§3.3).
+    ///
+    /// # Errors
+    ///
+    /// A record whose text no longer reads as an object.
+    pub(crate) fn release_links(
+        &mut self,
+        gone: &std::collections::BTreeSet<String>,
+    ) -> Result<Vec<(String, String)>, NativeConvertError> {
+        let mut lost = Vec::new();
+        for namespace in self.0.values_mut() {
+            for (arena, records) in &mut namespace.arenas {
+                for record in records.iter_mut() {
+                    let (released, kept): (Vec<Value>, Vec<Value>) =
+                        record_links(arena.as_str(), record)
+                            .into_iter()
+                            .partition(|link| {
+                                link.as_str().is_some_and(|link| gone.contains(link))
+                            });
+                    if released.is_empty() {
+                        continue;
+                    }
+                    let mut fields = record.fields()?;
+                    fields.insert("links".to_owned(), Value::Array(kept));
+                    *record = NativeRecord::new(record.id.clone(), fields)?;
+                    lost.extend(released.into_iter().filter_map(|link| match link {
+                        Value::String(link) => Some((record.id().to_owned(), link)),
+                        _ => None,
+                    }));
+                }
+            }
+        }
+        Ok(lost)
     }
 
     /// Sort every arena into canonical identity order.

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The document a CADIR writer writes: each id once, and only records of the
-//! classes the document's scope holds (§2.1, §2.5, §3.4).
+//! The document a CADIR writer writes: each id once, only records of the
+//! classes the document's scope holds, and native-record links that name a
+//! written record (§2.1, §2.5, §3.3, §3.4).
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::decode::{ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{ArenaClass, ContentScope};
 use cadmpeg_core::CodecError;
 
 use super::loss::{value_unwritable, ExportLossCode};
@@ -13,16 +14,17 @@ use crate::document::{ArenaName, CadIr, DifferingCopies};
 use crate::give_up::Arena;
 use crate::report::loss::LossNote;
 
-/// A copy of `ir` that states each id of an arena once and holds no record
-/// its scope excludes, with the losses of what the copy leaves out, or
-/// `None` where `ir` is already such a document.
+/// A copy of `ir` that states each id of an arena once, holds no record its
+/// scope excludes, and links no record the write leaves out, with the losses
+/// of what the copy leaves out, or `None` where `ir` is already such a
+/// document.
 ///
 /// # Errors
 ///
-/// A resource refusal for a rewritten `unknowns` arena.
+/// A native record whose text no longer reads as an object.
 pub(super) fn canonical_form(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
     let breach = ir.check_scope().is_err();
-    if !breach && ir.ids_in_order() {
+    if !breach && ir.ids_in_order() && unwritten_links(ir).is_empty() {
         return Ok(None);
     }
     let mut written = ir.clone();
@@ -30,7 +32,39 @@ pub(super) fn canonical_form(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)
     if breach {
         losses.extend(out_of_scope(&mut written)?);
     }
+    let unwritten = unwritten_links(&written);
+    if !unwritten.is_empty() {
+        let released = written.native.release_links(&unwritten)?;
+        losses.extend(value_unwritable(
+            CadirEncoder::FORMAT.as_str(),
+            "writes each native record without its link to a record of an arena the CADIR \
+             wire omits",
+            released
+                .into_iter()
+                .map(|(record, link)| format!("{record} -> {link}")),
+        ));
+    }
     Ok(Some((written, losses)))
+}
+
+/// Each id that a native-record link of `ir` names, that a record of an
+/// arena the CADIR wire omits has, and that no written record has.
+fn unwritten_links(ir: &CadIr) -> BTreeSet<String> {
+    let omitted = ir.model.omitted_record_ids();
+    if omitted.is_empty() {
+        return BTreeSet::new();
+    }
+    let linked = ir.native.linked_among(&omitted);
+    if linked.is_empty() {
+        return BTreeSet::new();
+    }
+    let written = ir.arenas().written_among(&linked);
+    let native = ir.native.held_among(&linked);
+    linked
+        .into_iter()
+        .filter(|id| !written.contains(id) && !native.contains(id))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Keeps the first copy in arena order of each id an arena states more than
@@ -106,21 +140,18 @@ fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
 /// Drops the records `held` excludes and each record that needs one, and
 /// returns the records it states in their partial forms.
 fn drop_excluded(ir: &mut CadIr, held: ContentScope) -> Result<BTreeSet<String>, CodecError> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let seeds = ArenaClass::ALL
         .into_iter()
         .filter(|class| !held.holds(*class))
         .flat_map(|class| ir.arenas().seeds_of(class))
         .collect();
     let mut marked = BTreeSet::new();
-    for (_, released) in crate::give_up::drop_records(&ctx, ir, seeds)? {
+    for (_, released) in crate::give_up::drop_records(ir, seeds)? {
         marked.extend(released.marked);
     }
     if !held.holds(ArenaClass::Design) {
         let seeds = ir.design_reference_seeds();
-        for (_, released) in crate::give_up::drop_records(&ctx, ir, seeds)? {
+        for (_, released) in crate::give_up::drop_records(ir, seeds)? {
             marked.extend(released.marked);
         }
     }

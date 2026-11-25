@@ -218,7 +218,7 @@ pub(crate) fn give_up(
         let Some(text) = text(ir, &seed.arena, &seed.id) else {
             continue;
         };
-        let Some(released) = remove(ctx, ir, &seed)? else {
+        let Some(released) = remove(ir, &seed)? else {
             continue;
         };
         ctx.retain_bytes(
@@ -253,15 +253,14 @@ pub(crate) fn give_up(
 ///
 /// # Errors
 ///
-/// A resource refusal for a rewritten `unknowns` arena.
+/// A native record whose text no longer reads as an object.
 pub(crate) fn drop_records(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     seeds: Vec<Seed>,
 ) -> Result<Vec<(Seed, Released)>, CodecError> {
     let mut removed = Vec::new();
     for seed in seeds {
-        if let Some(released) = remove(ctx, ir, &seed)? {
+        if let Some(released) = remove(ir, &seed)? {
             removed.push((seed, released));
         }
     }
@@ -270,11 +269,7 @@ pub(crate) fn drop_records(
 
 /// Removes every copy of `seed` and releases it, or returns `None` where
 /// its arena holds none.
-fn remove(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    seed: &Seed,
-) -> Result<Option<Released>, CodecError> {
+fn remove(ir: &mut CadIr, seed: &Seed) -> Result<Option<Released>, CodecError> {
     let parents = parents(ir, &seed.arena, &seed.id);
     let copies = take(ir, &seed.arena, &seed.id);
     if copies == 0 {
@@ -287,7 +282,7 @@ fn remove(
         marked: BTreeSet::new(),
     };
     mark_parents(ir, &parents, &mut released.marked);
-    release(ctx, ir, &seed.id, &mut released)?;
+    release(ir, &seed.id, &mut released)?;
     Ok(Some(released))
 }
 
@@ -366,19 +361,14 @@ fn mark_parents(ir: &mut CadIr, parents: &[String], marked: &mut BTreeSet<String
 /// holds, and marks each record that only lists it, recording both in
 /// `released`. An id another arena still holds names that record, so
 /// nothing needs it.
-fn release(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    id: &str,
-    released: &mut Released,
-) -> Result<(), CodecError> {
+fn release(ir: &mut CadIr, id: &str, released: &mut Released) -> Result<(), CodecError> {
     let mut gone: BTreeSet<String> = BTreeSet::new();
     if !ir.holds_id(id) {
         gone.insert(id.to_owned());
     }
     while !gone.is_empty() {
         ir.release_keyed(&gone);
-        release_stub_links(ctx, ir, &gone)?;
+        ir.native.release_links(&gone)?;
         let holders = ir.arenas().holders(&gone);
         let mut next = BTreeSet::new();
         for holder in holders {
@@ -472,37 +462,6 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
         }
         _ => false,
     }
-}
-
-/// Removes each id of `gone` from the links of every `unknowns` stub: a
-/// stub's links are a set.
-fn release_stub_links(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    gone: &BTreeSet<String>,
-) -> Result<(), CodecError> {
-    let namespaces: Vec<String> = ir
-        .native
-        .0
-        .iter()
-        .filter(|(_, namespace)| namespace.arenas().contains_key("unknowns"))
-        .map(|(codec, _)| codec.as_str().to_owned())
-        .collect();
-    for codec in namespaces {
-        let Ok(mut stubs) = ir.native_unknowns(&codec) else {
-            continue;
-        };
-        let mut changed = false;
-        for stub in &mut stubs {
-            let before = stub.links.len();
-            stub.links.retain(|link| !gone.contains(link.as_str()));
-            changed |= stub.links.len() != before;
-        }
-        if changed {
-            ir.set_native_unknowns(ctx, &codec, &stubs)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
