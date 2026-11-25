@@ -98,7 +98,6 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
         object_id: cadmpeg_core::nonblank_literal!("failed-brep"),
         instance_path: Vec::new(),
     };
-    let unknown = "rhino:object:record#failed".try_into().expect("identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -109,7 +108,6 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
             key: "failed",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: crate::test_support::millimeter_scale(1.0),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -245,7 +243,6 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
             key: "plane",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: crate::test_support::millimeter_scale(25.4),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -323,6 +320,124 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert!(report.is_ok(), "{report:?}");
 }
 
+/// The plane triangle Brep with each combination of a reversed face and a
+/// trim whose C2 curve runs against it, staged, committed, and validated.
+fn plane_brep_variant(face_reversed: bool, proxy_reversed: bool) -> CadIr {
+    let (mut data, mut raw) = source_shaped_plane_brep();
+    raw.faces[0].reversed_surface = face_reversed;
+    if proxy_reversed {
+        let line = raw.c2.slots[0].as_ref().expect("trim C2 curve").class_uuid;
+        let range = super::append_line_payload(&mut data, [1.0, 0.0, 0.0], [0.0, 0.0, 0.0], 2);
+        raw.c2.slots[0] = Some(super::child(line, range));
+        raw.trims[0].proxy_reversed = true;
+        raw.trims[0].domain = super::finite_interval([-1.0, 0.0]);
+    }
+    let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate plane Brep");
+    let association = SourceObjectAssociation {
+        geometry_role: None,
+        format: cadmpeg_ir::codec_id!("rhino"),
+        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+            .expect("nonempty source identity"),
+        instance_path: Vec::new(),
+    };
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "plane",
+            association: &association,
+            display: &ObjectDisplay::default(),
+            scale: MillimeterScale::IDENTITY,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("stage plane Brep");
+    assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+    let mut ir = CadIr::empty();
+    staged
+        .draft
+        .commit(
+            &mut ir,
+            &mut cadmpeg_ir::Annotations::default(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+        )
+        .unwrap()
+        .expect("commit staged plane Brep");
+    cadmpeg_ir::examples::add_document_root(&mut ir);
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model");
+    assert!(report.is_ok(), "{report:?}");
+    ir
+}
+
+#[test]
+fn an_outer_loop_runs_counterclockwise_about_the_face_normal_with_each_use_on_its_coedge() {
+    use cadmpeg_ir::topology::Sense;
+
+    for face_reversed in [false, true] {
+        for proxy_reversed in [false, true] {
+            let ir = plane_brep_variant(face_reversed, proxy_reversed);
+            let geometry = &ir.geometry;
+            let face = &geometry.faces[0];
+            let normal = cadmpeg_ir::math::Vector3::new(
+                0.0,
+                0.0,
+                if face.sense == Sense::Reversed {
+                    -1.0
+                } else {
+                    1.0
+                },
+            );
+            let loop_ = &geometry.loops[0];
+            for id in loop_.coedges() {
+                let coedge = geometry
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.id == *id)
+                    .expect("coedge");
+                let [start, end] = crate::test_support::coedge_ends(&ir, coedge);
+                let [use_] = coedge.pcurves.as_slice() else {
+                    panic!("one pcurve use per coedge");
+                };
+                let pcurve = geometry
+                    .pcurves
+                    .iter()
+                    .find(|pcurve| pcurve.id == use_.pcurve)
+                    .expect("pcurve");
+                let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+                    panic!("line C2 must be a NURBS pcurve");
+                };
+                let lifted = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    nurbs
+                        .lift(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
+                        .expect("lift pcurve"),
+                ));
+                let range = use_.parameter_range.expect("use interval").endpoints();
+                let [use_start, use_end] = range.map(|parameter| {
+                    cadmpeg_ir::eval::decode::curve_point(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        &lifted,
+                        parameter,
+                    )
+                    .expect("evaluate pcurve")
+                    .get()
+                });
+                let case = (face_reversed, proxy_reversed, coedge.id.as_str());
+                assert!(use_start.distance(start) < 1e-12, "{case:?}");
+                assert!(use_end.distance(end) < 1e-12, "{case:?}");
+            }
+            let twice_area = crate::test_support::loop_twice_area_about(&ir, loop_, normal);
+            assert!(
+                (twice_area - 1.0).abs() < 1e-12,
+                "{face_reversed} {proxy_reversed}: {twice_area}"
+            );
+        }
+    }
+}
+
 #[test]
 fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let (data, mut raw) = source_shaped_plane_brep();
@@ -356,7 +471,6 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
             key: "free-vertex",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -412,9 +526,6 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
             .expect("nonempty source identity"),
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane"
-        .try_into()
-        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -425,7 +536,6 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
             key: "plane",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -587,9 +697,6 @@ fn brep_mesh_cache_stages_one_tessellation() {
             .expect("nonempty source identity"),
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane"
-        .try_into()
-        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -600,7 +707,6 @@ fn brep_mesh_cache_stages_one_tessellation() {
             key: "plane",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })

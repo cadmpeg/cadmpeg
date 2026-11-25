@@ -92,8 +92,9 @@ fn a_singular_edge_is_written_as_a_singular_trim() {
     );
 }
 
-#[test]
-fn a_compound_edge_curve_is_written_as_its_joined_nurbs_form() {
+/// A square sheet whose first edge runs from (0, 0) to (4, 0) over [0, 4]
+/// along a compound whose second component starts at `second_start`.
+fn compound_edge_sheet(second_start: Point3) -> cadmpeg_ir::CadIr {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(4.0, 0.0, 0.0),
@@ -117,7 +118,7 @@ fn a_compound_edge_curve_is_written_as_its_joined_nurbs_form() {
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
-                Point3::new(1.0, 1.0, 0.0),
+                second_start,
                 Point3::new(2.5, 2.0, 0.0),
                 Point3::new(4.0, 0.0, 0.0),
             ],
@@ -158,6 +159,12 @@ fn a_compound_edge_curve_is_written_as_its_joined_nurbs_form() {
     };
     ir.geometry.curves.extend([first, second]);
     ir.finalize();
+    ir
+}
+
+#[test]
+fn a_compound_edge_curve_is_written_as_its_joined_nurbs_form() {
+    let ir = compound_edge_sheet(Point3::new(1.0, 1.0, 0.0));
 
     let (decoded, losses) = written(&ir);
     assert_eq!(decoded.geometry.faces.len(), 1, "{losses:?}");
@@ -195,6 +202,36 @@ fn a_compound_edge_curve_is_written_as_its_joined_nurbs_form() {
             "{parameter}: {actual:?} != {expected:?}"
         );
     }
+}
+
+#[test]
+fn compound_edge_pieces_apart_within_the_edge_tolerance_keep_the_face() {
+    let mut ir = compound_edge_sheet(Point3::new(1.0, 1.0 + 1.0e-6, 0.0));
+    ir.geometry.edges[0].tolerance = Some(PositiveLength::new(1.0e-3).expect("finite tolerance"));
+
+    let (decoded, losses) = written(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 1, "{losses:?}");
+    assert!(
+        omitted(&losses, "cadir:model:face#polygon").is_empty(),
+        "{losses:?}"
+    );
+    let code = RhinoLossCode::WriterEdgeGapJoined.kind().to_string();
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(&code)),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn compound_edge_pieces_apart_beyond_the_edge_tolerance_leave_out_the_face() {
+    let ir = compound_edge_sheet(Point3::new(1.0, 2.0, 0.0));
+
+    let (decoded, losses) = written(&ir);
+    assert!(decoded.geometry.faces.is_empty(), "{losses:?}");
+    assert!(
+        !omitted(&losses, "cadir:model:face#polygon").is_empty(),
+        "{losses:?}"
+    );
 }
 
 #[test]
