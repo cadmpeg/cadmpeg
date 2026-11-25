@@ -549,9 +549,11 @@ fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_de
     let report = crate::test_support::assert_written_with_loss(
         result.ir(),
         None,
-        &crate::loss::F3dLossCode::SourceDialectDisplaced
-            .kind()
-            .to_string(),
+        &cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("f3d"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+        )
+        .to_string(),
         "f3d:unknown",
     );
     assert!(

@@ -161,6 +161,7 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
     194, 196, 198, 314, 406, 502, 504, 508, 510, 514,
 ];
 
+mod covered_uses;
 mod degrade;
 use degrade::{named, naming, Unwritten};
 mod exact;
@@ -187,6 +188,7 @@ fn body(
         coverage,
         losses,
         notes: vec![note.into()],
+        written_row: None,
     }
 }
 
@@ -477,6 +479,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     }
     let mut range_losses = Vec::new();
     let ranged = state_open_edge_ranges(lowering.ir.as_ref(), &mut range_losses)?;
+    let ranged = covered_uses::covered_pcurve_uses(ranged.as_ref());
     let brep = has_brep_topology(ranged.as_ref());
     let dissimilar = placement::dissimilar_supports(ranged.as_ref());
     let admitted = |surface: &str| !brep || dissimilar.contains(surface);

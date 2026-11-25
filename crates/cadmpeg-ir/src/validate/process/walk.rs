@@ -204,12 +204,16 @@ impl Capture {
                 },
             }),
             Self::ParamRef => {
-                if let Ok(reference) = serde_json::from_value(Value::Object(members)) {
+                if let Ok(reference) =
+                    cadmpeg_core::serde_erase::from_json_value(&Value::Object(members))
+                {
                     found.references.push((at, reference));
                 }
             }
             Self::PickContext => {
-                if let Ok(context) = serde_json::from_value(Value::Object(members)) {
+                if let Ok(context) =
+                    cadmpeg_core::serde_erase::from_json_value(&Value::Object(members))
+                {
                     found.contexts.push((at, context));
                 }
             }
@@ -221,7 +225,7 @@ impl Capture {
             Self::Selection => {
                 if let Some(anchor) = members
                     .remove("at")
-                    .and_then(|value| serde_json::from_value(value).ok())
+                    .and_then(|value| cadmpeg_core::serde_erase::from_json_value(&value).ok())
                 {
                     found.anchors.push((at, anchor));
                 }
