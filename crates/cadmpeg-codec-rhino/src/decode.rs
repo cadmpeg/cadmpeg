@@ -386,6 +386,8 @@ struct InstanceDisplay {
     visible: bool,
 }
 
+mod object_presentation;
+
 /// Mutable decode state shared by metadata and geometry phases.
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
@@ -410,6 +412,9 @@ pub(crate) struct DecodeContext<'a> {
     /// the root, stated with its own name, colour, and visibility once the
     /// root exists.
     mesh_bodies: HashMap<String, MeshBody>,
+    /// The display state of each object decoded, by the key its source
+    /// associations carry.
+    object_presentations: object_presentation::ObjectPresentations,
 }
 
 /// A mesh object's own display name, colour, and visibility flag.
@@ -462,6 +467,7 @@ impl<'a> DecodeContext<'a> {
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
             mesh_bodies: HashMap::new(),
+            object_presentations: HashMap::new(),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -648,7 +654,7 @@ impl<'a> DecodeContext<'a> {
         let appended = self.session.try_admit_append(
             candidate,
             annotations,
-            cadmpeg_ir::RHINO_DRAFT_CHECKS,
+            cadmpeg_ir::RHINO_DRAFT,
             |validation, annotations| {
                 let validation = match validation {
                     Ok(report) => report,
@@ -788,6 +794,7 @@ impl<'a> DecodeContext<'a> {
             if self.instance_selection.is_none() && self.is_definition_member(object) {
                 continue;
             }
+            self.record_presentation(&object.identity);
             if crate::instances::is_reference_class(object.class_uuid) {
                 self.expand_reference(source_order)?;
                 continue;
@@ -893,6 +900,7 @@ impl<'a> DecodeContext<'a> {
                                 Ok(Some(decoded)) => {
                                     proxy_transferred = self.commit_subd_surface(
                                         source_order,
+                                        key.clone(),
                                         decoded,
                                         scale != MillimeterScale::IDENTITY,
                                     )?;
@@ -2026,6 +2034,24 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
+    /// Records the display state `identity` is decoded with at the current
+    /// instance path.
+    fn record_presentation(&mut self, identity: &crate::objects::SourceIdentity) {
+        let path = self
+            .instance_selection
+            .as_ref()
+            .map_or_else(Vec::new, |selected| selected.path.clone());
+        let presentation = object_presentation::ObjectPresentation {
+            display: self.object_display(identity),
+            layer_index: identity.layer.as_ref().map(|_| identity.layer_index),
+        };
+        object_presentation::record(
+            &mut self.object_presentations,
+            (format!("{}", identity.object_id), path),
+            presentation,
+        );
+    }
+
     fn object_display(&self, identity: &crate::objects::SourceIdentity) -> ObjectDisplay {
         object_display(
             identity,
@@ -2077,7 +2103,7 @@ impl<'a> DecodeContext<'a> {
             Ok(links) => {
                 let validation = self
                     .session
-                    .admit_appended(&self.annotations, cadmpeg_ir::RHINO_INSTANCE_CHECKS)?;
+                    .admit_appended(&self.annotations, cadmpeg_ir::RHINO_INSTANCE)?;
                 if validation
                     .as_ref()
                     .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)
@@ -2479,7 +2505,7 @@ impl<'a> DecodeContext<'a> {
         };
         let id = cadmpeg_ir::ids::SubdId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "subd"),
-            key,
+            key.clone(),
         );
         match crate::subd::decode(
             self.scan.data,
@@ -2494,6 +2520,7 @@ impl<'a> DecodeContext<'a> {
             Ok(Some(decoded)) => {
                 if self.commit_subd_surface(
                     source_order,
+                    key,
                     decoded,
                     scale != MillimeterScale::IDENTITY,
                 )? {
@@ -2526,9 +2553,13 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
+    /// Commits a decoded `SubD` object as a cage in a body of its own: one
+    /// region and one shell whose `members` list the cage (§5.6), the body
+    /// stating the object's display name, colour, and visibility.
     fn commit_subd_surface(
         &mut self,
         source_order: usize,
+        key: cadmpeg_ir::ids::IdentityKey,
         decoded: crate::subd::DecodedSubd,
         scaled: bool,
     ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -2556,9 +2587,35 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         };
         surface.source_object = Some(self.source_association(identity)?);
+        let display = self.object_display(identity);
         let id = surface.id.to_string();
+        let body_id = cadmpeg_ir::ids::BodyId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+            key.clone(),
+        );
+        let region_id = cadmpeg_ir::ids::RegionId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+            key.clone(),
+        );
+        let shell_id = cadmpeg_ir::ids::ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+            key,
+        );
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
-            candidate.geometry.subds.push(surface);
+            for derived in [
+                shell_id.to_string(),
+                region_id.to_string(),
+                body_id.to_string(),
+            ] {
+                set_exactness(candidate_annotations, derived, Exactness::Derived);
+            }
+            let cage_body =
+                candidate
+                    .geometry
+                    .push_cage_object(surface, body_id.clone(), region_id, shell_id);
+            cage_body.name = display.name;
+            cage_body.color = display.color;
+            cage_body.visible = display.visible;
             set_exactness(
                 candidate_annotations,
                 &id,
@@ -2568,7 +2625,7 @@ impl<'a> DecodeContext<'a> {
                     Exactness::ByteExact
                 },
             );
-            Ok::<_, cadmpeg_core::CodecError>(id.clone())
+            Ok::<_, cadmpeg_core::CodecError>(body_id.to_string())
         });
         let link = match result {
             Ok(link) => link,
@@ -2698,6 +2755,12 @@ impl<'a> DecodeContext<'a> {
             }
             document.display_unresolved_meshes(&root);
         }
+        self.report.typed_losses.extend(object_presentation::state(
+            ctx,
+            document,
+            &self.scan.metadata.layers,
+            &self.object_presentations,
+        )?);
         document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
@@ -6408,7 +6471,7 @@ fn source_association(
 
 /// The display name, colour, and visibility that the bodies and faces made
 /// from one Rhino object state.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct ObjectDisplay {
     name: Option<String>,
     color: Option<Color>,

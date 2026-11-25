@@ -185,6 +185,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
             .collect::<Vec<_>>(),
         vec![curve_id.to_string()]
     );
+    cadmpeg_ir::examples::add_document_root(&mut candidate);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
@@ -316,6 +317,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .unwrap()
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
+    cadmpeg_ir::examples::add_document_root(&mut candidate);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
@@ -391,6 +393,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         )
         .unwrap()
         .expect("commit Brep with an isolated vertex");
+    cadmpeg_ir::examples::add_document_root(&mut candidate);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");

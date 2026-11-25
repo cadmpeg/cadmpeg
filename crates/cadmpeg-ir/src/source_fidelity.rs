@@ -83,7 +83,7 @@ impl DecodeSidecar {
 
     /// Parses a decode sidecar.
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
-        serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)
+        crate::bounds::read_json::<Self>(text).map_err(DecodeSidecarParseError::Json)
     }
 }
 
@@ -380,8 +380,9 @@ pub struct SourceFidelity {
     /// covers, has no entry.
     pub file_digests: BTreeMap<ProductDefinitionId, Sha256Digest>,
     /// SHA-256 of the canonical JSON of the document the decode returned,
-    /// which the decode wrapper takes after it sets `scope` and normalizes.
-    pub content_digest: Sha256Digest,
+    /// which the decode wrapper takes after it sets `scope` and normalizes;
+    /// `None` where that document has no canonical JSON.
+    pub content_digest: Option<Sha256Digest>,
     /// The digests by which the decoding codec's patch path finds what
     /// changed; only that codec reads them.
     pub codec_digests: CodecDigests,
@@ -400,8 +401,10 @@ struct SourceFidelityWire {
     /// SHA-256 of each component file, keyed by its `File` definition.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     file_digests: BTreeMap<ProductDefinitionId, Sha256Digest>,
-    /// SHA-256 of the canonical JSON of the document the decode returned.
-    content_digest: Sha256Digest,
+    /// SHA-256 of the canonical JSON of the document the decode returned,
+    /// absent where that document has no canonical JSON.
+    #[serde(default, deserialize_with = "deserialize_content_digest")]
+    content_digest: Option<Sha256Digest>,
     /// The decoding codec's narrower digests, keyed as its format
     /// specification lists.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
@@ -416,6 +419,8 @@ struct SourceFidelityWire {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_content_digest, Sha256Digest, "content_digest");
 
 impl TryFrom<SourceFidelityWire> for SourceFidelity {
     type Error = String;
@@ -466,7 +471,8 @@ pub(crate) fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
 struct SourceFidelityWriteWire<'a> {
     decode_digest: &'a Sha256Digest,
     file_digests: &'a BTreeMap<ProductDefinitionId, Sha256Digest>,
-    content_digest: &'a Sha256Digest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_digest: Option<&'a Sha256Digest>,
     codec_digests: &'a CodecDigests,
     #[serde(serialize_with = "cadmpeg_core::distinct_keys::set::serialize")]
     unrepresented: BTreeSet<ArenaClass>,
@@ -479,7 +485,7 @@ impl Serialize for SourceFidelity {
         SourceFidelityWriteWire {
             decode_digest: &self.decode_digest,
             file_digests: &self.file_digests,
-            content_digest: &self.content_digest,
+            content_digest: self.content_digest.as_ref(),
             codec_digests: &self.codec_digests,
             unrepresented: self.unrepresented(),
             annotations: &self.annotations,
@@ -507,15 +513,14 @@ impl SourceFidelity {
     /// Fidelity carrying the given annotations, for a decode whose root file
     /// has the given digest.
     ///
-    /// The decode wrapper sets `content_digest`; until then it holds the
-    /// SHA-256 of no bytes, which no canonical JSON of a document has, so a
-    /// document compared with it reads as edited.
+    /// The decode wrapper sets `content_digest`; until then it is absent,
+    /// and a document compared with it reads as edited.
     #[must_use]
     pub fn with_annotations(annotations: Annotations, decode_digest: Sha256Digest) -> Self {
         Self {
             decode_digest,
             file_digests: BTreeMap::new(),
-            content_digest: Sha256Digest::digest(&[]),
+            content_digest: None,
             codec_digests: CodecDigests::new(),
             annotations,
             retained_records: BTreeMap::new(),
@@ -551,10 +556,10 @@ impl SourceFidelity {
         Ok(())
     }
 
-    /// Whether `ir` is edited: whether the SHA-256 of its canonical JSON
-    /// differs from `content_digest` (§3.1, Rule B). A document that has no
-    /// canonical JSON, because it holds a non-finite number or nests past the
-    /// depth a default session admits, is edited. So is a document whose
+    /// Whether `ir` is edited: whether `content_digest` is absent or differs
+    /// from the SHA-256 of its canonical JSON (§3.1, Rule B). A document that
+    /// has no canonical JSON, because it holds a non-finite number or nests
+    /// past the depth a default session admits, is edited. So is a document whose
     /// arenas the CADIR wire omits differ from the baseline the decode wrapper
     /// recorded in memory ([`crate::hash::omitted_arenas_edited`]).
     ///
@@ -565,11 +570,10 @@ impl SourceFidelity {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Ok(
-            !crate::hash::content_digest(&ctx, ir)
-                .is_ok_and(|digest| digest == self.content_digest)
-                || crate::hash::omitted_arenas_edited(&ctx, ir).unwrap_or(true),
-        )
+        let same = self.content_digest.as_ref().is_some_and(|stored| {
+            crate::hash::content_digest(&ctx, ir).is_ok_and(|digest| digest == *stored)
+        });
+        Ok(!same || crate::hash::omitted_arenas_edited(&ctx, ir).unwrap_or(true))
     }
 
     /// Append source metadata after checking every table for collisions.
@@ -816,7 +820,7 @@ mod tests {
     fn fidelity_text(records: &str) -> String {
         format!(
             r#"{{"decode_digest":"{}","file_digests":{{}},
-                "content_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","codec_digests":{{}},"unrepresented":[],
+                "codec_digests":{{}},"unrepresented":[],
                 "annotations":{{"provenance":{{}},"exactness":{{}}}},"retained_records":{records}}}"#,
             root_digest()
         )

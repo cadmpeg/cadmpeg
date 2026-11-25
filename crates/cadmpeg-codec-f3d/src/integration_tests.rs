@@ -41,6 +41,7 @@ mod procedural_support;
 mod product_owners;
 mod profile_region_selection;
 mod reference_rows;
+mod saved_cadir;
 mod scan;
 mod scene;
 mod sketch_regions;
@@ -495,7 +496,7 @@ fn plan(
     result: &EditableDecodeResult,
     fidelity: bool,
     request: TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     F3dCodec.plan(
         EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
         request,

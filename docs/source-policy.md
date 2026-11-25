@@ -207,8 +207,7 @@ Placement rules inspect `crates/**/*.rs`, following test-only module ancestry.
 The test-collection rule reads `scripts/test_*.py` as Python syntax.
 The manifest rule `measurement_dependency` inspects `crates/*/Cargo.toml`.
 Both scans recognize `cfg(test)` and flat `cfg(all(..., test, ...))` gates.
-Other conditions remain production, including `cfg(not(test))` and
-`cfg(any(feature = "examples", test))`. Comments and literals are masked
+Other conditions remain production, including `cfg(not(test))`. Comments and literals are masked
 before test-item boundaries and vector repeats are scanned.
 
 The checker recognizes source forms, not Rust types or data flow. It does not

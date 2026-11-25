@@ -3403,7 +3403,6 @@ fn append_resolved_consolidated_surface_curves(
                 "resolved_surface_curve_bound_to_standard_edge",
                 Exactness::Derived,
             )?;
-            annotations.derived(&procedural.id, "curve")?;
             annotations.derived(&procedural.id, "definition")?;
         } else {
             let curve_id = crate::resource::compose_index_id(
@@ -3441,7 +3440,6 @@ fn append_resolved_consolidated_surface_curves(
                 "resolved_surface_curve",
                 Exactness::Derived,
             )?;
-            annotations.derived(&procedural_id, "curve")?;
             annotations.derived(&procedural_id, "definition")?;
             admission.charge()?;
             let _attached = ir
@@ -4272,6 +4270,7 @@ mod tests {
             Point3::new(7.0, 11.0, 13.0)
         );
         ir.finalize();
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let validation =
             cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -4353,6 +4352,7 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let validation =
             cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);

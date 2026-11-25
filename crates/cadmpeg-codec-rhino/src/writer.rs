@@ -2,49 +2,49 @@
 //! Native Rhino 3DM archive writing.
 
 use crate::mesh::FaceIndexWidth;
+use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
+mod convert;
+mod exact;
 mod model;
 pub(crate) mod target;
 use model::{
-    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
-    WritablePcurve, WritableVertex,
+    TrimEdge, WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel,
+    WritableObjectCurve, WritablePcurve, WritableVertex,
 };
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{native_records_omitted, value_unwritable};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
+use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
+/// Power iterations that estimate a placement's largest stretch.
+const STRETCH_ITERATIONS: usize = 64;
 
-/// Returns the IR-stated linear tolerance that governs `owner`.
+/// Returns the IR-stated linear tolerance that governs `owner`, at least
+/// `EPS_WRITE_DEGENERATE`.
 ///
 /// An absent per-entity tolerance defers to the document linear tolerance.
 /// Rhino Brep write routes compare evaluated geometry against this tolerance.
-/// A stated tolerance below `EPS_WRITE_DEGENERATE` is finer than the write
-/// route resolves, so the route refuses the document instead of widening the
-/// stated value.
-fn stated_write_tolerance(
-    stated: Option<cadmpeg_ir::scalar::PositiveLength>,
-    ir: &CadIr,
-    owner: &str,
-) -> Result<f64, CodecError> {
-    let (field, value) = stated.map_or_else(
-        || ("document linear tolerance", ir.tolerances.linear.get()),
-        |tolerance| ("tolerance", tolerance.get()),
-    );
-    if value >= EPS_WRITE_DEGENERATE {
-        return Ok(value);
-    }
-    Err(CodecError::InvalidInput(format!(
-        "{field} {value} of {owner} is finer than the Rhino Brep write bound {EPS_WRITE_DEGENERATE}"
-    )))
+/// The writer resolves no finer distance than `EPS_WRITE_DEGENERATE`, and it
+/// writes the stated tolerance unchanged.
+fn stated_write_tolerance(stated: Option<cadmpeg_ir::scalar::PositiveLength>, ir: &CadIr) -> f64 {
+    stated
+        .map_or_else(
+            || ir.tolerances.linear.get(),
+            cadmpeg_ir::scalar::PositiveLength::get,
+        )
+        .max(EPS_WRITE_DEGENERATE)
 }
 
 trait WriteSeek: Write + Seek {}
@@ -114,100 +114,86 @@ const CHANNEL_COLOR: u32 = 0x5248_0002;
 const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
+/// The angular tolerance openNURBS states by default, written where the
+/// document states one above pi.
+const DEFAULT_ANGULAR_TOLERANCE: f64 = std::f64::consts::PI / 180.0;
 
 fn is_support(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
     source
         .is_some_and(|source| source.geometry_role == Some(cadmpeg_ir::SourceGeometryRole::Support))
 }
 
+/// Each mesh that displays a body the archive holds as a Brep: a body that
+/// holds a face. 3DM keeps a Brep's display mesh in the Brep's own render
+/// cache, which this writer does not write, so the writer withholds the mesh
+/// rather than write it again as a separate object.
+fn withheld_body_meshes(ir: &CadIr) -> std::collections::BTreeSet<&str> {
+    let geometry = &ir.geometry;
+    let regions = geometry
+        .regions
+        .iter()
+        .map(|region| (region.id.as_str(), region.body.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let shells = geometry
+        .shells
+        .iter()
+        .map(|shell| (shell.id.as_str(), shell.region.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let breps = geometry
+        .faces
+        .iter()
+        .filter_map(|face| regions.get(shells.get(face.shell.as_str())?))
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    ir.model
+        .tessellations
+        .iter()
+        .filter(|mesh| {
+            mesh.of
+                .body()
+                .is_some_and(|body| breps.contains(body.as_str()))
+        })
+        .map(|mesh| mesh.id.as_str())
+        .collect()
+}
+
+/// What the writer wrote: whether the object table holds an object, and the
+/// losses its records charge.
+pub(super) struct Written {
+    pub(super) wrote_object: bool,
+    pub(super) losses: Vec<LossNote>,
+}
+
+/// Writes the archive. Each face of a region in `unjoined` is written as its
+/// own Brep, so that faces the document does not state as closed stay open.
 fn write(
     ir: &CadIr,
     version: RhinoArchiveVersion,
+    unjoined: &BTreeSet<&str>,
     output: &mut dyn Write,
-) -> Result<(), CodecError> {
+) -> Result<Written, CodecError> {
     let mut staged = tempfile::tempfile()?;
-    write_seekable(ir, version, &mut staged)?;
+    let written = write_seekable(ir, version, unjoined, &mut staged)?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, output)?;
-    Ok(())
+    Ok(written)
 }
 
 fn write_seekable(
     ir: &CadIr,
     version: RhinoArchiveVersion,
+    unjoined: &BTreeSet<&str>,
     output: &mut dyn WriteSeek,
-) -> Result<(), CodecError> {
-    let mut plan = prepare_write(ir, version)?;
-    write_archive_prefix(ir, version, output)?;
+) -> Result<Written, CodecError> {
+    let mut plan = prepare_write(ir, version, unjoined)?;
+    write_archive_prefix(ir.tolerances.linear.get(), plan.angular, version, output)?;
     let table_start = output.stream_position()?;
     output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
     output.write_all(&0_i64.to_le_bytes())?;
     let body_start = output.stream_position()?;
-
-    plan.brep_records.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut plan.brep_records, output)?;
-    for point in ir.geometry.points.iter().filter(|point| {
-        !plan.topology_points.contains(point.id.as_str())
-            && !is_support(point.source_object.as_ref())
-    }) {
-        let position = point.position().get();
-        let mut payload = vec![0x10];
-        payload.extend(position.x.to_le_bytes());
-        payload.extend(position.y.to_le_bytes());
-        payload.extend(position.z.to_le_bytes());
-        output.write_all(&attributed_object_record(
-            1,
-            POINT_CLASS,
-            &payload,
-            point.id.as_str(),
-            None,
-            None,
-            None,
-        )?)?;
-    }
-    for group in &plan.point_groups {
-        if group.points.len() == 1 {
-            let point = group.points[0];
-            let mut payload = vec![0x10];
-            payload.extend(point.x.to_le_bytes());
-            payload.extend(point.y.to_le_bytes());
-            payload.extend(point.z.to_le_bytes());
-            output.write_all(&attributed_object_record(
-                1,
-                POINT_CLASS,
-                &payload,
-                &group.identity,
-                group.name.as_deref(),
-                group.color,
-                group.visible,
-            )?)?;
-        } else {
-            output.write_all(&attributed_object_record(
-                2,
-                POINT_CLOUD_CLASS,
-                &point_cloud_payload(&group.points)?,
-                &group.identity,
-                group.name.as_deref(),
-                group.color,
-                group.visible,
-            )?)?;
-        }
-    }
-    for (id, (class, payload)) in &plan.curves {
-        output.write_all(&attributed_object_record(
-            4, *class, payload, id, None, None, None,
-        )?)?;
-    }
-    for (id, (class, payload)) in &plan.surfaces {
-        output.write_all(&attributed_object_record(
-            8, *class, payload, id, None, None, None,
-        )?)?;
-    }
-    for mesh in &ir.model.tessellations {
-        let payload = mesh_payload(mesh, version)?;
-        output.write_all(&mesh_object_record(&payload, mesh.id.as_str())?)?;
-    }
-
+    plan.records.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut plan.records, output)?;
+    let wrote_object = output.stream_position()? != body_start;
     output.write_all(&short_chunk(TCODE_ENDOFTABLE, 0))?;
     let table_end = output.stream_position()?;
     let body_len = archive_body_len(table_end - body_start)?;
@@ -217,11 +203,15 @@ fn write_seekable(
     output.write_all(&table(TCODE_HISTORY_RECORD_TABLE, &[])?)?;
     let final_size = archive_final_size(output.stream_position()?)?;
     output.write_all(&long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?)?;
-    Ok(())
+    Ok(Written {
+        wrote_object,
+        losses: plan.losses,
+    })
 }
 
 fn write_archive_prefix(
-    ir: &CadIr,
+    linear: f64,
+    angular: f64,
     version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
@@ -236,10 +226,7 @@ fn write_archive_prefix(
     )?)?;
     output.write_all(&table(
         TCODE_SETTINGS_TABLE,
-        &[units_record(
-            ir.tolerances.linear.get(),
-            ir.tolerances.angular.get(),
-        )?],
+        &[units_record(linear, angular)?],
     )?)?;
     for typecode in [
         TCODE_BITMAP_TABLE,
@@ -267,12 +254,18 @@ fn write_archive_prefix(
     Ok(())
 }
 
+/// One Brep object: a shell of a Sheet or Solid body, or one face of it.
 struct BrepScope {
+    /// The object identity: the body's, or the shell's or face's where the
+    /// body is written as several Breps.
+    identity: String,
     ir: CadIr,
-    points: std::collections::BTreeSet<String>,
-    surfaces: std::collections::BTreeSet<String>,
-    curves: std::collections::BTreeSet<String>,
-    pcurves: std::collections::BTreeSet<String>,
+    /// Each topology and pcurve record the scope holds.
+    held: BTreeSet<String>,
+    points: BTreeSet<String>,
+    surfaces: BTreeSet<String>,
+    curves: BTreeSet<String>,
+    pcurves: BTreeSet<String>,
 }
 
 struct BrepPayload {
@@ -280,17 +273,39 @@ struct BrepPayload {
     direct: Vec<u8>,
 }
 
-/// A native class identifier and the payload encoded for it.
-type ClassPayload = ([u8; 16], Vec<u8>);
+struct WritePlan {
+    /// The object records, in object-table order.
+    records: std::fs::File,
+    /// The angular tolerance the settings table states.
+    angular: f64,
+    losses: Vec<LossNote>,
+}
 
-struct WritePlan<'a> {
-    /// Each free curve's identity and encoded payload.
-    curves: Vec<(&'a str, ClassPayload)>,
-    /// Each free surface's identity and encoded payload.
-    surfaces: Vec<(&'a str, ClassPayload)>,
-    brep_records: std::fs::File,
-    topology_points: std::collections::BTreeSet<String>,
-    point_groups: Vec<PointGroup>,
+/// The object records the writer encodes, and each record it leaves out with
+/// the reason.
+struct Records {
+    file: std::fs::File,
+    omitted: Vec<(String, String)>,
+}
+
+impl Records {
+    /// The value `built` holds, or `None` with `id` named as left out where
+    /// the record has no 3DM form. A resource limit or an I/O failure stops
+    /// the write.
+    fn admit<T>(
+        &mut self,
+        id: &str,
+        built: Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError> {
+        match built {
+            Ok(value) => Ok(Some(value)),
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+            Err(error) => {
+                self.omitted.push((id.to_owned(), error.to_string()));
+                Ok(None)
+            }
+        }
+    }
 }
 
 /// Each arena position, grouped by the key of its entity.
@@ -325,506 +340,1132 @@ fn members<'a, 'k, T>(
         .collect()
 }
 
-fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
+/// The arena indexes a Brep scope reads.
+struct TopologyIndex<'a> {
+    faces_by_shell: std::collections::HashMap<&'a str, Vec<usize>>,
+    shells_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    loops_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    coedges_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    edges_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    vertices_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    points_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    surfaces_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    curves_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+    pcurves_by_id: std::collections::HashMap<&'a str, Vec<usize>>,
+}
+
+impl<'a> TopologyIndex<'a> {
+    fn new(ir: &'a CadIr) -> Self {
+        let geometry = &ir.geometry;
+        Self {
+            faces_by_shell: positions_by(&geometry.faces, |face| face.shell.as_str()),
+            shells_by_id: positions_by(&geometry.shells, |shell| shell.id.as_str()),
+            loops_by_id: positions_by(&geometry.loops, |loop_| loop_.id.as_str()),
+            coedges_by_id: positions_by(&geometry.coedges, |coedge| coedge.id.as_str()),
+            edges_by_id: positions_by(&geometry.edges, |edge| edge.id.as_str()),
+            vertices_by_id: positions_by(&geometry.vertices, |vertex| vertex.id.as_str()),
+            points_by_id: positions_by(&geometry.points, |point| point.id.as_str()),
+            surfaces_by_id: positions_by(&geometry.surfaces, |surface| surface.id.as_str()),
+            curves_by_id: positions_by(&geometry.curves, |curve| curve.id.as_str()),
+            pcurves_by_id: positions_by(&geometry.pcurves, |pcurve| pcurve.id.as_str()),
+        }
+    }
+}
+
+/// One Brep scope for each shell of each Sheet or Solid body, or for each
+/// face of a shell whose region is in `unjoined`, and each body written as
+/// several Breps with the identities of its Breps. A carrier that several
+/// scopes use is copied into each.
+fn brep_scopes(
+    ir: &CadIr,
+    unjoined: &BTreeSet<&str>,
+) -> (Vec<BrepScope>, Vec<(String, Vec<String>)>) {
     use cadmpeg_ir::topology::BodyKind;
-    use std::collections::BTreeSet;
 
     let geometry = &ir.geometry;
     let regions_by_body = positions_by(&geometry.regions, |region| region.body.as_str());
-    let regions_by_id = positions_by(&geometry.regions, |region| region.id.as_str());
-    let shells_by_id = positions_by(&geometry.shells, |shell| shell.id.as_str());
-    let faces_by_shell = positions_by(&geometry.faces, |face| face.shell.as_str());
-    let faces_by_id = positions_by(&geometry.faces, |face| face.id.as_str());
-    let loops_by_id = positions_by(&geometry.loops, |loop_| loop_.id.as_str());
-    let coedges_by_id = positions_by(&geometry.coedges, |coedge| coedge.id.as_str());
-    let edges_by_id = positions_by(&geometry.edges, |edge| edge.id.as_str());
-    let vertices_by_id = positions_by(&geometry.vertices, |vertex| vertex.id.as_str());
-    let points_by_id = positions_by(&geometry.points, |point| point.id.as_str());
-    let surfaces_by_id = positions_by(&geometry.surfaces, |surface| surface.id.as_str());
-    let curves_by_id = positions_by(&geometry.curves, |curve| curve.id.as_str());
-    let pcurves_by_id = positions_by(&geometry.pcurves, |pcurve| pcurve.id.as_str());
+    let index = TopologyIndex::new(ir);
     let mut scopes = Vec::new();
-    let mut all_regions = BTreeSet::new();
-    let mut all_shells = BTreeSet::new();
-    let mut all_faces = BTreeSet::new();
-    let mut all_loops = BTreeSet::new();
-    let mut all_coedges = BTreeSet::new();
-    let mut all_edges = BTreeSet::new();
-    let mut all_vertices = BTreeSet::new();
-    let mut all_points = BTreeSet::new();
-    let mut all_surfaces = BTreeSet::new();
-    let mut all_curves = BTreeSet::new();
-    let mut all_pcurves = BTreeSet::new();
-
+    let mut splits = Vec::new();
     for body in geometry
         .bodies
         .iter()
         .filter(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
     {
-        let body_regions = members(&geometry.regions, &regions_by_body, [body.id.as_str()]);
-        let regions = body_regions
-            .iter()
-            .map(|region| region.id.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
-        let shells = body_regions
-            .iter()
-            .flat_map(|region| region.stated_shells().map(|id| id.as_str().to_owned()))
-            .collect::<BTreeSet<_>>();
-        let faces = members(
-            &geometry.faces,
-            &faces_by_shell,
-            shells.iter().map(String::as_str),
-        )
-        .into_iter()
-        .map(|face| face.id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-        let body_faces = members(
-            &geometry.faces,
-            &faces_by_id,
-            faces.iter().map(String::as_str),
-        );
-        let surfaces = body_faces
-            .iter()
-            .map(|face| face.surface.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
-        let loops = body_faces
-            .iter()
-            .flat_map(|face| face.loops.stated().map(|id| id.as_str().to_owned()))
-            .collect::<BTreeSet<_>>();
-        let body_loops = members(
-            &geometry.loops,
-            &loops_by_id,
-            loops.iter().map(String::as_str),
-        );
-        let coedges = body_loops
-            .iter()
-            .flat_map(|loop_| loop_.coedges().iter().map(|id| id.as_str().to_owned()))
-            .collect::<BTreeSet<_>>();
-        let body_coedges = members(
-            &geometry.coedges,
-            &coedges_by_id,
-            coedges.iter().map(String::as_str),
-        );
-        let edges = body_coedges
-            .iter()
-            .map(|coedge| coedge.edge.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
-        let pcurves = body_coedges
-            .iter()
-            .filter_map(|coedge| {
-                coedge
-                    .pcurves
-                    .first()
-                    .map(|use_| &use_.pcurve)
-                    .map(|id| id.as_str().to_owned())
-            })
-            .collect::<BTreeSet<_>>();
-        let body_edges = members(
-            &geometry.edges,
-            &edges_by_id,
-            edges.iter().map(String::as_str),
-        );
-        let vertices = body_edges
-            .iter()
-            .flat_map(|edge| edge.vertices().map(|vertex| vertex.as_str().to_owned()))
-            .collect::<BTreeSet<_>>();
-        let curves = body_edges
-            .iter()
-            .filter_map(|edge| edge.curve().map(|id| id.as_str().to_owned()))
-            .collect::<BTreeSet<_>>();
-        let body_vertices = members(
-            &geometry.vertices,
-            &vertices_by_id,
-            vertices.iter().map(String::as_str),
-        );
-        let points = body_vertices
-            .iter()
-            .map(|vertex| vertex.point.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
-
-        for (owned, global, kind) in [
-            (&regions, &mut all_regions, "region"),
-            (&shells, &mut all_shells, "shell"),
-            (&faces, &mut all_faces, "face"),
-            (&loops, &mut all_loops, "loop"),
-            (&coedges, &mut all_coedges, "coedge"),
-            (&edges, &mut all_edges, "edge"),
-            (&vertices, &mut all_vertices, "vertex"),
-            (&points, &mut all_points, "point"),
-            (&surfaces, &mut all_surfaces, "surface"),
-            (&curves, &mut all_curves, "curve"),
-            (&pcurves, &mut all_pcurves, "pcurve"),
-        ] {
-            if owned.iter().any(|id| !global.insert(id.clone())) {
-                return Err(CodecError::NotImplemented(format!(
-                    "{kind} carrier is shared by multiple Brep objects"
-                )));
+        let mut pieces = Vec::new();
+        for region in members(&geometry.regions, &regions_by_body, [body.id.as_str()]) {
+            for shell in region.stated_shells() {
+                let faces = members(&geometry.faces, &index.faces_by_shell, [shell.as_str()]);
+                if faces.is_empty() {
+                    continue;
+                }
+                if unjoined.contains(region.id.as_str()) {
+                    pieces.extend(
+                        faces
+                            .into_iter()
+                            .map(|face| (face.id.as_str().to_owned(), region, shell, vec![face])),
+                    );
+                } else {
+                    pieces.push((shell.as_str().to_owned(), region, shell, faces));
+                }
             }
         }
-
-        let mut scoped = CadIr::empty();
-        scoped.tolerances = ir.tolerances;
-        scoped.geometry.bodies.push(body.clone());
-        scoped.geometry.regions = members(
-            &geometry.regions,
-            &regions_by_id,
-            regions.iter().map(String::as_str),
-        )
-        .into_iter()
-        .cloned()
-        .collect();
-        scoped.geometry.shells = members(
-            &geometry.shells,
-            &shells_by_id,
-            shells.iter().map(String::as_str),
-        )
-        .into_iter()
-        .cloned()
-        .collect();
-        scoped.geometry.faces = body_faces.into_iter().cloned().collect();
-        scoped.geometry.loops = body_loops.into_iter().cloned().collect();
-        scoped.geometry.coedges = body_coedges.into_iter().cloned().collect();
-        scoped.geometry.edges = body_edges.into_iter().cloned().collect();
-        scoped.geometry.vertices = body_vertices.into_iter().cloned().collect();
-        scoped.geometry.points = members(
-            &geometry.points,
-            &points_by_id,
-            points.iter().map(String::as_str),
-        )
-        .into_iter()
-        .cloned()
-        .collect();
-        scoped.geometry.surfaces = members(
-            &geometry.surfaces,
-            &surfaces_by_id,
-            surfaces.iter().map(String::as_str),
-        )
-        .into_iter()
-        .cloned()
-        .collect();
-        scoped.geometry.curves = members(
-            &geometry.curves,
-            &curves_by_id,
-            curves.iter().map(String::as_str),
-        )
-        .into_iter()
-        .cloned()
-        .collect();
-        scoped.geometry.pcurves = members(
-            &geometry.pcurves,
-            &pcurves_by_id,
-            pcurves.iter().map(String::as_str),
-        )
-        .into_iter()
-        .cloned()
-        .collect();
-        scopes.push(BrepScope {
-            ir: scoped,
-            points,
-            surfaces,
-            curves,
-            pcurves,
-        });
+        if let [piece] = pieces.as_mut_slice() {
+            body.id.as_str().clone_into(&mut piece.0);
+        } else if !pieces.is_empty() {
+            splits.push((
+                body.id.as_str().to_owned(),
+                pieces.iter().map(|piece| piece.0.clone()).collect(),
+            ));
+        }
+        for (identity, region, shell, faces) in pieces {
+            scopes.push(brep_scope(
+                ir, &index, identity, body, region, shell, &faces,
+            ));
+        }
     }
-    Ok(scopes)
+    (scopes, splits)
 }
 
-fn general_topology_ir(ir: &CadIr) -> CadIr {
-    use cadmpeg_ir::topology::BodyKind;
-    use std::collections::BTreeSet;
-
-    let mut scoped = CadIr::empty();
-    scoped.tolerances = ir.tolerances;
-    scoped.geometry.bodies = ir
-        .geometry
-        .bodies
+/// The Brep scope of `faces`, which `shell` of `region` of `body` holds.
+/// The scoped region states `shell` alone, the scoped shell holds no wire
+/// edge or free vertex, and each radial ring closes past the coedges outside
+/// the scope.
+fn brep_scope(
+    ir: &CadIr,
+    index: &TopologyIndex<'_>,
+    identity: String,
+    body: &cadmpeg_ir::topology::Body,
+    region: &cadmpeg_ir::topology::Region,
+    shell: &cadmpeg_ir::ids::ShellId,
+    faces: &[&cadmpeg_ir::topology::Face],
+) -> BrepScope {
+    let geometry = &ir.geometry;
+    let loops = faces
         .iter()
-        .filter(|body| body.kind == BodyKind::General)
-        .cloned()
-        .collect();
-    let bodies = scoped
-        .geometry
-        .bodies
-        .iter()
-        .map(|body| body.id.as_str().to_owned())
+        .flat_map(|face| face.loops.stated().map(cadmpeg_ir::ids::LoopId::as_str))
         .collect::<BTreeSet<_>>();
-    scoped.geometry.regions = ir
-        .geometry
-        .regions
+    let scope_loops = members(&geometry.loops, &index.loops_by_id, loops.iter().copied());
+    let coedges = scope_loops
         .iter()
-        .filter(|region| bodies.contains(region.body.as_str()))
-        .cloned()
-        .collect();
-    let regions = scoped
-        .geometry
-        .regions
-        .iter()
-        .map(|region| region.id.as_str().to_owned())
+        .flat_map(|loop_| {
+            loop_
+                .coedges()
+                .iter()
+                .map(cadmpeg_ir::ids::CoedgeId::as_str)
+        })
         .collect::<BTreeSet<_>>();
-    scoped.geometry.shells = ir
-        .geometry
-        .shells
+    let scope_coedges = members(
+        &geometry.coedges,
+        &index.coedges_by_id,
+        coedges.iter().copied(),
+    );
+    let edges = scope_coedges
         .iter()
-        .filter(|shell| regions.contains(shell.region.as_str()))
-        .cloned()
-        .collect();
-    let vertices = scoped
-        .geometry
-        .shells
-        .iter()
-        .flat_map(|shell| shell.free_vertices().map(|id| id.as_str().to_owned()))
+        .map(|coedge| coedge.edge.as_str())
         .collect::<BTreeSet<_>>();
-    scoped.geometry.vertices = ir
-        .geometry
-        .vertices
+    let pcurves = scope_coedges
         .iter()
-        .filter(|vertex| vertices.contains(vertex.id.as_str()))
-        .cloned()
-        .collect();
-    let points = scoped
-        .geometry
-        .vertices
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
+        .collect::<BTreeSet<_>>();
+    let scope_edges = members(&geometry.edges, &index.edges_by_id, edges.iter().copied());
+    let vertices = scope_edges
+        .iter()
+        .flat_map(|edge| edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str))
+        .collect::<BTreeSet<_>>();
+    let curves = scope_edges
+        .iter()
+        .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
+        .collect::<BTreeSet<_>>();
+    let scope_vertices = members(
+        &geometry.vertices,
+        &index.vertices_by_id,
+        vertices.iter().copied(),
+    );
+    let points = scope_vertices
         .iter()
         .map(|vertex| vertex.point.as_str())
         .collect::<BTreeSet<_>>();
-    scoped.geometry.points = ir
-        .geometry
-        .points
+    let surfaces = faces
         .iter()
-        .filter(|point| points.contains(point.id.as_str()))
-        .cloned()
+        .map(|face| face.surface.as_str())
+        .collect::<BTreeSet<_>>();
+    let radial = geometry
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), &coedge.radial_next))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    let mut scoped = CadIr::empty();
+    scoped.tolerances = ir.tolerances;
+    scoped.geometry.bodies.push(body.clone());
+    let mut region = region.clone();
+    if !region.stated_shells().eq(std::iter::once(shell)) {
+        region.set_shells(vec![shell.clone()]);
+    }
+    scoped.geometry.regions.push(region);
+    scoped.geometry.shells = members(&geometry.shells, &index.shells_by_id, [shell.as_str()])
+        .into_iter()
+        .map(|shell| {
+            let mut shell = shell.clone();
+            shell.members.clear();
+            shell
+        })
         .collect();
-    scoped
+    scoped.geometry.faces = faces.iter().map(|face| (*face).clone()).collect();
+    scoped.geometry.loops = scope_loops.into_iter().cloned().collect();
+    scoped.geometry.coedges = scope_coedges
+        .into_iter()
+        .map(|coedge| {
+            let mut next = &coedge.radial_next;
+            for _ in 0..geometry.coedges.len() {
+                match radial.get(next.as_str()) {
+                    Some(following) if !coedges.contains(next.as_str()) => next = following,
+                    _ => break,
+                }
+            }
+            let mut coedge = coedge.clone();
+            if coedges.contains(next.as_str()) {
+                coedge.radial_next = next.clone();
+            } else {
+                coedge.radial_next = coedge.id.clone();
+            }
+            coedge
+        })
+        .collect();
+    scoped.geometry.edges = scope_edges.into_iter().cloned().collect();
+    scoped.geometry.vertices = scope_vertices.into_iter().cloned().collect();
+    scoped.geometry.points = members(
+        &geometry.points,
+        &index.points_by_id,
+        points.iter().copied(),
+    )
+    .into_iter()
+    .cloned()
+    .collect();
+    scoped.geometry.surfaces = members(
+        &geometry.surfaces,
+        &index.surfaces_by_id,
+        surfaces.iter().copied(),
+    )
+    .into_iter()
+    .cloned()
+    .collect();
+    scoped.geometry.curves = members(
+        &geometry.curves,
+        &index.curves_by_id,
+        curves.iter().copied(),
+    )
+    .into_iter()
+    .cloned()
+    .collect();
+    scoped.geometry.pcurves = members(
+        &geometry.pcurves,
+        &index.pcurves_by_id,
+        pcurves.iter().copied(),
+    )
+    .into_iter()
+    .cloned()
+    .collect();
+
+    let owned = |ids: BTreeSet<&str>| ids.into_iter().map(str::to_owned).collect::<BTreeSet<_>>();
+    let mut held = owned(
+        [
+            body.id.as_str(),
+            scoped.geometry.regions[0].id.as_str(),
+            shell.as_str(),
+        ]
+        .into_iter()
+        .chain(faces.iter().map(|face| face.id.as_str()))
+        .chain(loops)
+        .chain(coedges.iter().copied())
+        .chain(edges)
+        .chain(vertices)
+        .collect(),
+    );
+    held.extend(pcurves.iter().map(|id| (*id).to_owned()));
+    BrepScope {
+        identity,
+        held,
+        points: owned(points),
+        surfaces: owned(surfaces),
+        curves: owned(curves),
+        pcurves: owned(pcurves),
+        ir: scoped,
+    }
+}
+
+/// The Breps `scope` is written as, and each face left out with the reason.
+/// The carriers take their 3DM form ([`convert::convert_scope`]); the faces
+/// left are written as one Brep for each edge-connected set of them. A solid
+/// that loses a face is written as a sheet.
+fn brep_pieces(
+    ctx: &DecodeContext<'_>,
+    compounds: &convert::CompoundIndex<'_>,
+    scope: &BrepScope,
+) -> (Vec<BrepScope>, Vec<(String, String)>) {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let converted = convert::convert_scope(ctx, compounds, &scope.ir);
+    let mut ir = converted.ir;
+    if !converted.dropped.is_empty() {
+        for body in &mut ir.geometry.bodies {
+            if body.kind == BodyKind::Solid {
+                body.kind = BodyKind::Sheet;
+            }
+        }
+    }
+    let geometry = &ir.geometry;
+    let (Some(body), Some(region), Some(shell)) = (
+        geometry.bodies.first(),
+        geometry.regions.first(),
+        geometry.shells.first(),
+    ) else {
+        let piece = BrepScope {
+            identity: scope.identity.clone(),
+            ir: ir.clone(),
+            held: BTreeSet::new(),
+            points: BTreeSet::new(),
+            surfaces: BTreeSet::new(),
+            curves: BTreeSet::new(),
+            pcurves: BTreeSet::new(),
+        };
+        return (vec![piece], converted.dropped);
+    };
+    let index = TopologyIndex::new(&ir);
+    let components = face_components(&ir);
+    let single = components.len() == 1;
+    let pieces = components
+        .into_iter()
+        .map(|faces| {
+            let identity = if single {
+                scope.identity.clone()
+            } else {
+                faces[0].id.as_str().to_owned()
+            };
+            brep_scope(&ir, &index, identity, body, region, &shell.id, &faces)
+        })
+        .collect();
+    (pieces, converted.dropped)
+}
+
+/// The faces of `ir`, in sets joined through shared edges, each set in
+/// arena order.
+fn face_components(ir: &CadIr) -> Vec<Vec<&cadmpeg_ir::topology::Face>> {
+    use std::collections::HashMap;
+
+    let geometry = &ir.geometry;
+    let loops = geometry
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.as_str(), loop_))
+        .collect::<HashMap<_, _>>();
+    let coedges = geometry
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<HashMap<_, _>>();
+    let mut parent = (0..geometry.faces.len()).collect::<Vec<_>>();
+    let root = |parent: &mut Vec<usize>, mut index: usize| {
+        while parent[index] != index {
+            parent[index] = parent[parent[index]];
+            index = parent[index];
+        }
+        index
+    };
+    let mut first_face = HashMap::<&str, usize>::new();
+    for (index, face) in geometry.faces.iter().enumerate() {
+        let edges = face
+            .loops
+            .stated()
+            .filter_map(|id| loops.get(id.as_str()))
+            .flat_map(|loop_| loop_.coedges())
+            .filter_map(|id| coedges.get(id.as_str()))
+            .map(|coedge| coedge.edge.as_str());
+        for edge in edges {
+            let other = *first_face.entry(edge).or_insert(index);
+            let (left, right) = (root(&mut parent, index), root(&mut parent, other));
+            parent[left.max(right)] = left.min(right);
+        }
+    }
+    let mut components = Vec::<Vec<&cadmpeg_ir::topology::Face>>::new();
+    let mut slots = HashMap::<usize, usize>::new();
+    for (index, face) in geometry.faces.iter().enumerate() {
+        let key = root(&mut parent, index);
+        let slot = *slots.entry(key).or_insert_with(|| {
+            components.push(Vec::new());
+            components.len() - 1
+        });
+        components[slot].push(face);
+    }
+    components
+}
+
+/// The Brep object record of `scope`, and the validation losses of its
+/// geometry.
+fn brep_record(
+    ctx: &DecodeContext<'_>,
+    scope: &BrepScope,
+    archive_version: RhinoArchiveVersion,
+) -> Result<(Vec<u8>, Vec<LossNote>), CodecError> {
+    let placed;
+    let mut dropped_tolerances = None;
+    let ir = match scope.ir.geometry.bodies[0].transform {
+        Some(transform) => {
+            let (ir, dropped) = placed_brep(&scope.ir, transform)?;
+            placed = ir;
+            dropped_tolerances = dropped;
+            &placed
+        }
+        None => &scope.ir,
+    };
+    let mut model = WritableModel::try_new(ir)?;
+    model.losses.extend(dropped_tolerances);
+    let payload = brep_payload(ctx, &model, archive_version)?;
+    let body = model.body;
+    let record = brep_object_record(
+        &payload,
+        &scope.identity,
+        written_name(body.name.as_deref()),
+        body.color,
+        body.visible,
+    )?;
+    Ok((record, model.losses))
+}
+
+/// The largest factor by which the linear part of `rows` stretches a
+/// length: the square root of the largest eigenvalue of `AᵀA`, by power
+/// iteration.
+fn largest_stretch(rows: [[f64; 4]; 3]) -> f64 {
+    let gram: [[f64; 3]; 3] = std::array::from_fn(|i| {
+        std::array::from_fn(|j| (0..3).map(|k| rows[k][i] * rows[k][j]).sum())
+    });
+    let norm = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    let mut vector = gram
+        .iter()
+        .copied()
+        .max_by(|left, right| norm(*left).total_cmp(&norm(*right)))
+        .unwrap_or([1.0, 0.0, 0.0]);
+    let mut value = norm(vector);
+    for _ in 0..STRETCH_ITERATIONS {
+        if !(value > 0.0 && value.is_finite()) {
+            return value;
+        }
+        let unit = vector.map(|lane| lane / value);
+        vector = std::array::from_fn(|i| (0..3).map(|j| gram[i][j] * unit[j]).sum());
+        value = norm(vector);
+    }
+    value.sqrt()
+}
+
+/// The Brep piece `ir` with its body placement applied: 3DM holds a Brep in
+/// model coordinates. Points and NURBS poles are mapped. A rigid placement
+/// keeps lines and planes. Any other placement writes a line as the
+/// degree-1 NURBS curve over the same range, and a plane with the
+/// orthonormal frame of its mapped axes, whose faces then take the
+/// projections of their edges as trims; tolerances grow by the largest
+/// stretch, and a reflection reverses each face. A tolerance that grows past
+/// the finite range is left out, with the loss that names its records.
+fn placed_brep(
+    ir: &CadIr,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<(CadIr, Option<LossNote>), CodecError> {
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+
+    let orientation = transform
+        .orientation()
+        .filter(|sign| *sign != 0.0)
+        .ok_or_else(|| {
+            CodecError::NotImplemented(
+                "the body placement is singular, and a 3DM Brep holds no placement".into(),
+            )
+        })?;
+    let rigid = transform.is_proper_rigid();
+    let unplaceable =
+        || CodecError::NotImplemented("the placed body leaves the finite range".into());
+    let point = |point: cadmpeg_ir::features::geometry::FinitePoint3| {
+        transform.apply_point(point.get()).ok_or_else(unplaceable)
+    };
+    let direction = |direction: cadmpeg_ir::units::UnitVector3| {
+        transform
+            .apply_unit_normal(direction)
+            .ok_or_else(unplaceable)
+    };
+    let linear = |vector: cadmpeg_ir::math::Vector3| {
+        transform
+            .apply_vector(vector)
+            .map(|vector| *vector.as_raw())
+            .ok_or_else(unplaceable)
+    };
+    let mut placed = ir.clone();
+    placed.geometry.bodies[0].transform = None;
+    let geometry = &mut placed.geometry;
+    for record in &mut geometry.points {
+        record.set_position(point(record.position())?);
+    }
+    for curve in &mut geometry.curves {
+        match &mut curve.geometry {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) if rigid => {
+                *line = cadmpeg_ir::geometry::analytic::LineCurve::new(
+                    point(line.origin())?,
+                    direction(line.direction())?,
+                );
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                nurbs.try_map_control_points(|_, pole| point(pole))?;
+            }
+            _ => {}
+        }
+    }
+    let edges = geometry
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.curve()?.as_str(), edge.param_range()?.get())))
+        .collect::<std::collections::HashMap<_, _>>();
+    for curve in &mut geometry.curves {
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &curve.geometry {
+            if rigid {
+                continue;
+            }
+            let range = edges.get(curve.id.as_str()).copied().ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "line {} bounds no edge range to place",
+                    curve.id.as_str()
+                ))
+            })?;
+            let origin = line.origin().get();
+            let along = *line.direction().as_raw();
+            let at = |parameter: f64| {
+                point(
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(
+                            origin.x + along.x * parameter,
+                            origin.y + along.y * parameter,
+                            origin.z + along.z * parameter,
+                        ),
+                    )
+                    .ok_or_else(unplaceable)?,
+                )
+            };
+            let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                1,
+                vec![range[0], range[0], range[1], range[1]],
+                vec![at(range[0])?.get(), at(range[1])?.get()],
+                None,
+                false,
+            )
+            .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+            curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
+        }
+        if !matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Nurbs(_))
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "curve {} has no placed 3DM form",
+                curve.id.as_str()
+            )));
+        }
+    }
+    let mut reframed = BTreeSet::new();
+    for surface in &mut geometry.surfaces {
+        match &mut surface.geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) if rigid => {
+                let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                    direction(*plane.frame().axis())?,
+                    direction(*plane.frame().reference())?,
+                )
+                .ok_or_else(unplaceable)?;
+                *plane = cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                    point(plane.origin())?,
+                    frame,
+                );
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
+                let reference = cadmpeg_ir::units::UnitVector3::normalized(linear(
+                    *plane.frame().reference().as_raw(),
+                )?)
+                .ok_or_else(unplaceable)?;
+                let mapped = linear(*plane.frame().binormal().as_raw())?;
+                let along = mapped.dot(*reference.as_raw());
+                let r = *reference.as_raw();
+                let binormal =
+                    cadmpeg_ir::units::UnitVector3::normalized(cadmpeg_ir::math::Vector3::new(
+                        mapped.x - along * r.x,
+                        mapped.y - along * r.y,
+                        mapped.z - along * r.z,
+                    ))
+                    .ok_or_else(unplaceable)?;
+                let axis = cadmpeg_ir::units::UnitVector3::normalized(r.cross(*binormal.as_raw()))
+                    .ok_or_else(unplaceable)?;
+                let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(axis, reference)
+                    .ok_or_else(unplaceable)?;
+                *plane = cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                    point(plane.origin())?,
+                    frame,
+                );
+                reframed.insert(surface.id.as_str().to_owned());
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                nurbs.try_map_control_points(|_, pole| point(pole))?;
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "surface {} has no placed 3DM form",
+                    surface.id.as_str()
+                )))
+            }
+        }
+    }
+    if !reframed.is_empty() {
+        let loops = geometry
+            .faces
+            .iter()
+            .filter(|face| reframed.contains(face.surface.as_str()))
+            .flat_map(|face| face.loops.stated().map(|id| id.as_str().to_owned()))
+            .collect::<BTreeSet<_>>();
+        for coedge in &mut geometry.coedges {
+            if loops.contains(coedge.owner_loop.as_str()) {
+                coedge.pcurves.clear();
+            }
+        }
+        let used = geometry
+            .coedges
+            .iter()
+            .flat_map(|coedge| {
+                coedge
+                    .pcurves
+                    .iter()
+                    .map(|use_| use_.pcurve.as_str().to_owned())
+            })
+            .collect::<BTreeSet<_>>();
+        geometry
+            .pcurves
+            .retain(|pcurve| used.contains(pcurve.id.as_str()));
+    }
+    let mut unwritable = Vec::new();
+    if !rigid {
+        let stretch = largest_stretch(transform.affine_rows());
+        let mut grow = |id: &str, tolerance: &mut Option<cadmpeg_ir::scalar::PositiveLength>| {
+            if let Some(value) = *tolerance {
+                *tolerance = cadmpeg_ir::scalar::PositiveLength::new(value.get() * stretch);
+                if tolerance.is_none() {
+                    unwritable.push(id.to_owned());
+                }
+            }
+        };
+        for edge in &mut geometry.edges {
+            grow(edge.id.as_str(), &mut edge.tolerance);
+        }
+        for vertex in &mut geometry.vertices {
+            grow(vertex.id.as_str(), &mut vertex.tolerance);
+        }
+        for face in &mut geometry.faces {
+            grow(face.id.as_str(), &mut face.tolerance);
+        }
+    }
+    if orientation < 0.0 {
+        for face in &mut geometry.faces {
+            face.sense = match face.sense {
+                cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
+                cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
+            };
+        }
+    }
+    let loss = value_unwritable(
+        "Rhino",
+        "writes these records without their tolerance, which the body placement scales past \
+         the finite range",
+        unwritable,
+    );
+    Ok((placed, loss))
+}
+
+/// An object name as 3DM holds it: up to its first NUL character.
+fn written_name(name: Option<&str>) -> Option<&str> {
+    name.map(|name| name.find('\0').map_or(name, |end| &name[..end]))
+}
+
+fn point_record(
+    point: cadmpeg_ir::math::Point3,
+    identity: &str,
+    name: Option<&str>,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+) -> Result<Vec<u8>, CodecError> {
+    let mut payload = vec![0x10];
+    payload.extend(point.x.to_le_bytes());
+    payload.extend(point.y.to_le_bytes());
+    payload.extend(point.z.to_le_bytes());
+    attributed_object_record(1, POINT_CLASS, &payload, identity, name, color, visible)
 }
 
 fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
-) -> Result<WritePlan<'_>, CodecError> {
+    unjoined: &BTreeSet<&str>,
+) -> Result<WritePlan, CodecError> {
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::topology::BodyKind;
+
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    if ir.tolerances.angular.get() > std::f64::consts::PI {
-        return Err(CodecError::NotImplemented(
-            "Rhino angular tolerance must not exceed pi".into(),
+    let mut losses = Vec::new();
+    let angular = if ir.tolerances.angular.get() > std::f64::consts::PI {
+        losses.extend(value_unwritable(
+            "Rhino",
+            "writes the default angular tolerance pi/180 in place of an angular tolerance above \
+             pi, which 3DM does not hold",
+            ["document angular tolerance"],
         ));
-    }
-    if ir
-        .native
-        .namespace("rhino")
-        .is_some_and(|namespace| !rewritable_generated_namespace(namespace))
-    {
-        return Err(CodecError::NotImplemented(
-            "Rhino native records require explicit survival handling".into(),
-        ));
-    }
-    let model = &ir.model;
-    let geometry = &ir.geometry;
-    let unsupported = [
-        ("subds", geometry.subds.len()),
-        ("procedural_surfaces", geometry.procedural_surfaces.len()),
-        ("procedural_curves", geometry.procedural_curves.len()),
-        ("features", model.features.len()),
-        ("configurations", model.configurations.len()),
-        ("parameters", model.parameters.len()),
-        ("sketches", model.sketches.len()),
-        ("sketch_entities", model.sketch_entities.len()),
-        ("sketch_constraints", model.sketch_constraints.len()),
-        ("appearances", model.appearances.len()),
-        ("appearance_bindings", model.appearance_bindings.len()),
-        ("attributes", model.attributes.len()),
-    ]
-    .into_iter()
-    .filter(|(_, count)| *count != 0)
-    .map(|(name, _)| name)
-    .collect::<Vec<_>>();
-    if !unsupported.is_empty() {
-        return Err(CodecError::NotImplemented(format!(
-            "Rhino writer cannot yet represent arenas: {}",
-            unsupported.join(", ")
-        )));
-    }
-    native_i32_count(
-        geometry.points.len(),
-        "point arena exceeds native counts".into(),
-    )?;
-    let breps = brep_scopes(ir)?;
-    let used_pcurves = breps
-        .iter()
-        .flat_map(|scope| scope.pcurves.iter())
-        .collect::<std::collections::BTreeSet<_>>();
-    if used_pcurves.len() != geometry.pcurves.len() {
-        return Err(CodecError::NotImplemented(
-            "pcurves without writable Brep coedge ownership are not writable".into(),
-        ));
-    }
-    let topology_curves = breps
-        .iter()
-        .flat_map(|scope| scope.curves.iter().cloned())
-        .collect::<std::collections::BTreeSet<_>>();
-    let topology_surfaces = breps
-        .iter()
-        .flat_map(|scope| scope.surfaces.iter().cloned())
-        .collect::<std::collections::BTreeSet<_>>();
-    let general = general_topology_ir(ir);
-    let scoped_count = |select: fn(&cadmpeg_ir::document::Topology) -> usize| {
-        breps
-            .iter()
-            .map(|scope| select(&scope.ir.geometry))
-            .sum::<usize>()
-            + select(&general.geometry)
+        DEFAULT_ANGULAR_TOLERANCE
+    } else {
+        ir.tolerances.angular.get()
     };
-    if scoped_count(|geometry| geometry.bodies.len()) != geometry.bodies.len()
-        || scoped_count(|geometry| geometry.regions.len()) != geometry.regions.len()
-        || scoped_count(|geometry| geometry.shells.len()) != geometry.shells.len()
-        || scoped_count(|geometry| geometry.faces.len()) != geometry.faces.len()
-        || scoped_count(|geometry| geometry.loops.len()) != geometry.loops.len()
-        || scoped_count(|geometry| geometry.coedges.len()) != geometry.coedges.len()
-        || scoped_count(|geometry| geometry.edges.len()) != geometry.edges.len()
-        || scoped_count(|geometry| geometry.vertices.len()) != geometry.vertices.len()
-    {
-        return Err(CodecError::NotImplemented(
-            "orphan or unsupported topology is not writable".into(),
+    if let Some(namespace) = ir.native.namespace("rhino") {
+        losses.extend(native_records_omitted(
+            "Rhino",
+            "that the 3DM writer does not regenerate",
+            omitted_native_records(namespace),
         ));
     }
-    let (mut topology_points, point_groups) = free_vertex_groups(&general)?;
+    let geometry = &ir.geometry;
+    let (breps, splits) = brep_scopes(ir, unjoined);
+    let mut held = BTreeSet::new();
+    let mut topology_points = BTreeSet::new();
+    let mut topology_curves = BTreeSet::new();
+    let mut topology_surfaces = BTreeSet::new();
     for scope in &breps {
-        topology_points.extend(scope.points.iter().cloned());
+        held.extend(scope.held.iter().map(String::as_str));
+        topology_points.extend(scope.points.iter().map(String::as_str));
+        topology_curves.extend(scope.curves.iter().map(String::as_str));
+        topology_surfaces.extend(scope.surfaces.iter().map(String::as_str));
     }
-    let curves = geometry
-        .curves
+    let compounds = convert::CompoundIndex::new(ir);
+    let components = compounds.components(topology_curves.iter().copied().collect::<Vec<_>>());
+    topology_curves.extend(components);
+    let general = geometry
+        .bodies
         .iter()
-        .filter(|curve| {
-            !topology_curves.contains(curve.id.as_str())
-                && !is_support(curve.source_object.as_ref())
-        })
-        .map(|curve| {
-            Ok((
-                curve.id.as_str(),
-                WritableObjectCurve::try_new(curve)?.payload()?,
-            ))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let surfaces = geometry
+        .filter(|body| body.kind == BodyKind::General)
+        .map(|body| (body, general_scope(ir, body)))
+        .collect::<Vec<_>>();
+    for (_, scope) in &general {
+        held.extend(scope.held.iter().copied());
+        topology_points.extend(scope.points.iter().copied());
+    }
+
+    let mut records = Records {
+        file: tempfile::tempfile()?,
+        omitted: Vec::new(),
+    };
+    let mut written_pieces = Vec::new();
+    let mut cut_names = Vec::new();
+    let mut written_carriers = BTreeSet::new();
+    let mut parts = Vec::new();
+    for scope in &breps {
+        let (pieces, dropped) = brep_pieces(&ctx, &compounds, scope);
+        records.omitted.extend(dropped);
+        if pieces.is_empty() {
+            records.omitted.push((
+                scope.identity.clone(),
+                "each of its faces is left out".to_owned(),
+            ));
+            continue;
+        }
+        if pieces.len() > 1 {
+            parts.push((
+                scope.identity.clone(),
+                pieces
+                    .iter()
+                    .map(|piece| piece.identity.clone())
+                    .collect::<Vec<_>>(),
+            ));
+        }
+        for piece in pieces {
+            let built = brep_record(&ctx, &piece, archive_version);
+            let Some((record, findings)) = records.admit(&piece.identity, built)? else {
+                continue;
+            };
+            records.file.write_all(&record)?;
+            losses.extend(findings);
+            let name = piece.ir.geometry.bodies[0].name.as_deref();
+            if name != written_name(name) {
+                cut_names.push(piece.identity.clone());
+            }
+            written_pieces.push(piece);
+        }
+    }
+    for piece in &written_pieces {
+        written_carriers.extend(
+            piece
+                .curves
+                .iter()
+                .chain(&piece.surfaces)
+                .chain(&piece.pcurves)
+                .map(String::as_str),
+        );
+    }
+    for point in geometry.points.iter().filter(|point| {
+        !topology_points.contains(point.id.as_str()) && !is_support(point.source_object.as_ref())
+    }) {
+        let built = point_record(point.position().get(), point.id.as_str(), None, None, None);
+        if let Some(record) = records.admit(point.id.as_str(), built)? {
+            records.file.write_all(&record)?;
+        }
+    }
+    let mut tolerant_vertices = Vec::new();
+    for (body, scope) in &general {
+        let built = point_group(ir, body, scope).and_then(|group| {
+            let name = written_name(body.name.as_deref());
+            let record = if let [point] = group.points.as_slice() {
+                point_record(*point, body.id.as_str(), name, body.color, body.visible)?
+            } else {
+                attributed_object_record(
+                    2,
+                    POINT_CLOUD_CLASS,
+                    &point_cloud_payload(&group.points)?,
+                    body.id.as_str(),
+                    name,
+                    body.color,
+                    body.visible,
+                )?
+            };
+            Ok((record, group.tolerant_vertices))
+        });
+        let Some((record, vertices)) = records.admit(body.id.as_str(), built)? else {
+            continue;
+        };
+        records.file.write_all(&record)?;
+        tolerant_vertices.extend(vertices);
+        if body.name.as_deref() != written_name(body.name.as_deref()) {
+            cut_names.push(body.id.as_str().to_owned());
+        }
+    }
+    let mut deflected = Vec::new();
+    for curve in geometry.curves.iter().filter(|curve| {
+        !topology_curves.contains(curve.id.as_str()) && !is_support(curve.source_object.as_ref())
+    }) {
+        let built = WritableObjectCurve::try_new(curve)
+            .and_then(|writable| writable.payload())
+            .and_then(|(class, payload)| {
+                attributed_object_record(4, class, &payload, curve.id.as_str(), None, None, None)
+            });
+        let Some(record) = records.admit(curve.id.as_str(), built)? else {
+            continue;
+        };
+        records.file.write_all(&record)?;
+        written_carriers.insert(curve.id.as_str());
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) = &curve.geometry {
+            if polyline.chordal_deflection().get() > 0.0 {
+                deflected.push(curve.id.as_str().to_owned());
+            }
+        }
+    }
+    for surface in geometry
         .surfaces
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
-        .map(|surface| {
+    {
+        let built = WritableFaceSurface::try_new(surface)
+            .and_then(WritableFaceSurface::payload)
+            .and_then(|(class, payload)| {
+                attributed_object_record(8, class, &payload, surface.id.as_str(), None, None, None)
+            });
+        if let Some(record) = records.admit(surface.id.as_str(), built)? {
+            records.file.write_all(&record)?;
+            written_carriers.insert(surface.id.as_str());
+        }
+    }
+    let withheld = withheld_body_meshes(ir);
+    let mut unbound = Vec::new();
+    for mesh in ir
+        .model
+        .tessellations
+        .iter()
+        .filter(|mesh| !withheld.contains(mesh.id.as_str()))
+    {
+        let built = check_mesh(mesh).and_then(|admission| {
+            let payload = mesh_payload(mesh, archive_version, &admission.channels)?;
             Ok((
-                surface.id.as_str(),
-                WritableFaceSurface::try_new(surface)?.payload()?,
+                mesh_object_record(&payload, mesh.id.as_str())?,
+                admission.omitted,
             ))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    for mesh in &model.tessellations {
-        check_mesh(mesh)?;
+        });
+        let Some((record, omitted)) = records.admit(mesh.id.as_str(), built)? else {
+            continue;
+        };
+        records.file.write_all(&record)?;
+        if !omitted.is_empty() {
+            losses.push(RhinoLossCode::WriterMeshDataOmitted.note(format!(
+                "mesh {} is written without its {}, which a 3DM mesh does not hold",
+                mesh.id,
+                omitted.join(", ")
+            )));
+        }
+        if mesh.of.body().is_some() {
+            unbound.push(mesh.id.as_str().to_owned());
+        }
     }
-    let mut brep_records = tempfile::tempfile()?;
-    for scope in &breps {
-        let body = &scope.ir.geometry.bodies[0];
-        let model = WritableModel::try_new(&scope.ir)?;
-        let payload = brep_payload(&ctx, &model, archive_version)?;
-        brep_records.write_all(&brep_object_record(
-            &payload,
-            body.id.as_str(),
-            body.name.as_deref(),
-            body.color,
-            body.visible,
-        )?)?;
+
+    for (body, pieces) in splits {
+        losses.push(RhinoLossCode::WriterBodySplit.note(format!(
+            "body {body} is written as {} Brep objects, one for each of its shells or of the \
+             faces of a region that does not state every shell or face: {}",
+            pieces.len(),
+            pieces.join(", ")
+        )));
     }
+    for (id, pieces) in parts {
+        losses.push(RhinoLossCode::WriterBodySplit.note(format!(
+            "{id} is written as {} Brep objects, one for each edge-connected set of its written \
+             faces: {}",
+            pieces.len(),
+            pieces.join(", ")
+        )));
+    }
+    for (id, reason) in records.omitted {
+        losses.push(RhinoLossCode::WriterRecordOmitted.note(format!(
+            "{id} is not written, with the records only it uses: {reason}"
+        )));
+    }
+    let unheld = [
+        geometry
+            .bodies
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect::<Vec<_>>(),
+        geometry
+            .regions
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+        geometry
+            .shells
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+        geometry
+            .faces
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+        geometry
+            .loops
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+        geometry
+            .coedges
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+        geometry
+            .edges
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+        geometry
+            .vertices
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+        geometry
+            .pcurves
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|id| !held.contains(id))
+    .collect::<Vec<_>>();
+    if !unheld.is_empty() {
+        losses.push(RhinoLossCode::WriterRecordOmitted.note(format!(
+            "{} topology or pcurve record(s) belong to no Brep or free-vertex body the writer \
+             writes and are not written: {}",
+            unheld.len(),
+            unheld.join(", ")
+        )));
+    }
+    losses.extend(value_unwritable(
+        "Rhino",
+        "writes these object names up to their first NUL character, which ends a 3DM name",
+        cut_names,
+    ));
+    losses.extend(value_unwritable(
+        "Rhino",
+        "writes these free vertices as points without their tolerance",
+        tolerant_vertices,
+    ));
+    losses.extend(value_unwritable(
+        "Rhino",
+        "writes these polylines as degree-1 NURBS curves without their chordal deflection",
+        deflected,
+    ));
+    losses.extend(value_unwritable(
+        "Rhino",
+        "writes these meshes as standalone objects without their body binding",
+        unbound,
+    ));
+    losses.extend(value_unwritable(
+        "Rhino",
+        "writes these NURBS carriers without their periodic flag, which 3DM derives from the \
+         knot vector",
+        periodic_flags_changed(ir, &written_carriers),
+    ));
     Ok(WritePlan {
-        curves,
-        surfaces,
-        brep_records,
-        topology_points,
-        point_groups,
+        records: records.file,
+        angular,
+        losses,
     })
 }
 
-fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bool {
-    const REGENERATED: &[&str] = &[
-        "byte_spans",
-        "document_settings",
-        "layers",
-        "object_presentation",
-        "opaque_records",
-        "unknowns",
-    ];
-    if namespace
-        .arenas()
-        .iter()
-        .any(|(name, records)| !records.is_empty() && !REGENERATED.contains(&name.as_str()))
-    {
-        return false;
+/// The written NURBS curves, surfaces, and pcurves whose periodic flag
+/// differs from the one 3DM derives from their knot vector.
+fn periodic_flags_changed(ir: &CadIr, written: &BTreeSet<&str>) -> Vec<String> {
+    use cadmpeg_ir::geometry::{
+        pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+        SurfaceGeometry,
+    };
+
+    fn changed(knots: &[f64], degree: u32, count: usize, periodic: bool) -> bool {
+        usize::try_from(degree).is_ok_and(|degree| {
+            knots.len() > 2
+                && crate::surfaces::periodic_knots(&knots[1..knots.len() - 1], degree + 1, count)
+                    != periodic
+        })
     }
-    let opaque = namespace.arenas().get("opaque_records");
-    let generated_comment = opaque.is_some_and(|records| {
+    let geometry = &ir.geometry;
+    let curves = geometry
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
+                if changed(
+                    nurbs.knots(),
+                    nurbs.degree(),
+                    nurbs.pole_count(),
+                    nurbs.periodic(),
+                ) =>
+            {
+                Some(curve.id.as_str())
+            }
+            _ => None,
+        });
+    let surfaces = geometry
+        .surfaces
+        .iter()
+        .filter_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+                if changed(
+                    nurbs.u_knots(),
+                    nurbs.u_degree(),
+                    nurbs.u_count(),
+                    nurbs.u_periodic(),
+                ) || changed(
+                    nurbs.v_knots(),
+                    nurbs.v_degree(),
+                    nurbs.v_count(),
+                    nurbs.v_periodic(),
+                ) =>
+            {
+                Some(surface.id.as_str())
+            }
+            _ => None,
+        });
+    let pcurves = geometry
+        .pcurves
+        .iter()
+        .filter_map(|pcurve| match &pcurve.geometry {
+            PcurveGeometry::Nurbs { nurbs } => nurbs
+                .lift(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
+                .ok()
+                .filter(|nurbs| {
+                    changed(
+                        nurbs.knots(),
+                        nurbs.degree(),
+                        nurbs.pole_count(),
+                        nurbs.periodic(),
+                    )
+                })
+                .map(|_| pcurve.id.as_str()),
+            _ => None,
+        });
+    curves
+        .chain(surfaces)
+        .chain(pcurves)
+        .filter(|id| written.contains(id))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The ids of the records of the native `rhino` namespace that the archive
+/// this writer writes does not regenerate: the byte spans and document
+/// settings, the generated comment and the opaque records it names, one
+/// default layer, default object presentations, and unknowns that link
+/// written objects are regenerated.
+fn omitted_native_records(namespace: &cadmpeg_ir::NativeNamespace) -> Vec<String> {
+    let arenas = namespace.arenas();
+    let generated_comment = arenas.get("opaque_records").is_some_and(|records| {
         records.iter().any(|record| {
-            let Ok(fields) = record.fields() else {
-                return false;
-            };
             record.id() == "rhino:source:opaque#comment"
-                && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
-                && fields.get("data").and_then(serde_json::Value::as_str)
-                    == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
+                && record.fields().is_ok_and(|fields| {
+                    json_str(&fields, "typecode") == Some("0x00000001")
+                        && json_str(&fields, "data") == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
+                })
         })
     });
-    if (opaque.is_some() && !generated_comment)
-        || opaque.is_some_and(|records| {
-            records.iter().any(|record| {
-                !matches!(
+    let one_layer = arenas
+        .get("layers")
+        .is_some_and(|records| records.len() == 1);
+    let regenerated = |arena: &str, record: &cadmpeg_ir::NativeRecord| match arena {
+        "byte_spans" | "document_settings" => true,
+        "opaque_records" => {
+            generated_comment
+                && matches!(
                     record
                         .field("typecode")
                         .as_ref()
                         .and_then(serde_json::Value::as_str),
                     Some("0x00000001" | "0xa0000026" | "0x20008031" | "0x20008050")
                 )
-            })
-        })
-    {
-        return false;
-    }
-    if namespace
-        .arenas()
-        .get("layers")
-        .is_some_and(|records| records.len() != 1 || !default_native_layer(&records[0]))
-    {
-        return false;
-    }
-    if namespace
-        .arenas()
-        .get("object_presentation")
-        .is_some_and(|records| {
+        }
+        "layers" => one_layer && default_native_layer(record),
+        "object_presentation" => default_native_presentation(record),
+        "unknowns" => record
+            .field("links")
+            .as_ref()
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|links| {
+                !links.is_empty()
+                    && links.iter().all(|link| {
+                        link.as_str().is_some_and(|link| {
+                            [
+                                "rhino:object:body#",
+                                "rhino:object:curve#",
+                                "rhino:object:point#",
+                                "rhino:object:surface#",
+                                "rhino:object:tessellation#",
+                            ]
+                            .iter()
+                            .any(|prefix| link.starts_with(prefix))
+                        })
+                    })
+            }),
+        _ => false,
+    };
+    arenas
+        .iter()
+        .flat_map(|(arena, records)| {
             records
                 .iter()
-                .any(|record| !default_native_presentation(record))
+                .filter(|record| !regenerated(arena.as_str(), record))
+                .map(|record| record.id().to_owned())
         })
-    {
-        return false;
-    }
-    namespace.arenas().get("unknowns").is_none_or(|records| {
-        records.iter().all(|record| {
-            record
-                .field("links")
-                .as_ref()
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|links| {
-                    !links.is_empty()
-                        && links.iter().all(|link| {
-                            link.as_str().is_some_and(|link| {
-                                [
-                                    "rhino:object:body#",
-                                    "rhino:object:curve#",
-                                    "rhino:object:point#",
-                                    "rhino:object:surface#",
-                                    "rhino:object:tessellation#",
-                                ]
-                                .iter()
-                                .any(|prefix| link.starts_with(prefix))
-                            })
-                        })
-                })
-        })
-    })
+        .collect()
 }
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
@@ -990,35 +1631,37 @@ fn brep_payload(
         .iter()
         .enumerate()
         .map(|(index, coedge)| {
-            let edge = &model.edges[coedge.edge];
             let (from, to) = model.endpoints(index);
+            let (edge_index, trim_type) = match coedge.edge {
+                TrimEdge::Edge(position) => {
+                    let edge = &model.edges[position];
+                    let same_loop = edge.uses.len() == 2
+                        && model.coedges[edge.uses[0]].owner_loop
+                            == model.coedges[edge.uses[1]].owner_loop;
+                    (
+                        wire_index(position)?,
+                        brep_trim_type(edge.uses.len(), same_loop),
+                    )
+                }
+                TrimEdge::Singular(_) => (-1, SINGULAR_TRIM_TYPE),
+            };
             let index = wire_index(index)?;
             let mut record = index.to_le_bytes().to_vec();
             record.extend(index.to_le_bytes());
-            record.extend(
-                edge.domain
-                    .into_iter()
-                    .flat_map(|value| value.get().to_le_bytes()),
-            );
-            record.extend(wire_index(coedge.edge)?.to_le_bytes());
+            record.extend(coedge.domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend(edge_index.to_le_bytes());
             record.extend(wire_index(from)?.to_le_bytes());
             record.extend(wire_index(to)?.to_le_bytes());
             record.extend(i32::from(coedge.source.sense == Sense::Reversed).to_le_bytes());
-            let same_loop = edge.uses.len() == 2
-                && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
-            record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
-            record.extend(0_i32.to_le_bytes());
+            record.extend(trim_type.to_le_bytes());
+            record.extend(coedge.iso.to_le_bytes());
             record.extend(wire_index(coedge.owner_loop)?.to_le_bytes());
             record.extend(
                 [coedge.fit_tolerance, 0.0_f64]
                     .into_iter()
                     .flat_map(f64::to_le_bytes),
             );
-            record.extend(
-                edge.domain
-                    .into_iter()
-                    .flat_map(|value| value.get().to_le_bytes()),
-            );
+            record.extend(coedge.domain.into_iter().flat_map(f64::to_le_bytes));
             record.push(0);
             record.extend([0_u8; 31]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
@@ -1087,7 +1730,18 @@ fn brep_payload(
     let mesh_presence = ctx.alloc_filled(model.faces.len(), 0_u8, "Rhino Brep mesh presence")?;
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence)?);
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence)?);
-    let solid = if model.body.kind == BodyKind::Solid {
+    let polyhedral = model
+        .surfaces
+        .iter()
+        .all(|surface| matches!(surface, WritableFaceSurface::Plane { .. }))
+        && model
+            .edges
+            .iter()
+            .all(|edge| matches!(edge.curve, WritableEdgeCurve::Line(_)));
+    let solid = if model.body.kind == BodyKind::Solid
+        && polyhedral
+        && model.edges.iter().all(|edge| edge.uses.len() == 2)
+    {
         planar_solid_orientation(model)
     } else {
         0
@@ -1103,6 +1757,9 @@ fn brep_payload(
         direct,
     })
 }
+
+/// The 3DM trim type of a trim with no edge whose ends meet at one vertex.
+const SINGULAR_TRIM_TYPE: i32 = 4;
 
 fn brep_trim_type(edge_use_count: usize, two_uses_in_one_loop: bool) -> i32 {
     if edge_use_count == 1 {
@@ -1285,22 +1942,39 @@ fn canonicalize_native_curve_knots(
     Ok(())
 }
 
-fn admit_pcurve<'a>(
-    edge: &WritableEdge<'_>,
-    pcurve: &'a cadmpeg_ir::geometry::pcurve::Pcurve,
-) -> Result<WritablePcurve<'a>, CodecError> {
-    if pcurve.wrapper_reversed() == Some(true)
-        || pcurve.native_tail_flags().is_some()
-        || pcurve
-            .parameter_range()
-            .is_some_and(|range| range.finite_components() != edge.domain)
-    {
-        return Err(CodecError::NotImplemented(format!(
-            "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
-            pcurve.id.as_str()
-        )));
+/// The pcurve `pcurve` as a trim carrier over its own interval: its stated
+/// range, else its NURBS knot domain, else `edge_domain`, the range of its
+/// edge where the edge has a curve.
+fn admit_pcurve(
+    edge_domain: Option<[f64; 2]>,
+    pcurve: &cadmpeg_ir::geometry::pcurve::Pcurve,
+) -> Result<WritablePcurve<'_>, CodecError> {
+    let unsupported =
+        |what: &str| CodecError::NotImplemented(format!("pcurve {} {what}", pcurve.id.as_str()));
+    if pcurve.wrapper_reversed() == Some(true) || pcurve.native_tail_flags().is_some() {
+        return Err(unsupported("has a reversed wrapper or tail flags"));
     }
-    let domain = FiniteReal::raw_array(edge.domain);
+    let knot_domain = match &pcurve.geometry {
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => {
+            let degree = usize::try_from(nurbs.degree())
+                .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?;
+            let knots = nurbs.knots();
+            match (knots.get(degree), knots.get(nurbs.pole_rows().count())) {
+                (Some(lo), Some(hi)) => Some([*lo, *hi]),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    let domain = pcurve
+        .parameter_range()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+        .or(knot_domain)
+        .or(edge_domain)
+        .ok_or_else(|| unsupported("states no parameter interval"))?;
+    if domain[0].partial_cmp(&domain[1]) != Some(std::cmp::Ordering::Less) {
+        return Err(unsupported("has an empty or decreasing parameter interval"));
+    }
     let (payload, domain_extent_points) = match &pcurve.geometry {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
             let origin = line.origin().as_raw();
@@ -1330,19 +2004,10 @@ fn admit_pcurve<'a>(
                     CodecError::NotImplemented(format!("pcurve {}: {error}", pcurve.id.as_str()))
                 })?;
             check_nurbs_curve(pcurve.id.as_str(), &curve)?;
-            let count = curve.pole_count();
-            if curve.periodic()
-                || [
-                    curve.knots()[usize::try_from(curve.degree()).map_err(|_| {
-                        CodecError::Malformed("Rhino count exceeds address space".into())
-                    })?],
-                    curve.knots()[count],
-                ] != domain
-            {
-                return Err(CodecError::NotImplemented(format!(
-                    "pcurve {} is not a nonperiodic full-domain NURBS curve",
-                    pcurve.id.as_str()
-                )));
+            if curve.periodic() || knot_domain != Some(domain) {
+                return Err(unsupported(
+                    "is not a nonperiodic NURBS curve over its whole knot domain",
+                ));
             }
             (
                 (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)?),
@@ -1350,33 +2015,78 @@ fn admit_pcurve<'a>(
             )
         }
         _ => {
-            return Err(CodecError::NotImplemented(format!(
-                "pcurve {} geometry is not writable as Rhino Brep trim geometry",
-                pcurve.id.as_str()
-            )))
+            return Err(unsupported(
+                "geometry is not writable as Rhino Brep trim geometry",
+            ))
         }
     };
     Ok(WritablePcurve {
         source: pcurve,
         payload,
         domain_extent_points,
+        domain,
     })
 }
 
-/// Checks that an explicit pcurve tracks its directed edge curve through the
-/// NURBS surface.
+/// Samples per knot span of a trim or of its edge curve.
+const TRIM_SAMPLES_PER_SPAN: u32 = 16;
+/// Golden-section steps that refine the closest edge parameter to a trim
+/// sample.
+const CLOSEST_POINT_STEPS: usize = 48;
+
+/// The point of `edge`'s curve at `parameter`: a non-finite point as it is,
+/// `None` where the curve has no point there.
+fn edge_curve_point(
+    edge: &WritableEdge<'_>,
+    parameter: f64,
+) -> Result<Option<cadmpeg_ir::math::Point3>, CodecError> {
+    let parameter = FiniteReal::new(parameter)
+        .ok_or_else(|| CodecError::malformed("non-finite edge sample parameter"))?;
+    match edge.curve.point(parameter) {
+        Ok(point) => Ok(Some(point.get())),
+        Err(failure) => Ok(failure.non_finite()?),
+    }
+}
+
+/// Parameters that split `domain` at `knots` into spans, each sampled
+/// `TRIM_SAMPLES_PER_SPAN` times.
+fn span_samples(domain: [f64; 2], knots: impl IntoIterator<Item = f64>) -> Vec<f64> {
+    let mut breaks = vec![domain[0], domain[1]];
+    breaks.extend(
+        knots
+            .into_iter()
+            .filter(|value| *value > domain[0] && *value < domain[1]),
+    );
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup();
+    let mut samples = Vec::new();
+    for span in breaks.windows(2) {
+        for step in 0..TRIM_SAMPLES_PER_SPAN {
+            let fraction = f64::from(step) / f64::from(TRIM_SAMPLES_PER_SPAN);
+            if let Some(sample) = cadmpeg_ir::math::interpolate(span[0], span[1], fraction) {
+                samples.push(sample.get());
+            }
+        }
+    }
+    samples.push(domain[1]);
+    samples
+}
+
+/// Checks that an explicit pcurve, mapped through its NURBS surface, runs
+/// along its edge curve from the coedge's start vertex to its end vertex,
+/// and returns the finding where it does not. The pcurve and the edge are
+/// parameterized independently: each trim sample is measured against the
+/// closest point of the edge curve.
 ///
-/// `face_tolerance` is an admitted IR-stated tolerance from
-/// `stated_write_tolerance`.
+/// `face_tolerance` is the IR-stated tolerance `stated_write_tolerance`
+/// gives.
 fn validate_nurbs_trim(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     face_tolerance: f64,
     edge: &WritableEdge<'_>,
-    sense: cadmpeg_ir::topology::Sense,
+    ends: [cadmpeg_ir::math::Point3; 2],
     explicit: &WritablePcurve<'_>,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::topology::Sense;
-
+) -> Result<Option<String>, CodecError> {
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let u_domain = [
@@ -1390,54 +2100,42 @@ fn validate_nurbs_trim(
         surface.v_knots()[v_count],
     ];
     let pcurve = explicit.source;
-    let domain = edge.domain;
     let inside_domain = |u: f64, v: f64| {
         cadmpeg_ir::math::parameter_in_domain(u, u_domain, EPS_WRITE_DEGENERATE)
             && cadmpeg_ir::math::parameter_in_domain(v, v_domain, EPS_WRITE_DEGENERATE)
     };
-    let domain_extent_inside = explicit
+    if !explicit
         .domain_extent_points
         .iter()
-        .all(|point| inside_domain(point.u, point.v));
-    if !domain_extent_inside {
-        return Err(CodecError::malformed(format_args!(
+        .all(|point| inside_domain(point.u, point.v))
+    {
+        return Ok(Some(format!(
             "pcurve {} leaves its NURBS surface parameter domain",
             pcurve.id.as_str()
         )));
     }
-    let mut breaks = vec![domain[0].get(), domain[1].get()];
-    if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
-        breaks.extend(
-            nurbs
-                .knots()
-                .finite_knots()
-                .filter(|value| *value > domain[0] && *value < domain[1])
-                .map(|value| {
-                    if sense == Sense::Forward {
-                        Ok(value.get())
-                    } else {
-                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
-                            .map(FiniteReal::get)
-                            .ok_or_else(|| {
-                                CodecError::malformed("reversed edge knot is non-finite")
-                            })
-                    }
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?,
-        );
+    let edge_domain = FiniteReal::raw_array(edge.domain);
+    let edge_knots = match edge.curve {
+        WritableEdgeCurve::Nurbs(nurbs) => nurbs.knots().to_vec(),
+        WritableEdgeCurve::Line(_) => Vec::new(),
+    };
+    let edge_parameters = span_samples(edge_domain, edge_knots);
+    let mut edge_points = Vec::with_capacity(edge_parameters.len());
+    for parameter in &edge_parameters {
+        match edge_curve_point(edge, *parameter)? {
+            Some(point) => edge_points.push(point),
+            None => {
+                return Ok(Some(format!(
+                    "edge curve {} cannot be evaluated over its edge domain",
+                    edge.curve_id
+                )))
+            }
+        }
     }
-    if let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {
-        breaks.extend(
-            nurbs
-                .knots()
-                .iter()
-                .copied()
-                .filter(|value| *value > domain[0].get() && *value < domain[1].get()),
-        );
-    }
-    breaks.sort_by(f64::total_cmp);
-    breaks.dedup();
-
+    let pcurve_knots = match &pcurve.geometry {
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => nurbs.knots().to_vec(),
+        _ => Vec::new(),
+    };
     let tolerance = face_tolerance
         .max(
             edge.source
@@ -1449,74 +2147,240 @@ fn validate_nurbs_trim(
                 .fit_tolerance()
                 .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         );
-    for span in breaks.windows(2) {
-        for step in 0..=16 {
-            let fraction = f64::from(step) / 16.0;
-            let sample = cadmpeg_ir::math::interpolate(span[0], span[1], fraction)
-                .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
-            let parameter = sample.get();
-            // A non-finite pcurve point is refused by the domain test.
-            let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &pcurve.geometry,
-                parameter,
-            ) {
-                Ok(uv) => uv.get(),
-                Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "pcurve {} cannot be evaluated over its edge domain",
+    let samples = span_samples(explicit.domain, pcurve_knots);
+    let last = samples.len() - 1;
+    for (index, parameter) in samples.into_iter().enumerate() {
+        // A non-finite pcurve point fails the domain test.
+        let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            parameter,
+        ) {
+            Ok(uv) => uv.get(),
+            Err(failure) => match failure.non_finite()? {
+                Some(point) => point,
+                None => {
+                    return Ok(Some(format!(
+                        "pcurve {} cannot be evaluated over its parameter interval",
                         pcurve.id.as_str()
-                    ))
-                })?,
-            };
-            if !inside_domain(uv.u, uv.v) {
-                return Err(CodecError::malformed(format_args!(
-                    "pcurve {} leaves its NURBS surface parameter domain",
-                    pcurve.id.as_str()
-                )));
-            }
-            // A non-finite surface point is measured as a finite one is.
-            let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                surface,
-                uv.u,
-                uv.v,
-            ) {
-                Ok(point) => point.get(),
-                Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    )))
+                }
+            },
+        };
+        if !inside_domain(uv.u, uv.v) {
+            return Ok(Some(format!(
+                "pcurve {} leaves its NURBS surface parameter domain",
+                pcurve.id.as_str()
+            )));
+        }
+        // A non-finite surface point is measured as a finite one is.
+        let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            uv.u,
+            uv.v,
+        ) {
+            Ok(point) => point.get(),
+            Err(failure) => match failure.non_finite()? {
+                Some(point) => point,
+                None => {
+                    return Ok(Some(format!(
                         "pcurve {} cannot be evaluated through its NURBS surface",
                         pcurve.id.as_str()
-                    ))
-                })?,
-            };
-            let curve_parameter = if sense == Sense::Forward {
-                sample
-            } else {
-                cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
-                    .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
-            };
-            // A non-finite edge curve point is measured as a finite one is.
-            let edge_point = match edge.curve.point(curve_parameter) {
-                Ok(point) => point.get(),
-                Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "edge curve {} cannot be evaluated over its edge domain",
-                        edge.curve_id
-                    ))
-                })?,
-            };
-            let distance = cadmpeg_ir::math::Point3::distance(mapped, edge_point);
+                    )))
+                }
+            },
+        };
+        let distance = closest_edge_distance(edge, &edge_parameters, &edge_points, mapped)?;
+        if !distance.is_finite() || distance > tolerance {
+            return Ok(Some(format!(
+                "pcurve {} misses edge curve {} by {distance}",
+                pcurve.id.as_str(),
+                edge.curve_id
+            )));
+        }
+        let end = if index == 0 {
+            Some((ends[0], "start"))
+        } else if index == last {
+            Some((ends[1], "end"))
+        } else {
+            None
+        };
+        if let Some((vertex, which)) = end {
+            let distance = cadmpeg_ir::math::Point3::distance(mapped, vertex);
             if !distance.is_finite() || distance > tolerance {
-                return Err(CodecError::malformed(format_args!(
-                    "pcurve {} misses directed edge curve {} by {distance}",
-                    pcurve.id.as_str(),
-                    edge.curve_id
+                return Ok(Some(format!(
+                    "pcurve {} misses the {which} vertex of its coedge by {distance}",
+                    pcurve.id.as_str()
                 )));
             }
         }
     }
-    Ok(())
+    Ok(None)
+}
+
+/// Checks that the image of a singular trim's pcurve through its face's
+/// surface stays at the trim's vertex, and returns the finding where it does
+/// not. `tolerance` is the larger of the face and edge tolerances.
+fn validate_singular_trim(
+    surface: WritableFaceSurface<'_>,
+    tolerance: f64,
+    vertex: cadmpeg_ir::math::Point3,
+    explicit: &WritablePcurve<'_>,
+) -> Result<Option<String>, CodecError> {
+    let pcurve = explicit.source;
+    let tolerance = tolerance.max(
+        pcurve
+            .fit_tolerance()
+            .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
+    );
+    let knots = match &pcurve.geometry {
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => nurbs.knots().to_vec(),
+        _ => Vec::new(),
+    };
+    for parameter in span_samples(explicit.domain, knots) {
+        let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            parameter,
+        ) {
+            Ok(uv) => uv.get(),
+            Err(failure) => match failure.non_finite()? {
+                Some(point) => point,
+                None => {
+                    return Ok(Some(format!(
+                        "pcurve {} cannot be evaluated over its parameter interval",
+                        pcurve.id.as_str()
+                    )))
+                }
+            },
+        };
+        let mapped = match surface {
+            WritableFaceSurface::Plane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                let v_axis = normal.cross(u_axis);
+                cadmpeg_ir::math::Point3::new(
+                    origin.x + u_axis.x * uv.u + v_axis.x * uv.v,
+                    origin.y + u_axis.y * uv.u + v_axis.y * uv.v,
+                    origin.z + u_axis.z * uv.u + v_axis.z * uv.v,
+                )
+            }
+            WritableFaceSurface::Nurbs { surface, .. } => {
+                match cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    surface,
+                    uv.u,
+                    uv.v,
+                ) {
+                    Ok(point) => point.get(),
+                    Err(failure) => match failure.non_finite()? {
+                        Some(point) => point,
+                        None => {
+                            return Ok(Some(format!(
+                                "pcurve {} cannot be evaluated through its NURBS surface",
+                                pcurve.id.as_str()
+                            )))
+                        }
+                    },
+                }
+            }
+        };
+        let distance = cadmpeg_ir::math::Point3::distance(mapped, vertex);
+        if !distance.is_finite() || distance > tolerance {
+            return Ok(Some(format!(
+                "pcurve {} of a singular trim leaves its vertex by {distance}",
+                pcurve.id.as_str()
+            )));
+        }
+    }
+    Ok(None)
+}
+
+/// The 3DM iso value of a singular trim: west 3, south 4, east 5, or north
+/// 6 where its pcurve lies on that side of its NURBS surface's parameter
+/// domain, else 0.
+fn singular_trim_iso(surface: WritableFaceSurface<'_>, pcurve: &WritablePcurve<'_>) -> i32 {
+    let WritableFaceSurface::Nurbs { surface, .. } = surface else {
+        return 0;
+    };
+    let Some((u, v)) = convert::nurbs_surface_domain(surface) else {
+        return 0;
+    };
+    let points = &pcurve.domain_extent_points;
+    let on = |lane: fn(&cadmpeg_ir::math::Point2) -> f64, bound: f64| {
+        points
+            .iter()
+            .all(|point| (lane(point) - bound).abs() <= EPS_WRITE_DEGENERATE)
+    };
+    let u_of = |point: &cadmpeg_ir::math::Point2| point.u;
+    let v_of = |point: &cadmpeg_ir::math::Point2| point.v;
+    if on(u_of, u[0]) {
+        3
+    } else if on(v_of, v[0]) {
+        4
+    } else if on(u_of, u[1]) {
+        5
+    } else if on(v_of, v[1]) {
+        6
+    } else {
+        0
+    }
+}
+
+/// The distance from `point` to the edge curve: the closest of `points`,
+/// sampled at `parameters`, refined by golden-section search over the
+/// sample spans on either side of it.
+fn closest_edge_distance(
+    edge: &WritableEdge<'_>,
+    parameters: &[f64],
+    points: &[cadmpeg_ir::math::Point3],
+    point: cadmpeg_ir::math::Point3,
+) -> Result<f64, CodecError> {
+    let Some((closest, mut best)) = points
+        .iter()
+        .map(|sample| cadmpeg_ir::math::Point3::distance(*sample, point))
+        .enumerate()
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+    else {
+        return Ok(f64::INFINITY);
+    };
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+    let distance = |parameter: Option<cadmpeg_ir::scalar::FiniteReal>| -> Result<f64, CodecError> {
+        let Some(parameter) = parameter else {
+            return Ok(f64::INFINITY);
+        };
+        Ok(
+            edge_curve_point(edge, parameter.get())?.map_or(f64::INFINITY, |sample| {
+                cadmpeg_ir::math::Point3::distance(sample, point)
+            }),
+        )
+    };
+    let at = |a: f64, b: f64, fraction: f64| cadmpeg_ir::math::interpolate(a, b, fraction);
+    let mut a = closest
+        .checked_sub(1)
+        .map_or(parameters[closest], |index| parameters[index]);
+    let mut b = parameters
+        .get(closest + 1)
+        .copied()
+        .unwrap_or(parameters[closest]);
+    let mut fc = distance(at(a, b, 1.0 - ratio))?;
+    let mut fd = distance(at(a, b, ratio))?;
+    for _ in 0..CLOSEST_POINT_STEPS {
+        if fc < fd {
+            b = at(a, b, ratio).map_or(b, cadmpeg_ir::scalar::FiniteReal::get);
+            fd = fc;
+            fc = distance(at(a, b, 1.0 - ratio))?;
+        } else {
+            a = at(a, b, 1.0 - ratio).map_or(a, cadmpeg_ir::scalar::FiniteReal::get);
+            fc = fd;
+            fd = distance(at(a, b, ratio))?;
+        }
+        best = best.min(fc).min(fd);
+    }
+    Ok(best)
 }
 
 fn plane_uv(
@@ -1686,29 +2550,21 @@ fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Result<Vec<u8>, CodecE
     long_chunk(TCODE_CLASS_WRAPPER, &[uuid, data, end].concat())
 }
 
-fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), CodecError> {
+/// What a mesh is written with: its admitted channel kinds, and the mesh
+/// values a 3DM mesh does not hold.
+struct MeshAdmission {
+    channels: BTreeSet<u32>,
+    omitted: Vec<String>,
+}
+
+/// Admits a mesh whose counts and values 3DM holds. A channel the archive
+/// cannot state, and the strips, feature edges, corner normals, triangle
+/// groups, and texture assignments, are written without and named.
+fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<MeshAdmission, CodecError> {
     let vertex_count = mesh.vertices().len();
     if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles().len() > (1 << 24) {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} counts are outside Rhino's native range",
-            mesh.id
-        )));
-    }
-    if mesh.of.body().is_some() || !mesh.strip_lengths().is_empty() {
-        return Err(CodecError::NotImplemented(format!(
-            "mesh {} uses body binding or strips not yet writable",
-            mesh.id
-        )));
-    }
-    if !mesh.feature_edges().is_empty() || !mesh.per_corner_normals().is_empty() {
-        return Err(CodecError::NotImplemented(format!(
-            "mesh {} uses feature edges or corner normals not yet writable",
-            mesh.id
-        )));
-    }
-    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
-        return Err(CodecError::NotImplemented(format!(
-            "mesh {} uses triangle groups or texture assignments not yet writable",
             mesh.id
         )));
     }
@@ -1726,162 +2582,143 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    let mut kinds = std::collections::BTreeSet::new();
+    let mut omitted = [
+        (!mesh.strip_lengths().is_empty(), "strips"),
+        (!mesh.feature_edges().is_empty(), "feature edges"),
+        (!mesh.per_corner_normals().is_empty(), "corner normals"),
+        (!mesh.triangle_groups().is_empty(), "triangle groups"),
+        (
+            !mesh.texture_assignments().is_empty(),
+            "texture assignments",
+        ),
+    ]
+    .into_iter()
+    .filter(|(present, _)| *present)
+    .map(|(_, values)| values.to_owned())
+    .collect::<Vec<_>>();
+    let mut channels = BTreeSet::new();
     for channel in mesh.channels() {
         let expected = match channel.kind() {
-            CHANNEL_UV => 8,
-            CHANNEL_COLOR => 4,
-            CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "mesh {} channel kind {:#x} is not writable",
-                    mesh.id,
-                    channel.kind()
-                )));
-            }
+            CHANNEL_UV => Some(8),
+            CHANNEL_COLOR => Some(4),
+            CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => Some(16),
+            _ => None,
         };
-        if !kinds.insert(channel.kind())
-            || channel.flags() != 0
-            || channel.item_size() != expected
-            || usize::try_from(channel.count())
-                .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
-                != vertex_count
-        {
-            return Err(CodecError::malformed(format_args!(
-                "mesh {} channel {:#x} has invalid metadata",
-                mesh.id,
-                channel.kind()
-            )));
+        let admitted = expected.is_some_and(|expected| {
+            channel.flags() == 0
+                && channel.item_size() == expected
+                && usize::try_from(channel.count()).is_ok_and(|count| count == vertex_count)
+                && channels.insert(channel.kind())
+        });
+        if !admitted {
+            omitted.push(format!("channel {:#x}", channel.kind()));
         }
     }
-    Ok(())
+    Ok(MeshAdmission { channels, omitted })
 }
 
+/// The records a General body holds, which the writer writes as one point
+/// object of its free vertices.
+struct GeneralScope<'a> {
+    /// Each topology record of the body.
+    held: BTreeSet<&'a str>,
+    /// Each point its vertices use.
+    points: BTreeSet<&'a str>,
+    vertices: Vec<&'a cadmpeg_ir::topology::Vertex>,
+}
+
+/// The regions, shells, and free vertices of the General body `body`.
+fn general_scope<'a>(ir: &'a CadIr, body: &'a cadmpeg_ir::topology::Body) -> GeneralScope<'a> {
+    let geometry = &ir.geometry;
+    let mut held = BTreeSet::from([body.id.as_str()]);
+    let regions = geometry
+        .regions
+        .iter()
+        .filter(|region| region.body == body.id)
+        .collect::<Vec<_>>();
+    held.extend(regions.iter().map(|region| region.id.as_str()));
+    let shells = geometry
+        .shells
+        .iter()
+        .filter(|shell| {
+            regions.iter().any(|region| {
+                shell.region == region.id && region.stated_shells().any(|id| *id == shell.id)
+            })
+        })
+        .collect::<Vec<_>>();
+    held.extend(shells.iter().map(|shell| shell.id.as_str()));
+    let free = shells
+        .iter()
+        .flat_map(|shell| shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str))
+        .collect::<BTreeSet<_>>();
+    let vertices = geometry
+        .vertices
+        .iter()
+        .filter(|vertex| free.contains(vertex.id.as_str()))
+        .collect::<Vec<_>>();
+    held.extend(vertices.iter().map(|vertex| vertex.id.as_str()));
+    GeneralScope {
+        held,
+        points: vertices
+            .iter()
+            .map(|vertex| vertex.point.as_str())
+            .collect(),
+        vertices,
+    }
+}
+
+/// The points of a General body's free vertices, placed by the body
+/// placement, and the vertices whose tolerance 3DM does not hold.
 struct PointGroup {
     points: Vec<cadmpeg_ir::math::Point3>,
-    identity: String,
-    name: Option<String>,
-    color: Option<cadmpeg_ir::topology::Color>,
-    visible: Option<bool>,
+    tolerant_vertices: Vec<String>,
 }
 
-type PointGroups = (std::collections::BTreeSet<String>, Vec<PointGroup>);
-
-fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
-    use cadmpeg_ir::topology::BodyKind;
-
+fn point_group(
+    ir: &CadIr,
+    body: &cadmpeg_ir::topology::Body,
+    scope: &GeneralScope<'_>,
+) -> Result<PointGroup, CodecError> {
     let geometry = &ir.geometry;
-    let mut regions = std::collections::BTreeSet::new();
-    let mut shells = std::collections::BTreeSet::new();
-    let mut vertices = std::collections::BTreeSet::new();
-    let mut points = std::collections::BTreeSet::new();
-    let mut groups = Vec::new();
-    for body in &geometry.bodies {
-        if body.kind != BodyKind::General
-            || geometry
-                .complete_body_regions(&body.id)
-                .is_none_or(|regions| regions.count() != 1)
-            || body.transform.is_some()
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "body {} is not a free-vertex body without placement",
-                body.id.as_str()
-            )));
-        }
-        check_object_attributes(body.id.as_str(), body.name.as_deref())?;
-        let region = geometry
-            .regions
+    let mut points = Vec::new();
+    for vertex in &scope.vertices {
+        let point = geometry
+            .points
             .iter()
-            .find(|region| region.body == body.id)
+            .find(|point| point.id == vertex.point)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("body {} region is missing", body.id.as_str()))
-            })?;
-        let Some([region_shell]) = geometry.complete_shells(region) else {
-            return Err(CodecError::NotImplemented(format!(
-                "body {} region does not state one complete shell",
-                body.id.as_str()
-            )));
-        };
-        if region.body != body.id || !regions.insert(region.id.as_str().to_owned()) {
-            return Err(CodecError::malformed(format_args!(
-                "body {} region graph is invalid",
-                body.id.as_str()
-            )));
-        }
-        let shell = geometry
-            .shells
-            .iter()
-            .find(|shell| shell.id == *region_shell)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("body {} shell is missing", body.id.as_str()))
-            })?;
-        if shell.region != region.id
-            || geometry.stated_shell_faces(&shell.id).next().is_some()
-            || shell.wire_edges().next().is_some()
-            || shell.free_vertices().next().is_none()
-            || !shells.insert(shell.id.as_str().to_owned())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "body {} shell graph is invalid",
-                body.id.as_str()
-            )));
-        }
-        let mut group = Vec::new();
-        for vertex_id in shell.free_vertices() {
-            let vertex = geometry
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
+                CodecError::malformed(format_args!("point {} is missing", vertex.point.as_str()))
+            })?
+            .position()
+            .get();
+        points.push(match body.transform {
+            Some(transform) => transform
+                .apply_point(point)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("vertex {} is missing", vertex_id.as_str()))
-                })?;
-            if vertex.tolerance.is_some() || !vertices.insert(vertex.id.as_str().to_owned()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "vertex {} has tolerance or multiple ownership",
-                    vertex.id.as_str()
-                )));
-            }
-            let point = geometry
-                .points
-                .iter()
-                .find(|point| point.id == vertex.point)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "point {} is missing",
-                        vertex.point.as_str()
+                    CodecError::NotImplemented(format!(
+                        "vertex {} leaves the finite range under the body placement",
+                        vertex.id
                     ))
-                })?;
-            if !points.insert(point.id.as_str().to_owned()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "point {} is shared by multiple free vertices",
-                    point.id.as_str()
-                )));
-            }
-            if is_support(point.source_object.as_ref()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "Rhino cannot write support point {} as a standalone free-vertex object",
-                    point.id
-                )));
-            }
-            group.push(point.position().get());
-        }
-        groups.push(PointGroup {
-            points: group,
-            identity: body.id.as_str().to_owned(),
-            name: body.name.clone(),
-            color: body.color,
-            visible: body.visible,
+                })?
+                .get(),
+            None => point,
         });
     }
-    if regions.len() != geometry.regions.len()
-        || shells.len() != geometry.shells.len()
-        || vertices.len() != geometry.vertices.len()
-    {
-        return Err(CodecError::NotImplemented(
-            "orphan region, shell, or vertex topology is not writable".into(),
-        ));
+    if points.is_empty() {
+        return Err(CodecError::NotImplemented(format!(
+            "body {} holds no free vertex, and 3DM writes a General body as its free vertices",
+            body.id
+        )));
     }
-    Ok((points, groups))
+    Ok(PointGroup {
+        points,
+        tolerant_vertices: scope
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.tolerance.is_some())
+            .map(|vertex| vertex.id.as_str().to_owned())
+            .collect(),
+    })
 }
 
 fn check_frame(
@@ -1932,22 +2769,8 @@ fn check_nurbs_surface(
     native_i32_count(v_order, count_error())?;
     native_i32_count(u_count, count_error())?;
     native_i32_count(v_count, count_error())?;
-    check_knot_roundtrip(
-        id,
-        "surface U",
-        surface.u_knots(),
-        u_order,
-        u_count,
-        surface.u_periodic(),
-    )?;
-    check_knot_roundtrip(
-        id,
-        "surface V",
-        surface.v_knots(),
-        v_order,
-        v_count,
-        surface.v_periodic(),
-    )?;
+    check_knot_roundtrip(id, "surface U", surface.u_knots(), u_order, u_count)?;
+    check_knot_roundtrip(id, "surface V", surface.v_knots(), v_order, v_count)?;
     Ok(pole_count)
 }
 
@@ -1965,17 +2788,19 @@ fn check_nurbs_curve(
     }
     native_i32_count(order, count_error())?;
     native_i32_count(count, count_error())?;
-    check_knot_roundtrip(id, "curve", curve.knots(), order, count, curve.periodic())?;
+    check_knot_roundtrip(id, "curve", curve.knots(), order, count)?;
     Ok(())
 }
 
+/// Admits a knot vector whose stored knots state an increasing native
+/// domain. The archive stores no end knot, so the reader derives canonical
+/// end knots, which leave the curve on its domain unchanged.
 fn check_knot_roundtrip(
     id: &str,
     direction: &str,
     full: &[f64],
     order: usize,
     count: usize,
-    declared_periodic: bool,
 ) -> Result<(), CodecError> {
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
@@ -1983,19 +2808,12 @@ fn check_knot_roundtrip(
             "{direction} {id} has a non-increasing native NURBS domain"
         )));
     }
-    let reconstructed =
-        crate::surfaces::reconstruct_knots(stored, order, count).map_err(|error| match error {
-            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
-                CodecError::ResourceLimit(limit)
-            }
-            error => CodecError::NotImplemented(format!("{direction} {id}: {error}")),
-        })?;
-    let periodic = crate::surfaces::periodic_knots(stored, order, count);
-    if reconstructed != full || periodic != declared_periodic {
-        return Err(CodecError::NotImplemented(format!(
-            "{direction} {id} knot endpoints or periodic flag are not native-canonical"
-        )));
-    }
+    crate::surfaces::reconstruct_knots(stored, order, count).map_err(|error| match error {
+        crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
+            CodecError::ResourceLimit(limit)
+        }
+        error => CodecError::NotImplemented(format!("{direction} {id}: {error}")),
+    })?;
     Ok(())
 }
 
@@ -2103,6 +2921,7 @@ fn circle_payload(
     axis: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
     radius: f64,
+    range: [f64; 2],
 ) -> Result<Vec<u8>, CodecError> {
     let y = cadmpeg_ir::math::Vector3::new(
         axis.y * x.z - axis.z * x.y,
@@ -2142,10 +2961,10 @@ fn circle_payload(
         arc_point(center.x - radius * x.x)?.get(),
         arc_point(center.y - radius * x.y)?.get(),
         arc_point(center.z - radius * x.z)?.get(),
-        0.0,
-        std::f64::consts::TAU,
-        0.0,
-        std::f64::consts::TAU,
+        range[0],
+        range[1],
+        range[0],
+        range[1],
     ] {
         payload.extend(value.to_le_bytes());
     }
@@ -2340,6 +3159,7 @@ struct MeshPayload {
 fn mesh_payload(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     archive_version: RhinoArchiveVersion,
+    channels: &BTreeSet<u32>,
 ) -> Result<MeshPayload, CodecError> {
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
@@ -2423,15 +3243,19 @@ fn mesh_payload(
     for data in [
         &float_vertices[..],
         &normals[..],
-        mesh_channel(mesh, CHANNEL_UV),
-        mesh_channel(mesh, CHANNEL_CURVATURE),
-        mesh_channel(mesh, CHANNEL_COLOR),
+        mesh_channel(mesh, channels, CHANNEL_UV),
+        mesh_channel(mesh, channels, CHANNEL_CURVATURE),
+        mesh_channel(mesh, channels, CHANNEL_COLOR),
     ] {
         payload.extend(mesh_buffer(data)?);
     }
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 16]);
-    payload.extend(mesh_buffer(mesh_channel(mesh, CHANNEL_SURFACE_PARAMETERS))?);
+    payload.extend(mesh_buffer(mesh_channel(
+        mesh,
+        channels,
+        CHANNEL_SURFACE_PARAMETERS,
+    ))?);
     let mut direct = payload.clone();
     payload.extend(mesh_mapping_tag()?);
     payload.extend([0_u8; 3]);
@@ -2499,10 +3323,16 @@ fn mesh_mapping_tag() -> Result<Vec<u8>, CodecError> {
     crc_chunk(0x4000_8000, &body)
 }
 
-fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u8] {
+/// The data of the first channel of `kind`, empty where `channels` does not
+/// admit the kind.
+fn mesh_channel<'a>(
+    mesh: &'a cadmpeg_ir::tessellation::Tessellation,
+    channels: &BTreeSet<u32>,
+    kind: u32,
+) -> &'a [u8] {
     mesh.channels()
         .iter()
-        .find(|channel| channel.kind() == kind)
+        .find(|channel| channel.kind() == kind && channels.contains(&kind))
         .map_or(&[], |channel| channel.data())
 }
 
@@ -2532,7 +3362,6 @@ fn attributed_object_record(
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
 ) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, name)?;
     framed_object_record(
         object_type,
         class_uuid,
@@ -2543,7 +3372,6 @@ fn attributed_object_record(
 }
 
 fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, None)?;
     framed_object_record(
         0x20,
         MESH_CLASS,
@@ -2560,7 +3388,6 @@ fn brep_object_record(
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
 ) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, name)?;
     framed_object_record(
         0x10,
         BREP_CLASS,
@@ -2595,15 +3422,6 @@ fn framed_object_record(
     }
     body.extend(object_end);
     zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
-}
-
-fn check_object_attributes(identity: &str, name: Option<&str>) -> Result<(), CodecError> {
-    if name.is_some_and(|value| value.contains('\0')) {
-        return Err(CodecError::NotImplemented(format!(
-            "object {identity} name contains a null character"
-        )));
-    }
-    Ok(())
 }
 
 fn object_attributes_payload(
@@ -2659,6 +3477,16 @@ fn default_layer_payload() -> Result<Vec<u8>, CodecError> {
     payload.push(0);
     payload.extend(&Sha256::digest(b"cadmpeg:default-layer")[..16]);
     Ok(payload)
+}
+
+/// Whether `edge` is singular: it has no curve and both its ends are one
+/// vertex. A 3DM Brep holds it as a singular trim, which has no edge.
+fn is_singular_edge(edge: &cadmpeg_ir::topology::Edge) -> bool {
+    edge.curve().is_none()
+        && edge
+            .ends
+            .as_ref()
+            .is_some_and(|ends| ends.start == ends.end)
 }
 
 /// The two vertices that bound an edge. A Rhino Brep edge names both.

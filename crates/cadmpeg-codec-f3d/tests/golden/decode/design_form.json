@@ -66,6 +66,10 @@
             "a": 1.0
           },
           "visible": true
+        },
+        {
+          "id": "f3d:tspline:body#TSpline.synthetic",
+          "kind": "sheet"
         }
       ],
       "regions": [
@@ -75,6 +79,13 @@
           "shells": [
             "f3d:brep:entity#3"
           ]
+        },
+        {
+          "id": "f3d:tspline:region#TSpline.synthetic",
+          "body": "f3d:tspline:body#TSpline.synthetic",
+          "shells": [
+            "f3d:tspline:shell#TSpline.synthetic"
+          ]
         }
       ],
       "shells": [
@@ -82,6 +93,16 @@
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
           "members": []
+        },
+        {
+          "id": "f3d:tspline:shell#TSpline.synthetic",
+          "region": "f3d:tspline:region#TSpline.synthetic",
+          "members": [
+            {
+              "kind": "subd",
+              "id": "f3d:tspline:subd#TSpline.synthetic"
+            }
+          ]
         }
       ],
       "faces": [
@@ -414,7 +435,8 @@
             "document": {}
           },
           "bodies": [
-            "f3d:brep:entity#1"
+            "f3d:brep:entity#1",
+            "f3d:tspline:body#TSpline.synthetic"
           ],
           "occurrences": [],
           "instance_bodies": [],
@@ -1725,8 +1747,8 @@
       "exactness": {
         "f3d:brep:entity#6": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         }

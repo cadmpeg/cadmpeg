@@ -1,26 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Setups, order, and programs (§7.1, §7.2, §7.3): every operation's setup,
-//! modifier inputs, program steps, stock taken from a previous setup, and
-//! the nesting a reader admits.
+//! modifier inputs, program steps, and stock taken from a previous setup.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::records::{program_targets, ProcessRecords, ProgramTarget};
-use super::walk::Found;
 use crate::design::ids::OperationId;
 use crate::process::operation::OperationKind;
 use crate::process::stock::StockRule;
 use crate::report::check::Finding;
 use crate::validate::cycles::on_cycles;
-
-/// The JSON nesting `serde_json` reads, which bounds every recursive process
-/// type the specification gives no ceiling: step folders, program groups,
-/// and motions nested through a cycle's expansion.
-pub(super) const READER_JSON_DEPTH: usize = 127;
-
-/// The levels above a record of a process arena in a document: the root
-/// object, the `process` object, and the arena's array.
-pub(super) const RECORD_PREFIX_DEPTH: usize = 3;
 
 pub(super) fn check_order(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
     check_membership(records, findings);
@@ -38,7 +27,10 @@ fn check_membership(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     setup,
-                    format_args!("setup step names {operation}, which is no operation"),
+                    crate::rule!(
+                        "process.setup-step-names-no-operation",
+                        "setup step names {operation}, which is no operation"
+                    ),
                 );
             }
         }
@@ -46,7 +38,8 @@ fn check_membership(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 operation,
-                format_args!(
+                crate::rule!(
+                    "process.operation-listed-times-setup-steps-one",
                     "operation is listed {} times in setup steps; it is one step of one setup",
                     listings.len()
                 ),
@@ -59,7 +52,7 @@ fn check_membership(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             None | Some(0) => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!("process.operation-no-setup-no-setup-steps", 
                     "operation is in no setup: no setup's steps list it and no modifier in a setup takes it"
                 ),
             ),
@@ -69,7 +62,7 @@ fn check_membership(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("process.operation-setups-exactly-one", 
                         "operation is in setups {}; it is in exactly one",
                         setups.join(", ")
                     ),
@@ -88,14 +81,22 @@ fn check_inputs(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
         };
         let id = operation.id.as_str();
         if inputs.is_empty() {
-            super::error(findings, id, format_args!("modifier takes no input"));
+            super::error(
+                findings,
+                id,
+                crate::rule!("process.modifier-takes-no-input", "modifier takes no input"),
+            );
         }
         for input in inputs {
             if !records.operations.contains_key(input.as_str()) {
                 super::error(
                     findings,
                     id,
-                    format_args!("modifier input {} is no operation", input.as_str()),
+                    crate::rule!(
+                        "process.modifier-input-no-operation",
+                        "modifier input {} is no operation",
+                        input.as_str()
+                    ),
                 );
             }
         }
@@ -105,7 +106,10 @@ fn check_inputs(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
         super::error(
             findings,
             id,
-            format_args!("operation is its own input through modifier inputs"),
+            crate::rule!(
+                "process.operation-own-input-through-modifier-inputs",
+                "operation is its own input through modifier inputs"
+            ),
         );
     }
 }
@@ -130,7 +134,10 @@ fn check_programs(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     program.id.as_str(),
-                    format_args!("program step names {id}, which is no {what}"),
+                    crate::rule!(
+                        "process.program-step-names-no",
+                        "program step names {id}, which is no {what}"
+                    ),
                 );
             }
         }
@@ -153,7 +160,10 @@ fn check_previous_setups(records: &ProcessRecords<'_>, findings: &mut Vec<Findin
             super::error(
                 findings,
                 id,
-                format_args!("setup takes its stock from itself"),
+                crate::rule!(
+                    "process.setup-takes-stock-itself",
+                    "setup takes its stock from itself"
+                ),
             );
             continue;
         }
@@ -161,7 +171,10 @@ fn check_previous_setups(records: &ProcessRecords<'_>, findings: &mut Vec<Findin
             super::error(
                 findings,
                 id,
-                format_args!("setup takes its stock from {previous}, which is no setup"),
+                crate::rule!(
+                    "process.setup-takes-stock-no-setup",
+                    "setup takes its stock from {previous}, which is no setup"
+                ),
             );
         }
         graph.insert(id, BTreeSet::from([previous]));
@@ -170,21 +183,9 @@ fn check_previous_setups(records: &ProcessRecords<'_>, findings: &mut Vec<Findin
         super::error(
             findings,
             id,
-            format_args!("setup takes its stock from itself through previous setups"),
-        );
-    }
-}
-
-/// A record nests no deeper than the reader admits, so a validated document
-/// reads back.
-pub(super) fn check_nesting(arena: &str, id: &str, found: &Found, findings: &mut Vec<Finding>) {
-    let depth = RECORD_PREFIX_DEPTH + found.depth;
-    if depth > READER_JSON_DEPTH {
-        super::error(
-            findings,
-            id,
-            format_args!(
-                "{arena} record nests {depth} JSON levels deep in the document, past the {READER_JSON_DEPTH} a reader admits"
+            crate::rule!(
+                "process.setup-takes-stock-itself-through-previous",
+                "setup takes its stock from itself through previous setups"
             ),
         );
     }

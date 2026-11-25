@@ -36,8 +36,8 @@
 //! Decode reports can accompany a usable model. Untyped support carriers become
 //! opaque geometry linked to retained bytes, while their resolvable topology
 //! remains in the IR. No usable geometry yields metadata with diagnostics.
-//! Set [`DecodeOptions::depth`] to [`DecodeDepth::Container`] to omit geometry
-//! decoding explicitly.
+//! Set [`DecodeOptions::depth`] to [`DecodeDepth::Container`] to read the
+//! container only: the document then states no model record.
 //! Semantic Parasolid graph errors propagate as decode errors.
 //!
 //! [`Codec::inspect`] inventories the outer blocks, section directory, cache
@@ -185,7 +185,9 @@ impl SldprtCodec {
     /// envelope. Where it refuses one, or its envelope lands on another
     /// dialect than `target`, the source's, the output is the stored
     /// compound-file part, and a `writer.compound-file-edit-unwritten` loss
-    /// states that no edit is written.
+    /// states that no edit is written. A part read from CADIR JSON whose
+    /// history arenas the retained source did not restore is written as the
+    /// stored part, and `export:edit.dropped` names the file.
     ///
     /// The returned [`WritePath`] is the branch this function took, not a
     /// judgement made about its output afterwards. The semantic writer can
@@ -225,11 +227,18 @@ impl SldprtCodec {
                     Err(error) => format!("refuses it ({error})"),
                 };
                 writer.write_all(image)?;
-                return Ok(Written::StoredCompoundFile {
+                return Ok(Written::Stored {
                     loss: loss::SldprtLossCode::WriterCompoundFileEditUnwritten.note(format!(
                         "The document is edited since decode; the native-envelope write of the compound-file part {why}, SLDPRT has no compound-file writer, and the output is the stored compound-file part, which carries no edit of the document."
                     )),
                 });
+            }
+            if let Some((image, loss)) = image
+                .filter(|_| !ir.model.omitted_arenas_held())
+                .zip(Self::unrestored_loss())
+            {
+                writer.write_all(image)?;
+                return Ok(Written::Stored { loss });
             }
             return Self::write_semantic(
                 ir,
@@ -254,6 +263,20 @@ impl SldprtCodec {
         Ok(Written::Replayed)
     }
 
+    /// The loss of a part read from CADIR JSON written as its stored part,
+    /// because the retained source did not restore the history arenas its
+    /// edits are written into.
+    fn unrestored_loss() -> Option<cadmpeg_ir::report::loss::LossNote> {
+        cadmpeg_ir::codec::write::edit_dropped(
+            cadmpeg_ir::schema::EntityKind::Feature,
+            "SLDPRT",
+            "keeps the stored part, without any edit of the document read from CADIR, because \
+             the retained source part does not restore the feature history the edits are \
+             written into, so no digest isolates an edited record",
+            [SOURCE_IMAGE_ID],
+        )
+    }
+
     /// Runs the semantic writer and names the path it stands for: `Patched` when
     /// retained source records fed the write, `Synthesized` when the document was
     /// built from the neutral IR alone. `digests` are the codec digests the
@@ -272,7 +295,8 @@ impl SldprtCodec {
             return Err(CodecError::NotImplemented(
                 "the document was read from CADIR, which does not carry the feature, sketch, \
                  parameter, and configuration arenas the SLDPRT writer applies native history \
-                 edits from; write it from the decoded source file"
+                 edits from, and no retained source part restored them; write it from the \
+                 decoded source file"
                     .into(),
             ));
         }
@@ -419,9 +443,9 @@ enum Written {
     /// The retained source image, byte for byte. The dialect is the source's
     /// own, which this write neither chooses nor needs to name.
     Replayed,
-    /// The retained compound-file source image, byte for byte, written for a
-    /// document that may be edited: `loss` states that no edit is written.
-    StoredCompoundFile {
+    /// The retained source image, byte for byte, written for a document that
+    /// may be edited: `loss` states that no edit is written.
+    Stored {
         loss: cadmpeg_ir::report::loss::LossNote,
     },
     /// A semantic write, in the dialect the emitted `swSolidWorks` envelope
@@ -449,7 +473,7 @@ impl Written {
     /// byte, so the output cannot say and only this value can.
     fn path(&self) -> WritePath {
         match self {
-            Self::Replayed | Self::StoredCompoundFile { .. } => WritePath::VerbatimReplay,
+            Self::Replayed | Self::Stored { .. } => WritePath::VerbatimReplay,
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
@@ -461,9 +485,7 @@ impl Written {
             Self::Replayed => ArenaCoverage::Complete,
             // The stored part may represent a record of any arena; the loss
             // names the edits it does not carry.
-            Self::StoredCompoundFile { .. } => {
-                ArenaCoverage::Declared(writer::stored_part_coverage())
-            }
+            Self::Stored { .. } => ArenaCoverage::Declared(writer::stored_part_coverage()),
             Self::Semantic { coverage, .. } => ArenaCoverage::Declared(*coverage),
         }
     }
@@ -546,6 +568,16 @@ impl EncoderBackend for SldprtCodec {
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         writer::target::plan(input, &target)
+    }
+
+    fn restore(
+        &self,
+        input: EncodeInput<'_>,
+        target: &ResolvedWrite<'_>,
+        notes: &mut Vec<String>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        writer::saved::restore(input, target, notes, losses)
     }
 }
 

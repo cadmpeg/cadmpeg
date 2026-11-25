@@ -35,17 +35,20 @@ mod parameter_records;
 #[cfg(test)]
 mod parameter_tests;
 mod parameters;
+mod picked;
 mod programs;
 pub(super) mod records;
 pub(super) mod resolved;
 pub(super) mod selections;
 mod states;
+mod target_states;
 mod tolerances;
 mod walk;
 
 #[cfg(test)]
 mod tests;
 
+use crate::report::check::Ruled;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -118,6 +121,7 @@ pub(super) fn check_design(
 ) -> Result<(), CodecError> {
     if ir.design.is_empty() {
         linkage::check_scope(ir, findings);
+        linkage::check_identities(ir, findings);
         tolerances::check_definition_general_tolerances(ir, findings);
         if !ir.process.parameters.is_empty() {
             let records = records::DesignRecords::new(ir);
@@ -135,6 +139,7 @@ pub(super) fn check_design(
     configurations::check_configurations(records, findings);
     ops::check_operations(records, findings);
     overrides::check(records, findings);
+    target_states::check(ir, findings);
     parameter_records::check_parameter_records(records, findings);
     programs::check_programs(records, findings);
     expressions::check_expressions(ctx, records, findings)?;
@@ -153,6 +158,7 @@ pub(super) fn check_design(
     selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
+    picked::check(&index, &matchers, findings);
     materials::check(&index, &matchers, findings);
     Ok(())
 }
@@ -303,7 +309,7 @@ fn collect<'a>(
     Ok(held)
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     record_finding(
         findings,
         Check::Design,
@@ -313,7 +319,7 @@ fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments
     );
 }
 
-fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Design,

@@ -21,8 +21,8 @@ const CHECK_REPORT: &str = r#"{
   "check_report": {
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
-      {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
-      {"check": "tolerances", "severity": "warning", "message": "negative radius"}
+      {"check": "identity", "rule": "identity.duplicate-id", "severity": "error", "message": "duplicate id", "entity": "e1"},
+      {"check": "tolerances", "rule": "tolerances.negative-radius", "severity": "warning", "message": "negative radius"}
     ],
     "losses": [
       {
@@ -403,9 +403,9 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .assert()
         .success()
         .stdout(
-            "severity\tcheck\tentity\tmessage\n\
-             error\tidentity\te1\tduplicate id\n\
-             warning\ttolerances\t\tnegative radius\n",
+            "severity\tcheck\trule\tentity\tmessage\n\
+             error\tidentity\tidentity.duplicate-id\te1\tduplicate id\n\
+             warning\ttolerances\ttolerances.negative-radius\t\tnegative radius\n",
         );
 
     cadmpeg()
@@ -526,6 +526,7 @@ fn query_json_wraps_the_projection_in_an_envelope() {
     assert!(value["generator"].is_string());
     assert_eq!(value["payload"].as_array().unwrap().len(), 2);
     assert_eq!(value["payload"][0]["check"], "identity");
+    assert_eq!(value["payload"][0]["rule"], "identity.duplicate-id");
 }
 
 #[test]
@@ -567,7 +568,7 @@ fn a_non_json_file_is_an_operational_error() {
 #[test]
 fn query_projects_a_real_check_report_end_to_end() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube().expect("unit cube fixture is admitted");
+    let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("report.json");
@@ -702,7 +703,7 @@ fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
         .arg(&report)
         .assert()
         .success()
-        .stdout("severity\tcheck\tentity\tmessage\n")
+        .stdout("severity\tcheck\trule\tentity\tmessage\n")
         .stderr(predicate::str::contains("this command did not check"));
     cadmpeg()
         .args(["query", "losses"])
@@ -1477,7 +1478,7 @@ fn schema_sidecar_and_json_envelope() {
 #[test]
 fn a_written_report_carries_the_generator_and_summary_prints_it() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube().expect("unit cube fixture is admitted");
+    let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("cube.report.json");

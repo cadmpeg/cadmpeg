@@ -712,7 +712,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     product.label = Some("Cube part".into());
     product.part_number = Some("PART-001".into());
     product.bodies = vec![ir.geometry.bodies[0].id.clone()];
-    ir.model.product_definitions.push(product);
+    ir.model.product_definitions = vec![product];
     let options = StepWriteOptions {
         ..StepWriteOptions::default()
     };
@@ -1967,6 +1967,7 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
     }
     ir.geometry.shells[0].add_wire_edge(second.id.clone());
     ir.geometry.edges.push(second);
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     assert!(cadmpeg_ir::validate_neutral(&ir, Vec::new())
         .expect("neutral validation")
         .is_ok());

@@ -714,6 +714,35 @@ fn process_expressions_type_check() {
     );
 }
 
+#[test]
+fn a_process_record_shares_no_id_with_a_design_or_process_record() {
+    let mut ir = with_width();
+    let mut shared = process_parameter("depth", Some(LENGTH), "1[mm]", &[]);
+    shared.id = ir.design.parameters[0]
+        .id
+        .as_str()
+        .to_owned()
+        .try_into()
+        .unwrap();
+    ir.process.parameters.push(shared);
+    assert_finding(
+        &ir,
+        "process.parameters record id is also the id of a design.parameters record",
+    );
+
+    let mut ir = with_width();
+    ir.process
+        .parameters
+        .push(process_parameter("depth", Some(LENGTH), "1[mm]", &[]));
+    let mut twin = process_parameter("depth", Some(LENGTH), "2[mm]", &[]);
+    twin.name = NonBlankString::new("twin").unwrap();
+    ir.process.parameters.push(twin);
+    assert_finding(
+        &ir,
+        "process.parameters record id is also the id of a process.parameters record",
+    );
+}
+
 fn equation_curve(x: &str) -> FeatureOperation {
     let law = |text: &str| {
         Law::Expression(Expression::Neutral(Neutral(
@@ -799,4 +828,109 @@ fn a_definitions_general_tolerance_is_checked() {
         &ir,
         "general tolerance states neither a linear nor an angular rule",
     );
+}
+
+/// Part 10: a `through` path resolves from the referencing scope's
+/// definition. The part places `pin` by occurrence `a`; `pin` places itself
+/// again by occurrence `nested`, which the part does not own.
+#[test]
+fn a_through_path_resolves_from_the_referencing_scope() {
+    use crate::design::selection::{PathStep, StepRef};
+    use crate::products::Occurrence;
+    const FRAGMENT: &str = "is not an occurrence of the previous step's prototype";
+    let through = |first: &str| {
+        let mut ir = with_width();
+        let pin = id::<ProductDefinitionId>("definition", "pin");
+        let mut definition = ProductDefinition::new(pin.clone(), Storage::Embedded);
+        definition.occurrences.push(id("occurrence", "nested"));
+        ir.model.product_definitions.push(definition);
+        ir.model
+            .product_definitions
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        let part = id::<ProductDefinitionId>("definition", "part");
+        ir.model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == part)
+            .unwrap()
+            .occurrences
+            .push(id("occurrence", "a"));
+        ir.model.occurrences = vec![
+            Occurrence::new(id("occurrence", "a"), pin.clone(), None),
+            Occurrence::new(id("occurrence", "nested"), pin.clone(), None),
+        ];
+        let mut bolt = parameter("bolt", LENGTH);
+        bolt.scope = pin;
+        ir.design.parameters.push(bolt);
+        let reference = ParameterRef {
+            target: RefTarget::Parameter(id("parameter", "bolt")),
+            through: Some(OccurrencePath(vec![PathStep {
+                occurrence: StepRef::Occurrence(id("occurrence", first)),
+                configuration: None,
+            }])),
+        };
+        ir.design.parameters[0].definition = expression("$0", &[reference]);
+        ir.design
+            .parameters
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        ir
+    };
+    let found = |ir: &CadIr| {
+        design_findings(ir)
+            .into_iter()
+            .any(|finding| finding.message.contains(FRAGMENT))
+    };
+    assert!(!found(&through("a")));
+    assert_finding(&through("nested"), FRAGMENT);
+}
+
+/// The fixture with an `External` definition `lib`, and a reference to its
+/// parameter `size`.
+fn with_library() -> (CadIr, ParameterRef) {
+    let mut ir = with_width();
+    let library = id::<ProductDefinitionId>("definition", "lib");
+    ir.model.product_definitions.push(ProductDefinition::new(
+        library.clone(),
+        Storage::External(ExternalDocument::default()),
+    ));
+    ir.model
+        .product_definitions
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    let reference = ParameterRef {
+        target: RefTarget::External {
+            definition: library,
+            name: NonBlankString::new("size").unwrap(),
+        },
+        through: None,
+    };
+    (ir, reference)
+}
+
+const EXTERNAL_PLACE: &str =
+    "an External reference is not the whole tree of an expression that states a design parameter's value";
+
+#[test]
+fn an_external_reference_is_the_whole_tree_of_a_parameter_value() {
+    let (mut ir, reference) = with_library();
+    ir.design.parameters[0].definition = expression("$0", std::slice::from_ref(&reference));
+    assert!(design_findings(&ir)
+        .iter()
+        .all(|finding| !finding.message.contains(EXTERNAL_PLACE)));
+    ir.design.parameters[0].definition = expression("$0 + 1[mm]", &[reference]);
+    assert_finding(&ir, EXTERNAL_PLACE);
+}
+
+#[test]
+fn parameters_naming_one_external_parameter_have_one_kind() {
+    const FRAGMENT: &str = "with another kind";
+    let (mut ir, reference) = with_library();
+    ir.design.parameters[0].definition = expression("$0", std::slice::from_ref(&reference));
+    let mut depth = parameter("depth", LENGTH);
+    depth.definition = expression("$0", std::slice::from_ref(&reference));
+    ir.design.parameters.insert(0, depth);
+    assert!(design_findings(&ir)
+        .iter()
+        .all(|finding| !finding.message.contains(FRAGMENT)));
+    ir.design.parameters[0].kind = ValueKind::Quantity(Quantity::ANGLE);
+    assert_finding(&ir, FRAGMENT);
 }

@@ -302,6 +302,7 @@ mod budget {
                         &DecodeOptions {
                             depth: cadmpeg_core::decode::DecodeDepth::Full,
                             policy,
+                            ..DecodeOptions::default()
                         },
                     )
                     .expect_err("starved decode must fail");
@@ -420,6 +421,7 @@ mod sketch_profiles {
                     &DecodeOptions {
                         depth: DecodeDepth::Full,
                         policy,
+                        ..DecodeOptions::default()
                     },
                 )
                 .unwrap_or_else(|error| panic!("{profile}: sketch projection refused: {error}"));
@@ -899,7 +901,7 @@ mod subset_carriers {
     /// The unit cube with its first edge on a chain of subsets over `basis`,
     /// innermost first, that maps the edge onto `RANGE` of the basis.
     fn chain(basis: Basis, links: &[([f64; 2], bool)]) -> CadIr {
-        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let edge = ir.geometry.edges[0].clone();
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
             let vertex = ir

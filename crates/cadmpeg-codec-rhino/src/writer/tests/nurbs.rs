@@ -258,7 +258,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
 }
 
 #[test]
-fn inconsistent_explicit_pcurve_is_rejected_before_output() {
+fn inconsistent_explicit_pcurve_is_written_and_named_invalid() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -290,80 +290,74 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         isoparametric: None,
         parameter_range: None,
     }];
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("does not exactly match"));
-    assert_eq!(output, [0xaa]);
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/record.invalid")
+                && loss.contains("does not exactly match")),
+        "{losses:?}"
+    );
 }
 
 #[test]
-fn multiple_pcurve_uses_are_rejected_before_output() {
-    let mut ir = polygon_sheet(&[
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(2.0, 0.0, 0.0),
-        Point3::new(0.0, 2.0, 0.0),
-    ]);
-    let first: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#first"
+fn a_pcurve_use_on_another_surface_is_left_out_of_the_face() {
+    let mut ir = rectangular_nurbs_patch();
+    let other: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#other-face"
         .try_into()
         .expect("valid identity");
-    let second: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#second"
-        .try_into()
-        .expect("valid identity");
-    for (id, origin) in [
-        (first.clone(), cadmpeg_ir::math::Point2::new(0.0, 0.0)),
-        (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
-    ] {
-        ir.geometry
-            .pcurves
-            .push(cadmpeg_ir::geometry::pcurve::Pcurve {
-                id,
-                geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                        origin,
-                        cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                    )
-                    .unwrap(),
-                ),
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                    None,
-                    Some(
-                        cadmpeg_ir::units::FiniteVector::new([0.0, 2.0])
-                            .expect("finite fixture range"),
-                    ),
-                    None,
-                ),
-                native_ref: None,
-            });
+    let mut metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+        None,
+        Some(cadmpeg_ir::units::FiniteVector::new([20.0, 23.0]).expect("finite fixture range")),
+        None,
+    );
+    if let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form } = &mut metadata {
+        form.support_surface = Some(
+            "cadir:model:surface#elsewhere"
+                .try_into()
+                .expect("valid identity"),
+        );
     }
-    ir.geometry.coedges[0].pcurves = vec![
-        cadmpeg_ir::topology::PcurveUse {
-            pcurve: first,
+    ir.geometry
+        .pcurves
+        .push(cadmpeg_ir::geometry::pcurve::Pcurve {
+            id: other.clone(),
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            ),
+            metadata,
+            native_ref: None,
+        });
+    ir.geometry.coedges[0]
+        .pcurves
+        .push(cadmpeg_ir::topology::PcurveUse {
+            pcurve: other,
             isoparametric: None,
             parameter_range: None,
-        },
-        cadmpeg_ir::topology::PcurveUse {
-            pcurve: second,
-            isoparametric: None,
-            parameter_range: None,
-        },
-    ];
+        });
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert_eq!(output, [0xaa]);
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 1, "{losses:?}");
+    assert_eq!(decoded.geometry.pcurves.len(), 4, "{losses:?}");
+    cadmpeg_measure::test_support::round_trip::measures_agree(
+        "NURBS patch",
+        &rectangular_nurbs_patch(),
+        &decoded,
+    )
+    .expect("the round trip keeps its measured geometry");
+    assert!(
+        !losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterRecordOmitted
+                .kind()
+                .to_string()
+        ) && !loss.contains("cadir:model:pcurve#other-face")),
+        "{losses:?}"
+    );
 }
 
 #[test]
@@ -686,7 +680,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
 }
 
 #[test]
-fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
+fn nurbs_trim_that_misses_its_edge_is_written_and_named_invalid() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.5, 0.5, 0.0),
         Point3::new(3.5, 0.5, 0.0),
@@ -705,35 +699,43 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
         cadmpeg_ir::math::Point2::new(direction.u, direction.v + 0.25),
     )
     .unwrap();
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("misses directed edge curve"));
-    assert_eq!(output, [0xaa]);
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/record.invalid")
+                && loss.contains("misses edge curve")),
+        "{losses:?}"
+    );
 }
 
 #[test]
-fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
+fn nurbs_surface_patch_without_boundary_pcurves_omits_the_face_and_names_it() {
     let mut ir = rectangular_nurbs_patch();
     ir.geometry.pcurves.clear();
     for coedge in &mut ir.geometry.coedges {
         coedge.pcurves.clear();
     }
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("explicit pcurve"));
-    assert_eq!(output, [0xaa]);
+    let body = ir.geometry.bodies[0].id.as_str().to_owned();
+    let face = ir.geometry.faces[0].id.as_str().to_owned();
+    let (decoded, losses) = super::written(&ir);
+    assert!(decoded.geometry.bodies.is_empty());
+    let omitted = crate::loss::RhinoLossCode::WriterRecordOmitted
+        .kind()
+        .to_string();
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(&omitted)
+            && loss.contains(&face)
+            && loss.contains("has no pcurve on the face's NURBS surface")),
+        "{losses:?}"
+    );
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(&omitted)
+            && loss.contains(&body)
+            && loss.contains("each of its faces is left out")),
+        "{losses:?}"
+    );
 }
 
 /// The archive's pole lane states the figure `check_nurbs_surface` proved
@@ -882,15 +884,17 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         source: &pcurve,
         payload: ([0; 16], vec![]),
         domain_extent_points: uv,
+        domain,
     };
-    validate_nurbs_trim(
+    let finding = validate_nurbs_trim(
         &surface,
         0.001,
         &edge,
-        cadmpeg_ir::topology::Sense::Reversed,
+        [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
         &explicit,
     )
     .unwrap();
+    assert_eq!(finding, None);
 }
 
 #[test]
@@ -959,13 +963,15 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
         source: &pcurve,
         payload: ([0; 16], vec![]),
         domain_extent_points: uv,
+        domain,
     };
-    validate_nurbs_trim(
+    let finding = validate_nurbs_trim(
         &surface,
         0.001,
         &edge,
-        cadmpeg_ir::topology::Sense::Reversed,
+        [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
         &explicit,
     )
     .unwrap();
+    assert_eq!(finding, None);
 }

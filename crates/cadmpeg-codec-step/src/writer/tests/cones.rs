@@ -165,7 +165,7 @@ fn zero_angle_cone_of_zero_radius_is_refused_at_planning() {
         )
         .expect_err("a semi-angle 0 cone of radius 0 is a line");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("is a line"))
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("is a line"))
     );
 }
 
@@ -328,7 +328,7 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
 /// Plans a document whose single surface is a circular cone of `half_angle`.
 fn circular_cone_plan(
     half_angle: f64,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -368,7 +368,7 @@ fn right_angle_cone_semi_angle_is_refused_at_planning() {
     let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
         .expect_err("right angle cone is outside WR2");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("outside (0, pi/2)"))
     );
 }
 
@@ -377,6 +377,6 @@ fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
     let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
         .expect_err("negative right angle cone is outside WR2");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("outside (0, pi/2)"))
     );
 }
