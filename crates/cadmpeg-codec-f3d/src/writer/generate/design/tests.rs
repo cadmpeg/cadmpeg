@@ -448,7 +448,7 @@ fn a_comment_is_written_with_its_parameter() {
 
 #[test]
 fn a_failure_of_the_design_module_drops_the_design_not_the_body() {
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, ir) = write(&scoped_cube());
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(ir.model.parameters.is_empty());
@@ -1050,7 +1050,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
             pmi: None,
             native_ref: None,
         });
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, _) = write(&ir);
     let omitted = loss(
         &report,
@@ -1168,7 +1168,7 @@ fn a_stale_and_a_current_evaluation_are_each_charged_once_by_name() {
     let stale = format!("{stale}: {root} tool body of {EXTRUDE} (stale)");
     let current = format!("{current}: {root} state at the start of {timeline}");
     for dropped in [false, true] {
-        super::FAIL_NEXT_PLAN.with(|fail| fail.set(dropped));
+        super::FAIL_NEXT_PLAN.with(|fail| fail.set(u32::from(dropped)));
         let (report, _) = write(&ir);
         assert!(
             loss(&report, "export/evaluation.stale")

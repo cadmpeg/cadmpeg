@@ -95,7 +95,9 @@ enum MissingStates {
     /// The current geometry is written exactly.
     GeometryTrue,
     /// The stated run is written with its states; later features follow the
-    /// timeline marker rolled back.
+    /// timeline marker rolled back. Where the writer cannot write the state
+    /// of the first feature that changes one, the marker stands before that
+    /// feature and the file holds no body.
     HistoryTrue,
 }
 

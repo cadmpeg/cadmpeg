@@ -961,7 +961,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         .map(|records| format!("record {} (Sketch scope: its item tail)", records.scope));
     notes.extend(record_residual_unavailable(
         "F3D",
-        "writes the item tail of these items after the timeline marker as the tail of a built item with the rolled-back flag s1 = 1: no-result flag s0 = 0, state bytes 00 00 00 and null history-state identities; f3d-open-items.md DR-1032 leaves open which other states set s0",
+        "writes the item tail of these items after the timeline marker as the tail of a built item with the rolled-back flag s1 = 1: no-result flag s0 = 0, state bytes 00 00 00 and null history-state identities. This breaks the rule of f3d.md §3.1 (\"In every form, the state bytes\") that a rolled-back feature that holds no state stores s0 = 1; f3d-open-items.md DR-1032 leaves open which other states set s0",
         planes.chain(sketches),
     ));
     if let ContextValue::Chosen { value, outside } = &ctx.timeline_value {

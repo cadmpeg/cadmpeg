@@ -19,6 +19,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 
 use crate::loss::F3dLossCode;
+use crate::test_support::native_test::f3d_native;
 
 use super::super::sketch::{
     feature, feature_id, frame, picked, point2, principal, sketch_id, unread, Source,
@@ -128,6 +129,85 @@ fn the_run_is_written_with_its_state_and_the_later_features_follow_the_marker() 
     );
 }
 
+/// The export note of a history-true request written in the geometry-true
+/// form.
+const GEOMETRY_TRUE: &str = "in the geometry-true form and not the history-true form";
+
+#[test]
+fn a_history_true_write_notes_the_geometry_true_form_only_where_it_writes_it() {
+    let (ir, _, _) = rolled_back_after_the_extrude();
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(kinds(&decoded), ["sketch", "extrude", "sketch"]);
+    assert!(
+        report
+            .notes
+            .iter()
+            .all(|note| !note.contains(GEOMETRY_TRUE)),
+        "{:#?}",
+        report.notes
+    );
+
+    super::super::super::FAIL_NEXT_PLAN.with(|fail| fail.set(u32::MAX));
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    super::super::super::FAIL_NEXT_PLAN.with(|fail| fail.set(0));
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert!(
+        loss(&report, EVALUATION_MISSING)
+            .iter()
+            .any(|message| message.contains("a test failure of the design module")),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        report.notes.iter().any(|note| note.contains(GEOMETRY_TRUE)),
+        "{:#?}",
+        report.notes
+    );
+}
+
+#[test]
+fn a_rollback_before_a_later_sketch_is_written_where_the_source_states_it() {
+    let mut ir = sketch_and_extrude(blind(), true);
+    let second = feature(
+        "second",
+        FeatureOperation::Extrude(Box::new(extrude(blind()))),
+    );
+    let second_id = second.id.clone();
+    ir.design.features.push(second);
+    let later = feature_id("later");
+    let Some(Container::Ordered {
+        members, rollback, ..
+    }) = ir.design.containers.first_mut()
+    else {
+        panic!("the cube's timeline");
+    };
+    let at = members
+        .iter()
+        .position(|member| *member == Member::Feature(later.clone()))
+        .expect("the later sketch");
+    members.insert(at + 1, Member::Feature(second_id));
+    *rollback = Some(Rollback::Before(Member::Feature(later)));
+    ir.design.scopes[0].current[0].at = Position::After(Member::Feature(
+        FeatureId::mint(EXTRUDE).expect("identity grammar"),
+    ));
+
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude", "sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(rollback, Some(Rollback::Before(members[2].clone())));
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(!omitted.contains("rollback (before"), "{omitted}");
+}
+
 #[test]
 fn a_timeline_whose_every_feature_has_its_state_writes_one_form() {
     let ir = sketch_and_extrude(blind(), true);
@@ -140,6 +220,7 @@ fn a_timeline_whose_every_feature_has_its_state_writes_one_form() {
         format!("{:?}", geometry_true.losses),
         format!("{:?}", history_true.losses)
     );
+    assert_eq!(geometry_true.notes, history_true.notes);
 }
 
 #[test]
@@ -179,6 +260,24 @@ fn a_run_whose_feature_has_no_state_stands_after_the_marker_with_no_body() {
         omitted.contains("holds no body at its timeline marker"),
         "{omitted}"
     );
+    let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+    let reference = residual
+        .split("body-reference record ")
+        .skip(1)
+        .find_map(|rest| {
+            rest.split(|c: char| !c.is_ascii_digit())
+                .next()
+                .and_then(|digits| digits.parse::<u64>().ok())
+        })
+        .unwrap_or_else(|| panic!("{residual}"));
+    let native = f3d_native(&decoded);
+    let listed = native
+        .design_body_members
+        .iter()
+        .map(|member| member.entity_suffix)
+        .collect::<Vec<_>>();
+    assert_eq!(listed, [reference]);
+    assert!(native.design_body_bindings.is_empty());
 }
 
 #[test]
@@ -277,6 +376,22 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
     );
     let residual = loss(&report, "export/record.residual-unavailable").join("\n");
     assert!(residual.contains("DR-1032"), "{residual}");
+    let native = f3d_native(&decoded);
+    let rolled = native
+        .design_parameter_scopes
+        .iter()
+        .find(|scope| scope.kind_name() == "Extrude" && scope.feature_ordinal.get() == 2)
+        .expect("the rolled-back Extrude scope");
+    assert_eq!(
+        (
+            rolled.history_state_id(),
+            rolled.previous_history_state_id()
+        ),
+        (None, None)
+    );
+    let flags = rolled.tail_flags.expect("the item tail flags");
+    assert!(flags.no_result && flags.rolled_back);
+    assert!(!flags.suppressed() && !flags.unevaluated);
 }
 
 #[test]

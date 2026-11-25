@@ -4133,11 +4133,12 @@ In a design with one result body, the snapshot stream stores the solved part of 
 
 #### Records of a design whose timeline holds no body
 
-A Design stream whose timeline lists no item with a result body holds the records of "**Record roster.**" in "Records of a Base Feature design", with the differences below. The other records keep their roles and forms.
+A Design stream whose timeline holds no current result body holds the records of "**Record roster.**" in "Records of a Base Feature design", with the differences below. The other records keep their roles and forms.
 
-- The records of the result body are absent: the two body-reference records, their Scene nodes, the records of type `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c`, the auxiliary records, the browser-node member, and the body tracking entry.
+- The records of the current result body are absent: the two body-reference records, their Scene nodes, the records of type `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c`, the auxiliary records, the browser-node member, and the body tracking entry.
 - The records of the `Base Feature` item are absent: its scope, its result owner, its record-timestamp tables, its item-tail companion, and its tracked-results table.
-- The bodies root and the snapshot body-map companions of the two `Body` owners are absent. The companion of the snapshot body map keeps its 39-byte form.
+- The snapshot body-map companions of the two `Body` owners are absent. The companion of the snapshot body map keeps its 39-byte form.
+- The bodies root lists the body-reference records of the items after the saved rollback marker that make a body ("Records of a rolled-back Extrude"), in timeline order. The bodies root is absent when the timeline holds no such item.
 
 Each `Body` owner stores ten zero bytes, byte `0`, the count `0` twice, byte `1`, byte `00` in the place of the snapshot body-map companion, its body map, byte `1`, the alternate-owner slot, byte `0`, the count `0`, and the component aggregate. The alternate-owner slot of the design owner names the alternate `Body` owner list, and the alternate-owner slot of the parameter owner is byte `00`. The design owner is 71 bytes ([`body_less_design_body_owner`](../layouts/f3d.md#body_less_design_body_owner)) and the parameter owner is 61 bytes ([`body_less_parameter_body_owner`](../layouts/f3d.md#body_less_parameter_body_owner)). The body map stores ten zero bytes, the pair count `0`, the design `Body` owner, byte `0`, and an empty LP-UTF16 basename, and is 41 bytes ([`body_less_body_map`](../layouts/f3d.md#body_less_body_map)). The snapshot body map stores ten zero bytes, its companion, the pair count `0`, the parameter `Body` owner, byte `0`, and an empty LP-UTF16 basename, and is 52 bytes ([`body_less_snapshot_body_map`](../layouts/f3d.md#body_less_snapshot_body_map)). The archive stores no member in `Breps.BlobParts/`.
 
