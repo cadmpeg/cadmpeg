@@ -101,6 +101,8 @@ use cadmpeg_ir::ContainerSummary;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CatiaCodec;
 
+pub use container::{classify_v5_document, V5DocumentKind, V5OuterStreamView};
+
 impl CodecBackend for CatiaCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
     fn detect_impl(

@@ -1511,3 +1511,146 @@ fn absent_outer_declarations_do_not_create_modeling_scope() {
     assert!(!inventory.has_declarations);
     assert!(inventory.resolved.is_empty());
 }
+
+fn synthetic_outer_descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
+    let mut b = vec![0u8; 0x54];
+    b[0x0c..0x10].copy_from_slice(&phys_len.to_be_bytes());
+    let mut pos = 0x10;
+    for byte in name.bytes() {
+        b[pos] = byte;
+        b[pos + 1] = 0x00;
+        pos += 2;
+    }
+    b[0x50..0x54].copy_from_slice(&1u32.to_be_bytes());
+    b.extend_from_slice(&phys_off.to_be_bytes());
+    b.extend_from_slice(&phys_len.to_be_bytes());
+    b.extend_from_slice(&phys_len.to_be_bytes());
+    b.extend_from_slice(&0u32.to_be_bytes());
+    b.extend_from_slice(&0u32.to_be_bytes());
+    b
+}
+
+fn synthetic_outer_v5(streams: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut body = Vec::new();
+    let mut offsets = Vec::new();
+    for (name, payload) in streams {
+        let off = u32::try_from(16 + body.len()).expect("fixture fits u32");
+        let len = u32::try_from(payload.len()).expect("fixture fits u32");
+        body.extend_from_slice(payload);
+        offsets.push((*name, off, len));
+    }
+    let mut dir = Vec::new();
+    dir.extend_from_slice(super::DIR_MAGIC);
+    for (name, off, len) in offsets {
+        dir.extend_from_slice(&synthetic_outer_descriptor(name, off, len));
+    }
+    dir.extend_from_slice(b"CB__END");
+    let dir_off = u32::try_from(16 + body.len()).expect("fixture fits u32");
+    let dir_len = u32::try_from(dir.len()).expect("fixture fits u32");
+
+    let mut file = Vec::new();
+    file.extend_from_slice(OUTER_MAGIC);
+    file.extend_from_slice(&dir_off.to_be_bytes());
+    file.extend_from_slice(&dir_len.to_be_bytes());
+    file.extend_from_slice(&body);
+    file.extend_from_slice(&dir);
+    file
+}
+
+#[test]
+fn classify_v5_document_distinguishes_part_product_cgr_and_shape() {
+    let part = standard_catpart();
+    assert_eq!(
+        crate::classify_v5_document(&part),
+        crate::V5DocumentKind::CatPart
+    );
+    assert!(super::looks_like_catia(&part));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            CatiaCodec.detect(ctx, cadmpeg_core::decode::View::over_retained(&part))
+        })
+        .expect("detect"),
+        Confidence::High
+    );
+
+    let (part_with_base_prod, _) =
+        crate::test_support::test_container::outer_container_catpart(b"part-body-payload");
+    assert_eq!(
+        crate::classify_v5_document(&part_with_base_prod),
+        crate::V5DocumentKind::CatPart
+    );
+    assert!(super::looks_like_catia(&part_with_base_prod));
+
+    let part_with_external_product_ref =
+        outer_body_catpart(&external_reference_segment("subassembly.CATProduct"));
+    assert!(super::looks_like_catia(&part_with_external_product_ref));
+
+    let product = synthetic_outer_v5(&[("Data", b"CATProdCont\0ASMPRODUCT\0")]);
+    assert_eq!(
+        crate::classify_v5_document(&product),
+        crate::V5DocumentKind::CatProduct
+    );
+    assert!(!super::looks_like_catia(&product));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            CatiaCodec.detect(ctx, cadmpeg_core::decode::View::over_retained(&product))
+        })
+        .expect("detect"),
+        Confidence::No
+    );
+
+    let cgr = synthetic_outer_v5(&[("Header", b"hdr"), ("SceneGraph", b"sg-bytes")]);
+    assert_eq!(
+        crate::classify_v5_document(&cgr),
+        crate::V5DocumentKind::Cgr
+    );
+    assert!(!super::looks_like_catia(&cgr));
+
+    let shape = outer_body_catpart(b"CATShapeCont\0payload");
+    assert_eq!(
+        crate::classify_v5_document(&shape),
+        crate::V5DocumentKind::CatShape
+    );
+    assert!(!super::looks_like_catia(&shape));
+
+    assert_eq!(
+        crate::classify_v5_document(b"NOT_V5_HEADER"),
+        crate::V5DocumentKind::NotV5
+    );
+}
+
+#[test]
+fn outer_stream_view_reads_data_document_property_and_see_body_streams() {
+    let data_payload = b"CATProdCont\0ASMPRODUCT\0instance-tree";
+    let prop_payload = b"CATDocumentProperty\0locator-table";
+    let see_body_payload = b"\x01\x00\x00\x00\x07\x00\x00\x00";
+    let file = synthetic_outer_v5(&[
+        ("Data", data_payload),
+        ("CATDocumentProperty", prop_payload),
+        ("CATSeeBodyCont", see_body_payload),
+    ]);
+
+    let view = crate::V5OuterStreamView::parse(&file).expect("valid V5_CFV2 view");
+    assert_eq!(view.document_kind(), crate::V5DocumentKind::CatProduct);
+    assert_eq!(
+        view.stream_names(),
+        vec!["Data", "CATDocumentProperty", "CATSeeBodyCont"]
+    );
+    assert_eq!(view.data_stream().as_deref(), Some(data_payload.as_slice()));
+    assert_eq!(
+        view.document_property_stream().as_deref(),
+        Some(prop_payload.as_slice())
+    );
+    assert_eq!(
+        view.see_body_stream().as_deref(),
+        Some(see_body_payload.as_slice())
+    );
+    assert!(crate::V5OuterStreamView::parse(b"plain text").is_none());
+
+    let preview_part = outer_body_catpart(&summary_preview_segment());
+    let preview_view = crate::V5OuterStreamView::parse(&preview_part).expect("summary view");
+    assert_eq!(
+        preview_view.last_save_version().as_deref(),
+        Some("V5R27 SP2 HF0")
+    );
+}

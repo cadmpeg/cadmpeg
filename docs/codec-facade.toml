@@ -9,7 +9,12 @@
 
 [[crate]]
 id = "catia"
-names = ["CatiaCodec"]
+names = [
+    "CatiaCodec",
+    "V5DocumentKind",
+    "V5OuterStreamView",
+    "classify_v5_document",
+]
 fuzz = "required"
 
 [[crate]]

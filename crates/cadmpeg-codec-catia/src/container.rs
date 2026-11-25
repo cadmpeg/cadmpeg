@@ -1097,10 +1097,268 @@ fn contiguous_descriptor_range(
     Some(start..end)
 }
 
-/// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
-/// to Dassault's container and is a conclusive signal on its own.
+/// High-level CATIA V5 `V5_CFV2` container document classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum V5DocumentKind {
+    /// Mechanical part document (`.CATPart`).
+    CatPart,
+    /// Assembly product document (`.CATProduct`).
+    CatProduct,
+    /// Standalone graphical representation cache (`.cgr`).
+    Cgr,
+    /// Shape document (`.CATShape`).
+    CatShape,
+    /// 2D drawing document (`.CATDrawing`).
+    CatDrawing,
+    /// Recognized `V5_CFV2` container without enough markers to distinguish a
+    /// non-part document type (e.g. a short prefix or minimal synthetic container).
+    UnknownV5,
+    /// Not a `V5_CFV2` container.
+    NotV5,
+}
+
+/// Read-only view over outer `V5_CFV2` logical streams and container declarations.
+#[derive(Debug, Clone)]
+pub struct V5OuterStreamView<'a> {
+    data: &'a [u8],
+    outer: Option<InnerDir>,
+    declarations: Vec<OuterContainerDeclaration>,
+    kind: V5DocumentKind,
+}
+
+impl<'a> V5OuterStreamView<'a> {
+    /// Parse the outer `V5_CFV2` container directory and metadata of `data`.
+    ///
+    /// Returns `None` when `data` does not start with the `V5_CFV2\0` signature.
+    #[must_use]
+    pub fn parse(data: &'a [u8]) -> Option<Self> {
+        if !data.starts_with(OUTER_MAGIC) {
+            return None;
+        }
+        let outer = parse_outer_stream_directory(data);
+        let declarations = outer
+            .as_ref()
+            .map(|dir| outer_container_declarations(data, dir))
+            .unwrap_or_default();
+        let kind = classify_v5_with_outer(data, outer.as_ref(), &declarations);
+        Some(Self {
+            data,
+            outer,
+            declarations,
+            kind,
+        })
+    }
+
+    /// Classified CATIA V5 document kind.
+    #[must_use]
+    pub fn document_kind(&self) -> V5DocumentKind {
+        self.kind
+    }
+
+    /// Ordered names of all catalogued outer logical streams.
+    #[must_use]
+    pub fn stream_names(&self) -> Vec<&str> {
+        self.outer
+            .as_ref()
+            .map(|dir| {
+                dir.descriptors
+                    .iter()
+                    .map(|descriptor| descriptor.name.as_str())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Reconstruct the raw logical bytes of an outer stream by descriptor name.
+    ///
+    /// When multiple descriptors share the same name, selects the uniquely
+    /// largest descriptor.
+    #[must_use]
+    pub fn stream_bytes(&self, name: &str) -> Option<Cow<'a, [u8]>> {
+        let outer = self.outer.as_ref()?;
+        let descriptor = unique_largest_descriptor(
+            outer
+                .descriptors
+                .iter()
+                .filter(|descriptor| descriptor.name == name),
+        )?;
+        if let Some(range) = contiguous_descriptor_range(descriptor, outer.inner, self.data.len()) {
+            return Some(Cow::Borrowed(&self.data[range]));
+        }
+        let bytes = reconstruct_logical_stream(self.data, descriptor, outer.inner);
+        (!bytes.is_empty()).then_some(Cow::Owned(bytes))
+    }
+
+    /// Read-only access to the outer `Data` logical stream, when catalogued.
+    #[must_use]
+    pub fn data_stream(&self) -> Option<Cow<'a, [u8]>> {
+        self.stream_bytes("Data")
+    }
+
+    /// Read-only access to the outer `CATDocumentProperty` stream, when present.
+    #[must_use]
+    pub fn document_property_stream(&self) -> Option<Cow<'a, [u8]>> {
+        self.stream_bytes("CATDocumentProperty")
+            .or_else(|| self.declared_class_stream("CATDocumentProperty"))
+    }
+
+    /// Read-only access to the declared `CATSeeBodyCont` stream, when present.
+    #[must_use]
+    pub fn see_body_stream(&self) -> Option<Cow<'a, [u8]>> {
+        self.declared_class_stream("CATSeeBodyCont")
+            .or_else(|| self.stream_bytes("CATSeeBodyCont"))
+    }
+
+    /// Read-only access to the outer stream resolved for a declared container class
+    /// (such as `CATPrtCont`, `CATProdCont`, `CATSeeBodyCont`, or `CGMGeom`).
+    #[must_use]
+    pub fn declared_class_stream(&self, class_name: &str) -> Option<Cow<'a, [u8]>> {
+        let mut matching = self
+            .declarations
+            .iter()
+            .filter(|declaration| declaration.class_name == class_name);
+        let declaration = matching.next()?;
+        if matching.next().is_some() {
+            return None;
+        }
+        self.stream_bytes(&declaration.stream_name)
+    }
+
+    /// Declared `(class_name, base_class, stream_name)` outer container entries.
+    #[must_use]
+    pub fn declared_containers(&self) -> Vec<(&str, &str, &str)> {
+        self.declarations
+            .iter()
+            .map(|declaration| {
+                (
+                    declaration.class_name.as_str(),
+                    declaration.base_class.as_str(),
+                    declaration.stream_name.as_str(),
+                )
+            })
+            .collect()
+    }
+
+    /// Decoded `LastSaveVersion` summary string (e.g. `V5R27 SP2 HF0`), when unique.
+    #[must_use]
+    pub fn last_save_version(&self) -> Option<String> {
+        let segments = finjpl_segments(&BodyExtent::whole(self.data));
+        let version = last_save_version_in_segments(self.data, &segments)?;
+        Some(format!(
+            "V{}R{} SP{} HF{}",
+            version.version, version.release, version.service_pack, version.hot_fix
+        ))
+    }
+}
+
+/// Classify a byte slice or prefix into a [`V5DocumentKind`].
+#[must_use]
+pub fn classify_v5_document(data: &[u8]) -> V5DocumentKind {
+    if !data.starts_with(OUTER_MAGIC) {
+        return V5DocumentKind::NotV5;
+    }
+    let outer = parse_outer_stream_directory(data);
+    let declarations = outer
+        .as_ref()
+        .map(|dir| outer_container_declarations(data, dir))
+        .unwrap_or_default();
+    classify_v5_with_outer(data, outer.as_ref(), &declarations)
+}
+
+fn contains_unprefixed_marker(data: &[u8], marker: &[u8], forbidden_prefix: u8) -> bool {
+    let mut search = 0;
+    while let Some(pos) = find_from(data, marker, search) {
+        let preceded = pos > 0 && data[pos - 1] == forbidden_prefix;
+        if !preceded {
+            return true;
+        }
+        search = pos + 1;
+    }
+    false
+}
+
+fn classify_v5_with_outer(
+    data: &[u8],
+    outer: Option<&InnerDir>,
+    declarations: &[OuterContainerDeclaration],
+) -> V5DocumentKind {
+    const UTF16_MAIN_DATA: &[u8] = b"M\0a\0i\0n\0D\0a\0t\0a\0S\0t\0r\0e\0a\0m\0";
+    const UTF16_SURFACIC_REPS: &[u8] = b"S\0u\0r\0f\0a\0c\0i\0c\0R\0e\0p\0s\0";
+    const UTF16_SCENE_GRAPH: &[u8] = b"S\0c\0e\0n\0e\0G\0r\0a\0p\0h\0";
+
+    // 1. Authoritative declared outer container classes when parsed.
+    let has_decl = |class: &str| declarations.iter().any(|decl| decl.class_name == class);
+    if has_decl("CATPrtCont") || has_decl("CGMGeom") || has_decl("CATSeeBodyCont") {
+        return V5DocumentKind::CatPart;
+    }
+    if has_decl("CATProdCont") {
+        return V5DocumentKind::CatProduct;
+    }
+    if has_decl("CATShapeCont") || has_decl("CATSmaCont") {
+        return V5DocumentKind::CatShape;
+    }
+    if has_decl("CATDrwCont") {
+        return V5DocumentKind::CatDrawing;
+    }
+
+    // 2. Part-specific markers checked before product markers because `.CATPart`
+    //    declares `CATPrtCont` with base class `CATProdCont` and may reference
+    //    external `.CATProduct` paths in storage properties.
+    if find(data, b"CATPrtCont").is_some()
+        || find(data, b"CGMGeom").is_some()
+        || find(data, b"CATSeeBodyCont").is_some()
+        || find(data, b"MainDataStream").is_some()
+        || find(data, b"SurfacicReps").is_some()
+        || find(data, UTF16_MAIN_DATA).is_some()
+        || find(data, UTF16_SURFACIC_REPS).is_some()
+    {
+        return V5DocumentKind::CatPart;
+    }
+
+    // 3. Outer directory structural signatures (e.g. standalone `.cgr` has
+    //    `SceneGraph`/`Header`/`Describe` without `Data`/`MainDataStream`).
+    if let Some(dir) = outer {
+        let has_stream = |name: &str| dir.descriptors.iter().any(|desc| desc.name == name);
+        if has_stream("SceneGraph") && !has_stream("Data") && !has_stream("MainDataStream") {
+            return V5DocumentKind::Cgr;
+        }
+    }
+
+    // 4. Non-part container markers (ignoring `.CATProduct`/`.CATShape`/`.CATDrawing`
+    //    file-extension references preceded by `.`).
+    if find(data, b"CATProdCont").is_some()
+        || find(data, b"ASMPRODUCT").is_some()
+        || contains_unprefixed_marker(data, b"CATProduct\0", b'.')
+    {
+        return V5DocumentKind::CatProduct;
+    }
+    if find(data, b"CATShapeCont").is_some()
+        || find(data, b"CATSmaCont").is_some()
+        || contains_unprefixed_marker(data, b"CATShape\0", b'.')
+    {
+        return V5DocumentKind::CatShape;
+    }
+    if find(data, b"CATDrwCont").is_some()
+        || contains_unprefixed_marker(data, b"CATDrawing\0", b'.')
+    {
+        return V5DocumentKind::CatDrawing;
+    }
+    if (find(data, b"SceneGraph").is_some() || find(data, UTF16_SCENE_GRAPH).is_some())
+        && find(data, b"Data").is_none()
+    {
+        return V5DocumentKind::Cgr;
+    }
+
+    V5DocumentKind::UnknownV5
+}
+
+/// Whether a byte prefix looks like a `.CATPart` (`V5_CFV2\0` without explicit
+/// `.CATProduct`, `.cgr`, `.CATShape`, or `.CATDrawing` markers).
 pub(crate) fn looks_like_catia(prefix: &[u8]) -> bool {
-    prefix.starts_with(OUTER_MAGIC)
+    matches!(
+        classify_v5_document(prefix),
+        V5DocumentKind::CatPart | V5DocumentKind::UnknownV5
+    )
 }
 
 /// Return maximal contiguous stride-8 FBB groups in source order.
