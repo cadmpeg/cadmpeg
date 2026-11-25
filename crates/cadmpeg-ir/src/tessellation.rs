@@ -885,6 +885,13 @@ struct TessellationWire {
     colors: Option<MeshColors>,
     /// Additional per-vertex or per-facet data channels.
     channels: Vec<TessellationChannel>,
+    /// The source's record of the mesh.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1024,6 +1031,8 @@ pub struct Tessellation {
     /// Colours the source stores per vertex, corner, or triangle.
     colors: Option<MeshColors>,
     channels: Vec<TessellationChannel>,
+    /// The source's record of the mesh.
+    pub native_ref: Option<String>,
 }
 
 /// One source-defined group in a tessellation triangle partition.
@@ -1387,6 +1396,7 @@ impl Tessellation {
             texture_coordinates: Vec::new(),
             colors: None,
             channels,
+            native_ref: None,
         })
     }
 
@@ -1770,6 +1780,7 @@ impl From<Tessellation> for TessellationWire {
             texture_coordinates: tessellation.texture_coordinates,
             colors: tessellation.colors,
             channels: tessellation.channels,
+            native_ref: tessellation.native_ref,
         }
     }
 }
@@ -1782,6 +1793,7 @@ impl TryFrom<TessellationWire> for Tessellation {
             of: wire.of,
             state: wire.state,
             source_object: wire.source_object,
+            native_ref: wire.native_ref,
             ..Self::new(wire.id, wire.mesh, wire.channels)?
         };
         mesh.set_chordal_deflection(wire.chordal_deflection)?;
@@ -1854,6 +1866,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
 cadmpeg_core::named_optional_field!(deserialize_face, FaceId, "face");
 cadmpeg_core::named_optional_field!(deserialize_colors, MeshColors, "colors");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;
 
