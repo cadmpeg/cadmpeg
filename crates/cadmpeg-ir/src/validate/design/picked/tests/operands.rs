@@ -20,8 +20,8 @@ use crate::design::ops::surface::Knit;
 use crate::design::options::SheetOutput;
 use crate::design::refs::EntityRef;
 use crate::design::selection::{
-    Anchor, MemberOrder, Members, OccurrencePath, PathStep, PickContext, PickTarget, Picked, Picks,
-    Selection, StepRef,
+    Anchor, DefinitionRef, MemberOrder, Members, OccurrencePath, PathStep, PickContext, PickTarget,
+    Picked, Picks, Selection, StepRef,
 };
 use crate::document::CadIr;
 use crate::ids::BodyId;
@@ -130,6 +130,53 @@ fn a_piece_pick_under_no_participant_is_reported_once() {
     assert!(ruled(&ir, operands).is_empty());
 }
 
+/// §5.8: an `InContext` piece pick runs from its assembly, and `own` places
+/// the owner's definition there, so a participant's path from the owner lies
+/// under `own`.
+#[test]
+fn an_in_context_piece_pick_is_read_through_its_own_place_in_the_assembly() {
+    let in_context = |target| PickContext::InContext {
+        assembly: DefinitionRef {
+            definition: id("definition", "assembly"),
+            configuration: None,
+        },
+        own: Some(OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(id("occurrence", "p")),
+            configuration: None,
+        }])),
+        target: Some(target),
+    };
+    let split = |piece: &[&str]| {
+        FeatureOperation::Split(Box::new(Split {
+            mode: SplitMode::ByTools {
+                targets: None,
+                tools: SplitTool::Plane(Box::new(empty())),
+                method: None,
+                kept: Some(Kept::Pieces {
+                    keep: Some(Box::new(under(piece, in_context))),
+                    remove: None,
+                }),
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let participant = "design.piece-pick-targets-entity-no-participant";
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.assembly = Some(AssemblyContext {
+        participants: BTreeMap::from([(
+            Some(ContextEffect::Definitions),
+            under(&["a"], PickContext::Occurrence),
+        )]),
+    });
+    with(&mut ir, |_| split(&["p", "a", "c"]));
+    assert!(ruled(&ir, participant).is_empty());
+    with(&mut ir, |_| split(&["p", "b"]));
+    assert_eq!(ruled(&ir, participant).len(), 1);
+    with(&mut ir, |_| split(&["a", "c"]));
+    assert_eq!(ruled(&ir, participant).len(), 1);
+}
+
 #[test]
 fn a_constrained_mate_first_connector_picks_a_moved_body() {
     let transform = |ir: &CadIr, moved: EntityRef, kind: JointKind| {
@@ -226,4 +273,37 @@ fn a_break_corner_edge_is_no_shorter_than_the_sheet() {
         family: crate::design::feature::OperationFamily::Extrude,
     });
     assert!(ruled(&ir, rule).is_empty());
+}
+
+#[test]
+fn a_break_corner_reads_the_sheet_of_its_state_configuration() {
+    let rule = "design.break-corner-edge-shorter-than-sheet";
+    let mut ir = fixture::document();
+    ir.design.features[1].definition.operation = sheet(SheetMetalKind::BreakCorner {
+        corners: input(current(vec![edge(&ir, 0)])),
+        size: positive(0.5),
+        shape: CornerBreak::Chamfer,
+    });
+    let wall = |thickness| {
+        sheet(SheetMetalKind::Wall {
+            profile: current(Vec::new()),
+            thickness: Some(positive(thickness)),
+            side: None,
+            rule: None,
+        })
+    };
+    with(&mut ir, |_| wall(0.1));
+    assert!(ruled(&ir, rule).is_empty());
+    // The current state is the active configuration's, "base", which gives
+    // the wall a thickness longer than every edge of the cube.
+    let mut thick = ir.design.features[0].definition.clone();
+    thick.operation = wall(100.0);
+    ir.design.configurations[0].overrides.features.insert(
+        fixture::feature("extrude"),
+        crate::design::configuration::FeatureStateOverride {
+            suppressed: None,
+            definition: Some(thick),
+        },
+    );
+    assert_eq!(ruled(&ir, rule).len(), 1);
 }

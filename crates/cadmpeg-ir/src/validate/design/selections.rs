@@ -370,7 +370,6 @@ fn check_pick<'a>(
     moved: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) {
-    let states = matchers.states();
     let at = site.holder.record();
     if !target_exists(index, &pick.target) {
         super::error(
@@ -450,20 +449,69 @@ fn check_pick<'a>(
         }
     }
     if pick.context.is_none() {
-        let stored = anchored_states(index, states, site);
-        if stored.is_empty() && pick.resolved.is_some() && names_unstored_state(index, site) {
-            super::error(
-                findings,
-                at,
-                crate::rule!(
-                    "design.resolved-without-stored-state",
-                    "a pick states `resolved`, but the document stores no state at its anchor"
-                ),
-            );
-        }
-        for state in stored {
-            check_in_state(states, matchers, &state, pick, at, findings);
-        }
+        check_anchored(index, matchers, site, pick, findings);
+    }
+}
+
+/// A pick of a process record with no context, which resolves in its
+/// setup's scope (§5.8, part 7).
+pub(in crate::validate) struct ProcessPick<'a> {
+    pub(in crate::validate) record: &'a str,
+    pub(in crate::validate) scope: &'a ProductDefinitionId,
+    pub(in crate::validate) anchor: &'a Anchor,
+    pub(in crate::validate) pick: &'a Picked,
+}
+
+/// Each process pick resolves in its anchored state by the matching rule
+/// of §5.7, as a design pick does: a `Current` pick in the current geometry
+/// of its setup's scope (§5.8).
+pub(in crate::validate) fn check_process_picks(
+    ir: &CadIr,
+    picks: &[ProcessPick<'_>],
+    findings: &mut Vec<Finding>,
+) {
+    if picks.is_empty() {
+        return;
+    }
+    let index = DesignIndex::new(ir);
+    let states = States::new(ir);
+    let matchers = Matchers::new(&states);
+    for pick in picks {
+        let site = Site {
+            holder: Holder::Record {
+                record: pick.record,
+                scope: Some(pick.scope),
+            },
+            anchor: pick.anchor,
+            owner: Some(pick.scope),
+        };
+        check_anchored(&index, &matchers, site, pick.pick, findings);
+    }
+}
+
+/// A pick with no context resolves in each stored state its anchor names.
+fn check_anchored<'a>(
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
+    site: Site<'a>,
+    pick: &'a Picked,
+    findings: &mut Vec<Finding>,
+) {
+    let states = matchers.states();
+    let at = site.holder.record();
+    let stored = anchored_states(index, states, site);
+    if stored.is_empty() && pick.resolved.is_some() && names_unstored_state(index, site) {
+        super::error(
+            findings,
+            at,
+            crate::rule!(
+                "design.resolved-without-stored-state",
+                "a pick states `resolved`, but the document stores no state at its anchor"
+            ),
+        );
+    }
+    for state in stored {
+        check_in_state(states, matchers, &state, pick, at, findings);
     }
 }
 

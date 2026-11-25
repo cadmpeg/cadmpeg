@@ -31,12 +31,14 @@ use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, SetSe
 use crate::design::selection::{MemberOrder, Selection};
 use crate::document::CadIr;
 use crate::features::geometry::FinitePoint3;
-use crate::geometry::analytic::{CircleCurve, CylinderSurface};
+use crate::geometry::analytic::{CircleCurve, CylinderSurface, SphereSurface};
+use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::ids::VertexId;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, NonNegativeLength, PositiveLength};
 use crate::topology::{BodyKind, EdgeCarrier};
+use crate::transform::Transform;
 
 /// A pick of `entity`, told apart from the other picks by `key`.
 fn pick(key: u32, entity: EntityRef) -> Picked {
@@ -115,8 +117,8 @@ fn with(ir: &mut CadIr, make: impl FnOnce(&CadIr) -> FeatureOperation) {
     ir.design.features[0].definition.operation = operation;
 }
 
-/// The height of a vertex.
-fn height(ir: &CadIr, vertex: &VertexId) -> f64 {
+/// The position of a vertex.
+fn place(ir: &CadIr, vertex: &VertexId) -> Point3 {
     let point = &ir
         .geometry
         .vertices
@@ -125,7 +127,12 @@ fn height(ir: &CadIr, vertex: &VertexId) -> f64 {
         .unwrap()
         .point;
     let point = ir.geometry.points.iter().find(|record| record.id == *point);
-    point.unwrap().position().get().z
+    point.unwrap().position().get()
+}
+
+/// The height of a vertex.
+fn height(ir: &CadIr, vertex: &VertexId) -> f64 {
+    place(ir, vertex).z
 }
 
 /// The edges of the cube's bottom face: those with both ends at height 0.
@@ -187,6 +194,26 @@ fn curve_bottom(ir: &mut CadIr) {
         .find(|record| record.id == surface)
         .unwrap();
     record.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder));
+}
+
+/// Makes the surface of face `index` the sphere of `radius` about the
+/// cube's middle.
+fn sphere_face(ir: &mut CadIr, index: usize, radius: f64) {
+    let surface = ir.geometry.faces[index].surface.clone();
+    let sphere = SphereSurface::try_new(
+        Point3::new(5.0, 5.0, 5.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        radius,
+    )
+    .unwrap();
+    let record = ir
+        .geometry
+        .surfaces
+        .iter_mut()
+        .find(|record| record.id == surface)
+        .unwrap();
+    record.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere));
 }
 
 fn set_kind(ir: &mut CadIr, kind: BodyKind) {
@@ -535,6 +562,34 @@ fn round_edge(ir: &mut CadIr, index: usize) {
     record.unwrap().geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle));
 }
 
+/// Makes the curve of edge `index` the NURBS curve of degree one between
+/// its ends.
+fn free_edge(ir: &mut CadIr, index: usize) {
+    let edge = &ir.geometry.edges[index];
+    let ends: Vec<Point3> = edge.vertices().map(|end| place(ir, end)).collect();
+    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) = edge.carrier.clone() else {
+        unreachable!("the fixture's edges lie on curves")
+    };
+    let nurbs = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        NurbsPoles3::from_lanes(ends, None).unwrap(),
+        false,
+    )
+    .unwrap();
+    let record = ir
+        .geometry
+        .curves
+        .iter_mut()
+        .find(|record| record.id == curve);
+    record.unwrap().geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
+}
+
+/// Places the cube's body by the affine map of `rows`.
+fn place_body(ir: &mut CadIr, rows: [[f64; 4]; 3]) {
+    ir.geometry.bodies[0].transform = Some(Transform::affine(rows).unwrap());
+}
+
 #[test]
 fn a_contour_flange_profile_is_one_open_chain_bent_where_two_pieces_meet() {
     let contour = |ir: &CadIr, profile: &[usize], at: EntityRef| {
@@ -646,6 +701,32 @@ fn a_patch_support_face_meets_its_boundary_curve() {
     assert_eq!(ruled(&ir, rule).len(), 1);
     round_edge(&mut ir, top);
     assert!(ruled(&ir, rule).is_empty());
+}
+
+#[test]
+fn a_patch_support_on_a_sphere_meets_its_boundary_curve() {
+    let rule = "design.patch-support-face-off-curve";
+    let mut ir = fixture::document();
+    let top = level_edges(&ir, 10.0)[0];
+    let floor = bottom(&ir);
+    with(&mut ir, |ir| {
+        patch(vec![PatchEdge {
+            curve: current(vec![edge(ir, top)]),
+            condition: Some(SectionCondition::Tangent {
+                support: Some(Support::Faces(current(vec![face(ir, floor)]))),
+                weight: None,
+                flip: None,
+            }),
+        }])
+    });
+    // A top edge comes within 50^0.5 of the cube's middle at its midpoint,
+    // and its ends lie 75^0.5 from it.
+    sphere_face(&mut ir, floor, 50.0_f64.sqrt());
+    assert!(ruled(&ir, rule).is_empty());
+    sphere_face(&mut ir, floor, 1.0);
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    sphere_face(&mut ir, floor, 10.0);
+    assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
 #[test]
@@ -789,33 +870,36 @@ fn a_thin_wall_side_and_corners_fit_whether_its_profile_closes() {
     assert!(found[0].contains("picks edge "), "{found:?}");
 }
 
+/// A sweep along the edges `path` of the cube, limited at its start by
+/// `start`.
+fn spine_sweep(ir: &CadIr, path: &[usize], start: EntityRef) -> FeatureOperation {
+    FeatureOperation::Sweep(Box::new(Sweep {
+        section: SweepSection::Profile(current(vec![face(ir, bottom(ir))])),
+        path: current(edges(ir, path)),
+        controls: SweepControls {
+            orientation: None,
+            twist: None,
+            scaling: None,
+        },
+        guides: Vec::new(),
+        extent: None,
+        placement: None,
+        limits: SpineLimits {
+            start: Some(current(vec![start])),
+            end: None,
+        },
+        transition: None,
+        output: SolidOutput {
+            body: None,
+            boolean: None,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
 #[test]
 fn a_spine_limit_lies_on_the_spine() {
-    let sweep = |ir: &CadIr, path: &[usize], start: EntityRef| {
-        FeatureOperation::Sweep(Box::new(Sweep {
-            section: SweepSection::Profile(current(vec![face(ir, bottom(ir))])),
-            path: current(edges(ir, path)),
-            controls: SweepControls {
-                orientation: None,
-                twist: None,
-                scaling: None,
-            },
-            guides: Vec::new(),
-            extent: None,
-            placement: None,
-            limits: SpineLimits {
-                start: Some(current(vec![start])),
-                end: None,
-            },
-            transition: None,
-            output: SolidOutput {
-                body: None,
-                boolean: None,
-            },
-            native_options: BTreeMap::new(),
-            source_settings: BTreeMap::new(),
-        }))
-    };
     let rule = "design.spine-limit-off-spine";
     let mut ir = fixture::document();
     let around = bottom_edges(&ir);
@@ -824,13 +908,77 @@ fn a_spine_limit_lies_on_the_spine() {
         .start()
         .unwrap()
         .clone();
-    with(&mut ir, |ir| sweep(ir, three, meeting(ir, three, 1)));
+    with(&mut ir, |ir| spine_sweep(ir, three, meeting(ir, three, 1)));
     assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| sweep(ir, three, face(ir, bottom(ir))));
+    with(&mut ir, |ir| spine_sweep(ir, three, face(ir, bottom(ir))));
     assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| sweep(ir, three, face(ir, level(ir, 10.0))));
+    with(&mut ir, |ir| {
+        spine_sweep(ir, three, face(ir, level(ir, 10.0)))
+    });
     assert_eq!(ruled(&ir, rule).len(), 1);
-    with(&mut ir, |ir| sweep(ir, three, EntityRef::Vertex(raised)));
+    with(&mut ir, |ir| {
+        spine_sweep(ir, three, EntityRef::Vertex(raised))
+    });
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
+#[test]
+fn a_spine_limit_lies_on_a_free_form_or_placed_spine() {
+    let rule = "design.spine-limit-off-spine";
+    let mut ir = fixture::document();
+    let three = bottom_edges(&ir)[..3].to_vec();
+    let raised = ir.geometry.edges[level_edges(&ir, 10.0)[0]]
+        .start()
+        .unwrap()
+        .clone();
+    for &index in &three {
+        free_edge(&mut ir, index);
+    }
+    with(&mut ir, |ir| spine_sweep(ir, &three, face(ir, bottom(ir))));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| {
+        spine_sweep(ir, &three, face(ir, level(ir, 10.0)))
+    });
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    // A rigid placement moves the spine and the face together.
+    place_body(
+        &mut ir,
+        [
+            [0.0, -1.0, 0.0, 3.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 100.0],
+        ],
+    );
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    with(&mut ir, |ir| {
+        spine_sweep(ir, &three, EntityRef::Vertex(raised))
+    });
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    // A placement that scales is not rigid, and no bound reads it.
+    place_body(
+        &mut ir,
+        [
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0, 0.0],
+            [0.0, 0.0, 2.0, 0.0],
+        ],
+    );
+    assert!(ruled(&ir, rule).is_empty());
+}
+
+#[test]
+fn a_spine_limit_resolves_to_a_point_or_a_plane() {
+    let rule = "design.spine-limit-resolves-no-point-or-plane";
+    let mut ir = fixture::document();
+    let three = bottom_edges(&ir)[..3].to_vec();
+    with(&mut ir, |ir| spine_sweep(ir, &three, face(ir, bottom(ir))));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| spine_sweep(ir, &three, edge(ir, three[0])));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    with(&mut ir, |ir| spine_sweep(ir, &three, body(ir)));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    with(&mut ir, |ir| spine_sweep(ir, &three, face(ir, bottom(ir))));
+    curve_bottom(&mut ir);
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The sheet-metal bodies of a state and the rules that govern them (§6.6),
-//! read one configuration at a time: whether the state entering a feature
-//! holds a sheet-metal body, the literal thickness of each sheet where the
-//! features before it keep every sheet's thickness edges, an
-//! `Extrude.sheet_cut` cuts a sheet-metal body, and each body has at most one
-//! governing rule.
+//! read one configuration, or one arrangement over a configuration, at a
+//! time, with the definition and suppression in force there: whether the
+//! state entering a feature holds a sheet-metal body, the literal thickness
+//! of each sheet where the features before it keep every sheet's thickness
+//! edges, an `Extrude.sheet_cut` cuts a sheet-metal body, and each body has
+//! at most one governing rule.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::design::configuration::{Arrangement, FeatureStateOverride};
 use crate::design::container::Container;
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use crate::design::ids::SheetMetalRuleId;
@@ -16,6 +18,7 @@ use crate::design::ops::sheet_metal::{Flange, Hem, SheetMetalKind};
 use crate::design::options::{Boolean, BooleanOp, Thickness};
 use crate::design::refs::Member;
 use crate::design::selection::{PickTarget, Picks, SetSelection};
+use crate::features::FeatureId;
 use crate::report::check::Finding;
 
 use super::index::{DesignIndex, StateAt};
@@ -66,14 +69,75 @@ enum Effect<'a> {
     Unknown,
 }
 
+/// One reading of a scope's features: a configuration, and an arrangement
+/// whose overrides resolve over it (§5.1).
+#[derive(Clone, Copy)]
+pub(super) struct Reading<'a> {
+    configuration: Option<&'a str>,
+    arrangement: Option<&'a Arrangement>,
+}
+
+impl<'a> Reading<'a> {
+    /// The reading of a configuration, or of the base, with no arrangement.
+    pub(super) const fn of(configuration: Option<&'a str>) -> Self {
+        Self {
+            configuration,
+            arrangement: None,
+        }
+    }
+
+    /// The overrides of a feature that apply, nearest first: the
+    /// arrangement's, then those of the configuration and its parents.
+    fn overrides(
+        self,
+        index: &DesignIndex<'a>,
+        feature: &FeatureId,
+    ) -> Vec<&'a FeatureStateOverride> {
+        self.arrangement
+            .map(|arrangement| &arrangement.overrides)
+            .into_iter()
+            .chain(
+                index
+                    .records
+                    .configuration_chain(self.configuration)
+                    .into_iter()
+                    .map(|configuration| &configuration.overrides),
+            )
+            .filter_map(|overrides| overrides.features.get(feature))
+            .collect()
+    }
+
+    /// The definition of a feature in force.
+    fn definition(self, index: &DesignIndex<'a>, feature: &'a Feature) -> &'a FeatureDefinition {
+        self.overrides(index, &feature.id)
+            .into_iter()
+            .find_map(|stated| stated.definition.as_ref())
+            .unwrap_or(&feature.definition)
+    }
+
+    /// Whether a feature is suppressed; `None` where that is a dimension
+    /// that is not literal (§10, Bounded values).
+    fn suppressed(self, index: &DesignIndex<'a>, feature: &Feature) -> Option<bool> {
+        match self
+            .overrides(index, &feature.id)
+            .into_iter()
+            .find_map(|stated| stated.suppressed)
+        {
+            Some(suppressed) => Some(suppressed),
+            None => feature.suppressed.as_ref().map_or(Some(false), literal),
+        }
+    }
+}
+
 /// The sheet-metal bodies entering `feature`, a member of an ordered
-/// container, where each feature of the state has the definition in force
-/// in `configuration`. `None` where a feature of the state has an effect
-/// that is not read, or the definition takes bodies from elsewhere.
+/// container, where each feature of the state has the definition and
+/// suppression in force in `reading`. `None` where a feature of the state
+/// has an effect that is not read, or the definition takes bodies from
+/// elsewhere.
 pub(super) fn entering<'a>(
     index: &DesignIndex<'a>,
     feature: &'a str,
-    configuration: Option<&str>,
+    reading: Reading<'a>,
 ) -> Option<Entering> {
     index.entering(feature)?;
     let owner = index.owner_definition(feature)?;
@@ -87,13 +151,15 @@ pub(super) fn entering<'a>(
     let mut thicknesses = Some(Vec::new());
     let mut sheets = Vec::new();
     let mut reshapers = Vec::new();
-    let mut deleted = BTreeSet::new();
+    // The `DeleteBodies` features in force that remove each sheet whole.
+    let mut deleters: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for &id in index.state_features(StateAt::Entering(feature))?.iter() {
         let record = *index.records.features.get(id)?;
-        match effect(
-            index,
-            &index.records.definition_in(record, configuration).operation,
-        ) {
+        let suppressed = reading.suppressed(index, record);
+        if suppressed == Some(true) {
+            continue;
+        }
+        match effect(index, &reading.definition(index, record).operation) {
             Effect::Keeps => {}
             Effect::Reshapes => {
                 thicknesses = None;
@@ -101,27 +167,37 @@ pub(super) fn entering<'a>(
             }
             Effect::Deletes(delete) => {
                 thicknesses = None;
-                if in_force(index, record, configuration) {
-                    deleted.extend(whole_results(delete));
+                if suppressed == Some(false) {
+                    for sheet in whole_results(delete) {
+                        deleters.entry(sheet).or_default().push(id);
+                    }
                 }
             }
             Effect::Sheet(found) => {
                 sheets.push(id);
-                match (&mut thicknesses, found) {
-                    (Some(all), Some(found)) => all.extend(found),
-                    (all, _) => *all = None,
+                match (&mut thicknesses, found, suppressed) {
+                    (Some(all), Some(found), Some(false)) => all.extend(found),
+                    (all, _, _) => *all = None,
                 }
             }
             Effect::Unknown => return None,
         }
     }
-    let sheet_metal = sheets.iter().any(|&sheet| {
-        !deleted.contains(sheet)
-            || reshapers.iter().any(|&reshaper| {
-                index
-                    .state_features(StateAt::Entering(reshaper))
-                    .is_none_or(|state| state.contains(sheet))
-            })
+    // Whether `earlier` is in the state entering `feature`, taken as so where
+    // that state is not read.
+    let before = |earlier: &str, feature: &'a str| {
+        index
+            .state_features(StateAt::Entering(feature))
+            .is_none_or(|state| state.contains(earlier))
+    };
+    // A sheet survives where no delete removes it whole, or where a feature
+    // that runs after it and before every delete of it can copy or reshape
+    // it.
+    let sheet_metal = sheets.iter().any(|&sheet| match deleters.get(sheet) {
+        None => true,
+        Some(deletes) => reshapers.iter().any(|&reshaper| {
+            before(sheet, reshaper) && deletes.iter().all(|&delete| before(reshaper, delete))
+        }),
     });
     Some(Entering {
         sheet_metal,
@@ -129,7 +205,8 @@ pub(super) fn entering<'a>(
     })
 }
 
-/// The features whose whole results a `DeleteBodies` removes.
+/// The features whose whole results a `DeleteBodies` removes: those its
+/// `FeatureResult` picks name with no narrowing `resolved` list.
 fn whole_results(delete: &DeleteBodies) -> Vec<&str> {
     let Picks::Named(picks) = &delete.bodies.picks else {
         return Vec::new();
@@ -141,50 +218,54 @@ fn whole_results(delete: &DeleteBodies) -> Vec<&str> {
         .as_slice()
         .iter()
         .filter_map(|pick| match (&pick.context, &pick.target) {
-            (None, PickTarget::FeatureResult(feature)) => Some(feature.as_str()),
+            (None, PickTarget::FeatureResult(feature)) if pick.resolved.is_none() => {
+                Some(feature.as_str())
+            }
             _ => None,
         })
         .collect()
 }
 
-/// Whether a feature is unsuppressed in `configuration`.
-fn in_force(index: &DesignIndex<'_>, feature: &Feature, configuration: Option<&str>) -> bool {
-    let overridden = index
-        .records
-        .configuration_chain(configuration)
-        .into_iter()
-        .find_map(|configuration| {
-            configuration
-                .overrides
-                .features
-                .get(&feature.id)?
-                .suppressed
-        });
-    match overridden {
-        Some(suppressed) => !suppressed,
-        None => feature
-            .suppressed
-            .as_ref()
-            .is_none_or(|suppressed| literal(suppressed) == Some(false)),
-    }
-}
-
-/// The configurations a member's definitions are read in: the base, then
-/// each configuration of its scope.
-fn configurations<'a>(index: &DesignIndex<'a>, member: MemberKey<'a>) -> Vec<Option<&'a str>> {
+/// The readings a member's features are judged in: the base and each
+/// configuration of its scope, and each arrangement of the scope that
+/// overrides a feature's definition or suppression over each configuration
+/// it applies in.
+fn readings<'a>(index: &DesignIndex<'a>, member: MemberKey<'a>) -> Vec<Reading<'a>> {
     let records = &index.records;
-    let scoped = records
-        .scope_of(member)
-        .and_then(|scope| records.scope_configurations.get(scope));
-    std::iter::once(None)
+    let scope = records.scope_of(member);
+    let configurations: Vec<Option<&'a str>> = std::iter::once(None)
         .chain(
-            scoped
+            scope
+                .and_then(|scope| records.scope_configurations.get(scope))
                 .into_iter()
                 .flatten()
-                .copied()
                 .map(|configuration| Some(configuration.id.as_str())),
         )
-        .collect()
+        .collect();
+    let mut readings: Vec<Reading<'a>> = configurations.iter().copied().map(Reading::of).collect();
+    let arrangements = records
+        .arrangements
+        .values()
+        .copied()
+        .filter(|arrangement| {
+            Some(arrangement.scope.as_str()) == scope
+                && arrangement
+                    .overrides
+                    .features
+                    .values()
+                    .any(|stated| stated.definition.is_some() || stated.suppressed.is_some())
+        });
+    for arrangement in arrangements {
+        let applies: Vec<Option<&'a str>> = match &arrangement.configuration {
+            Some(configuration) => vec![Some(configuration.as_str())],
+            None => configurations.clone(),
+        };
+        readings.extend(applies.into_iter().map(|configuration| Reading {
+            configuration,
+            arrangement: Some(arrangement),
+        }));
+    }
+    readings
 }
 
 fn effect<'a>(index: &DesignIndex<'_>, operation: &'a FeatureOperation) -> Effect<'a> {
@@ -287,15 +368,17 @@ fn sheet_cut(definition: &FeatureDefinition) -> bool {
 }
 
 /// An `Extrude.sheet_cut` cuts a sheet-metal body, and each sheet-metal body
-/// has at most one governing rule (§6.6), in each configuration.
+/// has at most one governing rule (§6.6), in each reading where the features
+/// are in force.
 pub(super) fn check(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
     for feature in &index.records.ir.design.features {
         let id = feature.id.as_str();
-        let uncut = configurations(index, MemberKey::Feature(id))
+        let uncut = readings(index, MemberKey::Feature(id))
             .into_iter()
-            .any(|configuration| {
-                sheet_cut(index.records.definition_in(feature, configuration))
-                    && entering(index, id, configuration).is_some_and(|state| !state.sheet_metal)
+            .any(|reading| {
+                reading.suppressed(index, feature) == Some(false)
+                    && sheet_cut(reading.definition(index, feature))
+                    && entering(index, id, reading).is_some_and(|state| !state.sheet_metal)
             });
         if uncut {
             super::error(
@@ -316,7 +399,7 @@ pub(super) fn check(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
 }
 
 /// Two `ApplyRule` members of one unordered container that are in force in
-/// one configuration and pick one body name one rule.
+/// one reading and pick one body name two rules.
 fn check_applied_rules<'a>(
     index: &DesignIndex<'a>,
     container: &'a str,
@@ -331,11 +414,15 @@ fn check_applied_rules<'a>(
         })
         .collect();
     let mut governed = BTreeSet::new();
-    for configuration in configurations(index, MemberKey::Container(container)) {
+    for reading in readings(index, MemberKey::Container(container)) {
         let mut applied: Vec<(&str, &SheetMetalRuleId, &SetSelection)> = Vec::new();
         for &feature in &features {
-            let definition = index.records.definition_in(feature, configuration);
-            if let FeatureOperation::SheetMetal(sheet) = &definition.operation {
+            if reading.suppressed(index, feature) != Some(false) {
+                continue;
+            }
+            if let FeatureOperation::SheetMetal(sheet) =
+                &reading.definition(index, feature).operation
+            {
                 if let SheetMetalKind::ApplyRule {
                     rule,
                     bodies: Some(bodies),

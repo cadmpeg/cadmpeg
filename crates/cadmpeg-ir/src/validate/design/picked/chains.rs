@@ -4,7 +4,7 @@
 //! flange's profile is open, a wall's side fits whether its profile is open,
 //! a chain's start is an end of it, a vertex bend sits where two pieces
 //! meet, a patch condition's support meets its curve, a natural extend
-//! picks whole loops, and a spine limit lies on its spine.
+//! picks whole loops, and a spine limit is a point or a plane on its spine.
 //!
 //! A chain is read where every pick of the selection resolves to edges of
 //! the state, or picks a curve of one sketch whose solve is current. Two
@@ -22,13 +22,14 @@ use crate::design::options::{
     BodyForm, CornerRound, SectionCondition, SolidOutput, Support, Thickness, WallSide,
 };
 use crate::design::selection::{MemberOrder, Selection, SetSelection};
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
-use crate::math::portable::Portable;
+use crate::geometry::SolvedCurveGeometry;
 use crate::math::Point3;
 use crate::topology::EdgeCarrier;
 
 use super::super::matching::StateTopology;
-use super::{all_entities, edge_placed, position, surface_shape, Entity, InState, Probe};
+use super::super::ops::picks::{is_point_or_plane, refused};
+use super::{all_entities, planar, position, resolved_entities, Entity, InState, Probe};
+use apart::{apart, curve_distance, placed_position};
 
 /// How the edges of a selection join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -236,82 +237,6 @@ fn touches(topology: &StateTopology<'_>, face: &str, edges: &BTreeSet<&str>) -> 
                     .any(|vertex| holds(topology.vertex_faces.get(vertex.as_str())))
             })
     })
-}
-
-/// Whether `edge` lies wholly on one side of the plane of `face`, farther
-/// than `tolerance` from it. `None` where the face is not an unplaced plane,
-/// the edge is not on an unplaced line with two ends or a circle, or a body
-/// that holds either has a placement of its own.
-fn apart(topology: &StateTopology<'_>, face: &str, edge: &str, tolerance: f64) -> Option<bool> {
-    if topology.face_body(face)?.transform.is_some() || edge_placed(topology, edge) {
-        return None;
-    }
-    let (SolvedSurfaceGeometry::Plane(plane), false) = surface_shape(topology, face)? else {
-        return None;
-    };
-    let normal = *plane.frame().axis().as_raw();
-    let height = |point: Point3| point.vector_from(plane.origin().get()).dot(normal);
-    let record = topology.edges.get(edge)?;
-    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) = &record.carrier else {
-        return None;
-    };
-    match topology.curves.get(curve.as_str())?.geometry.solved()? {
-        SolvedCurveGeometry::Line(_) => {
-            let ends = record.ends.as_ref()?;
-            let start = height(position(topology, ends.start.as_str())?);
-            let end = height(position(topology, ends.end.as_str())?);
-            Some(start * end > 0.0 && start.abs().min(end.abs()) > tolerance)
-        }
-        SolvedCurveGeometry::Circle(circle) => {
-            let axis = *circle.frame().axis().as_raw();
-            let reach = circle.radius().get() * normal.cross(axis).norm();
-            Some(height(circle.center().get()).abs() - reach > tolerance)
-        }
-        _ => None,
-    }
-}
-
-/// The distance from `point` to the curve of `edge`, through its whole
-/// carrier. `None` where the curve is not an analytic line or circle or a
-/// body that holds the edge has a placement of its own.
-fn curve_distance(topology: &StateTopology<'_>, edge: &str, point: Point3) -> Option<f64> {
-    if edge_placed(topology, edge) {
-        return None;
-    }
-    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) =
-        &topology.edges.get(edge)?.carrier
-    else {
-        return None;
-    };
-    match topology.curves.get(curve.as_str())?.geometry.solved()? {
-        SolvedCurveGeometry::Line(line) => {
-            let offset = point.vector_from(line.origin().get());
-            Some(offset.cross(*line.direction().as_raw()).norm())
-        }
-        SolvedCurveGeometry::Circle(circle) => {
-            let axis = *circle.frame().axis().as_raw();
-            let offset = point.vector_from(circle.center().get());
-            let height = offset.dot(axis);
-            let across = offset.cross(axis).norm() - circle.radius().get();
-            Some(height.portable_hypot(across))
-        }
-        _ => None,
-    }
-}
-
-/// The position of `vertex` where every face it lies on belongs to a held
-/// body with no placement of its own.
-fn unplaced_position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
-    let faces = topology.vertex_faces.get(vertex)?;
-    let unplaced = faces.iter().all(|face| {
-        topology
-            .face_body(face)
-            .is_some_and(|body| body.transform.is_none())
-    });
-    if faces.is_empty() || !unplaced {
-        return None;
-    }
-    position(topology, vertex)
 }
 
 impl<'a> Probe<'_, 'a> {
@@ -529,7 +454,8 @@ impl<'a> Probe<'_, 'a> {
     }
 
     /// Each patch condition's support faces meet its boundary curve (§6.6).
-    /// A face is judged where it shares no edge or vertex with the curve.
+    /// A face is judged where it shares no edge or vertex with the curve,
+    /// and is off it where a bound shows every curve edge apart from it.
     fn patch_supports(&mut self, edges: &'a [PatchEdge]) {
         let mut off = BTreeSet::new();
         for edge in edges {
@@ -606,11 +532,36 @@ impl<'a> Probe<'_, 'a> {
     }
 
     /// `SpineLimits` targets are points or planes on the spine, where the
-    /// state exists (§6.6). A planar face is judged against the lines and
-    /// circles of the spine, and a vertex that ends no spine edge against
-    /// their carriers.
+    /// state exists (§6.6). A target that resolves to an edge, a body, or a
+    /// face that is not planar is no point or plane; a target whose pick
+    /// states such a kind is judged by its kind (`ops::swept`). A face is off
+    /// the spine where a bound shows every spine edge apart from it, and a
+    /// vertex that ends no spine edge where a bound shows it apart from every
+    /// one.
     fn spine_limits<O: MemberOrder>(&mut self, spine: &'a Selection<O>, limits: &'a SpineLimits) {
         let mut off = BTreeSet::new();
+        let mut shapeless = BTreeSet::new();
+        for target in [&limits.start, &limits.end].into_iter().flatten() {
+            if refused(target, is_point_or_plane).is_some() {
+                continue;
+            }
+            for state in self.states(&target.at) {
+                let Some(topology) = state.matcher.topology() else {
+                    continue;
+                };
+                for entity in resolved_entities(&state.matcher, topology, target) {
+                    match entity {
+                        Entity::Edge(id) | Entity::Body(id) => {
+                            shapeless.insert(id);
+                        }
+                        Entity::Face(face) if planar(topology, face) == Some(false) => {
+                            shapeless.insert(face);
+                        }
+                        Entity::Face(_) | Entity::Vertex(_) | Entity::Other => {}
+                    }
+                }
+            }
+        }
         for target in [&limits.start, &limits.end].into_iter().flatten() {
             if target.at != spine.at {
                 continue;
@@ -637,7 +588,7 @@ impl<'a> Probe<'_, 'a> {
                                     record.vertices().any(|end| end.as_str() == vertex)
                                 })
                             });
-                            let far = unplaced_position(topology, vertex).is_some_and(|point| {
+                            let far = placed_position(topology, vertex).is_some_and(|point| {
                                 path.iter().all(|&edge| {
                                     curve_distance(topology, edge, point)
                                         .is_some_and(|distance| distance > self.linear)
@@ -655,6 +606,12 @@ impl<'a> Probe<'_, 'a> {
             self.error(crate::rule!(
                 "design.spine-limit-off-spine",
                 "a SpineLimits target, {target}, does not lie on the spine"
+            ));
+        }
+        for target in shapeless {
+            self.error(crate::rule!(
+                "design.spine-limit-resolves-no-point-or-plane",
+                "a SpineLimits target resolves to {target}, which is no point or plane"
             ));
         }
     }
@@ -739,4 +696,5 @@ impl<'a> Probe<'_, 'a> {
     }
 }
 
+mod apart;
 mod sketch;

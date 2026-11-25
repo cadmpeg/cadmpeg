@@ -22,8 +22,8 @@ use crate::design::ops::shared::{
 use crate::design::ops::sheet_metal::SheetMetalKind;
 use crate::design::options::Boolean;
 use crate::design::selection::{
-    Keyed, Members, OccurrencePath, OrderedSelection, PickContext, PickTarget, Picked, Picks,
-    SelectionRule, SetSelection, StepRef,
+    Keyed, Members, OccurrencePath, OrderedSelection, PathStep, PickContext, PickTarget, Picked,
+    Picks, SelectionRule, SetSelection, StepRef,
 };
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
@@ -565,28 +565,96 @@ fn path_occurrences(path: &OccurrencePath) -> Option<Vec<&str>> {
         .collect()
 }
 
-/// The occurrences a pick's occurrence path steps through, where its
-/// context names a path of occurrence steps.
-fn occurrence_steps(pick: &Picked) -> Option<Vec<&str>> {
-    path_occurrences(pick_path(pick)?)
+/// The definition that owns the selections of a site's feature: its
+/// `component` where stated, else its scope's definition (§5.8).
+fn owner_definition(site: Site<'_>) -> Option<&str> {
+    site.index
+        .and_then(|index| index.features.get(site.feature))
+        .and_then(|feature| feature.component.as_ref())
+        .map(crate::ids::ProductDefinitionId::as_str)
+        .or(site.scope)
 }
 
-/// Whether a pick names an occurrence path under none of `roots`.
-fn under_none(pick: &Picked, roots: &[Vec<&str>]) -> bool {
-    occurrence_steps(pick).is_some_and(|steps| !roots.iter().any(|root| steps.starts_with(root)))
+/// A pick's occurrence path from the definition it starts at: the owner's
+/// definition for an `Occurrence` context, the assembly for `InContext`,
+/// with `own`, the owner's own place in that assembly (§5.8).
+struct Rooted<'a, T> {
+    root: &'a str,
+    own: Option<Vec<T>>,
+    steps: Vec<T>,
+}
+
+impl<'a, T: Clone + PartialEq> Rooted<'a, T> {
+    fn of(
+        pick: &'a Picked,
+        owner: Option<&'a str>,
+        steps: impl Fn(&'a OccurrencePath) -> Option<Vec<T>>,
+    ) -> Option<Self> {
+        match pick.context.as_ref()? {
+            PickContext::Occurrence(path) => Some(Self {
+                root: owner?,
+                own: None,
+                steps: steps(path)?,
+            }),
+            PickContext::InContext {
+                assembly,
+                own,
+                target: Some(target),
+            } => Some(Self {
+                root: assembly.definition.as_str(),
+                own: match own {
+                    Some(own) => Some(steps(own)?),
+                    None => None,
+                },
+                steps: steps(target)?,
+            }),
+            _ => None,
+        }
+    }
+
+    /// The steps of `self` from the root of `frame`, where `self` starts at
+    /// that root or at the owner's definition that `frame` places by `own`.
+    fn steps_from_root_of(&self, frame: &Self, owner: Option<&str>) -> Option<Vec<T>> {
+        if self.root == frame.root {
+            return Some(self.steps.clone());
+        }
+        if self.own.is_some() || Some(self.root) != owner {
+            return None;
+        }
+        let mut steps = frame.own.clone()?;
+        steps.extend_from_slice(&self.steps);
+        Some(steps)
+    }
+
+    /// Whether `self` lies under `seed`; `None` where their paths start at
+    /// definitions neither places in the other.
+    fn under(&self, seed: &Self, owner: Option<&str>) -> Option<bool> {
+        if let Some(seed_steps) = seed.steps_from_root_of(self, owner) {
+            return Some(self.steps.starts_with(&seed_steps));
+        }
+        self.steps_from_root_of(seed, owner)
+            .map(|steps| steps.starts_with(&seed.steps))
+    }
 }
 
 /// A chain's pins are two distinct axes, and its pins and native picks pick
 /// the geometry of the pattern's seeds (§6.7). A pick is judged where it and
-/// every seed name their occurrences by paths of occurrence steps.
+/// every seed name their occurrences by paths of occurrence steps from one
+/// definition, or from an assembly and the owner's definition the
+/// `InContext` pick places in it by `own`.
 fn check_chain_seeds(
     site: Site<'_>,
     seeds: &OrderedSelection,
     links: &ChainLinks,
     findings: &mut Vec<Finding>,
 ) {
-    let seeds: Option<Vec<Vec<&str>>> =
-        picks::named(seeds).and_then(|seeds| seeds.iter().map(occurrence_steps).collect());
+    let owner = owner_definition(site);
+    let seeds: Option<Vec<_>> = picks::named(seeds).and_then(|seeds| {
+        seeds
+            .iter()
+            .map(|seed| Rooted::of(seed, owner, path_occurrences))
+            .collect()
+    });
     let off_seeds = |selection: &OrderedSelection| {
         let Some(seeds) = seeds.as_ref().filter(|seeds| !seeds.is_empty()) else {
             return false;
@@ -594,7 +662,12 @@ fn check_chain_seeds(
         picks::named(selection)
             .unwrap_or_default()
             .iter()
-            .any(|pick| under_none(pick, seeds))
+            .filter_map(|pick| Rooted::of(pick, owner, path_occurrences))
+            .any(|pick| {
+                seeds
+                    .iter()
+                    .all(|seed| pick.under(seed, owner) == Some(false))
+            })
     };
     match links {
         ChainLinks::Connected(links) => {
@@ -1329,13 +1402,28 @@ fn check_participant_operands(
             else {
                 return;
             };
+            let owner = owner_definition(site);
+            let rooted = |pick| {
+                Rooted::of(pick, owner, |path| {
+                    Some(path.0.iter().collect::<Vec<&PathStep>>())
+                })
+            };
+            let participants: Vec<_> = context
+                .participants
+                .values()
+                .filter_map(listed_participants)
+                .flatten()
+                .filter_map(rooted)
+                .collect();
             for list in [keep, remove].into_iter().flatten() {
                 let Some(pieces) = picks::named(list) else {
                     continue;
                 };
-                for path in pieces.iter().filter_map(pick_path) {
-                    let of_participant = members.iter().any(|member| path.0.starts_with(&member.0));
-                    if !of_participant {
+                for piece in pieces.iter().filter_map(rooted) {
+                    let off = participants
+                        .iter()
+                        .all(|member| piece.under(member, owner) == Some(false));
+                    if off {
                         error(
                             findings,
                             site.entity,
