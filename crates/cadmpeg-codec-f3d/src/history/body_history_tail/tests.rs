@@ -409,6 +409,10 @@ fn a_body_with_an_unknown_slot_retains_the_tail_native() {
 }
 
 fn body_update(lump: i64, transform: i64) -> AsmHistory {
+    body_shape_update(0, -1, lump, -1, transform)
+}
+
+fn body_shape_update(key: i64, pattern: i64, lump: i64, wire: i64, transform: i64) -> AsmHistory {
     use cadmpeg_asm::sab::{Record, Token};
     let base = history();
     let states = base
@@ -437,24 +441,27 @@ fn body_update(lump: i64, transform: i64) -> AsmHistory {
         })
         .collect();
     let history = crate::test_support::history::history(base.id.clone(), 0, None, false, states);
-    let record = |attribute, lump, transform| Record {
+    let record = |attribute, key, pattern, lump, wire, transform| Record {
         index: 1,
         name: "body".into(),
         offset: 0,
         len: 0,
         tokens: vec![
             Token::Ref(attribute),
-            Token::Long(0),
-            Token::Ref(-1),
+            Token::Long(key),
+            Token::Ref(pattern),
             Token::Ref(lump),
-            Token::Ref(-1),
+            Token::Ref(wire),
             Token::Ref(transform),
         ]
         .into(),
     };
     history.check_transitions().unwrap();
     history.cache_record_archive(crate::history_records::CachedRecordArchive {
-        archive: HashMap::from([(200, record(149, 3, 4)), (201, record(5, lump, transform))]),
+        archive: HashMap::from([
+            (200, record(149, 0, -1, 3, -1, 4)),
+            (201, record(5, key, pattern, lump, wire, transform)),
+        ]),
         subtypes: cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&[]),
     });
     history
@@ -490,4 +497,21 @@ fn a_body_transform_update_retains_a_tail() {
             .len(),
         1
     );
+}
+
+#[test]
+fn a_body_key_pattern_or_wire_update_retains_a_tail() {
+    let scope = scope(59);
+    for history in [
+        body_shape_update(1, -1, 3, -1, 4),
+        body_shape_update(0, 7, 3, -1, 4),
+        body_shape_update(0, -1, 3, 9, 4),
+    ] {
+        assert_eq!(
+            collect(&[feature(&scope, 1)], &[scope.clone()], &[history], None)
+                .tails
+                .len(),
+            1
+        );
+    }
 }
