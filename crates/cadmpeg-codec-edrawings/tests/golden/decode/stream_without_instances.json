@@ -152,8 +152,7 @@
           "value": {
             "code": "model.no-geometry",
             "kind": "geometry_not_transferred",
-            "namespace": "edrawings",
-            "strict_floor": "warning"
+            "namespace": "edrawings"
           }
         },
         "message": "the model stream holds no instance with a body that could be built",
