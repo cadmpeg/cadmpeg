@@ -281,8 +281,8 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
             .as_bytes()
     );
     assert_eq!(
-        serde_json::to_vec(first.report()).expect("required invariant"),
-        serde_json::to_vec(second.report()).expect("required invariant")
+        cadmpeg_core::serde_erase::json::to_vec(first.report()).expect("required invariant"),
+        cadmpeg_core::serde_erase::json::to_vec(second.report()).expect("required invariant")
     );
 }
 

@@ -363,9 +363,10 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
     ] {
         let read: cadmpeg_ir::native::Native =
-            serde_json::from_value(wire.clone()).expect("native store reads back");
+            cadmpeg_core::serde_erase::json::from_value(wire.clone())
+                .expect("native store reads back");
         assert_eq!(
-            serde_json::to_value(read).expect("native store writes back"),
+            cadmpeg_core::serde_erase::json::to_value(read).expect("native store writes back"),
             wire
         );
     }
@@ -374,7 +375,8 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": true}}),
     ] {
         assert!(
-            serde_json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::Native>(wire)
+                .is_err(),
             "native namespace and arena maps refuse invalid value shapes"
         );
     }
@@ -385,17 +387,19 @@ fn every_hand_written_deserialize_states_its_coverage() {
 /// open native field map and a closed hand-written object adapter.
 #[test]
 fn compiled_hand_readers_keep_their_admission_boundaries() {
-    let native = serde_json::from_value::<cadmpeg_ir::native::NativeRecord>(serde_json::json!({
-        "id": "test:source-census:record#0",
-        "codec_field": {"preserved": true},
-    }))
+    let native = cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::NativeRecord>(
+        serde_json::json!({
+            "id": "test:source-census:record#0",
+            "codec_field": {"preserved": true},
+        }),
+    )
     .expect("NativeRecord's open field reader admits codec-owned fields");
     assert_eq!(
         native.field("codec_field"),
         Some(serde_json::json!({"preserved": true}))
     );
 
-    let unknown_configuration = serde_json::from_value::<
+    let unknown_configuration = cadmpeg_core::serde_erase::json::from_value::<
         cadmpeg_ir::features::parameters::ConfigurationEvaluation,
     >(serde_json::json!({
         "kind": "suppressed",

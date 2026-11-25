@@ -845,14 +845,6 @@ macro_rules! declare_topology {
             )*
         }
 
-        impl TopologyReadWire {
-            fn deserialize_erased(
-                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
-            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
-                Self::deserialize(deserializer)
-            }
-        }
-
         impl Topology {
             fn deserialize_direct<'de, D>(deserializer: D) -> Result<Self, D::Error>
             where
@@ -977,10 +969,7 @@ macro_rules! declare_topology {
             where
                 D: Deserializer<'de>,
             {
-                let wire = cadmpeg_core::serde_erase::deserialize_with(
-                    deserializer,
-                    TopologyReadWire::deserialize_erased,
-                )?;
+                let wire = TopologyReadWire::deserialize(deserializer)?;
                 Topology::from_read_wire(wire, &mut |_, _, error| Err(error))
                     .map_err(serde::de::Error::custom)
             }
@@ -1842,12 +1831,6 @@ macro_rules! declare_model_wire {
         }
 
         impl ModelReadWire {
-            fn deserialize_erased(
-                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
-            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
-                Self::deserialize(deserializer)
-            }
-
             fn into_model(mut self) -> Model {
                 Model {
                     $($field: model_read_value!(self, $field),)*
@@ -1905,10 +1888,7 @@ macro_rules! declare_model_wire {
             where
                 D: Deserializer<'de>,
             {
-                let wire = cadmpeg_core::serde_erase::deserialize_with(
-                    deserializer,
-                    ModelReadWire::deserialize_erased,
-                )?;
+                let wire = ModelReadWire::deserialize(deserializer)?;
                 Ok(wire.into_model())
             }
         }
@@ -2947,14 +2927,6 @@ struct CadIrReadWire {
     native: Native,
 }
 
-impl CadIrReadWire {
-    fn deserialize_erased(
-        deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
-    ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
-        Self::deserialize(deserializer)
-    }
-}
-
 impl CadIr {
     pub(crate) fn serialize_erased(
         &self,
@@ -3050,10 +3022,7 @@ impl Serialize for CadIr {
 
 impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = cadmpeg_core::serde_erase::deserialize_with(
-            deserializer,
-            CadIrReadWire::deserialize_erased,
-        )?;
+        let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.check_arena_order().map_err(serde::de::Error::custom)?;
         wire.admit()
@@ -3069,8 +3038,7 @@ impl CadIr {
     ///
     /// Where `value` is not a document of this IR version.
     pub fn from_projection(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        let wire =
-            cadmpeg_core::serde_erase::deserialize_with(value, CadIrReadWire::deserialize_erased)?;
+        let wire: CadIrReadWire = cadmpeg_core::serde_erase::json::from_value(value)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.admit()
     }
@@ -3505,12 +3473,15 @@ impl CadIr {
 
         let probe = crate::bounds::read_json::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        one_zero::from_str::<Self>(s).map_err(|error| {
+        let wire = one_zero::from_str::<CadIrReadWire>(s).map_err(|error| {
             match legacy::omitted_arena_refusal(&error.to_string()) {
                 Some(refusal) => serde::de::Error::custom(refusal),
                 None => error,
             }
-        })
+        })?;
+        check_ir_version(wire.ir_version.as_ref())?;
+        wire.check_arena_order().map_err(serde::de::Error::custom)?;
+        wire.admit()
     }
 
     /// Sorts every arena of the document's homes and native namespaces by

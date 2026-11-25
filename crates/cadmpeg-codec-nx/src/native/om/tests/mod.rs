@@ -21,8 +21,12 @@ fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
     ] {
         let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
             "object_id":value, "raw_object_id":cadmpeg_ir::native::bytes::NativeBytes::from(raw), "source_offset":12});
-        let record: super::DataBlockReference = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record: super::DataBlockReference =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            wire
+        );
     }
     for (value, raw) in [
         (1, vec![0]),
@@ -33,10 +37,12 @@ fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
     ] {
         let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
             "object_id":value, "raw_object_id":cadmpeg_ir::native::bytes::NativeBytes::from(raw), "source_offset":12});
-        assert!(serde_json::from_value::<super::DataBlockReference>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("object_id/raw_object_id"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::DataBlockReference>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("object_id/raw_object_id")
+        );
     }
 }
 
@@ -346,25 +352,35 @@ fn stable_data_block_identity_excludes_position_and_scopes_role() {
 fn control_form_wire_checks_nonempty_counts_and_derived_length() {
     let json = r#"{"id":"c","data_block":"b","kind":"zero_prefixed","value_count":2,"byte_len":8,"source_offset":0}"#;
     let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&value).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+        json
+    );
     for (field, invalid) in [("value_count", 0), ("byte_len", 0), ("byte_len", 7)] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire[field] = invalid.into();
-        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains(field));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field)
+        );
     }
     let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"byte_len":1,"source_offset":0}"#;
     let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&value).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+        json
+    );
     for field in ["value_count", "byte_len"] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire[field] = 0.into();
-        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains(field));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field)
+        );
     }
 }
 
@@ -372,21 +388,26 @@ fn control_form_wire_checks_nonempty_counts_and_derived_length() {
 fn control_leading_value_preserves_wire_and_rejects_width_mismatch() {
     let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"leading_value_width":2,"leading_value":0,"byte_len":26,"source_offset":0}"#;
     let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&value).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+        json
+    );
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["leading_value_width"] = 4.into();
     assert!(
-        serde_json::from_value::<super::DataBlockControlForm>(wire.clone())
+        cadmpeg_core::serde_erase::json::from_value::<super::DataBlockControlForm>(wire.clone())
             .unwrap_err()
             .to_string()
             .contains("leading_value_width")
     );
     wire["leading_value_width"] = 2.into();
     wire["leading_value"] = 65536.into();
-    assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
-        .unwrap_err()
-        .to_string()
-        .contains("leading_value"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<super::DataBlockControlForm>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("leading_value")
+    );
 }
 
 #[test]
@@ -667,7 +688,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(references.len(), 3);
     assert_eq!(references[0].record, object_records[1].id);
     assert_eq!(references[0].object_id, 0x102);
-    let wire = serde_json::to_value(&references).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&references).unwrap();
     assert_eq!(wire[0]["value"], 0x1234_5678);
     assert_eq!(wire[0]["target_record"], serde_json::Value::Null);
     assert_eq!(wire[1]["kind"], "tagged28");

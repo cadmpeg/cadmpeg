@@ -1059,7 +1059,8 @@ mod tests {
             "active_design_view": "Primary", "active_design_view_state": [0, 0]
         });
         let admitted: UfrxRepresentationRecord =
-            serde_json::from_value(representation.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(representation.clone())
+                .expect("valid fixture");
         let record = Row {
             id: "inventor:ufrx:representation#0",
             representation: &admitted,
@@ -1078,7 +1079,7 @@ mod tests {
             "parameters": [], "suffix_len": 77, "suffix_sha256": "a".repeat(64)
         });
         let record: UfrxModelStateRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1092,7 +1093,7 @@ mod tests {
             "version": 0, "flags": 0
         });
         let record: ExternalReferenceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1107,7 +1108,7 @@ mod tests {
             "record_sha256": "a".repeat(64)
         });
         let record: EmbeddedReferenceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1121,7 +1122,7 @@ mod tests {
             "record_sha256": "a".repeat(64)
         });
         let record: UfrxOccurrenceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1143,7 +1144,7 @@ mod tests {
             tail_len: 0,
             tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("valid fixture"),
         }));
-        let expected = serde_json::to_value(&record).expect("valid fixture");
+        let expected = cadmpeg_core::serde_erase::json::to_value(&record).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1196,12 +1197,19 @@ mod tests {
             "reference_id": 1, "occurrence_count": 0, "version": 0, "flags": 0
         });
         let record: ExternalReferenceRecord =
-            serde_json::from_value(valid.clone()).expect("zero database ID is valid");
-        assert_eq!(serde_json::to_value(record).expect("record"), valid);
+            cadmpeg_core::serde_erase::json::from_value(valid.clone())
+                .expect("zero database ID is valid");
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).expect("record"),
+            valid
+        );
         for database_id in ["", "not-hex", "0001", "g0000000000000000000000000000000"] {
             let mut wire = valid.clone();
             wire["database_id"] = serde_json::json!(database_id);
-            assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ExternalReferenceRecord>(wire)
+                    .is_err()
+            );
         }
         for id in [
             "",
@@ -1211,11 +1219,17 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire["id"] = serde_json::json!(id);
-            assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ExternalReferenceRecord>(wire)
+                    .is_err()
+            );
         }
         let mut wrong_ordinal = valid;
         wrong_ordinal["ordinal"] = serde_json::json!(7);
-        assert!(serde_json::from_value::<ExternalReferenceRecord>(wrong_ordinal).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<ExternalReferenceRecord>(wrong_ordinal)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1242,7 +1256,9 @@ mod tests {
             let mut wire = valid.clone();
             wire["path"] = serde_json::json!(path);
             wire["document_id"] = serde_json::json!(document_id);
-            let record = serde_json::from_value::<ExternalReferenceRecord>(wire.clone());
+            let record = cadmpeg_core::serde_erase::json::from_value::<ExternalReferenceRecord>(
+                wire.clone(),
+            );
             if accepted {
                 if document_id.chars().all(|character| character == '0') {
                     wire.as_object_mut()
@@ -1250,8 +1266,10 @@ mod tests {
                         .remove("document_id");
                 }
                 assert_eq!(
-                    serde_json::to_value(record.expect("valid native record fixture"))
-                        .expect("valid native record fixture"),
+                    cadmpeg_core::serde_erase::json::to_value(
+                        record.expect("valid native record fixture")
+                    )
+                    .expect("valid native record fixture"),
                     wire
                 );
             } else {
@@ -1279,15 +1297,19 @@ mod tests {
             "record_sha256": "a".repeat(64)
         });
         let admitted: UfrxOccurrenceRecord =
-            serde_json::from_value(occurrence.clone()).expect("valid native record fixture");
+            cadmpeg_core::serde_erase::json::from_value(occurrence.clone())
+                .expect("valid native record fixture");
         assert_eq!(
-            serde_json::to_value(admitted).expect("valid native record fixture"),
+            cadmpeg_core::serde_erase::json::to_value(admitted)
+                .expect("valid native record fixture"),
             occurrence
         );
         let admitted: EmbeddedReferenceRecord =
-            serde_json::from_value(embedded.clone()).expect("valid native record fixture");
+            cadmpeg_core::serde_erase::json::from_value(embedded.clone())
+                .expect("valid native record fixture");
         assert_eq!(
-            serde_json::to_value(admitted).expect("valid native record fixture"),
+            cadmpeg_core::serde_erase::json::to_value(admitted)
+                .expect("valid native record fixture"),
             embedded
         );
         for (field, value) in [
@@ -1298,23 +1320,29 @@ mod tests {
         ] {
             let mut wire = occurrence.clone();
             wire[field] = value.clone();
-            assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
-                .expect_err("invalid native record fixture")
-                .to_string()
-                .contains(field));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<UfrxOccurrenceRecord>(wire)
+                    .expect_err("invalid native record fixture")
+                    .to_string()
+                    .contains(field)
+            );
             let mut wire = embedded.clone();
             wire[field] = value;
-            assert!(serde_json::from_value::<EmbeddedReferenceRecord>(wire)
-                .expect_err("invalid native record fixture")
-                .to_string()
-                .contains(field));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<EmbeddedReferenceRecord>(wire)
+                    .expect_err("invalid native record fixture")
+                    .to_string()
+                    .contains(field)
+            );
         }
         let mut wire = occurrence;
         wire["header_padding_words"] = serde_json::json!(9);
-        assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
-            .expect_err("invalid native record fixture")
-            .to_string()
-            .contains("header_padding_words"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<UfrxOccurrenceRecord>(wire)
+                .expect_err("invalid native record fixture")
+                .to_string()
+                .contains("header_padding_words")
+        );
     }
 
     #[test]
@@ -1325,28 +1353,35 @@ mod tests {
             "active_design_view": "Primary", "active_design_view_state": [0, 0]
         });
         let record: UfrxRepresentationRecord =
-            serde_json::from_value(valid.clone()).expect("valid native record fixture");
+            cadmpeg_core::serde_erase::json::from_value(valid.clone())
+                .expect("valid native record fixture");
         assert_eq!(
-            serde_json::to_value(record).expect("valid native record fixture"),
+            cadmpeg_core::serde_erase::json::to_value(record).expect("valid native record fixture"),
             valid
         );
         let mut wire = valid.clone();
         wire["active_design_view"] = serde_json::json!("");
-        assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire)
-            .expect_err("invalid native record fixture")
-            .to_string()
-            .contains("active_design_view"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<UfrxRepresentationRecord>(wire)
+                .expect_err("invalid native record fixture")
+                .to_string()
+                .contains("active_design_view")
+        );
         for field in ["name", "kind"] {
             let mut wire = valid.clone();
             wire["design_views"][0][field] = serde_json::json!("");
-            assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire)
-                .expect_err("invalid native record fixture")
-                .to_string()
-                .contains(field));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<UfrxRepresentationRecord>(wire)
+                    .expect_err("invalid native record fixture")
+                    .to_string()
+                    .contains(field)
+            );
         }
         let mut wire = valid;
         wire["design_views"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<UfrxRepresentationRecord>(wire).is_ok()
+        );
     }
 
     #[test]
@@ -1357,9 +1392,10 @@ mod tests {
             "suffix_len": 77, "suffix_sha256": "a".repeat(64)
         });
         let record: UfrxModelStateRecord =
-            serde_json::from_value(valid.clone()).expect("valid native record fixture");
+            cadmpeg_core::serde_erase::json::from_value(valid.clone())
+                .expect("valid native record fixture");
         assert_eq!(
-            serde_json::to_value(record).expect("valid native record fixture"),
+            cadmpeg_core::serde_erase::json::to_value(record).expect("valid native record fixture"),
             valid
         );
         for (field, value) in [
@@ -1372,7 +1408,7 @@ mod tests {
             let mut wire = valid.clone();
             wire[field] = value;
             assert!(
-                serde_json::from_value::<UfrxModelStateRecord>(wire).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<UfrxModelStateRecord>(wire).is_err(),
                 "{field}"
             );
         }

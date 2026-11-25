@@ -29,15 +29,23 @@ fn rows(form: u8) -> Value {
 #[test]
 fn roster_hoists_each_legal_form_and_preserves_row_json() {
     for wire in [json!([]), rows(0), rows(1)] {
-        let occurrences: FastLoadOccurrences = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&occurrences).unwrap(), wire);
+        let occurrences: FastLoadOccurrences =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&occurrences).unwrap(),
+            wire
+        );
         let namespace_wire = json!({"fast_load_component_occurrences": wire});
-        let namespace: NativeNamespace = serde_json::from_value(namespace_wire.clone()).unwrap();
+        let namespace: NativeNamespace =
+            cadmpeg_core::serde_erase::json::from_value(namespace_wire.clone()).unwrap();
         assert_eq!(
             namespace.admit::<FastLoadOccurrences>().unwrap(),
             occurrences
         );
-        assert_eq!(serde_json::to_value(namespace).unwrap(), namespace_wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(namespace).unwrap(),
+            namespace_wire
+        );
     }
 }
 
@@ -47,17 +55,21 @@ fn roster_rejects_disagreeing_locally_valid_lane_forms_before_hoisting() {
         let mut wire = rows(first);
         wire[1]["occurrence_lane_form"] = json!(1 - first);
         let records: Vec<FastLoadComponentOccurrenceWire> =
-            serde_json::from_value(wire.clone()).unwrap();
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert!(FastLoadOccurrences::try_from(records)
             .unwrap_err()
             .to_string()
             .contains("occurrence_lane_form"));
-        assert!(serde_json::from_value::<FastLoadOccurrences>(wire.clone())
-            .unwrap_err()
-            .to_string()
-            .contains("occurrence_lane_form"));
-        let namespace: NativeNamespace =
-            serde_json::from_value(json!({"fast_load_component_occurrences": wire})).unwrap();
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FastLoadOccurrences>(wire.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("occurrence_lane_form")
+        );
+        let namespace: NativeNamespace = cadmpeg_core::serde_erase::json::from_value(
+            json!({"fast_load_component_occurrences": wire}),
+        )
+        .unwrap();
         assert!(namespace
             .admit::<FastLoadOccurrences>()
             .unwrap_err()
@@ -73,8 +85,10 @@ fn roster_rejects_disagreeing_locally_valid_lane_forms_before_hoisting() {
 
 #[test]
 fn native_occurrence_admission_preserves_caller_resource_refusals() {
-    let namespace: NativeNamespace =
-        serde_json::from_value(json!({"fast_load_component_occurrences": rows(0)})).unwrap();
+    let namespace: NativeNamespace = cadmpeg_core::serde_erase::json::from_value(
+        json!({"fast_load_component_occurrences": rows(0)}),
+    )
+    .unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert(cadmpeg_ir::codec_id!("nx"), namespace);
     crate::test_support::with_decode_context_over(

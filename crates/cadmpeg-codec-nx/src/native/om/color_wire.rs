@@ -229,10 +229,14 @@ mod tests {
     fn palette_definition_borrowed_wire_matches_owned_bytes() {
         let json = r#"{"id":"nx:om:color#0","color_table":"table","color_index":128,"name":"test","rgb":[0.0,1.0,0.5],"raw_color_index":"807f","raw_components":["00","01","3000000000000000"],"source_offset":10,"component_source_offsets":[20,30,40]}"#;
         let record: PartColorDefinition = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&PartColorDefinitionWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            json.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&PartColorDefinitionWire::from(record.clone()))
+                .unwrap()
         );
     }
 
@@ -261,15 +265,16 @@ mod tests {
     fn palette_table_borrowed_wire_matches_owned_bytes() {
         let record = table();
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&PartColorTableWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&PartColorTableWire::from(record.clone()))
+                .unwrap()
         );
     }
 
     #[test]
     fn palette_table_retained_limit_refuses_before_definition_clone() {
         let record = table();
-        let expected = serde_json::to_value(&record).unwrap();
+        let expected = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
     }
 
@@ -277,7 +282,10 @@ mod tests {
     fn palette_definition_keeps_wire_and_rejects_derived_field_mismatches() {
         let json = r#"{"id":"color","color_table":"table","color_index":128,"name":"test","rgb":[0.0,1.0,0.5],"raw_color_index":"807f","raw_components":["00","01","3000000000000000"],"source_offset":10,"component_source_offsets":[20,30,40]}"#;
         let definition: PartColorDefinition = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&definition).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&definition).unwrap(),
+            json
+        );
         for (field, invalid) in [
             ("rgb", serde_json::json!([0.0, 1.0, 0.25])),
             ("raw_color_index", serde_json::json!("8080")),
@@ -286,7 +294,8 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid;
-            let error = serde_json::from_value::<PartColorDefinition>(wire).unwrap_err();
+            let error = cadmpeg_core::serde_erase::json::from_value::<PartColorDefinition>(wire)
+                .unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
     }
@@ -301,9 +310,9 @@ mod tests {
             source_entry: "entry".into(),
             source_offset: 0,
         };
-        let wire = serde_json::to_value(&table).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&table).unwrap();
         assert_eq!(
-            serde_json::from_value::<PartColorTable>(wire.clone()).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<PartColorTable>(wire.clone()).unwrap(),
             table
         );
         for (field, invalid) in [
@@ -313,7 +322,8 @@ mod tests {
         ] {
             let mut invalid_wire = wire.clone();
             invalid_wire[field] = invalid;
-            let error = serde_json::from_value::<PartColorTable>(invalid_wire).unwrap_err();
+            let error = cadmpeg_core::serde_erase::json::from_value::<PartColorTable>(invalid_wire)
+                .unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
     }

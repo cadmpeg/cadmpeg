@@ -82,13 +82,22 @@ mod tests {
                 "delta_key": 0, "delta_is_forward": false, "identifier": 0x1234_5678,
             },
         });
-        let prefix: PartitionPrefixState = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(serde_json::to_value(prefix).unwrap(), value);
+        let prefix: PartitionPrefixState =
+            cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(prefix).unwrap(),
+            value
+        );
         let mut duplicate = value.clone();
         duplicate["partition"]["xmt"] = 9.into();
-        assert!(serde_json::from_value::<PartitionPrefixState>(duplicate).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PartitionPrefixState>(duplicate).is_err()
+        );
         let mut wrong_pointer = value;
         wrong_pointer["partition"]["current_pmark"] = 8.into();
-        assert!(serde_json::from_value::<PartitionPrefixState>(wrong_pointer).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PartitionPrefixState>(wrong_pointer)
+                .is_err()
+        );
     }
 }

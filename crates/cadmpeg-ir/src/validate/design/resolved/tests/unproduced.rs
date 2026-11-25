@@ -31,7 +31,7 @@ fn names_on_an_unproduced_extent_are_native() {
     let body = body(&ir);
     ir.design.scopes[0].current[0].bodies.clear();
     ir.design.scopes[0].unproduced.insert(body);
-    let native: NameEntry = serde_json::from_value(json!({
+    let native: NameEntry = cadmpeg_core::serde_erase::json::from_value(json!({
         "native": { "codec": "test", "value": {"kind": "text", "value": "face"} }
     }))
     .unwrap();

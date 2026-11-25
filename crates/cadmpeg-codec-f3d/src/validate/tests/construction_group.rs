@@ -611,8 +611,10 @@ fn pattern_native(
     native.design_construction_operand_groups[0].operand_role =
         DesignConstructionOperandRole::Other(first);
     if let Some(second) = second {
-        let mut group =
-            serde_json::to_value(&native.design_construction_operand_groups[0]).unwrap();
+        let mut group = cadmpeg_core::serde_erase::json::to_value(
+            &native.design_construction_operand_groups[0],
+        )
+        .unwrap();
         group["id"] = format!("{stream}:design-construction-operand-group#2000").into();
         group["record_index"] = 102.into();
         group["scope_reference_ordinal"] = 2.into();
@@ -625,7 +627,7 @@ fn pattern_native(
         group["role_offset"] = 2_040.into();
         group["paired_byte_offset"] = 2_080.into();
         let mut group: crate::records::topology::construction::DesignConstructionOperandGroup =
-            serde_json::from_value(group).unwrap();
+            cadmpeg_core::serde_erase::json::from_value(group).unwrap();
         group.operand_role = DesignConstructionOperandRole::Other(second);
         native.design_construction_operand_groups.push(group);
         for (index, offset) in [(102, 2_000), (103, 2_100)] {
@@ -716,7 +718,9 @@ fn path_seed_native(
     };
     let stream = "f3d:Design/BulkStream.dat";
     let mut native = pattern_native(kind, DesignOperandRole::PATH_SEED, None);
-    let mut group = serde_json::to_value(&native.design_construction_operand_groups[0]).unwrap();
+    let mut group =
+        cadmpeg_core::serde_erase::json::to_value(&native.design_construction_operand_groups[0])
+            .unwrap();
     group["members"] = serde_json::json!([]);
     group["member_offsets"] = serde_json::json!([]);
     group["frame"]["auxiliary_record_indices"] = serde_json::json!([103, 106]);
@@ -725,7 +729,7 @@ fn path_seed_native(
     group["frame"]["trailing_record_offsets"] = serde_json::json!([1_030]);
     edit(&mut group);
     let mut group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(group).unwrap();
+        cadmpeg_core::serde_erase::json::from_value(group).unwrap();
     let path = |record_index: u32, byte_offset: u64, placement| {
         let scope_offset = byte_offset
             + match placement {

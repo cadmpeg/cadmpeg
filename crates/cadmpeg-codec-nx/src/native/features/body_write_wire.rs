@@ -187,10 +187,13 @@ mod tests {
     fn body_write_borrowed_wire_matches_owned_bytes() {
         let json = WIRE.replace("\"id\":\"write\"", "\"id\":\"nx:feature:body-write#0\"");
         let record: FeatureOperationBodyWrite = serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&BodyWriteWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            json.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&BodyWriteWire::from(record.clone())).unwrap()
         );
     }
 
@@ -211,10 +214,14 @@ mod tests {
         wire["group_node_source_offset"] = serde_json::json!(101);
         wire["body_image_object_index_source_offset"] = serde_json::json!(120);
         wire["byte_len"] = serde_json::json!(24);
-        let write: FeatureOperationBodyWrite = serde_json::from_value(wire.clone()).unwrap();
+        let write: FeatureOperationBodyWrite =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(write.frame.group_node_offset(), 101);
         assert_eq!(write.frame.body_image_offset(), 120);
-        assert_eq!(serde_json::to_value(&write).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&write).unwrap(),
+            wire
+        );
         cadmpeg_test_support::native_serialization::assert_native_limit(&write, wire.clone());
         for (field, value) in [
             ("group_node_source_offset", 102),
@@ -224,18 +231,25 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             invalid[field] = serde_json::json!(value);
-            assert!(serde_json::from_value::<FeatureOperationBodyWrite>(invalid).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<FeatureOperationBodyWrite>(invalid)
+                    .is_err()
+            );
         }
     }
 
     #[test]
     fn body_write_wire_preserves_alias_tokens_and_checks_derived_fields() {
         let write: FeatureOperationBodyWrite = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_string(&write).unwrap(), WIRE);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&write).unwrap(),
+            WIRE
+        );
         for index in [1, 17, 20, 255] {
             let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             wire["endpoint_class_index"] = serde_json::json!(index);
-            let write: FeatureOperationBodyWrite = serde_json::from_value(wire).unwrap();
+            let write: FeatureOperationBodyWrite =
+                cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
             assert_eq!(write.frame.endpoint_class_index().get(), index);
         }
         for (field, value) in [
@@ -254,10 +268,12 @@ mod tests {
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             invalid[field] = value;
-            assert!(serde_json::from_value::<FeatureOperationBodyWrite>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<FeatureOperationBodyWrite>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
+            );
         }
     }
 }

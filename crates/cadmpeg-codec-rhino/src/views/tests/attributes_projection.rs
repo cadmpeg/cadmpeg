@@ -35,7 +35,7 @@ fn sample_attributes() -> ViewAttributes {
 #[test]
 fn view_attributes_projection_emits_the_documented_keys_in_order() {
     let attributes = sample_attributes();
-    let json = serde_json::to_string(&AttributesField(Some(&attributes)))
+    let json = cadmpeg_core::serde_erase::json::to_string(&AttributesField(Some(&attributes)))
         .expect("view attributes serialize");
     let keys = [
         "\"view_type\":1",
@@ -56,7 +56,8 @@ fn view_attributes_projection_emits_the_documented_keys_in_order() {
 
 #[test]
 fn view_attributes_projection_emits_null_keys_when_absent() {
-    let json = serde_json::to_string(&AttributesField(None)).expect("view attributes serialize");
+    let json = cadmpeg_core::serde_erase::json::to_string(&AttributesField(None))
+        .expect("view attributes serialize");
     assert_eq!(
         json,
         concat!(

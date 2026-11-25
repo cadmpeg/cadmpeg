@@ -50,8 +50,11 @@ mod tests {
             "00000000-0000-0000-0000-000000000000",
         ] {
             let value = CanonicalUuid::new(text.to_owned()).unwrap();
-            let json = serde_json::to_string(text).unwrap();
-            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            let json = cadmpeg_core::serde_erase::json::to_string(text).unwrap();
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+                json
+            );
             assert_eq!(
                 serde_json::from_str::<CanonicalUuid<String>>(&json).unwrap(),
                 value
@@ -68,7 +71,7 @@ mod tests {
             "01234567-89ab-cdef-0123-456789abcdeg",
             "01234567-89ab-cdef-0123-456789abcde",
         ] {
-            let json = serde_json::to_string(text).unwrap();
+            let json = cadmpeg_core::serde_erase::json::to_string(text).unwrap();
             assert!(serde_json::from_str::<CanonicalUuid<String>>(&json)
                 .unwrap_err()
                 .to_string()
@@ -84,12 +87,12 @@ mod tests {
             assert_eq!(borrowed.as_str(), text);
             assert_eq!(owned.as_str(), text);
             assert_eq!(
-                serde_json::to_string(&borrowed).unwrap(),
-                serde_json::to_string(text).unwrap()
+                cadmpeg_core::serde_erase::json::to_string(&borrowed).unwrap(),
+                cadmpeg_core::serde_erase::json::to_string(text).unwrap()
             );
             assert_eq!(
-                serde_json::to_string(&owned).unwrap(),
-                serde_json::to_string(text).unwrap()
+                cadmpeg_core::serde_erase::json::to_string(&owned).unwrap(),
+                cadmpeg_core::serde_erase::json::to_string(text).unwrap()
             );
         }
     }

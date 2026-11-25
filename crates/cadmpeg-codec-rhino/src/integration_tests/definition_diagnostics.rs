@@ -71,9 +71,10 @@ fn definition_fixture_families_have_valid_nested_checksums() {
                     .filter(|loss| loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind())
                     .collect::<Vec<_>>();
                 assert!(integrity.is_empty(), "archive={archive:?} fixture={index} container_only={container_only}: {integrity:?}");
-                let _: cadmpeg_ir::document::CadIr =
-                    serde_json::from_slice(&serde_json::to_vec(result.ir()).unwrap())
-                        .expect("complete CADIR admission");
+                let _: cadmpeg_ir::document::CadIr = cadmpeg_core::serde_erase::json::from_slice(
+                    &cadmpeg_core::serde_erase::json::to_vec(result.ir()).unwrap(),
+                )
+                .expect("complete CADIR admission");
             }
         }
     }
@@ -167,9 +168,10 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                         )
                         .expect("definition diagnostics remain recoverable"),
                 );
-                let _: cadmpeg_ir::document::CadIr =
-                    serde_json::from_slice(&serde_json::to_vec(result.ir()).unwrap())
-                        .expect("complete CADIR admission");
+                let _: cadmpeg_ir::document::CadIr = cadmpeg_core::serde_erase::json::from_slice(
+                    &cadmpeg_core::serde_erase::json::to_vec(result.ir()).unwrap(),
+                )
+                .expect("complete CADIR admission");
                 let integrity = result
                     .report()
                     .losses
@@ -352,9 +354,10 @@ fn definition_field_losses_keep_each_record_location_before_later_failure() {
                 actual, offsets,
                 "malformed={malformed_tail} container_only={container_only}"
             );
-            let _: cadmpeg_ir::document::CadIr =
-                serde_json::from_slice(&serde_json::to_vec(result.ir()).unwrap())
-                    .expect("complete CADIR admission");
+            let _: cadmpeg_ir::document::CadIr = cadmpeg_core::serde_erase::json::from_slice(
+                &cadmpeg_core::serde_erase::json::to_vec(result.ir()).unwrap(),
+            )
+            .expect("complete CADIR admission");
         }
     }
 }

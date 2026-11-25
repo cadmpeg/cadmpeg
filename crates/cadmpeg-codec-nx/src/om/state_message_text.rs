@@ -83,9 +83,12 @@ mod tests {
             let json = format!(
                 r#"{{"declared_length":{},"text":{}}}"#,
                 text.len() + 2,
-                serde_json::to_string(&text).unwrap()
+                cadmpeg_core::serde_erase::json::to_string(&text).unwrap()
             );
-            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+                json
+            );
             assert_eq!(
                 serde_json::from_str::<StateMessageText<String>>(&json).unwrap(),
                 value
