@@ -152,7 +152,7 @@ pub(crate) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
 pub(crate) fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.model.product_definitions.clear();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     let body = body(&ir);
     ir.model.product_definitions.push(ProductDefinition {
         kind: Some(ProductDefinitionKind::Part),
