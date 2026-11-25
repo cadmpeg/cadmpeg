@@ -64,6 +64,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
                 let mut candidate = brep::project(ctx, &records, stream, &mut partition_losses)?;
                 candidate.finalize();
+                // A partition is admitted as a document of its own; the decoded
+                // document states one root over the bodies of every partition.
                 candidate.state_root_definition(
                     ctx,
                     root_definition_id(),
