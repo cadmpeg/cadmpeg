@@ -620,11 +620,11 @@ fn cadir_within_bounds(ir: &CadIr) -> Result<ExportBody, CodecError> {
     loop {
         let mut bytes = Vec::new();
         let (written, measured) = crate::bounds::write_measured(&document, &mut bytes);
-        written.map_err(|error| CodecError::Malformed(error.to_string()))?;
+        written.map_err(|error| CodecError::InvalidInput(error.to_string()))?;
         if !measured.records.is_empty() {
             let given_up = document.to_mut().give_up_past_the_bounds(measured.records);
             if given_up.is_empty() {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::InvalidInput(
                     "the CADIR writer found a record past a depth bound it could not drop".into(),
                 ));
             }
@@ -655,7 +655,7 @@ fn cadir_within_bounds(ir: &CadIr) -> Result<ExportBody, CodecError> {
                 )));
             }
             Some(bound) => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "the document {} outside every record",
                     bound.describe()
                 )))
