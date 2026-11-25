@@ -178,7 +178,7 @@ fn surface_loft(
         .ok_or(NativeReason::Profile)?;
     index
         .profiles
-        .face_loop_edges(token, loop_link, &[*ordinal])
+        .face_loop_edges(token, loop_link)
         .ok_or(NativeReason::Profile)?;
     let section = resolve_property(token, admitted.face_loop.record.index(), index)
         .ok_or(NativeReason::SectionRecord)?;
