@@ -266,7 +266,21 @@ fn recovers_a_deeply_placed_pcurve_on_the_normal_test_stack() {
     }
     pcurve.geometry = geometry;
     ir.geometry.edges[0].carrier = EdgeCarrier::Free;
-    let recovered = recover(&ir);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let refusal = recover_edge_curves(&ir, &context)
+        .err()
+        .expect("the evaluation nests deeper than the desktop limits allow");
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::RecursionDepth
+    );
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_recursion_depth =
+        2 * cadmpeg_core::decode::u64_from_index(MAX_GEOMETRY_NESTING);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let recovered = recover_edge_curves(&ir, &context).unwrap();
     assert_eq!(
         recovered.sampled_fits,
         vec![ir.geometry.edges[0].id.clone()]
