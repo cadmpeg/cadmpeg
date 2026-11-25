@@ -200,6 +200,24 @@ impl SolvedSurfaceGeometry {
             | Self::Unknown { .. } => 0,
         }
     }
+
+    /// `"plane"`, `"cylinder"`, or `"cone"` where this carrier is one through
+    /// every placement: a surface no face covers whole, so a face on it states
+    /// a loop (part 10, Topology and model records).
+    #[must_use]
+    pub fn plane_cylinder_or_cone(&self) -> Option<&'static str> {
+        match self {
+            Self::Plane(_) => Some("plane"),
+            Self::Cylinder(_) => Some("cylinder"),
+            Self::Cone(_) => Some("cone"),
+            Self::Transformed(placed) => placed.basis().plane_cylinder_or_cone(),
+            Self::Sphere(_)
+            | Self::Torus(_)
+            | Self::Nurbs(_)
+            | Self::Polygonal(_)
+            | Self::Unknown { .. } => None,
+        }
+    }
 }
 
 /// Exact affine placement of an inline basis surface.
@@ -1132,6 +1150,11 @@ pub(crate) struct ProceduralCurveRow {
 }
 
 impl ProceduralSurfaceRow {
+    /// The construction's identity.
+    pub(crate) fn id_str(&self) -> &str {
+        self.id.as_str()
+    }
+
     /// The row a construction and its carrier state.
     pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
         Self {
@@ -1156,6 +1179,11 @@ impl ProceduralSurfaceRow {
 }
 
 impl ProceduralCurveRow {
+    /// The construction's identity.
+    pub(crate) fn id_str(&self) -> &str {
+        self.id.as_str()
+    }
+
     /// The row a construction and its carrier state.
     pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
         Self {

@@ -70,6 +70,7 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
 
     assert_eq!(loss.code.to_string(), "decode/record.unreadable");
     assert_eq!(loss.severity, Severity::Error);
+    assert_eq!(loss.code.strict_floor(), Some(Severity::Error));
     assert_eq!(
         loss.message,
         format!(

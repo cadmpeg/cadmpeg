@@ -6,6 +6,7 @@
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
@@ -16,9 +17,59 @@ pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     Ok(plan.write_to(writer)?.write_path().clone())
+}
+
+/// Plans an inherited write whose patch path declines the edited document:
+/// the writer synthesizes it without its `SolidWorks` history (§3.4, Paths).
+/// Checks that the output decodes, and returns the
+/// `export:native.records-omitted` message, which states why the patch
+/// declined.
+pub(crate) fn plan_inherited_write_declined(ir: &CadIr, fidelity: &SourceFidelity) -> String {
+    let mut output = Vec::new();
+    let report = SldprtCodec
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut output)
+        .unwrap();
+    declined(&report, output)
+}
+
+/// [`plan_inherited_write_declined`] with an authored native envelope.
+pub(crate) fn plan_fixture_write_with_native_envelope_declined(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> String {
+    let mut output = Vec::new();
+    let report = plan_fixture_with_native_envelope(
+        EncodeInput::new(ir, Some(fidelity)),
+        TargetRequest::Inherit,
+    )
+    .unwrap()
+    .write_to(&mut output)
+    .unwrap();
+    declined(&report, output)
+}
+
+fn declined(report: &cadmpeg_ir::report::export::ExportReport, output: Vec<u8>) -> String {
+    assert!(
+        matches!(report.write_path(), WritePath::Synthesized { .. }),
+        "{:?}",
+        report.write_path()
+    );
+    decode_bytes(output);
+    report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "native.records-omitted"
+                && loss.message.contains("because the patch of the document")
+        })
+        .unwrap_or_else(|| panic!("{:?}", report.losses))
+        .message
+        .clone()
 }
 
 /// The messages of a write's unwritten-attribute losses, by code.
@@ -75,7 +126,7 @@ impl UnwrittenLosses {
 pub(crate) fn write_with_unwritten_attributes(
     ir: &CadIr,
     fidelity: &SourceFidelity,
-) -> Result<(Vec<u8>, UnwrittenLosses), CodecError> {
+) -> Result<(Vec<u8>, UnwrittenLosses), cadmpeg_ir::codec::write::EncodeError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     let losses = UnwrittenLosses::of(&plan.report().losses);
     let mut bytes = Vec::new();
@@ -87,8 +138,8 @@ pub(crate) fn write_with_unwritten_attributes(
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
-    let (ir, fidelity) = fixture_native_envelope_context(input)?;
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
+    let (ir, fidelity) = fixture_native_envelope_context(input).map_err(EncodeError::Backend)?;
     SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)), request)
 }
 
@@ -181,7 +232,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, EncodeError> {
     let plan = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
         TargetRequest::Inherit,
@@ -225,6 +276,11 @@ fn write_without_stale_solid(
     (report, decode_bytes(output))
 }
 
+/// Whether `kind` is `export:edit.dropped`, of any entity kind.
+pub(crate) fn is_edit_dropped(kind: &cadmpeg_ir::report::loss::LossKind) -> bool {
+    kind.local_code() == "edit.dropped"
+}
+
 fn loss_messages(
     report: &cadmpeg_ir::report::export::ExportReport,
     code: crate::loss::SldprtLossCode,
@@ -247,10 +303,12 @@ pub(crate) fn write_unwritten_feature_edits(
 ) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
     let (report, written) = write_without_stale_solid(ir, fidelity);
     (
-        loss_messages(
-            &report,
-            crate::loss::SldprtLossCode::WriterFeatureEditUnwritten,
-        ),
+        report
+            .losses
+            .iter()
+            .filter(|loss| is_edit_dropped(&loss.code))
+            .map(|loss| loss.message.clone())
+            .collect(),
         written,
     )
 }
@@ -262,10 +320,12 @@ pub(crate) fn write_unwritten_feature_edits(
 /// edit written.
 pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
     let (report, written) = write_without_stale_solid(ir, fidelity);
-    let unwritten = loss_messages(
-        &report,
-        crate::loss::SldprtLossCode::WriterFeatureEditUnwritten,
-    );
+    let unwritten = report
+        .losses
+        .iter()
+        .filter(|loss| is_edit_dropped(&loss.code))
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
     let messages = report
         .losses
         .iter()
@@ -317,8 +377,9 @@ pub(crate) fn write_history_over_stale_solid(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<cadmpeg_ir::report::export::ExportReport, CodecError> {
-    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
+) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError> {
+    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
+        .map_err(cadmpeg_ir::codec::write::EncodeError::Backend)?;
     let report = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
@@ -350,6 +411,7 @@ pub(crate) fn write_in_native_envelope(
         &fidelity.annotations,
         &fidelity.codec_digests,
         &records,
+        &[],
         &[],
         writer,
     )

@@ -10,6 +10,7 @@
 
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NonEmptyMembers;
+use crate::geometry::SurfaceGeometry;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SubdId, SurfaceId, VertexId,
@@ -305,6 +306,41 @@ impl Region {
             Some(RegionUnstated::Voids) | None => {}
         }
     }
+
+    /// States the region without `shell`, which the document no longer
+    /// holds, in its partial form (§5.6, Unstated children): a region that
+    /// loses its exterior states `Exterior` with the voids it keeps, and one
+    /// that loses a void states `Voids`. Returns whether it named `shell`.
+    pub(crate) fn lose_shell(&mut self, shell: &str) -> bool {
+        match &mut self.unstated {
+            Some(
+                RegionUnstated::Exterior { voids: listed }
+                | RegionUnstated::Unclassified { shells: listed },
+            ) => {
+                let before = listed.len();
+                listed.retain(|listed| listed.as_str() != shell);
+                listed.len() != before
+            }
+            Some(RegionUnstated::Voids) | None => {
+                let Some(at) = self
+                    .shells
+                    .iter()
+                    .position(|listed| listed.as_str() == shell)
+                else {
+                    return false;
+                };
+                if at == 0 {
+                    let mut voids = std::mem::take(&mut self.shells).split_off(1);
+                    voids.retain(|listed| listed.as_str() != shell);
+                    self.unstated = Some(RegionUnstated::Exterior { voids });
+                } else {
+                    self.shells.retain(|listed| listed.as_str() != shell);
+                    self.unstated = Some(RegionUnstated::Voids);
+                }
+                true
+            }
+        }
+    }
 }
 
 impl crate::schema::EntitySchema for Region {
@@ -474,6 +510,19 @@ impl Shell {
                 .map(|id| ShellMember::FreeVertex { id }),
         );
         shell
+    }
+
+    /// States the shell without its member `member`, which the document no
+    /// longer holds, and marks it (§5.6, Unstated children). Returns whether
+    /// it listed `member`.
+    pub(crate) fn lose_member(&mut self, member: &str) -> bool {
+        let before = self.members.len();
+        self.members.retain(|listed| listed.as_str() != member);
+        let lost = self.members.len() != before;
+        if lost {
+            self.unstated = Some(Unstated::Members);
+        }
+        lost
     }
 
     /// Constructs a shell with one wire edge.
@@ -766,12 +815,15 @@ pub enum FaceLoops {
         /// Inner loops in source order.
         inner: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source does not classify the loops.
+    /// The boundary is not stated in full, and the source does not classify
+    /// the loops: a loop is not stated, or the source states none on a
+    /// surface whose domain is unbounded and the face lists none (§5.6).
     PartialUnspecified {
         /// The loops stated, in source order.
         loops: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source classifies the loops.
+    /// The boundary is not stated in full, and the source classifies the
+    /// loops: a loop is not stated.
     PartialClassified {
         /// The outer loop, where it is stated.
         #[serde(
@@ -854,6 +906,30 @@ impl FaceLoops {
         Self::Unspecified { loops: ids }
     }
 
+    /// The loops a source states for a face, in source order, where it does
+    /// not classify them, on `surface`. A face whose source states no loop on
+    /// a solved surface whose domain is unbounded (a plane, a cylinder, or a
+    /// cone, through every placement) has no extent to state, so it is stated
+    /// in its partial form with no loop (§5.6, Faces and loops), and the
+    /// second value names that surface for the
+    /// `topology.face-boundary-unstated` loss the decoder charges naming the
+    /// face. A procedural surface has the domain its construction gives it,
+    /// so a face on one keeps its unclassified form.
+    #[must_use]
+    pub fn unspecified_on(
+        loops: Vec<LoopId>,
+        surface: Option<&SurfaceGeometry>,
+    ) -> (Self, Option<&'static str>) {
+        let unbounded = match surface {
+            Some(SurfaceGeometry::Solved(solved)) => solved.plane_cylinder_or_cone(),
+            Some(SurfaceGeometry::Procedural { .. }) | None => None,
+        };
+        match unbounded {
+            Some(kind) if loops.is_empty() => (Self::PartialUnspecified { loops }, Some(kind)),
+            _ => (Self::unspecified(loops), None),
+        }
+    }
+
     /// Classified loops. Loop order is outer then inner.
     #[must_use]
     pub const fn classified(outer: LoopId, inner: Vec<LoopId>) -> Self {
@@ -882,13 +958,46 @@ impl FaceLoops {
         }
     }
 
-    /// Whether a loop of the face is not stated.
+    /// Whether the face's boundary is not stated in full: a loop of it is not
+    /// stated, or its source states none on a surface whose domain is
+    /// unbounded (§5.6).
     #[must_use]
     pub const fn is_partial(&self) -> bool {
         matches!(
             self,
             Self::PartialUnspecified { .. } | Self::PartialClassified { .. }
         )
+    }
+
+    /// States the face without the loop `id`, which the document no longer
+    /// holds, in the partial arm of its classification (§5.6, Unstated
+    /// children). Returns whether the face named `id`.
+    pub(crate) fn lose(&mut self, id: &str) -> bool {
+        if !self.stated().any(|listed| listed.as_str() == id) {
+            return false;
+        }
+        let kept = |loops: &mut Vec<LoopId>| loops.retain(|listed| listed.as_str() != id);
+        *self = match std::mem::replace(self, Self::PartialUnspecified { loops: Vec::new() }) {
+            Self::Unspecified { mut loops } | Self::PartialUnspecified { mut loops } => {
+                kept(&mut loops);
+                Self::PartialUnspecified { loops }
+            }
+            Self::Classified { outer, mut inner } => {
+                kept(&mut inner);
+                Self::PartialClassified {
+                    outer: (outer.as_str() != id).then_some(outer),
+                    inner,
+                }
+            }
+            Self::PartialClassified { outer, mut inner } => {
+                kept(&mut inner);
+                Self::PartialClassified {
+                    outer: outer.filter(|outer| outer.as_str() != id),
+                    inner,
+                }
+            }
+        };
+        true
     }
 
     /// Whether `id` is a loop of this face.

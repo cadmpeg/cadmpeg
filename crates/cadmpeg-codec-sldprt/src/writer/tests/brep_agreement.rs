@@ -803,7 +803,7 @@ fn a_dependency_its_operands_do_not_state_is_written_and_named() {
     let unwritten = report
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterFeatureEditUnwritten.kind())
+        .filter(|loss| crate::test_support::is_edit_dropped(&loss.code))
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
     assert!(

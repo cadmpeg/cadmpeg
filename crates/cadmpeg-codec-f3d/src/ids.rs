@@ -29,37 +29,56 @@ pub(crate) fn native_stream(id: &str) -> Option<&str> {
     id.rsplit_once(':').map(|(stream, _)| stream)
 }
 
-/// Return whether two native IDs belong to the same root document or xref occurrence.
+/// The definition key that qualifies the scope of `id` (`f3d:<key>@<scope>…`),
+/// the key of the `File` definition of the archive member `id` was read from;
+/// `None` for an identity of the root file.
+pub(crate) fn member_key(id: &str) -> Option<&str> {
+    let local = id.strip_prefix(SCHEME_PREFIX)?;
+    let scope = local.split_once(':').map_or(local, |(scope, _)| scope);
+    scope.split_once('@').map(|(key, _)| key)
+}
+
+/// `id` read from the archive member whose `File` definition has key `key`:
+/// the key, `@`, and the scope `id` has when the member is decoded alone.
+pub(crate) fn qualify(id: &str, key: &str) -> Option<String> {
+    id.strip_prefix(SCHEME_PREFIX)
+        .map(|local| format!("{SCHEME_PREFIX}{key}@{local}"))
+}
+
+/// The `File` definition of the archive member with definition key `key`,
+/// a record of the xref table of the file that places it: the root file, or
+/// the member with definition key `placing`.
+pub(crate) fn member_definition_id(
+    placing: Option<&str>,
+    key: &str,
+) -> Result<cadmpeg_ir::ids::ProductDefinitionId, cadmpeg_ir::ids::IdentityError> {
+    let local = format!("{MEMBER_DEFINITION_SCOPE}{key}");
+    cadmpeg_ir::ids::ProductDefinitionId::mint(match placing {
+        Some(placing) => format!("{SCHEME_PREFIX}{placing}@{local}"),
+        None => format!("{SCHEME_PREFIX}{local}"),
+    })
+}
+
+/// The scope and kind of an archive member's `File` definition, up to its
+/// key.
+pub(crate) const MEMBER_DEFINITION_SCOPE: &str = "xref:product-definition#";
+
+/// The definition key of the archive member whose `File` definition `id` is.
+pub(crate) fn member_definition_key(id: &str) -> Option<&str> {
+    let local = id.strip_prefix(SCHEME_PREFIX)?;
+    let local = local.split_once('@').map_or(local, |(_, local)| local);
+    local.strip_prefix(MEMBER_DEFINITION_SCOPE)
+}
+
+/// Whether `id` is a record of an archive member, or the `File` definition
+/// of one.
+pub(crate) fn is_member_identity(id: &str) -> bool {
+    member_key(id).is_some() || member_definition_key(id).is_some()
+}
+
+/// Return whether two native IDs belong to the same root document or archive member.
 pub(crate) fn same_native_occurrence(left: &str, right: &str) -> bool {
-    const OCCURRENCE_SEGMENT: &str = "/occurrence-";
-
-    /// The segment holds no other `/`, so its matches are exactly the
-    /// separators it starts at.
-    fn segments(id: &str) -> impl Iterator<Item = usize> + '_ {
-        id.match_indices('/')
-            .map(|(at, _)| at)
-            .filter(|&at| id[at..].starts_with(OCCURRENCE_SEGMENT))
-    }
-
-    fn occurrence(id: &str) -> Option<&str> {
-        let mut occurrence_end = None;
-        for at in segments(id) {
-            let digits_at = at + OCCURRENCE_SEGMENT.len();
-            let end = id[digits_at..]
-                .find('/')
-                .map_or(id.len(), |end| digits_at + end);
-            if end > digits_at && id[digits_at..end].bytes().all(|byte| byte.is_ascii_digit()) {
-                occurrence_end = Some(end);
-            }
-        }
-        occurrence_end.map(|end| &id[..end])
-    }
-
-    match (occurrence(left), occurrence(right)) {
-        (Some(left), Some(right)) => left == right,
-        (None, None) => segments(left).next().is_none() && segments(right).next().is_none(),
-        _ => false,
-    }
+    member_key(left) == member_key(right)
 }
 
 /// Parse the Design segment shared by sibling `MetaStream.dat` and
@@ -84,6 +103,9 @@ pub(crate) fn file_source_image_id() -> cadmpeg_ir::ids::UnknownId {
         cadmpeg_ir::identity_key!("0"),
     )
 }
+
+/// The identity [`archive_product_definition_id`] composes.
+pub(crate) const ARCHIVE_PRODUCT_DEFINITION_ID: &str = "f3d:archive:product-definition#0";
 
 /// The root product definition of a merged archive member.
 pub(crate) fn archive_product_definition_id() -> cadmpeg_ir::ids::ProductDefinitionId {
@@ -960,13 +982,18 @@ pub(crate) fn native_scope(name: &str) -> String {
 }
 
 /// Compare an encoded identity component with source text without allocating.
+/// The `@` that qualifies the scope of an archive member's record matches
+/// itself.
 pub(crate) fn encoded_identity_key_component_matches(encoded: &str, source: &str) -> bool {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut actual = encoded.as_bytes().iter();
+    let mut actual = encoded.as_bytes().iter().peekable();
     for character in source.chars() {
+        if character == '@' && actual.next_if_eq(&&b'@').is_some() {
+            continue;
+        }
         let mut buffer = [0; 4];
         let bytes = character.encode_utf8(&mut buffer).as_bytes();
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+        if cadmpeg_ir::ids::IdentityKeyTail::escapes(character) {
             for &byte in bytes {
                 for expected in [
                     b'%',
@@ -993,7 +1020,7 @@ pub(crate) fn encoded_identity_key_component_matches(encoded: &str, source: &str
 pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
     fn encoded_len(source: &str) -> Option<usize> {
         source.chars().try_fold(0usize, |length, character| {
-            let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            let width = if cadmpeg_ir::ids::IdentityKeyTail::escapes(character) {
                 character.len_utf8().checked_mul(3)?
             } else {
                 character.len_utf8()
@@ -1005,15 +1032,12 @@ pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
     let Some(encoded_length) = encoded_len(entry) else {
         return false;
     };
-    if let Some(direct) = stream.strip_prefix("f3d:") {
-        if direct.len() == encoded_length && encoded_identity_key_component_matches(direct, entry) {
-            return true;
-        }
-    }
     stream
-        .strip_prefix("f3d:xref/")
-        .and_then(|qualified| qualified.strip_suffix(entry))
-        .is_some_and(|prefix| prefix.ends_with('/'))
+        .strip_prefix(SCHEME_PREFIX)
+        .map(|local| local.split_once('@').map_or(local, |(_, scope)| scope))
+        .is_some_and(|scope| {
+            scope.len() == encoded_length && encoded_identity_key_component_matches(scope, entry)
+        })
 }
 
 /// Build one record ID in an archive-entry-qualified native scope.
@@ -1165,15 +1189,72 @@ mod tests {
     }
 
     #[test]
-    fn native_scope_match_preserves_direct_and_xref_comparisons() {
-        for entry in ["Design/BulkStream.dat", "A B:#%\u{2003}é", ""] {
+    fn native_scope_match_preserves_direct_and_member_comparisons() {
+        for entry in ["Design/BulkStream.dat", "A B:#%@\u{2003}é", ""] {
             let direct = super::native_scope(entry);
+            assert!(!direct.contains('@'));
             assert!(super::native_scope_matches(&direct, entry));
             assert!(!super::native_scope_matches(&direct, "different"));
-            let xref = format!("f3d:xref/part/{entry}");
-            assert!(super::native_scope_matches(&xref, entry));
-            assert!(!super::native_scope_matches(&format!("{xref}extra"), entry));
+            let member = super::qualify(&direct, "part").unwrap();
+            assert!(super::native_scope_matches(&member, entry));
+            assert!(!super::native_scope_matches(
+                &format!("{member}extra"),
+                entry
+            ));
         }
+    }
+
+    #[test]
+    fn an_encoded_member_scope_matches_its_decoded_text() {
+        let member = super::qualify(&super::native_scope("Design@1"), "pin").unwrap();
+        let encoded = member.strip_prefix(super::SCHEME_PREFIX).unwrap();
+        assert_eq!(encoded, "pin@Design%401");
+        let decoded = super::decode_identity_key_component(encoded).unwrap();
+        assert!(super::encoded_identity_key_component_matches(
+            encoded, &decoded
+        ));
+        assert!(super::encoded_identity_key_component_matches(
+            "pin%40Design",
+            "pin@Design"
+        ));
+        assert!(!super::encoded_identity_key_component_matches(
+            "pin@Design",
+            "pin/Design"
+        ));
+    }
+
+    #[test]
+    fn member_identities_carry_the_definition_key_before_the_scope() {
+        let id = super::native_scoped_id("Design/BulkStream.dat", "feature", 301);
+        let member = super::qualify(&id, "pin").unwrap();
+        assert_eq!(member, "f3d:pin@Design/BulkStream.dat:feature#301");
+        assert_eq!(super::member_key(&member), Some("pin"));
+        assert_eq!(super::member_key(&id), None);
+        let nested = super::qualify(&id, "pin/xref/bolt").unwrap();
+        assert_eq!(super::member_key(&nested), Some("pin/xref/bolt"));
+
+        assert_eq!(
+            super::archive_product_definition_id().as_str(),
+            super::ARCHIVE_PRODUCT_DEFINITION_ID
+        );
+        let definition = super::member_definition_id(None, "pin").unwrap();
+        assert_eq!(definition.as_str(), "f3d:xref:product-definition#pin");
+        assert_eq!(
+            super::member_definition_key(definition.as_str()),
+            Some("pin")
+        );
+        assert_eq!(super::member_key(definition.as_str()), None);
+        assert!(super::is_member_identity(definition.as_str()));
+        let placed = super::member_definition_id(Some("pin"), "pin/xref/bolt").unwrap();
+        assert_eq!(
+            placed.as_str(),
+            "f3d:pin@xref:product-definition#pin/xref/bolt"
+        );
+        assert_eq!(
+            super::member_definition_key(placed.as_str()),
+            Some("pin/xref/bolt")
+        );
+        assert!(!super::is_member_identity(&id));
     }
 
     #[test]
@@ -1348,38 +1429,34 @@ mod tests {
     }
 
     #[test]
-    fn native_occurrence_scope_isolates_xrefs_and_includes_root_streams() {
+    fn native_occurrence_scope_isolates_members_and_includes_root_streams() {
         assert!(same_native_occurrence(
             "f3d:Asset/Design1/BulkStream.dat:record#1",
             "f3d:design:persistent-subentity-tag#1",
         ));
         assert!(same_native_occurrence(
-            "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
-            "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
+            "f3d:root/occurrence-0@Asset/Design1/BulkStream.dat:record#1",
+            "f3d:root/occurrence-0@design:persistent-subentity-tag#1",
         ));
         assert!(!same_native_occurrence(
-            "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
-            "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1",
+            "f3d:root/occurrence-0@Asset/Design1/BulkStream.dat:record#1",
+            "f3d:other/occurrence-0@design:persistent-subentity-tag#1",
         ));
         assert!(!same_native_occurrence(
-            "f3d:xref/root/occurrence-0/xref/child/occurrence-0/design:record#1",
-            "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
+            "f3d:root/occurrence-0/xref/child/occurrence-0@design:record#1",
+            "f3d:root/occurrence-0@design:persistent-subentity-tag#1",
         ));
         assert!(!same_native_occurrence(
-            "f3d:xref/root/occurrence-invalid/design:record#1",
+            "f3d:root/occurrence-0@design:record#1",
             "f3d:design:persistent-subentity-tag#1",
         ));
     }
 
     #[test]
-    fn native_occurrence_scope_ends_at_the_last_numbered_segment() {
+    fn native_occurrence_scope_ignores_at_signs_after_the_scope() {
         assert!(same_native_occurrence(
-            "f3d:xref/root/occurrence-1/xref/child/occurrence-/design:record#1",
-            "f3d:xref/root/occurrence-1/design:persistent-subentity-tag#1",
-        ));
-        assert!(!same_native_occurrence(
-            "f3d:xref/root/occurrence-1/xref/child/occurrence-2/design:record#1",
-            "f3d:xref/root/occurrence-1/design:persistent-subentity-tag#1",
+            "f3d:model:sketch#f3d%3ADesign1/BulkStream.dat@277",
+            "f3d:design:persistent-subentity-tag#1",
         ));
     }
 

@@ -219,7 +219,7 @@ pub fn shrink(
                 .collect();
             let mut candidate_value = value.clone();
             retain(&mut candidate_value, &all, &keep);
-            let Ok(document) = serde_json::from_value(candidate_value) else {
+            let Ok(document) = cadmpeg_ir::CadIr::from_projection(candidate_value) else {
                 continue;
             };
             let mut candidate = best.clone();

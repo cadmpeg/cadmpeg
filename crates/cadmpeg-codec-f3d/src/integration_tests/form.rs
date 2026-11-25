@@ -171,21 +171,20 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
     let mut all_cages = std::collections::BTreeSet::new();
     let mut foreign_sources = std::collections::HashSet::new();
     for form in forms {
-        let (role, reference) = [(XREF_ROLE, 0), (SECOND_ROLE, 1)]
+        let prefix = ["child-a.f3d@", "child-b.f3d@"]
             .into_iter()
-            .find(|(role, reference)| {
-                form.inputs().references.iter().any(|id| {
-                    id.as_str()
-                        .contains(&format!("role-{role}/reference-{reference}/occurrence-0/"))
-                })
+            .find(|prefix| {
+                form.inputs()
+                    .references
+                    .iter()
+                    .any(|id| id.as_str().starts_with(&format!("f3d:{prefix}")))
             })
             .unwrap();
-        let prefix = format!("role-{role}/reference-{reference}/occurrence-0/");
         assert!(!form.membership_is_complete());
         assert_eq!(form.committed_cages().count(), 2);
         assert_eq!(form.referenced_cages().count(), 2);
         for id in form.referenced_cages() {
-            assert!(id.as_str().contains(&prefix));
+            assert!(id.as_str().contains(prefix));
             assert!(decoded
                 .ir()
                 .geometry
@@ -200,14 +199,14 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .iter()
             .find(|association| association.resource.source.as_str().ends_with("#1720"))
             .unwrap();
-        assert!(association.cage.as_str().contains(&prefix));
-        assert!(association.resource.source.as_str().contains(&prefix));
+        assert!(association.cage.as_str().contains(prefix));
+        assert!(association.resource.source.as_str().contains(prefix));
         assert!(form
             .referenced_cages()
             .any(|cage| cage == &association.cage));
         assert_eq!(association.resource.entry.as_str(), "FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm");
         let foreign = form.inputs().reference_evidence.iter().find(|reference| matches!(&reference.target, FormNativeReferenceTarget::Document { asset_guid, target_type_guid: Some(type_guid), link_name, version: Some(version), .. } if asset_guid == &collision && type_guid == "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA" && link_name == &collision && version.key == "11111111-2222-3333-4444-555555555555" && version.urn == collision)).unwrap();
-        assert!(foreign.source.as_str().contains(&prefix));
+        assert!(foreign.source.as_str().contains(prefix));
         assert_eq!(foreign.group, Some(original_group));
         assert!(foreign_sources.insert(foreign.source.clone()));
         assert!(decoded
@@ -219,10 +218,7 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .values()
             .flatten()
             .any(|record| record.id()
-                == format!(
-                    "f3d:xref/{prefix}{}",
-                    collision.strip_prefix("f3d:").unwrap()
-                )));
+                == format!("f3d:{prefix}{}", collision.strip_prefix("f3d:").unwrap())));
         let absent = form
             .inputs()
             .reference_evidence
@@ -238,7 +234,7 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .unwrap();
         let (absent, group) = absent;
         assert_eq!(group, Some(absent_group));
-        assert!(absent.as_str().contains(&prefix));
+        assert!(absent.as_str().contains(prefix));
         assert!(!decoded
             .ir()
             .native

@@ -13,12 +13,46 @@ use serde::de::{
     self, DeserializeSeed, Deserializer, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
 };
 
+fn read_zeroed_str(
+    text: &str,
+    read: &mut dyn FnMut(
+        cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::DeError>,
+) -> Result<(), serde_json::Error> {
+    let mut deserializer = crate::bounds::deserializer(text)?;
+    cadmpeg_core::serde_erase::deserialize_erased(Zeroed(&mut deserializer), read)?;
+    deserializer.end()
+}
+
+fn read_zeroed_value(
+    value: &serde_json::Value,
+    read: &mut dyn FnMut(
+        cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::DeError>,
+) -> Result<(), serde_json::Error> {
+    cadmpeg_core::serde_erase::deserialize_erased(Zeroed(value), read)
+}
+
 /// Reads `text` as one JSON value of `T`, every float zero as 0.
 pub(super) fn from_str<T: de::DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> {
-    let mut deserializer = crate::bounds::deserializer(text)?;
-    let value = T::deserialize(Zeroed(&mut deserializer))?;
-    deserializer.end()?;
-    Ok(value)
+    let mut slot = None;
+    read_zeroed_str(text, &mut |adapter| {
+        slot = Some(T::deserialize(adapter)?);
+        Ok(())
+    })?;
+    slot.ok_or_else(|| de::Error::custom("zeroed deserializer produced no value"))
+}
+
+/// Reads `value` as one value of `T`, every float zero as 0.
+pub(super) fn from_value<T: de::DeserializeOwned>(
+    value: &serde_json::Value,
+) -> Result<T, serde_json::Error> {
+    let mut slot = None;
+    read_zeroed_value(value, &mut |adapter| {
+        slot = Some(T::deserialize(adapter)?);
+        Ok(())
+    })?;
+    slot.ok_or_else(|| de::Error::custom("zeroed deserializer produced no value"))
 }
 
 /// A deserializer whose floats read negative zero as zero.

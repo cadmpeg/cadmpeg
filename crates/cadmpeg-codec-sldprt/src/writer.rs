@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic SLDPRT writer for analytic B-reps.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
+use std::sync::Arc;
 
 mod accounting;
 mod body_drop;
@@ -19,6 +20,7 @@ mod ownership;
 mod read_back;
 mod reduce;
 pub(crate) mod saved;
+mod stale;
 pub(crate) mod target;
 
 pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
@@ -30,7 +32,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
-use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
+use cadmpeg_ir::codec::write::{edit_dropped_note, ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::parameters::DesignConfiguration;
@@ -39,6 +41,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::topology::{BodyKind, Color, Face, FaceBoundary, LoopBoundary, Region, Sense};
 use cadmpeg_ir::Annotations;
@@ -93,31 +96,88 @@ pub(crate) struct SemanticOutput {
     pub(crate) claims: crate::history::write::read_back::ReadBackClaims,
     /// The retained source image decoded again, when the write compared the
     /// document with it.
-    pub(crate) source: Option<cadmpeg_ir::codec::Decoded>,
+    pub(crate) source: Option<Arc<cadmpeg_ir::codec::Decoded>>,
     /// The write's other losses.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// Lazy cache for the decoded SLDPRT native namespace across read-back retries.
+#[derive(Default)]
+pub(crate) enum CachedNative {
+    #[default]
+    Unloaded,
+    Loaded(Option<SldprtNative>),
+}
+
+/// Reusable decoded source baseline and native records across read-back retries
+/// of one semantic write.
+#[derive(Default)]
+pub(crate) struct SemanticWriteCache {
+    pub(crate) source_baseline: Option<Arc<cadmpeg_ir::codec::Decoded>>,
+    pub(crate) native: CachedNative,
+}
+
+/// Per-pass withheld features and shaping edits for one semantic write.
+#[derive(Clone, Copy)]
+pub(crate) struct SemanticWriteControls<'a> {
+    pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
+    pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
 /// wrote. Each feature of `withheld` keeps its stored definition record, for
 /// the reason it is paired with. `digests` are the codec digests the decode
-/// recorded.
+/// recorded. The configuration of each edit in `shaped`, and of each edit the
+/// write finds to shape the solid against its retained source, takes the
+/// stale mark.
+#[cfg(test)]
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
     withheld: &[(cadmpeg_ir::features::FeatureId, String)],
+    shaped: &[crate::history::write::brep_agreement::ShapingEdit],
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let mut cache = SemanticWriteCache::default();
+    write_semantic_with_records_cached(
+        ir,
+        annotations,
+        digests,
+        retained_records,
+        SemanticWriteControls { withheld, shaped },
+        &mut cache,
+        writer,
+    )
+}
+
+pub(crate) fn write_semantic_with_records_cached(
+    ir: &CadIr,
+    annotations: &Annotations,
+    digests: &CodecDigests,
+    retained_records: &[SourceRecord<'_>],
+    controls: SemanticWriteControls<'_>,
+    cache: &mut SemanticWriteCache,
+    writer: &mut dyn Write,
+) -> Result<SemanticOutput, CodecError> {
+    let SemanticWriteControls { withheld, shaped } = controls;
+    let source_baseline = &mut cache.source_baseline;
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
         DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
-    let mut native = ir
-        .native
-        .namespace("sldprt")
-        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
-        .transpose()?;
+    if matches!(cache.native, CachedNative::Unloaded) {
+        let loaded = ir
+            .native
+            .namespace("sldprt")
+            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .transpose()?;
+        cache.native = CachedNative::Loaded(loaded);
+    }
+    let mut native = match &cache.native {
+        CachedNative::Loaded(loaded) => loaded.clone(),
+        CachedNative::Unloaded => None,
+    };
     // A feature history or feature-input lane the input already holds comes
     // from a SolidWorks part; the write generates its own for any other source.
     let solidworks_history = native.as_ref().is_some_and(|native| {
@@ -144,7 +204,23 @@ pub(crate) fn write_semantic_with_records(
     let mut content_losses =
         reduce::unwritable_content(&mut normalized, !retained_records.is_empty(), digests)?;
     content_losses.extend(reduce::unwritable_carriers(&mut normalized, false)?);
-    crate::writer_transform::bake(&mut normalized)?;
+    if crate::writer_transform::places_bodies(&normalized) {
+        // A body whose placement cannot be baked into its geometry is left
+        // out with the records it owns; `reduce::empty_output` charges an
+        // output left with no face once, below.
+        let baked = body_drop::encode_without_unwritable_bodies(&normalized, None, |ir| {
+            let mut baked = ir.clone();
+            crate::writer_transform::bake(&mut baked)?;
+            Ok(baked)
+        })?;
+        content_losses.extend(
+            baked
+                .losses
+                .into_iter()
+                .filter(|loss| loss.code.local_code() != "output.empty"),
+        );
+        normalized = baked.partitions;
+    }
     sort_arenas(&mut normalized);
     let assigned = assign_configuration_indices(&mut normalized.model.configurations)?;
     if !assigned.is_empty() {
@@ -183,7 +259,6 @@ pub(crate) fn write_semantic_with_records(
         Some((records, annotations)) => (records.as_slice(), annotations),
         None => (retained_records, annotations),
     };
-    let mut source_baseline = None;
     let mut unwritten = UnwrittenAttributes::default();
     let mut losses = content_losses;
     // `export:value.unwritable` entries: texts cut to their field's width.
@@ -197,7 +272,7 @@ pub(crate) fn write_semantic_with_records(
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
     {
-        retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        retained_source_baseline(source_baseline, source_context.as_ref())?;
     }
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
@@ -269,6 +344,28 @@ pub(crate) fn write_semantic_with_records(
         edited_parameters,
         source_lanes,
     } = edit_outcome;
+    let mut shaping = shaped.to_vec();
+    if let Some(baseline) = &source_baseline {
+        let input_native = ir
+            .native
+            .namespace("sldprt")
+            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .transpose()?;
+        shaping.extend(
+            crate::history::write::brep_agreement::agreement(
+                ir,
+                digests,
+                input_native.as_ref(),
+                Some(crate::history::write::brep_agreement::Source::Decoded(
+                    &baseline.ir,
+                )),
+                &written,
+                &HashSet::new(),
+            )?
+            .shaped,
+        );
+    }
+    let stale = stale::StaleStates::of(&normalized, &shaping);
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
     losses.extend(renamed.note(&normalized));
@@ -362,8 +459,7 @@ pub(crate) fn write_semantic_with_records(
                 crate::codec_digests::baseline(digests, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
             let material = swobjects_material_local_sha256(&digest_ctx, ir)?;
             if material_baseline != Some(material.as_str()) {
-                let baseline =
-                    retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+                let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
                 losses.extend(materials::retained_materials_kept(
                     ir,
                     baseline.map(|baseline| &baseline.ir),
@@ -381,7 +477,7 @@ pub(crate) fn write_semantic_with_records(
         if !materials.omitted.is_empty() {
             // A source that does not decode leaves the note saying the write
             // cannot tell; it does not refuse the write.
-            let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())
+            let baseline = retained_source_baseline(source_baseline, source_context.as_ref())
                 .ok()
                 .flatten();
             losses.extend(materials::retained_materials_omitted(
@@ -434,13 +530,52 @@ pub(crate) fn write_semantic_with_records(
         members.push(&mut sections, &mut unwritten, "Units".into(), units);
     }
     if !ir.model.tessellations.is_empty() {
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
-        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref())? {
+        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
+        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref()) {
             for (section, payload) in retained {
                 members.push(&mut sections, &mut unwritten, section, payload);
             }
         } else {
-            let (payload, omitted) = tessellation_payload(ir, length_scale)?;
+            let (payload, omitted) = match tessellation_payload(ir, length_scale) {
+                Ok(written) => written,
+                Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => {
+                    return Err(error)
+                }
+                Err(error) => {
+                    let ids = ir
+                        .model
+                        .tessellations
+                        .iter()
+                        .map(|tessellation| tessellation.id.as_str());
+                    let stored = retained_records.iter().any(|record| {
+                        annotations
+                            .provenance
+                            .get(record.id.as_str())
+                            .is_some_and(|provenance| provenance.stream() == DISPLAY_LISTS)
+                    });
+                    if stored {
+                        losses.push(edit_dropped_note(
+                            EntityKind::Tessellation,
+                            format!(
+                                "SLDPRT member {DISPLAY_LISTS} keeps its stored tessellations: \
+                                 the display-list table cannot hold the tessellations {} \
+                                 ({error}).",
+                                ids.collect::<Vec<_>>().join(", ")
+                            ),
+                        ));
+                    } else {
+                        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+                            "SLDPRT",
+                            &format!(
+                                "writes no display-list table, which cannot hold these \
+                                 tessellations ({error})"
+                            ),
+                            ids,
+                        ));
+                    }
+                    (Vec::new(), Vec::new())
+                }
+            };
             if !omitted.is_empty() {
                 losses.push(
                     crate::loss::SldprtLossCode::WriterTessellationMetadataOmitted.note(format!(
@@ -452,19 +587,16 @@ pub(crate) fn write_semantic_with_records(
                     )),
                 );
             }
-            members.push(
-                &mut sections,
-                &mut unwritten,
-                "Contents/DisplayLists".into(),
-                payload,
-            );
+            if !payload.is_empty() {
+                members.push(&mut sections, &mut unwritten, DISPLAY_LISTS.into(), payload);
+            }
         }
     }
     let retained_histories = if native
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
     {
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
         match (baseline, source_scan.as_ref()) {
             (Some(baseline), Some(scan)) => retained_history_sections(baseline, scan)?,
             _ => Vec::new(),
@@ -533,7 +665,7 @@ pub(crate) fn write_semantic_with_records(
         );
     }
     let patch_active_configuration = if input_active_configuration.is_some() {
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
         baseline.is_none_or(|baseline| {
             active_configuration_intent(&baseline.ir) != input_active_configuration
         })
@@ -554,9 +686,15 @@ pub(crate) fn write_semantic_with_records(
         RetainedBlockPatches {
             active_configuration: patch_active_configuration,
             edited_parameters: &edited_parameters,
+            native: match &cache.native {
+                CachedNative::Loaded(loaded) => loaded.as_ref(),
+                CachedNative::Unloaded => None,
+            },
+            stale: &stale.configurations,
         },
     )?;
-    unwritten_edits.extend(opaque.kept_pmi);
+    unwritten_edits.extend(opaque.kept_edits);
+    let mut marked = opaque.marked;
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -580,12 +718,14 @@ pub(crate) fn write_semantic_with_records(
             &mut sections,
         );
         let skeleton = written.is_ok();
+        marked.extend(stale::mark_sections(&mut sections, &stale.configurations));
         losses.extend(written.unwrap_or_else(|reason| {
             vec![crate::loss::SldprtLossCode::WriterNativeSkeletonOmitted
                 .note(format!("the native skeleton is not written: {reason}"))]
         }));
         skeleton
     };
+    losses.extend(stale.losses(&marked));
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
@@ -656,7 +796,7 @@ pub(crate) fn write_semantic_with_records(
         unwritten_edits,
         written,
         claims,
-        source: source_baseline,
+        source: source_baseline.clone(),
         losses,
     })
 }
@@ -699,13 +839,7 @@ fn native_skeleton(
         .map(|name| native_part_name(name))
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "Part1".to_owned());
-    let active = ir
-        .model
-        .configurations
-        .iter()
-        .find(|value| value.active)
-        .and_then(|value| value.name.clone())
-        .unwrap_or_else(|| "Default".to_owned());
+    let active = active_configuration_name(ir);
     // The skeleton's stored bodies, parameters and last folders take
     // identifiers after the history summary's, so the decoder binds no
     // summary feature to a skeleton object.
@@ -1152,6 +1286,16 @@ fn assign_configuration_indices(
         }
     }
     Ok(assigned)
+}
+
+/// The name of the configuration row that states the active state of `ir`.
+fn active_configuration_name(ir: &CadIr) -> String {
+    ir.model
+        .configurations
+        .iter()
+        .find(|value| value.active)
+        .and_then(|value| value.name.clone())
+        .unwrap_or_else(|| "Default".to_owned())
 }
 
 fn generated_solidworks_xml(ir: &CadIr, active: &str) -> Vec<u8> {
@@ -1801,6 +1945,10 @@ struct RetainedBlockPatches<'a> {
     active_configuration: bool,
     /// The PMI records of these parameters; other records keep their bytes.
     edited_parameters: &'a HashSet<cadmpeg_ir::features::ParameterId>,
+    /// Pre-loaded SLDPRT native namespace for `ir`, when already decoded by the caller.
+    native: Option<&'a SldprtNative>,
+    /// The configurations, by name, whose stale mark the write sets.
+    stale: &'a BTreeSet<String>,
 }
 
 /// The retained blocks the output holds as stored, and the retained blocks it
@@ -1814,12 +1962,19 @@ fn opaque_blocks(
     retain_native_brep: bool,
     patches: RetainedBlockPatches<'_>,
 ) -> Result<OpaqueBlocks, CodecError> {
-    let native = ir
-        .native
-        .namespace("sldprt")
-        .map(SldprtNative::load)
-        .transpose()
-        .map_err(CodecError::from)?;
+    let loaded_native;
+    let native = match patches.native {
+        Some(native) => Some(native),
+        None => {
+            loaded_native = ir
+                .native
+                .namespace("sldprt")
+                .map(SldprtNative::load)
+                .transpose()
+                .map_err(CodecError::from)?;
+            loaded_native.as_ref()
+        }
+    };
     let active_name = match ir
         .model
         .configurations
@@ -1834,7 +1989,8 @@ fn opaque_blocks(
     let mut seen = HashSet::new();
     let mut blocks = Vec::new();
     let mut unavailable = Vec::new();
-    let mut kept_pmi = Vec::new();
+    let mut kept_edits = Vec::new();
+    let mut marked = BTreeSet::new();
     let mut replaced = HashMap::<&str, Vec<&str>>::new();
     for record in records
         .iter()
@@ -1872,7 +2028,7 @@ fn opaque_blocks(
         };
         let mut payload = data.to_vec();
         if lower.contains("pmisemanticdatadb") {
-            kept_pmi.extend(crate::pmi::patch_payload(
+            kept_edits.extend(crate::pmi::patch_payload(
                 ir,
                 record.id.as_str(),
                 &mut payload,
@@ -1880,8 +2036,22 @@ fn opaque_blocks(
             )?);
         }
         if let Some(active_name) = active_name {
-            if let Some(patched) = patch_active_configuration_xml(&payload, active_name)? {
+            match patch_active_configuration_xml(&payload, active_name) {
+                Ok(Some(patched)) => payload = patched,
+                Ok(None) => {}
+                Err(reason) => kept_edits.push(edit_dropped_note(
+                    EntityKind::Configuration,
+                    format!(
+                        "SLDPRT member {section} keeps its stored active configuration: {reason}, \
+                         so the active configuration {active_name} is not written there."
+                    ),
+                )),
+            }
+        }
+        if !patches.stale.is_empty() {
+            if let Some((patched, names)) = stale::mark(&payload, patches.stale) {
                 payload = patched;
+                marked.extend(names);
             }
         }
         if !seen.insert(record.id.as_str()) {
@@ -1902,7 +2072,8 @@ fn opaque_blocks(
         blocks,
         replaced,
         unavailable,
-        kept_pmi,
+        kept_edits,
+        marked,
     })
 }
 
@@ -1916,8 +2087,10 @@ struct OpaqueBlocks {
     /// Each retained block whose bytes the source fidelity does not hold,
     /// as its stream and id.
     unavailable: Vec<String>,
-    /// The losses of the edited PMI records that keep their stored bytes.
-    kept_pmi: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The losses of the edited records that keep their stored bytes.
+    kept_edits: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The configurations whose stale mark the written blocks set.
+    marked: BTreeSet<String>,
 }
 
 /// The patchable metadata members of one write, as the source stores them,
@@ -2271,10 +2444,14 @@ fn overwrite_bytes(payload: &mut [u8], offset: usize, bytes: &[u8]) -> Result<()
     Ok(())
 }
 
+/// `payload`, a `swSolidWorks` document of one model, with `name` as its
+/// active configuration. `Ok(None)` where `payload` is no `swSolidWorks`
+/// document; `Err` names why the document keeps its stored active
+/// configuration.
 fn patch_active_configuration_xml(
     payload: &[u8],
     name: &str,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<Vec<u8>>, &'static str> {
     let Some(text) = crate::container::xml_text(payload) else {
         return Ok(None);
     };
@@ -2287,25 +2464,20 @@ fn patch_active_configuration_xml(
     let mut models = document
         .descendants()
         .filter(|node| node.has_tag_name("swModel"));
-    let model = models
-        .next()
-        .ok_or_else(|| CodecError::Malformed("SolidWorks XML has no model record".into()))?;
+    let model = models.next().ok_or("the document holds no model record")?;
     if models.next().is_some()
         || document
             .descendants()
             .any(|node| node.has_tag_name("swConfiguration"))
     {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT active configuration edits require a complete configuration manifest rewrite"
-                .into(),
-        ));
+        return Err(
+            "the document holds a configuration manifest, which the writer does not rewrite",
+        );
     }
     let attribute = model
         .attributes()
         .find(|attribute| attribute.name() == "swConfigurationName")
-        .ok_or_else(|| {
-            CodecError::Malformed("SolidWorks XML has no active configuration".into())
-        })?;
+        .ok_or("the model record names no active configuration")?;
     let range = attribute.range();
     let mut output = String::with_capacity(text.len() + name.len());
     output.push_str(&text[..range.start]);
@@ -3121,29 +3293,66 @@ fn active_configuration_intent(ir: &CadIr) -> Option<ActiveConfigurationIntent<'
 }
 
 fn retained_source_baseline<'a>(
-    baseline: &'a mut Option<cadmpeg_ir::codec::Decoded>,
+    baseline: &'a mut Option<Arc<cadmpeg_ir::codec::Decoded>>,
     source: Option<&(DecodeContext<'_>, cadmpeg_core::decode::View<'_>)>,
 ) -> Result<Option<&'a cadmpeg_ir::codec::Decoded>, CodecError> {
+    type CachedBaseline = (
+        cadmpeg_ir::hash::digest::Sha256Digest,
+        usize,
+        Arc<cadmpeg_ir::codec::Decoded>,
+    );
+    static SOURCE_BASELINE_CACHE: std::sync::Mutex<Vec<CachedBaseline>> =
+        std::sync::Mutex::new(Vec::new());
+
     if baseline.is_none() {
         let Some((ctx, root)) = source else {
             return Ok(None);
         };
-        let mut decoded = crate::decode::decode(ctx, *root)?;
+        let raw = root.window();
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(raw);
+        let len = raw.len();
+        if let Ok(guard) = SOURCE_BASELINE_CACHE.lock() {
+            if let Some((_, _, cached)) = guard.iter().find(|(cached_digest, cached_len, _)| {
+                *cached_digest == digest && *cached_len == len
+            }) {
+                *baseline = Some(Arc::clone(cached));
+                return Ok(baseline.as_deref());
+            }
+        }
+        let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
         sort_arenas(&mut decoded.ir);
-        *baseline = Some(decoded);
+        let shared = Arc::new(decoded);
+        if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
+            if !guard.iter().any(|(cached_digest, cached_len, _)| {
+                *cached_digest == digest && *cached_len == len
+            }) {
+                if guard.len() >= 8 {
+                    guard.remove(0);
+                }
+                guard.push((digest, len, Arc::clone(&shared)));
+            }
+        }
+        *baseline = Some(shared);
+        return Ok(baseline.as_deref());
     }
-    Ok(baseline.as_ref())
+    Ok(baseline.as_deref())
 }
+
+/// The member that holds the display-list table.
+const DISPLAY_LISTS: &str = "Contents/DisplayLists";
 
 type RetainedDisplaySections = Vec<(String, Vec<u8>)>;
 
+/// The stored display members, where the document's tessellations and
+/// appearances are the decoded source's and each tessellation names one
+/// member of the source. `None` otherwise: the writer generates the display.
 fn retained_display_sections(
     ir: &CadIr,
     baseline: Option<&cadmpeg_ir::codec::Decoded>,
     scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<Option<RetainedDisplaySections>, CodecError> {
+) -> Option<RetainedDisplaySections> {
     let (Some(baseline), Some(scan)) = (baseline, scan) else {
-        return Ok(None);
+        return None;
     };
     let mut original = baseline.ir.model.tessellations.iter().collect::<Vec<_>>();
     let mut current = ir.model.tessellations.iter().collect::<Vec<_>>();
@@ -3153,7 +3362,7 @@ fn retained_display_sections(
         || baseline.ir.model.appearances != ir.model.appearances
         || baseline.ir.model.appearance_bindings != ir.model.appearance_bindings
     {
-        return Ok(None);
+        return None;
     }
     let mut names = HashSet::new();
     let mut result = Vec::new();
@@ -3162,28 +3371,18 @@ fn retained_display_sections(
             .source_fidelity
             .annotations
             .provenance
-            .get(mesh.id.as_str())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "retained tessellation has no proved source member".into(),
-                )
-            })?;
+            .get(mesh.id.as_str())?;
         let name = provenance.stream();
         if !names.insert(name.to_owned()) {
             continue;
         }
         let mut sources = scan.sections().filter(|source| source.name() == Some(name));
-        let source = sources.next().ok_or_else(|| {
-            CodecError::NotImplemented("retained display requires a named source member".into())
-        })?;
-        if sources.next().is_some() {
-            return Err(CodecError::NotImplemented(
-                "ambiguous retained display member identity".into(),
-            ));
-        }
+        let (Some(source), None) = (sources.next(), sources.next()) else {
+            return None;
+        };
         result.push((name.to_owned(), source.payload().to_vec()));
     }
-    Ok(Some(result))
+    Some(result)
 }
 
 fn retained_history_sections(

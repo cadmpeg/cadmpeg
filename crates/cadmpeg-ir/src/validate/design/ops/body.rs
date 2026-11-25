@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Patterns, template instances, and body operations (§6.5).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::text::NonBlankString;
 
@@ -277,6 +277,79 @@ pub(super) fn check_pattern(
                 );
             }
             check_generated_members(index, site, "pattern member", &listed, findings);
+            check_member_containers(index, site, &listed, findings);
+        }
+    }
+}
+
+/// A pattern's member features belong to the pattern's container. Where that
+/// container is ordered, the members' contiguity after the pattern decides it.
+fn check_member_containers(
+    index: &DesignRecords<'_>,
+    site: Site<'_>,
+    listed: &[&str],
+    findings: &mut Vec<Finding>,
+) {
+    let Some(container) = index.parents.get(&MemberKey::Feature(site.feature)) else {
+        return;
+    };
+    if matches!(
+        index.containers.get(container),
+        Some(Container::Ordered { .. })
+    ) {
+        return;
+    }
+    for &feature in listed {
+        if index.features.contains_key(feature)
+            && index.parents.get(&MemberKey::Feature(feature)) != Some(container)
+        {
+            error(
+                findings,
+                site.entity,
+                crate::rule!(
+                    "design.pattern-member-outside-pattern-container",
+                    "pattern member {feature} is no member of the pattern's container"
+                ),
+            );
+        }
+    }
+}
+
+/// Each feature that a pattern's `Members` or a template instance's `members`
+/// lists belongs to one generator.
+pub(super) fn check_generators(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+    let mut generators: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for (_, generator, definition) in index.feature_definitions() {
+        let members: Vec<&str> = match &definition.operation {
+            FeatureOperation::Pattern(pattern) => match &pattern.instances {
+                PatternInstances::Members(members) => members
+                    .iter()
+                    .flat_map(|member| &member.features)
+                    .map(FeatureId::as_str)
+                    .collect(),
+                PatternInstances::Implicit(_) => Vec::new(),
+            },
+            FeatureOperation::TemplateInstance(instance) => {
+                instance.members.iter().map(FeatureId::as_str).collect()
+            }
+            _ => Vec::new(),
+        };
+        for member in members {
+            generators.entry(member).or_default().insert(generator);
+        }
+    }
+    for (member, generators) in generators {
+        if generators.len() > 1 {
+            let names: Vec<&str> = generators.into_iter().collect();
+            error(
+                findings,
+                member,
+                crate::rule!(
+                    "design.member-listed-several-generators",
+                    "feature is a member of several generators: {}",
+                    names.join(", ")
+                ),
+            );
         }
     }
 }
@@ -974,44 +1047,6 @@ pub(super) fn check_template_instance(
     }
     let listed: Vec<&str> = instance.members.iter().map(FeatureId::as_str).collect();
     check_generated_members(index, site, "template member", &listed, findings);
-}
-
-/// Every `TemplateInput` pick names an input of an instance that lists the
-/// picking feature as a member.
-pub(super) fn check_template_inputs(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
-    for feature in &index.ir.design.features {
-        let Ok(wire) = serde_json::to_value(&feature.definition) else {
-            continue;
-        };
-        for found in super::tagged(&wire, "template_input") {
-            let Ok(PickTarget::TemplateInput { instance, input }) =
-                serde_json::from_value::<PickTarget>(found.clone())
-            else {
-                continue;
-            };
-            let valid = match index
-                .features
-                .get(instance.as_str())
-                .map(|f| &f.definition.operation)
-            {
-                Some(FeatureOperation::TemplateInstance(template)) => {
-                    template.members.contains(&feature.id)
-                        && usize::try_from(input).is_ok_and(|input| input < template.inputs.len())
-                }
-                _ => false,
-            };
-            if !valid {
-                error(
-                    findings,
-                    feature.id.as_str(),
-                    crate::rule!("design.templateinput-picks-input-no-input-instance", 
-                        "TemplateInput picks input {input} of {}, which is no input of an instance that lists this feature",
-                        instance.as_str()
-                    ),
-                );
-            }
-        }
-    }
 }
 
 /// Part 10 (§6.5): "`target` is `None` only with `Join`, `Intersect`, or

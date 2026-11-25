@@ -289,6 +289,15 @@ fn an_extent_keeps_the_zero_bound_it_holds() {
     );
 }
 
+#[test]
+fn a_cage_body_is_left_out_with_its_cage() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut ir, "usd");
+    let (text, report) = encode(&ir);
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    assert_eq!(decode(&text).ir().geometry.bodies.len(), 1, "{text}");
+}
+
 fn written_empty(report: &cadmpeg_ir::report::export::ExportReport) -> bool {
     report
         .losses

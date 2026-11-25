@@ -59,7 +59,7 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
     assert!(!contained.ir().geometry.bodies.is_empty());
 
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    strict.strictness.pinned = true;
     let refused = F3dCodec.decode(&mut Cursor::new(bytes), &strict);
     assert!(
         matches!(
@@ -244,7 +244,23 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         &rooted,
         None,
         "export/native.records-omitted",
-        "does not write the Design configuration root record",
+        "writes no DesignConfigurationRoot record",
+    );
+    let mut rooted_bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&rooted, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut rooted_bytes))
+        .expect("an active row is written without its root record");
+    let rooted_round_trip = F3dCodec
+        .decode(&mut Cursor::new(rooted_bytes), &DecodeOptions::default())
+        .expect("the design without its root record decodes");
+    assert_eq!(
+        f3d_native(rooted_round_trip.ir()).design_configurations,
+        native.design_configurations
+    );
+    assert_eq!(
+        rooted_round_trip.ir().model.configurations,
+        expected_projected
     );
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -700,22 +716,27 @@ fn generated_source_less_f3d_drops_subds() {
             &[],
         )
         .unwrap();
-    source_less.geometry.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-        native_ref: None,
-    });
+    let ordinary = source_less.geometry.bodies.len();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut source_less, "f3d");
 
-    crate::test_support::assert_written_with_loss(
+    let report = crate::test_support::assert_written_with_loss(
         &source_less,
         None,
         &crate::loss::F3dLossCode::WriterSubdOmitted
             .kind()
             .to_string(),
-        "test:f3d:subd#0",
+        cage.body.as_str(),
     );
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", ordinary);
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    let written = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(written.ir().geometry.bodies.len(), ordinary);
 }
 
 #[test]

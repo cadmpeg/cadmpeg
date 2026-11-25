@@ -852,6 +852,18 @@ impl JsonSchema for NativeRecord {
     }
 }
 
+/// The native-record links of `record` of the arena `arena`: its `links`
+/// member where that is an array in `unknowns` and an array of strings in
+/// another arena, as validation reads them.
+fn record_links(arena: &str, record: &NativeRecord) -> Vec<Value> {
+    match record.field("links") {
+        Some(Value::Array(links)) if arena == "unknowns" || links.iter().all(Value::is_string) => {
+            links
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Serialize codec-owned typed records into one arena in canonical record order.
 ///
 /// The arena is returned rather than stored, so a caller that only needs the
@@ -1113,17 +1125,35 @@ impl Native {
         })
     }
 
+    /// The first arena, as `<codec>.<arena>`, whose records do not state
+    /// their ids in strictly increasing order.
+    pub(crate) fn unordered_arena(&self) -> Option<String> {
+        self.0.iter().find_map(|(format, namespace)| {
+            namespace.arenas.iter().find_map(|(arena, records)| {
+                (!records.windows(2).all(|pair| pair[0].id() < pair[1].id()))
+                    .then(|| format!("{format}.{arena}"))
+            })
+        })
+    }
+
     /// States one record of each id in each sorted namespace arena whose
-    /// copies hold one value and none of an id whose copies differ,
-    /// returning each such id.
-    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
+    /// copies hold one value, and returns each id whose copies differ, whose
+    /// copies `differing` keeps.
+    pub(crate) fn repeated_ids(
+        &mut self,
+        differing: crate::document::DifferingCopies,
+    ) -> Vec<crate::document::RepeatedId> {
         let mut repeated = Vec::new();
         for (format, namespace) in &mut self.0 {
             for (arena, records) in &mut namespace.arenas {
                 crate::document::drop_repeated_copies(
                     records,
                     NativeRecord::id,
-                    &format!("native.{format}.{arena}"),
+                    &crate::give_up::Arena::Native {
+                        codec: format.as_str().to_owned(),
+                        arena: arena.as_str().to_owned(),
+                    },
+                    differing,
                     &mut repeated,
                 );
             }
@@ -1131,16 +1161,213 @@ impl Native {
         repeated
     }
 
-    /// Removes the record at `index` of `codec`'s arena `arena`, returning
-    /// its id.
-    pub(crate) fn remove_record(
+    /// The id of the record at `index` of `codec`'s arena `arena`.
+    pub(crate) fn id_at(&self, codec: &str, arena: &str, index: usize) -> Option<String> {
+        let records = self.0.get(codec)?.arenas.get(arena)?;
+        records.get(index).map(|record| record.id().to_owned())
+    }
+
+    /// The canonical JSON text of the records of `id` in `codec`'s arena
+    /// `arena`, or `None` where the arena holds none.
+    pub(crate) fn record_text(&self, codec: &str, arena: &str, id: &str) -> Option<String> {
+        let copies: Vec<&NativeRecord> = self
+            .0
+            .get(codec)?
+            .arenas
+            .get(arena)?
+            .iter()
+            .filter(|record| record.id() == id)
+            .collect();
+        (!copies.is_empty()).then(|| crate::give_up::record_text(&copies))
+    }
+
+    /// Removes every record of `id` from `codec`'s arena `arena`, returning
+    /// the number removed.
+    pub(crate) fn remove_records(&mut self, codec: &str, arena: &str, id: &str) -> usize {
+        let Some(records) = self
+            .0
+            .get_mut(codec)
+            .and_then(|namespace| namespace.arenas.get_mut(arena))
+        else {
+            return 0;
+        };
+        let before = records.len();
+        records.retain(|record| record.id() != id);
+        before - records.len()
+    }
+
+    /// Counts each namespace record in `references`.
+    pub(crate) fn hold_ids(&self, references: &mut crate::give_up::References) {
+        for record in self
+            .0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+        {
+            references.hold(record.id());
+        }
+    }
+
+    /// Adds the names each namespace record holds to `references`, other
+    /// than the `unknowns` stubs, whose links are a set (§3.3).
+    pub(crate) fn add_holders(&self, references: &mut crate::give_up::References) {
+        for (codec, namespace) in &self.0 {
+            for (arena, records) in &namespace.arenas {
+                if arena.as_str() == "unknowns" {
+                    continue;
+                }
+                let arena = crate::give_up::Arena::Native {
+                    codec: codec.as_str().to_owned(),
+                    arena: arena.as_str().to_owned(),
+                };
+                for record in records {
+                    references.add(&arena, record.id(), record);
+                }
+            }
+        }
+    }
+
+    /// The records of `id` in the native arena `arena`, which is in identity
+    /// order.
+    fn records(&self, arena: &crate::give_up::Arena, id: &str) -> &[NativeRecord] {
+        let crate::give_up::Arena::Native { codec, arena } = arena else {
+            return &[];
+        };
+        let Some(records) = self
+            .0
+            .get(codec.as_str())
+            .and_then(|namespace| namespace.arenas.get(arena.as_str()))
+        else {
+            return &[];
+        };
+        let start = records.partition_point(|record| record.id() < id);
+        let length = records[start..]
+            .iter()
+            .take_while(|record| record.id() == id)
+            .count();
+        &records[start..start + length]
+    }
+
+    /// The holder the records of `id` in the native arena `arena` are, where
+    /// they name an id of `gone`.
+    pub(crate) fn holder(
+        &self,
+        arena: &crate::give_up::Arena,
+        id: &str,
+        gone: &std::collections::BTreeSet<String>,
+    ) -> Option<crate::give_up::Holder> {
+        let names: Vec<(String, String)> = self
+            .records(arena, id)
+            .iter()
+            .filter_map(|record| {
+                crate::give_up::Holder::of(arena, id, record, |text| {
+                    gone.get(text).map(String::as_str)
+                })
+            })
+            .flat_map(|holder| holder.names)
+            .collect();
+        (!names.is_empty()).then(|| crate::give_up::Holder {
+            arena: arena.clone(),
+            id: id.to_owned(),
+            names,
+        })
+    }
+
+    /// The ids of `among` that a record of a namespace arena has.
+    pub(crate) fn held_among<'a>(
+        &self,
+        among: &std::collections::BTreeSet<&'a str>,
+    ) -> std::collections::BTreeSet<&'a str> {
+        self.0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+            .filter_map(|record| among.get(record.id()).copied())
+            .collect()
+    }
+
+    /// The ids of `among` that a native-record link names.
+    pub(crate) fn linked_among<'a>(
+        &self,
+        among: &std::collections::BTreeSet<&'a str>,
+    ) -> std::collections::BTreeSet<&'a str> {
+        let mut linked = std::collections::BTreeSet::new();
+        for namespace in self.0.values() {
+            for (arena, records) in &namespace.arenas {
+                for record in records {
+                    linked.extend(
+                        record_links(arena.as_str(), record)
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .filter_map(|link| among.get(link).copied()),
+                    );
+                }
+            }
+        }
+        linked
+    }
+
+    /// Removes each id of `gone` from the native-record links of every
+    /// record, and returns each record id with the link it lost (§3.3).
+    ///
+    /// # Errors
+    ///
+    /// A record whose text no longer reads as an object.
+    pub(crate) fn release_links(
         &mut self,
-        codec: &str,
-        arena: &str,
-        index: usize,
-    ) -> Option<String> {
-        let records = self.0.get_mut(codec)?.arenas.get_mut(arena)?;
-        (index < records.len()).then(|| records.remove(index).id().to_owned())
+        gone: &std::collections::BTreeSet<String>,
+    ) -> Result<Vec<(String, String)>, NativeConvertError> {
+        let mut lost = Vec::new();
+        for namespace in self.0.values_mut() {
+            for (arena, records) in &mut namespace.arenas {
+                for record in records.iter_mut() {
+                    let (released, kept): (Vec<Value>, Vec<Value>) =
+                        record_links(arena.as_str(), record)
+                            .into_iter()
+                            .partition(|link| {
+                                link.as_str().is_some_and(|link| gone.contains(link))
+                            });
+                    if released.is_empty() {
+                        continue;
+                    }
+                    let mut fields = record.fields()?;
+                    fields.insert("links".to_owned(), Value::Array(kept));
+                    *record = NativeRecord::new(record.id.clone(), fields)?;
+                    lost.extend(released.into_iter().filter_map(|link| match link {
+                        Value::String(link) => Some((record.id().to_owned(), link)),
+                        _ => None,
+                    }));
+                }
+            }
+        }
+        Ok(lost)
+    }
+
+    /// Removes every record of the native arena `arena` whose id is in
+    /// `ids`, returning the number removed of each id.
+    pub(crate) fn remove_ids(
+        &mut self,
+        arena: &crate::give_up::Arena,
+        ids: &std::collections::BTreeSet<String>,
+    ) -> BTreeMap<String, usize> {
+        let mut removed = BTreeMap::new();
+        let crate::give_up::Arena::Native { codec, arena } = arena else {
+            return removed;
+        };
+        let Some(records) = self
+            .0
+            .get_mut(codec.as_str())
+            .and_then(|namespace| namespace.arenas.get_mut(arena.as_str()))
+        else {
+            return removed;
+        };
+        records.retain(|record| {
+            if ids.contains(record.id()) {
+                *removed.entry(record.id().to_owned()).or_insert(0) += 1;
+                false
+            } else {
+                true
+            }
+        });
+        removed
     }
 
     /// Sort every arena into canonical identity order.

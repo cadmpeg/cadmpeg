@@ -161,6 +161,8 @@ pub(crate) enum CatiaLossCode {
     TopologyZeroEntityNotTransferred,
     /// Zero-entity wire loops transferred; face topology remains unresolved.
     TopologyZeroEntityFaceUnresolved,
+    /// A face on a plane, cylinder, or cone states no loop, so it is stated partial.
+    TopologyFaceBoundaryUnstated,
     /// Outer declarations do not select one physically contained object graph.
     HistoryModelingScopeUnresolved,
     /// Modeling-scope object-graph field records remain unresolved.
@@ -262,6 +264,7 @@ impl CatiaLossCode {
         Self::TopologyZeroEntityGaugeSubstituted,
         Self::TopologyZeroEntityNotTransferred,
         Self::TopologyZeroEntityFaceUnresolved,
+        Self::TopologyFaceBoundaryUnstated,
         Self::HistoryModelingScopeUnresolved,
         Self::HistoryObjectRecordsUnresolved,
         Self::HistoryLegacyRunsUnresolved,
@@ -355,6 +358,7 @@ impl CatiaLossCode {
             Self::TopologyZeroEntityGaugeSubstituted => "topology.zero-entity-gauge-substituted",
             Self::TopologyZeroEntityNotTransferred => "topology.zero-entity-not-transferred",
             Self::TopologyZeroEntityFaceUnresolved => "topology.zero-entity-face-unresolved",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::HistoryModelingScopeUnresolved => "history.modeling-scope-unresolved",
             Self::HistoryObjectRecordsUnresolved => "history.object-records-unresolved",
             Self::HistoryLegacyRunsUnresolved => "history.legacy-runs-unresolved",
@@ -392,7 +396,7 @@ impl CatiaLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::GeometryCarrierSummary => Severity::Info,
+            Self::GeometryCarrierSummary | Self::GeometryVertexToleranceWidened => Severity::Info,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::TopologyBoundaryGraphNotEmitted
@@ -459,7 +463,8 @@ impl CatiaLossCode {
             | Self::TopologyZeroEntityCandidatesBounded
             | Self::TopologyZeroEntitySupportsRetained
             | Self::TopologyZeroEntityNotTransferred
-            | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
+            | Self::TopologyZeroEntityFaceUnresolved
+            | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted
             | Self::TopologyAffineVertexReconciled
             | Self::TopologyOwnedPatchSenseInferred
@@ -579,6 +584,7 @@ mod tests {
                 "topology.zero-entity-gauge-substituted",
                 "topology.zero-entity-not-transferred",
                 "topology.zero-entity-face-unresolved",
+                "topology.face-boundary-unstated",
                 "history.modeling-scope-unresolved",
                 "history.object-records-unresolved",
                 "history.legacy-runs-unresolved",

@@ -53,18 +53,6 @@ impl fmt::Display for LossCategory {
     }
 }
 
-/// Strict-mode handling for a loss code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum StrictConsequence {
-    /// Strict mode must refuse the operation.
-    Reject,
-    /// Strict mode may proceed.
-    Tolerate,
-}
-
 /// Shared cross-codec loss taxonomy.
 ///
 /// Category and default severity live here. Codec-local loss enums map into a
@@ -301,26 +289,27 @@ impl LossTaxonomy {
             _ => Severity::Warning,
         }
     }
+}
 
-    /// Returns the minimum severity that makes strict mode reject this loss.
-    pub const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::MissingGeometryStream
-            | Self::TopologyNotTransferred
-            | Self::GeometryNotTransferred
-            | Self::GeometryAgreementSampled
-            | Self::ReferenceGraphNotClosed
-            | Self::CurvelessEdgeOmitted
-            | Self::UnknownSurfaceFaceOmitted
-            | Self::SubdOmitted
-            | Self::NoncanonicalSourceSyntax
-            | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
-            | Self::IntegrityFailure
-            | Self::NoExportableSolids => Some(Severity::Warning),
-            _ => None,
-        }
-    }
+/// The shared codes §3.2 spells without a namespace, whichever codec charges
+/// them, each with the strict floor §3.2 states for it.
+pub const BARE_SHARED_CODES: [(&str, Option<Severity>); 6] = [
+    ("record.unreadable", Some(Severity::Error)),
+    ("sidecar.stale", None),
+    ("geometry.vertex-tolerance-widened", None),
+    ("topology.face-boundary-unstated", None),
+    ("target.source-dialect-displaced", None),
+    ("target.request-displaced", None),
+];
+
+/// The strict floor §3.2 states for a bare shared code. Any other code has
+/// the floor its owner pins with [`NamespacedLossKind::with_strict_floor`].
+#[must_use]
+pub fn code_strict_floor(code: &str) -> Option<Severity> {
+    BARE_SHARED_CODES
+        .iter()
+        .find(|(shared, _)| *shared == code)
+        .and_then(|(_, floor)| *floor)
 }
 
 impl fmt::Display for LossTaxonomy {
@@ -455,7 +444,7 @@ impl LossKind {
         Self::Shared { kind: taxonomy }
     }
 
-    /// Constructs a codec-local loss with its taxonomy floor.
+    /// Constructs a codec-local loss with its [`code_strict_floor`].
     pub fn namespaced(
         namespace: LossNamespace<'_>,
         code: impl Into<String>,
@@ -498,27 +487,29 @@ impl LossKind {
         self.taxonomy().default_severity()
     }
 
-    /// Returns the pinned strict-mode severity floor.
+    /// Returns the strict floor the code pins (§3.2). A shared taxonomy
+    /// code pins none.
     pub const fn strict_floor(&self) -> Option<Severity> {
         match self {
-            Self::Shared { kind } => kind.strict_floor(),
+            Self::Shared { .. } => None,
             Self::Namespaced(kind) => kind.strict_floor,
         }
     }
 }
 
 impl NamespacedLossKind {
-    /// Constructs a codec-local loss with its taxonomy floor.
+    /// Constructs a codec-local loss with its [`code_strict_floor`].
     pub fn new(
         namespace: LossNamespace<'_>,
         code: impl Into<String>,
         taxonomy: LossTaxonomy,
     ) -> Self {
+        let code = code.into();
         Self {
             namespace: LossNamespaceName(namespace.as_str().to_owned()),
-            code: code.into(),
+            strict_floor: code_strict_floor(&code),
+            code,
             taxonomy,
-            strict_floor: taxonomy.strict_floor(),
         }
     }
 
@@ -532,13 +523,14 @@ impl NamespacedLossKind {
     ) -> Result<Self, LossNamespaceError> {
         Ok(Self {
             namespace: LossNamespaceName::try_from(namespace)?,
+            strict_floor: code_strict_floor(&code),
             code,
             taxonomy,
-            strict_floor: taxonomy.strict_floor(),
         })
     }
 
-    /// Pins the strict-mode severity floor independently of taxonomy.
+    /// Pins the strict floor that §3.2 or the codec's format specification
+    /// states for the code.
     #[must_use]
     pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
         self.strict_floor = floor;
@@ -623,14 +615,6 @@ impl LossNote {
     pub const fn with_count(mut self, count: u64) -> Self {
         self.count = Some(count);
         self
-    }
-
-    /// Returns strict-mode handling after applying the kind's severity floor.
-    pub fn strict_consequence(&self) -> StrictConsequence {
-        match self.code.strict_floor() {
-            Some(floor) if self.severity >= floor => StrictConsequence::Reject,
-            _ => StrictConsequence::Tolerate,
-        }
     }
 }
 

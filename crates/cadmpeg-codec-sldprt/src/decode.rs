@@ -174,6 +174,52 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+    decode_inner(ctx, root, true)
+}
+
+/// Decodes a retained `.sldprt` source image without stamping local SHA-256
+/// digests, for internal writer baselines that compare against the caller's
+/// recorded digests.
+pub(crate) fn decode_without_digests(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<Decoded, CodecError> {
+    decode_inner(ctx, root, false)
+}
+
+/// Decodes a written SLDPRT byte slice for read-back comparison, skipping
+/// local-digest and canonical-JSON digest calculation that read-back ignores.
+pub(crate) fn decode_for_read_back(
+    bytes: &[u8],
+) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
+    let options = cadmpeg_ir::codec::DecodeOptions::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut cursor = std::io::Cursor::new(bytes);
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::read_root(
+        &mut cursor,
+        &arena,
+        &options.policy,
+        options.depth,
+    )?;
+    let result = decode_inner(&ctx, root, false)
+        .map_err(Into::into)
+        .and_then(|decoded| {
+            cadmpeg_ir::codec::DecodeResult::from_decoded_without_digests(
+                &ctx,
+                decoded,
+                <crate::SldprtCodec as cadmpeg_ir::codec::CodecBackend>::FORMAT,
+                &options.strictness,
+            )
+        });
+    ctx.finish_session()?;
+    result
+}
+
+fn decode_inner(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    stamp_digests: bool,
+) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let assembly = crate::assembly::read(ctx, &scan)?;
     let placed_virtual = assembly
@@ -214,7 +260,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         let root = root.id.clone();
         decoded.ir.display_unresolved_meshes(&root);
     }
-    stamp_local_digests(ctx, &mut decoded.ir)?;
+    if stamp_digests {
+        stamp_local_digests(ctx, &mut decoded.ir)?;
+    }
     crate::codec_digests::move_to_sidecar(&mut decoded)?;
     Ok(decoded)
 }
@@ -1294,7 +1342,9 @@ pub(crate) fn append_design_losses(
     let incomplete_body_selection = |selection: &BodySelection| match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
         BodySelection::Historical { bodies, .. } => bodies.is_empty(),
-        BodySelection::ResolvedSet { .. } | BodySelection::HistoricalSet { .. } => false,
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::GeneratedSet { .. } => false,
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,

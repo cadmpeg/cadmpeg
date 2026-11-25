@@ -284,11 +284,14 @@ impl<'a> F3zSession<'a> {
         })
     }
 
-    /// Composes one result for every listed entry, in any arrival order.
+    /// Composes one result for every listed entry, in any arrival order,
+    /// and applies `strictness` to the completed report as
+    /// [`cadmpeg_ir::codec::Codec::decode`] does.
     /// Missing, duplicate, and foreign-session results are refused.
     pub fn compose(
         &self,
         members: impl IntoIterator<Item = F3zDecodedMember>,
+        strictness: &cadmpeg_ir::report::strictness::Strictness,
     ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
         let ctx = self.checkpoint.resume(&arena);
@@ -296,7 +299,9 @@ impl<'a> F3zSession<'a> {
         let result = self
             .compose_into(&ctx, members)
             .map_err(DecodeFailure::from)
-            .and_then(|decoded| DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d")));
+            .and_then(|decoded| {
+                DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d"), strictness)
+            });
         ctx.finish_session()?;
         result
     }

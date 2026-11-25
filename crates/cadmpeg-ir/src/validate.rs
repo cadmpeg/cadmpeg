@@ -23,9 +23,9 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod appearance_attributes;
-mod carriers_parameterization;
+pub(crate) mod carriers_parameterization;
 mod cycles;
-mod design;
+pub(crate) mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
@@ -62,8 +62,8 @@ use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
-    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
-    check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_loopless_faces,
+    check_partial_topology, check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
 use topology::procedural_owners::check_procedural_owners;
 use topology::{
@@ -154,7 +154,7 @@ fn validate_model_with_index<'ir>(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ids, &mut findings)?;
+    check_identity_and_order(ids, &products::decode_set::file_keys(ir), &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_procedural_owners(ir, &mut findings);
@@ -204,6 +204,7 @@ fn check_topology_rules(
     check_child_list_reciprocity(ir, findings);
     check_closed_edges(ir, findings);
     check_shell_connectivity(ir, findings);
+    check_loopless_faces(ir, findings);
     check_solid_edge_uses(ir, findings);
     check_partial_topology(ir, findings);
     check_wire_topology(ir, findings);

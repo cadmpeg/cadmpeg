@@ -65,15 +65,21 @@ use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod body_placement;
+mod cages;
 mod closed_edge_range;
+mod covered_uses;
 mod design_content;
 mod encode;
+mod exact_equivalents;
 mod extrusion_directrix;
+mod open_shell_restatement;
 mod ownership;
 mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;
+mod revolved_restatement;
 mod roundtrip;
 
 fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
@@ -98,7 +104,7 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxon
 }
 
 #[test]
-fn drops_a_mixed_unclassified_bounded_surface_representation() {
+fn completes_a_mixed_unclassified_plane_boundary_with_computed_parameter_curves() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
@@ -155,11 +161,22 @@ fn drops_a_mixed_unclassified_bounded_surface_representation() {
         .expect("the representable part is written");
     let losses = &plan.report().losses;
     assert!(
-        losses
+        !losses
             .iter()
             .any(|loss| loss.code.to_string() == "iges/writer.face-omitted"),
         "{losses:#?}"
     );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("the file is written");
+    let read = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("the written file decodes");
+    let geometry = &read.ir().geometry;
+    assert_eq!(geometry.faces.len(), decoded.ir().geometry.faces.len());
+    assert!(geometry
+        .coedges
+        .iter()
+        .all(|coedge| !coedge.pcurves.is_empty()));
 }
 
 fn line_pcurve(id: &str, direction: [f64; 2]) -> Pcurve {

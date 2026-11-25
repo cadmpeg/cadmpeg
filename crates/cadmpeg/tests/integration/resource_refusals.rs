@@ -337,7 +337,8 @@ fn input_byte_override_admits_the_exact_file_length() {
 #[test]
 fn check_json_retains_semantic_decode_refusals() {
     let directory = tempdir().unwrap();
-    let strict = crate::support::minimal_rhino_archive(directory.path(), "undeclared.3dm", "100");
+    let strict =
+        crate::support::rhino_archive_with_unreadable_point(directory.path(), "unreadable.3dm");
     let unsupported = directory.path().join("part28.xml");
     fs::write(&unsupported, b"<iso_10303_28/>").unwrap();
     for (input, format, code) in [

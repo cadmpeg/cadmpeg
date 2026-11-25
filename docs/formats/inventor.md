@@ -1407,6 +1407,8 @@ Feature-label class `e899dbdfd31165afc0000185e89c6b4f` identifies Tagging. In se
 
 The collection contains a type-2 reference list. Each member is a non-null qualified reference to a surface-body wrapper of type `474d8790d011f8d10008cabc0663dc09` in the same PmDc segment. Each wrapper has a non-null unqualified body reference, with the external-reference grammar of section 13.4. The Tagging label has an empty participant list.
 
+A PmDc segment that holds one derived stored-body feature (section 13.4) and one Tagging feature has the Tagging feature next after the derived feature in the feature order, with no other feature between them. The slot-0 collection of that Tagging feature has one member, and that member is the result-body wrapper (slot 1) of the derived feature. The wrapper has a kernel-entity link, as section 13.4 states. The Tagging feature has no result-body wrapper of its own, so it creates no body identity.
+
 ### 13.9 Stored-body composites
 
 Feature-label class `0843c7c2244c2dee62b95ab01118d108` identifies a stored-body composite. In segment major versions 19, 23, and 25, its owner uses the generic feature grammar of section 13. Its type-2 property vector has three non-null qualified references:

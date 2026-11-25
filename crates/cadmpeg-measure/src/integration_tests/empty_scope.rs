@@ -3,23 +3,28 @@
 //! `measure:output.empty`.
 
 use cadmpeg_core::decode::ContentScope;
-use cadmpeg_ir::report::strictness::code_name;
+use cadmpeg_ir::report::strictness::{code_name, Strictness};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::MeasureLossCode;
 use crate::select::Selection;
-use crate::test_support::builders::{measure, plate_with_hole};
+use crate::session::{MeasureError, MeasureInput, MeasureOptions, Measurer};
+use crate::test_support::builders::{measure, plate_with_hole, service_context};
 
-#[test]
-fn a_scope_without_the_model_class_charges_output_empty() {
+fn scope_without_model() -> CadIr {
     let mut ir = CadIr::empty();
     ir.set_scope(ContentScope {
         model: false,
         design: false,
         process: false,
-    })
-    .expect("an empty document holds no class");
+    });
+    ir
+}
+
+#[test]
+fn a_scope_without_the_model_class_charges_output_empty() {
+    let ir = scope_without_model();
     let report = measure(&ir, &Selection::default());
     assert!(report.bodies().is_empty());
     let [loss] = report.losses().as_slice() else {
@@ -35,4 +40,28 @@ fn a_scope_without_the_model_class_charges_output_empty() {
 fn a_model_document_charges_no_loss() {
     let report = measure(&plate_with_hole(false), &Selection::default());
     assert!(report.losses().is_empty());
+}
+
+#[test]
+fn a_caller_strictness_on_output_empty_refuses_the_measurement() {
+    let ir = scope_without_model();
+    let ctx = service_context();
+    let input = MeasureInput {
+        ir: &ir,
+        fidelity: None,
+        geometry_transferred: true,
+    };
+    let options = MeasureOptions {
+        strictness: Strictness::default().with_code("measure:output.empty"),
+        ..MeasureOptions::default()
+    };
+    let Err(MeasureError::StrictRejected { report, entry }) =
+        Measurer::new(input, options).measure(&ctx, &Selection::default())
+    else {
+        panic!("the strictness refuses measure:output.empty");
+    };
+    assert_eq!(
+        code_name(&report.losses()[entry].code),
+        "measure:output.empty"
+    );
 }
