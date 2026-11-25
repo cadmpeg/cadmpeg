@@ -49,8 +49,7 @@
             "value": {
               "code": "geometry.carrier-not-written",
               "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
+              "namespace": "step"
             }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
@@ -140,8 +139,7 @@
             "value": {
               "code": "geometry.carrier-not-written",
               "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
+              "namespace": "step"
             }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
@@ -231,8 +229,7 @@
             "value": {
               "code": "geometry.carrier-not-written",
               "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
+              "namespace": "step"
             }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",

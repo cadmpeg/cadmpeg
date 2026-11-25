@@ -95,8 +95,7 @@
           "value": {
             "code": "export.carrier-not-written",
             "kind": "geometry_not_transferred",
-            "namespace": "usd",
-            "strict_floor": "warning"
+            "namespace": "usd"
           }
         },
         "message": "2 curves with no line or NURBS form and 1 surfaces that no face uses were not written",
@@ -108,8 +107,7 @@
           "value": {
             "code": "output.empty",
             "kind": "no_exportable_solids",
-            "namespace": "export",
-            "strict_floor": "warning"
+            "namespace": "export"
           }
         },
         "message": "the written USD layer holds no prim: the document states no occurrence, body, mesh, curve, point, material, or physics record this writer encodes",
