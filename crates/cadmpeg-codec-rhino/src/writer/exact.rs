@@ -21,8 +21,8 @@ const DOMAIN_END_SLACK: f64 = 1e-12;
 const CONSTANT_COORDINATE_SPREAD: f64 = 1e-12;
 /// Relative distance within which a rebuilt conic pcurve meets its source.
 const REBUILT_PCURVE_TOLERANCE: f64 = 1e-9;
-/// Relative distance within which two pcurve pieces meet end to end.
-const JOIN_GAP: f64 = 1e-9;
+/// Relative distance within which two curve pieces meet end to end.
+pub(super) const JOIN_GAP: f64 = 1e-9;
 /// Most arcs one parameter range is split into.
 const MAX_ARCS: usize = 4096;
 
@@ -373,7 +373,12 @@ impl ArcAxis {
             (width / widest * (1.0 - DOMAIN_END_SLACK)).ceil().max(1.0),
         )
         .filter(|spans| *spans <= MAX_ARCS)
-        .ok_or_else(|| format!("the parameter range [{lo}, {hi}] needs too many arcs"))?;
+        .ok_or_else(|| {
+            format!(
+                "the parameter range [{lo}, {hi}] needs more arcs than the writer's limit of \
+                 {MAX_ARCS}"
+            )
+        })?;
         let half = width / (2.0 * index_f64(spans)?);
         let (cos, sin) = trig(hyperbolic);
         let middle_weight = cos(half);

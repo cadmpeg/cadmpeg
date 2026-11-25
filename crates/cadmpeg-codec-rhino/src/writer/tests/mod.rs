@@ -14,6 +14,7 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 
 mod computed_values;
 mod coverage;
+mod edge_forms;
 mod encoding;
 mod exact_forms;
 mod free_geometry;
