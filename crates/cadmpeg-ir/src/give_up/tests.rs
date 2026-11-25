@@ -665,3 +665,78 @@ fn a_construction_goes_with_the_carrier_that_owns_it() {
     assert!(ir.geometry.procedural_curves.is_empty());
     assert_closed(&ir, &owner, &outcome);
 }
+
+/// Each Error finding of `ir`, by rule and record.
+fn errors(ir: &CadIr) -> BTreeSet<(String, Option<String>)> {
+    crate::validate::validate_neutral(ir, Vec::new())
+        .expect("validation runs")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.severity >= crate::report::Severity::Error)
+        .map(|finding| (finding.rule.as_str().to_owned(), finding.entity))
+        .collect()
+}
+
+/// A shell whose cage is given up holds no member and states its members
+/// unstated (§5.6), and the document holds no cage outside a shell.
+#[test]
+fn a_shell_that_loses_its_cage_states_its_members_unstated() {
+    let mut ir = crate::examples::directed_subd_sum().unwrap();
+    let cage = ir.geometry.subds[0].id.clone();
+    if !ir
+        .geometry
+        .shells
+        .iter()
+        .any(|shell| shell.subds().any(|held| *held == cage))
+    {
+        let body = crate::ids::BodyId::mint("synthetic:subd:body#cage").unwrap();
+        let region = crate::ids::RegionId::mint("synthetic:subd:region#cage").unwrap();
+        let shell = crate::ids::ShellId::mint("synthetic:subd:shell#cage").unwrap();
+        let mut cage_shell = Shell::new(shell.clone(), region.clone());
+        cage_shell
+            .members
+            .push(crate::topology::ShellMember::Subd { id: cage.clone() });
+        ir.geometry.shells.push(cage_shell);
+        ir.geometry.regions.push(crate::topology::Region::new(
+            region,
+            body.clone(),
+            vec![shell],
+        ));
+        ir.geometry.bodies.push(crate::topology::Body {
+            id: body,
+            kind: crate::topology::BodyKind::Sheet,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            unstated: None,
+            native_ref: None,
+        });
+    }
+    let holder = ir
+        .geometry
+        .shells
+        .iter()
+        .find(|shell| shell.subds().any(|held| *held == cage))
+        .map(|shell| shell.id.clone())
+        .unwrap();
+    let before = errors(&ir);
+
+    let (outcome, _) = run(&mut ir, seed("geometry", "subds", cage.as_str()));
+    assert!(outcome.marked.contains(holder.as_str()), "{outcome:?}");
+    let shell = ir
+        .geometry
+        .shells
+        .iter()
+        .find(|shell| shell.id == holder)
+        .expect("the cage's shell stays");
+    assert!(shell.members.is_empty());
+    assert_eq!(shell.unstated, Some(Unstated::Members));
+    assert!(ir.geometry.subds.is_empty());
+    let after = errors(&ir);
+    assert!(
+        after.is_subset(&before),
+        "new errors: {:?}",
+        after.difference(&before).collect::<Vec<_>>()
+    );
+}
