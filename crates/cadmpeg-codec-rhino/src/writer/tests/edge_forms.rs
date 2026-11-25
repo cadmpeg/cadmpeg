@@ -217,6 +217,58 @@ fn a_compound_edge_curve_is_written_as_its_joined_nurbs_form() {
 }
 
 #[test]
+fn compound_edge_whose_end_break_is_off_by_rounding_spans_the_edge_range() {
+    let mut ir = compound_edge_sheet(Point3::new(1.0, 1.0, 0.0));
+    let [first, second] = [
+        "cadir:model:curve#compound.0",
+        "cadir:model:curve#compound.1",
+    ]
+    .map(|id| {
+        ir.geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == id)
+            .cloned()
+            .expect("the compound component")
+    });
+    ir.geometry
+        .procedural_curves
+        .retain(|curve| curve.id.as_str() != "cadir:model:procedural-curve#compound");
+    ir.geometry
+        .curves
+        .retain(|curve| curve.id != first.id && curve.id != second.id);
+    set_compound_edge_curve(&mut ir, [0.0, 1.5, 4.0 + 4.0e-12], first, second);
+
+    let (decoded, losses) = written(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 1, "{losses:?}");
+    assert!(
+        omitted(&losses, "cadir:model:face#polygon").is_empty(),
+        "{losses:?}"
+    );
+    let edge = decoded
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.curve().is_some_and(|id| {
+                decoded.geometry.curves.iter().any(|curve| {
+                    curve.id == *id
+                        && matches!(
+                            &curve.geometry,
+                            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
+                                if nurbs.degree() == 2
+                        )
+                })
+            })
+        })
+        .expect("the compound edge is written as one quadratic NURBS curve");
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 4.0])
+    );
+}
+
+#[test]
 fn compound_edge_pieces_apart_within_the_edge_tolerance_keep_the_face() {
     let mut ir = compound_edge_sheet(Point3::new(1.0, 1.0 + 1.0e-6, 0.0));
     ir.geometry.edges[0].tolerance = Some(PositiveLength::new(1.0e-3).expect("finite tolerance"));

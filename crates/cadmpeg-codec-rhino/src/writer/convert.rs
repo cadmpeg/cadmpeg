@@ -605,6 +605,7 @@ fn edge_curve(
     if let Some(joint) = compounds.joint(curve) {
         return compounds
             .nurbs(ctx, curve, &joint, range, tolerance)
+            .and_then(|(nurbs, gap)| Ok((over_range(nurbs, range)?, gap)))
             .map(|(nurbs, gap)| Some((SolvedCurveGeometry::Nurbs(nurbs), gap)))
             .map_err(|reason| format!("curve {}: {reason}", curve.id.as_str()));
     }
@@ -624,6 +625,22 @@ fn edge_curve(
     curve_nurbs(solved, range)
         .map(|nurbs| Some((SolvedCurveGeometry::Nurbs(nurbs), 0.0)))
         .map_err(|reason| format!("curve {}: {reason}", curve.id.as_str()))
+}
+
+/// `nurbs` with its knot domain mapped onto `range`: a joined curve takes
+/// the stored breaks of its components at ends within `BREAK_SLACK` of the
+/// range, and a 3DM edge curve spans its edge's range.
+fn over_range(nurbs: NurbsCurve, range: [f64; 2]) -> Result<NurbsCurve, String> {
+    if knot_domain(&nurbs) == Some(range) {
+        return Ok(nurbs);
+    }
+    let target = range
+        .map(FiniteReal::new)
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .and_then(|target| <[FiniteReal; 2]>::try_from(target).ok())
+        .ok_or("the edge range is not finite")?;
+    crate::curves::remap_nurbs_domain(nurbs, target, 0).map_err(|error| error.to_string())
 }
 
 /// The pcurve uses of `coedge` that lie on `surface`: each use whose pcurve
