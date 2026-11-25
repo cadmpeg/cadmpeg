@@ -1255,7 +1255,7 @@ fn plan_split(
             return None;
         }
         let forward = coedge.sense == Sense::Forward;
-        let mut uses = vec![Vec::new(); count];
+        let mut uses = vec![Vec::new(); piece_ids.len()];
         for use_ in &coedge.pcurves {
             let pcurve = geometry
                 .pcurves
