@@ -425,7 +425,7 @@ fn native_patch_requires_point_provenance_annotation() {
     .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("requires provenance annotation") && message.contains(&point_id)
     ));
 }
@@ -877,7 +877,7 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
     assert!(
         matches!(
             &error,
-            cadmpeg_core::CodecError::Malformed(message)
+            cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains("states body offset")
                     && message.contains("past its")
         ),

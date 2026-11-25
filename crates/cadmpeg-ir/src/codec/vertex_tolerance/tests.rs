@@ -54,7 +54,13 @@ fn a_vertex_off_the_ends_of_its_edges_states_its_largest_distance_marked_derived
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = DecodeResult::from_decoded(&ctx, decoded, FormatId::new("test")).unwrap();
+    let result = DecodeResult::from_decoded(
+        &ctx,
+        decoded,
+        FormatId::new("test"),
+        &crate::report::strictness::Strictness::default(),
+    )
+    .unwrap();
     ctx.finish_session().unwrap();
 
     let expected = 0.02 * 3.0_f64.sqrt();

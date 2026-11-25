@@ -900,6 +900,7 @@ impl<'a> DecodeContext<'a> {
                                 Ok(Some(decoded)) => {
                                     proxy_transferred = self.commit_subd_surface(
                                         source_order,
+                                        key.clone(),
                                         decoded,
                                         scale != MillimeterScale::IDENTITY,
                                     )?;
@@ -2504,7 +2505,7 @@ impl<'a> DecodeContext<'a> {
         };
         let id = cadmpeg_ir::ids::SubdId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "subd"),
-            key,
+            key.clone(),
         );
         match crate::subd::decode(
             self.scan.data,
@@ -2519,6 +2520,7 @@ impl<'a> DecodeContext<'a> {
             Ok(Some(decoded)) => {
                 if self.commit_subd_surface(
                     source_order,
+                    key,
                     decoded,
                     scale != MillimeterScale::IDENTITY,
                 )? {
@@ -2551,9 +2553,13 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
+    /// Commits a decoded `SubD` object as a cage in a body of its own: one
+    /// region and one shell whose `members` list the cage (§5.6), the body
+    /// stating the object's display name, colour, and visibility.
     fn commit_subd_surface(
         &mut self,
         source_order: usize,
+        key: cadmpeg_ir::ids::IdentityKey,
         decoded: crate::subd::DecodedSubd,
         scaled: bool,
     ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -2581,9 +2587,35 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         };
         surface.source_object = Some(self.source_association(identity)?);
+        let display = self.object_display(identity);
         let id = surface.id.to_string();
+        let body_id = cadmpeg_ir::ids::BodyId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+            key.clone(),
+        );
+        let region_id = cadmpeg_ir::ids::RegionId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+            key.clone(),
+        );
+        let shell_id = cadmpeg_ir::ids::ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+            key,
+        );
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
-            candidate.geometry.subds.push(surface);
+            for derived in [
+                shell_id.to_string(),
+                region_id.to_string(),
+                body_id.to_string(),
+            ] {
+                set_exactness(candidate_annotations, derived, Exactness::Derived);
+            }
+            let cage_body =
+                candidate
+                    .geometry
+                    .push_cage_object(surface, body_id.clone(), region_id, shell_id);
+            cage_body.name = display.name;
+            cage_body.color = display.color;
+            cage_body.visible = display.visible;
             set_exactness(
                 candidate_annotations,
                 &id,
@@ -2593,7 +2625,7 @@ impl<'a> DecodeContext<'a> {
                     Exactness::ByteExact
                 },
             );
-            Ok::<_, cadmpeg_core::CodecError>(id.clone())
+            Ok::<_, cadmpeg_core::CodecError>(body_id.to_string())
         });
         let link = match result {
             Ok(link) => link,

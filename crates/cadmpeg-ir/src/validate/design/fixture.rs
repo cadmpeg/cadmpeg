@@ -151,6 +151,7 @@ pub(in crate::validate) fn parameter(key: &str, kind: ValueKind) -> DesignParame
 /// the extrude, stored against the current state.
 pub(in crate::validate) fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
+    ir.model.product_definitions.clear();
     ir.set_scope(ContentScope::full()).unwrap();
     let body = body(&ir);
     ir.model.product_definitions.push(ProductDefinition {
