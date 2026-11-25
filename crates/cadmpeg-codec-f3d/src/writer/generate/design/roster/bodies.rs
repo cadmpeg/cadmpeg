@@ -83,7 +83,7 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         .roster
         .rolled
         .iter()
-        .filter_map(|item| item.place.rolled)
+        .filter_map(|item| item.place.rolled())
         .collect::<Vec<_>>();
     if streams || !rolled.is_empty() {
         out.record(&ctx.class_of(BODIES_ROOT)?, BODIES_ROOT)
@@ -174,11 +174,11 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
             &body.node_guid,
             false,
             records.design,
-            ctx.item_scope(),
+            ctx.item_scope(position),
         )?;
     }
     for (position, item) in (ctx.bodies.len()..).zip(&ctx.roster.rolled) {
-        let Some(body) = item.place.rolled else {
+        let Some(body) = item.place.rolled() else {
             continue;
         };
         let guid = super::swept::rolled_node_guid(ctx, body.node);
@@ -347,8 +347,8 @@ impl<'g> Reference<'g> {
                 // form: no property block (f3d.md §3.1, "Result body").
                 property: ctx
                     .roster
-                    .item
-                    .is_none()
+                    .items
+                    .is_empty()
                     .then_some((DESIGN_PROPERTY, records.parameter)),
                 owner: DESIGN_OWNER,
                 scene: records.design_scene[0],
