@@ -75,6 +75,7 @@ its result.
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
+| IronCAD `.ics`                                    | L0    |
 | Onshape bundle                                    | L0    |
 
 <!-- /generated: ladder-table -->
@@ -744,6 +745,31 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 | `solidedge:unknown` | refused  | none  |
 
 <!-- /generated: dialects solidedge -->
+
+## IronCAD `.ics`
+
+Detected by compound-file content: the scene root class and the `Brep Data`,
+`Shape Data`, and `Document Data` streams. The reader lists streams, inflates
+the framed `Brep Data` stream, and walks its record tree. Each Parasolid record
+contributes a Parasolid dialect layer with its schema token, and each ACIS
+record contributes an ACIS layer from its binary header. Every kernel record
+and every other scene stream produces a loss. The headline is L0.
+The codec is read-only. Body decoding, part placements, and feature history are
+pending.
+
+See [`formats/ironcad.md`](formats/ironcad.md) and
+[`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).
+
+<!-- generated: dialects ironcad -->
+
+**Ladder: L0.**
+
+| Dialect           | Read     | Write |
+| ----------------- | -------- | ----- |
+| `ironcad:cfb`     | detected | none  |
+| `ironcad:unknown` | refused  | none  |
+
+<!-- /generated: dialects ironcad -->
 
 ## Onshape bundle
 
