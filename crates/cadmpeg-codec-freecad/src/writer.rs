@@ -44,6 +44,8 @@ const UNREAD_PAYLOAD: &str = "whose ZIP member has no archive entry record";
 const UNHELD_PAYLOAD: &str =
     "as the payload entries of these properties, which the archive does not hold; each written \
      property names no entry";
+const UNREADABLE_SPAN: &str =
+    "whose physical ledger span does not read; the archive member order it states is not kept";
 
 /// Native records the archive leaves out, by the reason the write omits them.
 #[derive(Debug, Default, Clone)]
@@ -107,15 +109,23 @@ fn write_seekable(
     let namespace = resolution.namespace();
     let entries = resolution.entries();
     let mut omitted = resolution.omitted().clone();
-    let (physical_ledger, _) = read_arena::<ArchiveSpan>(namespace, "physical_ledger")?;
+    let (physical_ledger, unreadable_spans) =
+        read_arena::<ArchiveSpan>(namespace, "physical_ledger")?;
+    for id in unreadable_spans {
+        omitted.push(UNREADABLE_SPAN, id);
+    }
     let (objects, unreadable_objects) = read_arena::<ObjectRecord>(namespace, "objects")?;
     let (extensions, unreadable_extensions) =
         read_arena::<ExtensionRecord>(namespace, "extensions")?;
     let (properties, unreadable_properties) =
         read_arena::<PropertyRecord>(namespace, "properties")?;
+    let mut omitted_members = resolution.omitted_members().clone();
     for span in &physical_ledger {
         if let ArchiveSpanRole::CompressedPayload(name) = &span.role {
-            if name != "Document.xml" && !entries.iter().any(|entry| entry.name() == name) {
+            if name != "Document.xml"
+                && !entries.iter().any(|entry| entry.name() == name)
+                && omitted_members.insert(name.clone())
+            {
                 omitted.push(UNREAD_PAYLOAD, span.id.clone());
             }
         }
@@ -159,8 +169,8 @@ fn write_seekable(
     ));
     losses.extend(evaluation_stale(
         "FCStd",
-        "writes input edits of these objects, whose schema-2 declarations hold no recompute \
-         mark, beside their stored shapes",
+        "writes input edits or empty payload entry names of these objects beside their stored \
+         shapes, and their schema-2 declarations hold no recompute mark",
         written.stale,
     ));
     let notes = vec![
@@ -219,12 +229,37 @@ struct WrittenDocument {
     xml: String,
     /// Records whose edit the output holds as the source stores them.
     dropped: BTreeSet<String>,
-    /// Objects whose input edits the output holds beside their stored shapes,
-    /// with no recompute mark.
+    /// Schema-2 objects the output changes without a recompute mark: input
+    /// edits, or properties written with an empty file name.
     stale: BTreeSet<String>,
     /// Properties written with an empty file name in place of an archive
     /// entry the output does not hold.
     unheld: BTreeSet<String>,
+}
+
+impl WrittenDocument {
+    /// The written `xml`, which reads back as `graph`, with every record of
+    /// the document that `graph` does not state named as dropped.
+    fn read_back_as(
+        xml: String,
+        graph: &Graph,
+        expected: (&[ObjectRecord], &[ExtensionRecord], &[PropertyRecord]),
+        held: &HashSet<&str>,
+        stale: BTreeSet<String>,
+        unheld: BTreeSet<String>,
+    ) -> Self {
+        let (objects, extensions, properties) = expected;
+        let none = BTreeSet::new();
+        let mut dropped = differing_properties(properties, graph, &none, &none, held);
+        dropped.extend(declaration_edits(objects, extensions, graph));
+        dropped.extend(absent_properties(properties, graph));
+        Self {
+            xml,
+            dropped,
+            stale,
+            unheld,
+        }
+    }
 }
 
 /// Patch `Document.xml` with every property edit it can hold (§3.4, Paths
@@ -233,12 +268,14 @@ struct WrittenDocument {
 /// A property whose edit has no serializer here, or whose written form does
 /// not read back as its record states it, stays as the source stores it, and
 /// the patch is made again without it. Where the patched document does not
-/// read back, the archive holds `Document.xml` as the source stores it. Object
-/// and extension declarations are never patched; an edit of one is reported.
+/// read back, the archive holds the stored `Document.xml`
+/// ([`stored_document`]). Object and extension declarations are never
+/// patched; an edit of one is reported.
 /// An input edit marks its object `Touched`, except in schema 2, which has no
 /// recompute mark: there the object is reported stale. A property that names
 /// an archive entry the output does not hold is written with an empty file
-/// name, and its object is marked `Touched` where the schema has the mark.
+/// name, and its object is marked the same way. The edits reported dropped are
+/// the records of the document the written file does not state.
 fn written_document(
     resolution: &Resolution<'_>,
     objects: &[ObjectRecord],
@@ -246,64 +283,40 @@ fn written_document(
     properties: &[PropertyRecord],
 ) -> Result<WrittenDocument, CodecError> {
     let source = resolution.document_xml();
-    let schema_two = resolution.vocabulary() == Vocabulary::Features;
     let held = std::iter::once("Document.xml")
         .chain(resolution.entries().iter().map(EntryRecord::name))
         .collect::<HashSet<_>>();
-    let (properties, unheld) = without_unheld_entries(properties, &held);
+    let removed = properties
+        .iter()
+        .flat_map(PropertyRecord::side_entries)
+        .filter(|name| !held.contains(name.as_str()))
+        .cloned()
+        .collect::<HashSet<_>>();
+    let (properties, unheld) = without_entries(properties, &removed);
     let properties = properties.as_slice();
     let mut kept = BTreeSet::new();
-    let mut edited = BTreeSet::new();
     for pass in 0..2 {
         let patch = patch_document(source, properties, &kept)?;
         kept.extend(patch.unwritten);
-        edited.extend(patch.edited.iter().cloned());
-        let unheld_owners = properties
-            .iter()
-            .filter(|property| unheld.contains(&property.id) && !kept.contains(&property.id))
-            .map(|property| property.owner.as_str())
-            .collect::<HashSet<_>>();
-        let mut marked = objects.to_vec();
-        let mut stale = BTreeSet::new();
-        for object in &mut marked {
-            if !schema_two && unheld_owners.contains(object.id().as_str()) {
-                object
-                    .attributes
-                    .insert("Touched".to_owned(), "1".to_owned());
-            }
-            if patch.changed_inputs.contains(object.id()) {
-                if schema_two {
-                    stale.insert(object.id().clone());
-                } else {
-                    object
-                        .attributes
-                        .insert("Touched".to_owned(), "1".to_owned());
-                }
-            }
-        }
-        let xml = if schema_two {
-            patch.xml
-        } else {
-            let Some(xml) = patch_object_touches(&patch.xml, &marked)? else {
-                break;
-            };
-            xml
+        let emptied = emptied_owners(properties, &unheld, &kept);
+        let (marked, stale) = marked_objects(resolution, objects, &patch.changed_inputs, &emptied);
+        let Some(xml) = with_touches(resolution, patch.xml, &marked)? else {
+            break;
         };
-        let Some(graph) = read_back(&xml, resolution)? else {
+        let Some(graph) = read_back(&xml, resolution, true)? else {
             break;
         };
         let differing = differing_properties(properties, &graph, &kept, &patch.edited, &held);
         if differing.is_empty() {
             let unheld = unheld.difference(&kept).cloned().collect();
-            let mut dropped = kept;
-            dropped.extend(declaration_edits(&marked, extensions, &graph));
-            dropped.extend(absent_properties(properties, &graph));
-            return Ok(WrittenDocument {
+            return Ok(WrittenDocument::read_back_as(
                 xml,
-                dropped,
+                &graph,
+                (&marked, extensions, properties),
+                &held,
                 stale,
                 unheld,
-            });
+            ));
         }
         debug_assert!(
             pass == 0,
@@ -311,57 +324,147 @@ fn written_document(
         );
         kept.extend(differing);
     }
-    let mut dropped = kept;
-    dropped.extend(edited);
-    match read_back(source, resolution)? {
-        Some(graph) => {
-            dropped.extend(declaration_edits(objects, extensions, &graph));
-            dropped.extend(absent_properties(properties, &graph));
-        }
-        None => {
-            dropped.insert(resolution.document().id.clone());
+    stored_document(
+        resolution,
+        (objects, extensions, properties),
+        &held,
+        &removed,
+    )
+}
+
+/// `Document.xml` as the source stores it, except that each property naming
+/// a `removed` archive entry is written with an empty file name and its
+/// object is marked as on the patched rung. Every edit the
+/// document holds of a record the source stores otherwise is reported
+/// dropped. Where the stored `Document.xml` does not read back, the archive
+/// holds it unchanged and the report names the document.
+fn stored_document(
+    resolution: &Resolution<'_>,
+    expected: (&[ObjectRecord], &[ExtensionRecord], &[PropertyRecord]),
+    held: &HashSet<&str>,
+    removed: &HashSet<String>,
+) -> Result<WrittenDocument, CodecError> {
+    let (objects, extensions, properties) = expected;
+    let source = resolution.document_xml();
+    if let Some(stored) = read_back(source, resolution, false)? {
+        let (stored_properties, unheld) = without_entries(&stored.properties, removed);
+        let kept = stored_properties
+            .iter()
+            .filter(|property| !unheld.contains(&property.id))
+            .map(|property| property.id.clone())
+            .collect();
+        let patch = patch_document(source, &stored_properties, &kept)?;
+        let emptied = emptied_owners(&stored_properties, &unheld, &patch.unwritten);
+        let (stored_marked, _) =
+            marked_objects(resolution, &stored.objects, &HashSet::new(), &emptied);
+        if let Some(xml) = with_touches(resolution, patch.xml, &stored_marked)? {
+            if let Some(graph) = read_back(&xml, resolution, true)? {
+                let (marked, stale) =
+                    marked_objects(resolution, objects, &HashSet::new(), &emptied);
+                let unheld = unheld.difference(&patch.unwritten).cloned().collect();
+                return Ok(WrittenDocument::read_back_as(
+                    xml,
+                    &graph,
+                    (&marked, extensions, properties),
+                    held,
+                    stale,
+                    unheld,
+                ));
+            }
         }
     }
     Ok(WrittenDocument {
         xml: source.to_owned(),
-        dropped,
+        dropped: BTreeSet::from([resolution.document().id.clone()]),
         stale: BTreeSet::new(),
         unheld: BTreeSet::new(),
     })
 }
 
-/// `properties` with each file name that names an entry outside `held` made
+/// The owners of the properties in `unheld` outside `kept`: those written
+/// with an empty file name.
+fn emptied_owners<'p>(
+    properties: &'p [PropertyRecord],
+    unheld: &BTreeSet<String>,
+    kept: &BTreeSet<String>,
+) -> HashSet<&'p str> {
+    properties
+        .iter()
+        .filter(|property| unheld.contains(&property.id) && !kept.contains(&property.id))
+        .map(|property| property.owner.as_str())
+        .collect()
+}
+
+/// `objects` with `Touched` set on each object an input edit or an emptied
+/// file name changes, or, in schema 2, which has no recompute mark, the
+/// objects reported stale.
+fn marked_objects(
+    resolution: &Resolution<'_>,
+    objects: &[ObjectRecord],
+    changed_inputs: &HashSet<String>,
+    emptied: &HashSet<&str>,
+) -> (Vec<ObjectRecord>, BTreeSet<String>) {
+    let schema_two = resolution.vocabulary() == Vocabulary::Features;
+    let mut marked = objects.to_vec();
+    let mut stale = BTreeSet::new();
+    for object in &mut marked {
+        if !changed_inputs.contains(object.id()) && !emptied.contains(object.id().as_str()) {
+            continue;
+        }
+        if schema_two {
+            stale.insert(object.id().clone());
+        } else {
+            object
+                .attributes
+                .insert("Touched".to_owned(), "1".to_owned());
+        }
+    }
+    (marked, stale)
+}
+
+/// `xml` with the `Touched` marks of `marked` written, where the schema has
+/// the mark.
+fn with_touches(
+    resolution: &Resolution<'_>,
+    xml: String,
+    marked: &[ObjectRecord],
+) -> Result<Option<String>, CodecError> {
+    if resolution.vocabulary() == Vocabulary::Features {
+        Ok(Some(xml))
+    } else {
+        patch_object_touches(&xml, marked)
+    }
+}
+
+/// `properties` with each value attribute that names a `removed` entry made
 /// empty, and the ids of the properties that changed.
-fn without_unheld_entries(
+fn without_entries(
     properties: &[PropertyRecord],
-    held: &HashSet<&str>,
+    removed: &HashSet<String>,
 ) -> (Vec<PropertyRecord>, BTreeSet<String>) {
     let mut unheld = BTreeSet::new();
     let properties = properties
         .iter()
         .cloned()
         .map(|mut property| {
+            let type_name = property.type_name.clone();
             if let PropertyBody::Persisted {
                 values,
                 side_entries,
                 ..
             } = &mut property.body
             {
-                if side_entries
-                    .iter()
-                    .any(|name| !held.contains(name.as_str()))
-                {
+                if side_entries.iter().any(|name| removed.contains(name)) {
                     for value in values {
                         for (key, name) in &mut value.attributes {
-                            if matches!(key.as_str(), "file" | "File")
-                                && side_entries.contains(name)
-                                && !held.contains(name.as_str())
+                            if crate::persistence::names_side_entry(&type_name, key)
+                                && removed.contains(name)
                             {
                                 name.clear();
                             }
                         }
                     }
-                    side_entries.retain(|name| held.contains(name.as_str()));
+                    side_entries.retain(|name| !removed.contains(name));
                     unheld.insert(property.id.clone());
                 }
             }
@@ -372,14 +475,22 @@ fn without_unheld_entries(
 }
 
 /// Parse a written `Document.xml` as the decoder does, or `None` where it does
-/// not read.
-fn read_back(xml: &str, resolution: &Resolution<'_>) -> Result<Option<Graph>, CodecError> {
+/// not read. With `resolve`, each property's archive entries are resolved
+/// against the entries the output holds.
+fn read_back(
+    xml: &str,
+    resolution: &Resolution<'_>,
+    resolve: bool,
+) -> Result<Option<Graph>, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)?;
     let graph = crate::container::admit_document(&ctx, xml.as_bytes()).and_then(|admitted| {
         let mut graph = crate::persistence::parse_document(&admitted, resolution.vocabulary())?;
+        if !resolve {
+            return Ok(graph);
+        }
         let mut views = BTreeMap::new();
         views.insert(
             "Document.xml".to_owned(),

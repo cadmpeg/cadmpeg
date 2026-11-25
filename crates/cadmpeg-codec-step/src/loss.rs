@@ -398,6 +398,10 @@ pub(crate) enum StepLossCode {
     /// A non-manifold edge of a closed shell was written as one edge per
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
+    /// A face the source holds with no boundary on a plane, cylinder, or
+    /// cone, whose domain is unbounded, or whose stored boundary does not
+    /// resolve to a closed loop, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated,
     /// An edge vertex lies off its own carrier by more than the document
     /// tolerance, and the edge's parameter range was derived anyway.
     ///
@@ -618,6 +622,7 @@ impl StepLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
+        Self::TopologyFaceBoundaryUnstated,
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
@@ -833,6 +838,7 @@ impl StepLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
@@ -1030,7 +1036,8 @@ impl StepLossCode {
             | Self::EdgeStartVertexMissing
             | Self::EdgeEndVertexMissing
             | Self::EdgeNoVertex
-            | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
+            | Self::NonManifoldEdgeSplit
+            | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -1320,6 +1327,7 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
+                "topology.face-boundary-unstated",
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",

@@ -3096,6 +3096,16 @@ pub(super) fn project(
             );
             continue;
         }
+        // A face with no loop lies on the support itself; read its stated
+        // geometry, not the solved copy above, so a procedural support keeps
+        // the domain its construction gives it.
+        let face_support = if implicit_outer_domain || !loop_ids.is_empty() {
+            None
+        } else {
+            carrier_index
+                .surfaces(surface_id.as_str(), cadmpeg_ir::index::StandardIndex)
+                .map(|surface| surface.geometry.clone())
+        };
         let face_surface_id = if implicit_outer_domain {
             let derived_surface_id = crate::ids::surface(
                 &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::ImplicitOuter),
@@ -3168,7 +3178,24 @@ pub(super) fn project(
                 let inner = loop_ids.into_iter().filter(|id| *id != outer).collect();
                 cadmpeg_ir::topology::FaceLoops::classified(outer, inner)
             }
-            None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
+            None => {
+                let (face_loops, unbounded) = cadmpeg_ir::topology::FaceLoops::unspecified_on(
+                    loop_ids,
+                    face_support.as_ref(),
+                );
+                if let Some(kind) = unbounded {
+                    super::push_attributed_loss(
+                        &mut losses,
+                        entry,
+                        IgesLossCode::TopologyFaceBoundaryUnstated,
+                        format_args!(
+                            "IGES Type {} states no boundary on a {kind}, which no face covers whole: face {face_id} is stated partial",
+                            entry.entity_type
+                        ),
+                    );
+                }
+                face_loops
+            }
         };
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.geometry_mut().faces.push(Face {

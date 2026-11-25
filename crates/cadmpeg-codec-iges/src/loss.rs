@@ -77,6 +77,9 @@ loss_codes! {
     BoundaryPcurveDisagrees => "topology.boundary-pcurve-disagrees",
     /// A Type 144 boundary has no winding about its support normal and keeps its source traversal.
     BoundaryWindingUnresolved => "topology.boundary-winding-unresolved",
+    /// A face its source holds with no boundary on a plane, cylinder, or cone,
+    /// whose domain is unbounded, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved => "graph.pointer-unresolved",
     /// Parameter Data has more than one structural trailing pointer-group boundary.
@@ -157,6 +160,9 @@ loss_codes! {
     WriterFaceOmitted => "writer.face-omitted",
     /// A body the writer cannot write was dropped with the records only it uses.
     WriterBodyOmitted => "writer.body-omitted",
+    /// An open shell was written as unjoined trimmed surfaces for a version
+    /// that defines no open shell.
+    WriterOpenShellUnjoined => "writer.open-shell-unjoined",
     /// An open edge with no stated range was written over one of several
     /// ranges its vertices bound, or between its vertices' feet on its curve.
     WriterEdgeRangeAssumed => "writer.edge-range-assumed",
@@ -192,6 +198,7 @@ impl IgesLossCode {
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::BoundaryPcurveDisagrees
             | Self::BoundaryWindingUnresolved
+            | Self::TopologyFaceBoundaryUnstated
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
@@ -227,6 +234,7 @@ impl IgesLossCode {
             | Self::WriterBodyOpacityNotRepresented
             | Self::WriterBodyVisibilityNotRepresented
             | Self::WriterEdgeRangeAssumed
+            | Self::WriterOpenShellUnjoined
             | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
             Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
@@ -238,11 +246,11 @@ impl IgesLossCode {
         match self {
             Self::WriterSupportEdgeNotRepresented
             | Self::WriterFaceOmitted
-            | Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
-            Self::WriterEdgeRangeAssumed | Self::VertexToleranceWidened => {
-                LossTaxonomy::TopologyGaugeSubstituted
-            }
-            Self::OccurrenceExpansionOutputTruncated
+            | Self::WriterBodyOmitted
+            | Self::WriterOpenShellUnjoined => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::VertexToleranceWidened
+            | Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
@@ -254,6 +262,7 @@ impl IgesLossCode {
                 LossTaxonomy::SourceTopologyInvalid
             }
             Self::BoundaryWindingUnresolved => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::DisplayDataNotProjected | Self::LineWeightScaleUnavailable => {
@@ -357,6 +366,7 @@ mod tests {
                 "topology.boundary-pcurve-outside-support-domain",
                 "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",
+                "topology.face-boundary-unstated",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
@@ -396,6 +406,7 @@ mod tests {
                 "writer.body-visibility-not-represented",
                 "writer.face-omitted",
                 "writer.body-omitted",
+                "writer.open-shell-unjoined",
                 "writer.edge-range-assumed",
                 "geometry.vertex-tolerance-widened",
                 "projection.invalid",

@@ -3411,6 +3411,7 @@ impl<'a> F3dDecodeSession<'a> {
             unknowns,
             stats: _,
             annotation_records,
+            unbounded_faces: _,
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         // No v11 form states a `cage` yet (its forms are unresolved), so each
@@ -6204,6 +6205,16 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
             format_args!(
                 "{} sketch-region body record(s) of a keyless BREP blob are not model bodies and stay in the BREP stream.",
                 decoded.sketch_region_bodies_omitted
+            ),
+        );
+    }
+    for face in &decoded.asm.unbounded_faces {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::TopologyFaceBoundaryUnstated,
+            format_args!(
+                "ASM face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
+                face.record_index, face.surface_kind, face.face.as_str()
             ),
         );
     }
