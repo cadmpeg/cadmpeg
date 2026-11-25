@@ -15,7 +15,7 @@ use super::index::{DesignIndex, StateAt};
 use super::records::DesignRecords;
 
 pub(super) fn check(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
-    for (holder, definition) in index.records.feature_definitions() {
+    for (holder, _, definition) in index.records.feature_definitions() {
         let FeatureOperation::SheetMetal(sheet) = &definition.operation else {
             continue;
         };
