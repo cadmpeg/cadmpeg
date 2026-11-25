@@ -152,10 +152,14 @@ fn owner_findings(ir: &cadmpeg_ir::document::CadIr) -> Vec<String> {
 }
 
 fn sketch_naming(record_indices: &[u32]) -> cadmpeg_ir::document::CadIr {
+    scope_naming(record_indices, DesignFeatureKind::Sketch)
+}
+
+fn scope_naming(record_indices: &[u32], kind: DesignFeatureKind) -> cadmpeg_ir::document::CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scope = DesignParameterScope::empty(
         &format!("f3d:{DESIGN_STREAM}:design-parameter-scope#100"),
-        DesignFeatureKind::Sketch,
+        kind,
         SCOPE,
     );
     scope
@@ -237,4 +241,21 @@ fn numeric_owner_of_a_text_parameter_is_invalid() {
     );
     drop(native);
     assert_eq!(owner_findings(&ir).len(), 1);
+}
+
+#[test]
+fn standalone_thread_owner_keeps_its_scalar_without_a_dimension_link() {
+    let mut ir = scope_naming(&[20, 30], DesignFeatureKind::Thread);
+    add_dimension(&mut ir, 20, SCOPE, 0);
+    add_dimension(&mut ir, 30, SCOPE, 1);
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameters.clear();
+        native.design_parameter_companions.clear();
+    }
+    assert!(owner_findings(&ir).is_empty());
+    let mut unrelated = scope_naming(&[20], DesignFeatureKind::Sketch);
+    add_dimension(&mut unrelated, 20, SCOPE, 0);
+    f3d_native_mut(&mut unrelated).design_parameters.clear();
+    assert_eq!(owner_findings(&unrelated).len(), 1);
 }

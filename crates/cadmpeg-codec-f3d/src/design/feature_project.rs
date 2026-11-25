@@ -2731,7 +2731,9 @@ fn thread_nominal_diameter(
     construction: &crate::records::feature::thread::DesignThreadConstruction,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::scalar::PositiveLength> {
-    let size = if construction.nominal_size.is_decimal() {
+    let size = if let Some(inches) = construction.nominal_size.numbered_inches() {
+        cadmpeg_ir::scalar::PositiveLength::new(inches * 25.4)?
+    } else if construction.nominal_size.is_decimal() {
         cadmpeg_ir::scalar::PositiveLength::new(construction.nominal_size.value()?)?
     } else {
         let size = cadmpeg_ir::scalar::PositiveLength::new(

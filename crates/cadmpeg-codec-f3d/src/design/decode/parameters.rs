@@ -1343,7 +1343,7 @@ pub(crate) fn decode_parameter_owners(
     if parameters
         .iter()
         .all(|parameter| parameter.owner_record_index().is_none())
-        && !has_pipe_type(scan)?
+        && !has_standalone_scalar_scope(scan)?
     {
         return Ok(DecodedParameterOwners::default());
     }
@@ -1399,11 +1399,10 @@ pub(crate) fn decode_parameter_owners(
             .or_insert((entry, IndexedRecordOffsets::build(bytes), owner_typed));
     }
     let mut out = Vec::new();
-    // Pipe scalar owners are canonical records of their scope; they are read
-    // from their registered type even when no parameter links to them.
+    // Read standalone scalar owners through their registered scope type.
     let mut emitted = HashMap::new();
     for (stream, (entry, records, _)) in &streams {
-        for owner in pipe_scalar_owners(scan, &entry.name, records)? {
+        for owner in standalone_scalar_owners(scan, &entry.name, records)? {
             let key = (stream.clone(), owner.record_index());
             if let std::collections::hash_map::Entry::Vacant(slot) = emitted.entry(key) {
                 slot.insert(out.len());
@@ -1515,31 +1514,35 @@ pub(crate) fn decode_parameter_owners(
     })
 }
 
-/// Whether any Design `MetaStream` registers the `Pipe` type.
-fn has_pipe_type(scan: &ContainerScan) -> Result<bool, CodecError> {
+fn is_standalone_scalar_scope(data: &crate::records::entity_header::SegmentTypeData) -> bool {
+    crate::records::feature::path_features::pipe::is_pipe(data)
+        || super::scopes::parameter_scope::scan_kind(data.type_guid.as_str())
+            == Some(crate::records::feature::scope::DesignFeatureKind::Thread)
+}
+
+/// Whether a Design stream registers a scope with standalone scalar owners.
+fn has_standalone_scalar_scope(scan: &ContainerScan) -> Result<bool, CodecError> {
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        if super::meta::metadata_for_bulk_stream(scan, &entry.name)?.is_some_and(|meta| {
-            meta.types
-                .iter()
-                .any(crate::records::feature::path_features::pipe::is_pipe)
-        }) {
+        if super::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            .is_some_and(|meta| meta.types.iter().any(is_standalone_scalar_scope))
+        {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-/// Scalar owners of uniquely registered `Pipe` scopes in one Design stream.
+/// Scalar owners of uniquely registered Pipe and Thread scopes in one Design stream.
 ///
 /// An owner frame is admitted when its entity has one type registration, it
 /// parses as a 103- or 104-byte parameter owner, it is the only indexed frame
-/// with that extent, and its owning scope is a uniquely registered Pipe with
+/// with that extent, and its owning scope is uniquely registered with
 /// one primary frame.
-fn pipe_scalar_owners(
+fn standalone_scalar_owners(
     scan: &ContainerScan,
     entry_name: &str,
     records: &IndexedRecordOffsets,
@@ -1548,7 +1551,7 @@ fn pipe_scalar_owners(
     let Some(meta) = super::meta::metadata_for_bulk_stream(scan, entry_name)? else {
         return Ok(Vec::new());
     };
-    if !meta.types.iter().any(pipe::is_pipe) {
+    if !meta.types.iter().any(is_standalone_scalar_scope) {
         return Ok(Vec::new());
     }
     let bytes = scan.entry_bytes(entry_name)?;
@@ -1565,7 +1568,7 @@ fn pipe_scalar_owners(
     let mut pipe_frames = HashMap::<u64, usize>::new();
     for frame in frames
         .iter()
-        .filter(|frame| pipe::is_pipe(frame.design_type) && unique(frame.entity_id))
+        .filter(|frame| is_standalone_scalar_scope(frame.design_type) && unique(frame.entity_id))
     {
         *pipe_frames.entry(frame.entity_id).or_default() += 1;
     }

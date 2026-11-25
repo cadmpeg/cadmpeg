@@ -57,3 +57,12 @@ fn a_profile_angle_other_than_sixty_degrees_charges_its_native_retention() {
     );
     assert!(losses[0].message.contains("55-degree"));
 }
+
+#[test]
+fn numbered_inch_size_projects_its_nominal_diameter_in_millimetres() {
+    let mut losses = Vec::new();
+    let size = thread_nominal_diameter("scope", &construction("0.216(#12)", 60.0), &mut losses)
+        .expect("numbered thread diameter");
+    assert!((size.get() - 5.4864).abs() < EPS_DIAMETER_MM);
+    assert!(losses.is_empty());
+}

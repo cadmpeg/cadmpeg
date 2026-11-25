@@ -29,6 +29,7 @@ mod compact_null_owner;
 mod expression_flags;
 mod header_flag;
 mod registered_tail;
+mod standalone_thread;
 mod tail_forms;
 mod text_owner;
 mod unparsed_frames;

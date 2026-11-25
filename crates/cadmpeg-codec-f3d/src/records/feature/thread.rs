@@ -363,7 +363,7 @@ impl TryFrom<String> for DesignThreadNominalSize {
     fn try_from(text: String) -> Result<Self, Self::Error> {
         if nominal_size_value(&text).is_none() {
             return Err(
-                "nominal_size_text must encode a finite positive decimal or a fraction of positive integers"
+                "nominal_size_text must encode a finite positive decimal, fraction, or numbered inch size"
                     .into(),
             );
         }
@@ -374,6 +374,7 @@ impl TryFrom<String> for DesignThreadNominalSize {
 /// The value of a positive finite decimal, or of a fraction `N/D` of two
 /// positive integers.
 fn nominal_size_value(text: &str) -> Option<f64> {
+    let text = numbered_size_decimal(text).unwrap_or(text);
     let value = match text.split_once('/') {
         None => text.parse::<f64>().ok()?,
         Some((numerator, denominator)) => {
@@ -383,6 +384,22 @@ fn nominal_size_value(text: &str) -> Option<f64> {
         }
     };
     (value.is_finite() && value > 0.0).then_some(value)
+}
+
+fn numbered_size_decimal(text: &str) -> Option<&str> {
+    let (decimal, number) = text.strip_suffix(')')?.split_once("(#")?;
+    if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    if decimal.is_empty()
+        || !decimal
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+        || decimal.bytes().filter(|byte| *byte == b'.').count() > 1
+    {
+        return None;
+    }
+    Some(decimal)
 }
 
 impl DesignThreadNominalSize {
@@ -396,10 +413,12 @@ impl DesignThreadNominalSize {
         nominal_size_value(&self.0)
     }
 
-    /// Whether the size is a decimal: a fraction names a size in the units
-    /// of its profile.
+    pub(crate) fn numbered_inches(&self) -> Option<f64> {
+        numbered_size_decimal(&self.0)?.parse().ok()
+    }
+
     pub(crate) fn is_decimal(&self) -> bool {
-        !self.0.contains('/')
+        !self.0.contains('/') && self.numbered_inches().is_none()
     }
 }
 

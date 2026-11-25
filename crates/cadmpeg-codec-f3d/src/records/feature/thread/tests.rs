@@ -221,3 +221,29 @@ fn thread_class_follows_the_prefix_token() {
         assert_eq!(construction.class(), Some(class));
     }
 }
+
+#[test]
+fn numbered_inch_size_retains_decimal_and_number() {
+    use super::DesignThreadNominalSize;
+
+    let size = DesignThreadNominalSize::try_from("0.216(#12)".to_owned()).unwrap();
+    assert_eq!(size.value(), Some(0.216));
+    assert_eq!(size.numbered_inches(), Some(0.216));
+    assert!(!size.is_decimal());
+    let mut wire = thread_wire();
+    wire["nominal_size_text"] = serde_json::json!("0.216(#12)");
+    wire["nominal_size"] = serde_json::json!(0.216);
+    let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(construction).unwrap(), wire);
+    for text in [
+        "0(#12)",
+        "-0.216(#12)",
+        "0.216(#)",
+        "0.216(#x)",
+        "0.216(#12",
+        "1/8(#12)",
+        "NaN(#12)",
+    ] {
+        assert!(DesignThreadNominalSize::try_from(text.to_owned()).is_err());
+    }
+}

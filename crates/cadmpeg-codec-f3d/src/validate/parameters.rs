@@ -49,8 +49,15 @@ pub(super) fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Fi
                 owner.local_ordinal(),
             ))
         };
-        let valid = frame_layout
-            && text_link
+        let standalone_thread = parameter.is_none()
+            && owner.text_value().is_none()
+            && matches!(owner.frame_length(), 103 | 104)
+            && owner.local_ordinal() <= 1
+            && ctx.scopes_by_index.get(&scope_key).is_some_and(|scope| {
+                scope.kind() == crate::records::feature::scope::DesignFeatureKind::Thread
+                    && scope.names_owner(owner)
+            });
+        let linked = text_link
             && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
             && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
             && companions_by_index
@@ -60,9 +67,9 @@ pub(super) fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Fi
                 parameter.owner_record_index() == Some(owner.record_index())
                     && parameter.evaluated_value().get().to_bits()
                         == owner.evaluated_value().get().to_bits()
-            })
-            && unique_index
-            && unique_local_ordinal;
+            });
+        let valid =
+            frame_layout && (standalone_thread || linked) && unique_index && unique_local_ordinal;
         if !valid {
             push_constant_finding(
                 findings,
