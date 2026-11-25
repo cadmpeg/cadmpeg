@@ -62,14 +62,16 @@ fn a_definition_no_occurrence_places_is_a_prototype_with_no_reference() {
     ));
     let mut ir = source.ir().clone();
     let mut spare = cadmpeg_ir::products::ProductDefinition::new(
-        cadmpeg_ir::ids::ProductDefinitionId::try_from("test:definition#spare".to_owned()).unwrap(),
+        cadmpeg_ir::ids::ProductDefinitionId::try_from("test:model:definition#spare".to_owned())
+            .unwrap(),
         cadmpeg_ir::products::Storage::Embedded,
     );
     spare.source_name = Some("Spare".into());
     let mut mesh = ir.model.tessellations[0].clone();
-    mesh.id =
-        cadmpeg_ir::tessellation::TessellationId::try_from("test:tessellation#spare".to_owned())
-            .unwrap();
+    mesh.id = cadmpeg_ir::tessellation::TessellationId::try_from(
+        "test:model:tessellation#spare".to_owned(),
+    )
+    .unwrap();
     mesh.of = cadmpeg_ir::tessellation::Meshed::definition(spare.id.clone());
     ir.model.tessellations.push(mesh);
     ir.model.product_definitions.push(spare);

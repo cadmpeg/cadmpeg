@@ -1643,7 +1643,7 @@ mod tests {
         serialize_gates, Observed,
     };
     use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 

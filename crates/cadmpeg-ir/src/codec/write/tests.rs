@@ -979,7 +979,7 @@ fn the_wrapper_charges_each_carried_error_of_the_validation() {
 fn rooted(id: &str) -> (CadIr, crate::ids::ProductDefinitionId) {
     let mut ir = CadIr::empty();
     let definition =
-        crate::ids::ProductDefinitionId::try_from(format!("test:definition#{id}")).unwrap();
+        crate::ids::ProductDefinitionId::try_from(format!("test:model:definition#{id}")).unwrap();
     ir.model
         .product_definitions
         .push(crate::products::ProductDefinition::root(

@@ -182,10 +182,7 @@ impl Synthesis {
             consumption: Consumption::Degraded {
                 reason: format!("patch declined: {reason}"),
             },
-            loss: Some(F3dLossCode::WriterPatchDeclined.note(
-                "the retained F3D source could not carry the document; the file was regenerated \
-                 from the document",
-            )),
+            loss: Some(F3dLossCode::WriterPatchDeclined.note(reason.clone())),
             cause: Some(SynthesisCause::PatchDeclined { reason }),
         }
     }
