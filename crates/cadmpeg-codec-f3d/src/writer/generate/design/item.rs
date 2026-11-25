@@ -102,9 +102,16 @@ impl<'a> Item<'a> {
             Self::Revolve(plan) => vec![&plan.angle],
         }
     }
+
+    /// The source ordinal after the item's parameters, which take the
+    /// ordinals from `ordinal`.
+    pub(super) fn next_ordinal(&self, ordinal: u32) -> Option<u32> {
+        ordinal.checked_add(u32::try_from(self.owned().len()).ok()?)
+    }
 }
 
 /// The feature's typed operation the writer can write as an item.
+#[derive(Clone, Copy)]
 enum Typed<'a> {
     Extrude(&'a Extrude),
     Revolve(&'a Revolve),
@@ -119,7 +126,17 @@ fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
     }
 }
 
-/// The decision for the scope's features in timeline order: the first
+/// The features the geometry item is chosen from: the scope's features in
+/// timeline order, or the run before the timeline marker of the
+/// history-true form (cadir-v11.md §3.4).
+#[derive(Clone, Copy)]
+pub(super) struct Run<'a, 'p> {
+    pub(super) features: &'p [&'a FeatureId],
+    /// Whether features follow the run in the timeline, rolled back.
+    pub(super) ends: bool,
+}
+
+/// The decision for the run's features in timeline order: the first
 /// stateful feature of a family the writer writes as an item. `failure` is
 /// the error of an earlier attempt to write the item. A written item whose
 /// parameter binds a user parameter takes that parameter out of
@@ -127,12 +144,13 @@ fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
 pub(super) fn plan<'a>(
     target: &'a CadIr,
     scope: &'a DesignScope,
-    features: &[&'a FeatureId],
+    run: Run<'a, '_>,
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
     failure: Option<&str>,
     ordinal: u32,
 ) -> Decision<'a> {
+    let features = run.features;
     let stateful = features
         .iter()
         .enumerate()
@@ -157,17 +175,62 @@ pub(super) fn plan<'a>(
         sketches,
         feature,
         position,
+        ends: run.ends,
+        rolled_back: false,
     };
-    let planned = match operation {
-        Typed::Extrude(operation) => extrude::plan(&rows, operation, parameters, ordinal)
-            .map(|plan| Item::Extrude(Box::new(plan))),
-        Typed::Revolve(operation) => revolve::plan(&rows, operation, parameters, ordinal)
-            .map(|plan| Item::Revolve(Box::new(plan))),
-    };
-    match planned {
+    match family_plan(&rows, operation, parameters, ordinal) {
         Ok(item) => Decision::Item(item),
         Err(reason) => base(reason.to_owned()),
     }
+}
+
+/// The definition of the feature at `position` in `features`, the scope's
+/// features in timeline order, as an item after the timeline marker of the
+/// history-true form: rolled back, without its state (cadir-v11.md §3.4).
+/// Its parameters take the source ordinals from `ordinal`. `Err` names why
+/// the writer does not write it.
+pub(super) fn rolled_back<'a>(
+    target: &'a CadIr,
+    scope: &'a DesignScope,
+    features: &[&'a FeatureId],
+    position: usize,
+    sketches: &SketchPlan<'a>,
+    parameters: &mut ParameterPlan,
+    ordinal: u32,
+) -> Result<Item<'a>, &'static str> {
+    let feature = features[position];
+    let operation =
+        typed(target, feature).ok_or("the writer writes no rolled-back item of its family")?;
+    let rows = Rows {
+        target,
+        scope,
+        features,
+        sketches,
+        feature,
+        position,
+        ends: true,
+        rolled_back: true,
+    };
+    family_plan(&rows, operation, parameters, ordinal)
+}
+
+/// The rows of the feature's family. A failed plan leaves `parameters` as
+/// it was.
+fn family_plan<'a>(
+    rows: &Rows<'a, '_>,
+    operation: Typed<'a>,
+    parameters: &mut ParameterPlan,
+    ordinal: u32,
+) -> Result<Item<'a>, &'static str> {
+    let mut trial = parameters.clone();
+    let planned = match operation {
+        Typed::Extrude(operation) => extrude::plan(rows, operation, &mut trial, ordinal)
+            .map(|plan| Item::Extrude(Box::new(plan))),
+        Typed::Revolve(operation) => revolve::plan(rows, operation, &mut trial, ordinal)
+            .map(|plan| Item::Revolve(Box::new(plan))),
+    }?;
+    *parameters = trial;
+    Ok(planned)
 }
 
 /// What the shared rows read.
@@ -179,11 +242,17 @@ pub(super) struct Rows<'a, 'p> {
     pub(super) feature: &'a FeatureId,
     /// The feature's position in `features`.
     position: usize,
+    /// Whether rolled-back features follow `features` in the timeline.
+    ends: bool,
+    /// Whether the feature itself follows the timeline marker: the rows of
+    /// its state do not apply.
+    pub(super) rolled_back: bool,
 }
 
 /// What the shared rows establish of a sketch-driven feature.
 pub(super) struct Profiled<'a, 'p> {
-    pub(super) body: &'a BodyId,
+    /// The body of its state; `None` for a rolled-back feature.
+    pub(super) body: Option<&'a BodyId>,
     /// The position of its sketch in [`SketchPlan::items`].
     pub(super) sketch: usize,
     pub(super) planned: &'p PlannedSketch<'a>,
@@ -203,17 +272,23 @@ impl<'a, 'p> Rows<'a, 'p> {
     /// The shared rows in order; the first that fails names the reason: one
     /// body, the timeline rolled to its end, the current state its result,
     /// and the profile `selection` one region of one written sketch before
-    /// the feature, on an origin plane and not mirrored.
+    /// the feature, on an origin plane and not mirrored. A rolled-back
+    /// feature takes only the rows of its profile.
     pub(super) fn profiled(
         &self,
         selection: &ProfileRef,
     ) -> Result<Profiled<'a, 'p>, &'static str> {
         let target = self.target;
-        let [body] = target.geometry.bodies.as_slice() else {
-            return Err("the design holds more than one body");
+        let body = if self.rolled_back {
+            None
+        } else {
+            let [body] = target.geometry.bodies.as_slice() else {
+                return Err("the design holds more than one body");
+            };
+            self.rollback()?;
+            self.current(&body.id)?;
+            Some(&body.id)
         };
-        self.rollback()?;
-        self.current(&body.id)?;
         let (sketch, after) = self.sketch(selection)?;
         let planned = &self.sketches.items[sketch];
         if planned.origin_plane().is_none() {
@@ -225,7 +300,7 @@ impl<'a, 'p> Rows<'a, 'p> {
             return Err("its sketch is written mirrored on its origin plane");
         }
         Ok(Profiled {
-            body: &body.id,
+            body,
             sketch,
             planned,
             after,
@@ -241,9 +316,10 @@ impl<'a, 'p> Rows<'a, 'p> {
         })
     }
 
-    /// The feature's timeline is rolled to its end. An unstated rollback is
-    /// read as the end (cadir-v11.md §5.2), which the design's report names
-    /// as an assumption.
+    /// The feature's timeline is rolled to its end, or, where rolled-back
+    /// features follow the run, to a feature after the run. An unstated
+    /// rollback is read as the end (cadir-v11.md §5.2), which the design's
+    /// report names as an assumption.
     fn rollback(&self) -> Result<(), &'static str> {
         let member = Member::Feature(self.feature.clone());
         let container = self
@@ -261,14 +337,18 @@ impl<'a, 'p> Rows<'a, 'p> {
                 rollback: None | Some(Rollback::End),
                 ..
             } => Ok(()),
+            Container::Ordered {
+                rollback: Some(Rollback::Before(Member::Feature(before))),
+                ..
+            } if self.ends && !self.features.contains(&before) => Ok(()),
             Container::Ordered { .. } | Container::Unordered { .. } => {
                 Err("its timeline's rollback is not at the end")
             }
         }
     }
 
-    /// The current state is the state after the feature or a later member,
-    /// and holds the one body.
+    /// The current state is the state after the feature or a later member
+    /// of the run, and holds the one body.
     fn current(&self, body: &BodyId) -> Result<(), &'static str> {
         const NOT_ITS_RESULT: &str = "the current state is not its result";
         let [state] = self.scope.current.as_slice() else {
@@ -281,8 +361,9 @@ impl<'a, 'p> Rows<'a, 'p> {
                 .position(|feature| *feature == at)
                 .is_some_and(|at| at >= self.position),
             // The state at an unstated rollback, read as built through the
-            // end of the timeline that holds the feature.
-            Position::After(Member::Container(timeline)) => {
+            // end of the timeline that holds the feature, where no feature
+            // follows the run: §3.4 makes it no member's state.
+            Position::After(Member::Container(timeline)) if !self.ends => {
                 self.target.design.containers.iter().any(|container| {
                     matches!(
                         container,
@@ -292,7 +373,7 @@ impl<'a, 'p> Rows<'a, 'p> {
                     )
                 })
             }
-            Position::Start(_) => false,
+            Position::After(Member::Container(_)) | Position::Start(_) => false,
         };
         if !later || !matches!(state.bodies.as_slice(), [only] if only == body) {
             return Err(NOT_ITS_RESULT);

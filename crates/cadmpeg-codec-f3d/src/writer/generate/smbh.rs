@@ -2135,6 +2135,7 @@ fn apply_native_edge_owners(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::codec::write::MissingStateForm;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
@@ -2208,7 +2209,8 @@ mod tests {
     fn invalid_wire_membership_is_dropped_and_the_rest_written() {
         let target = decoded_wire(&synthetic_free_vertex_body_smbh());
         let mut valid_output = Vec::new();
-        write_new(&target, &mut valid_output).expect("unmodified free wire writes");
+        write_new(&target, MissingStateForm::GeometryTrue, &mut valid_output)
+            .expect("unmodified free wire writes");
         assert!(!valid_output.is_empty());
 
         let mut missing = target.clone();
@@ -2243,8 +2245,8 @@ mod tests {
             (endpoint, "is both free and an edge endpoint"),
         ] {
             let mut output = Vec::new();
-            let generated =
-                write_new(&target, &mut output).expect("invalid wire ownership still writes");
+            let generated = write_new(&target, MissingStateForm::GeometryTrue, &mut output)
+                .expect("invalid wire ownership still writes");
             crate::F3dCodec
                 .decode(&mut Cursor::new(&output), &DecodeOptions::default())
                 .expect("the written file decodes");
