@@ -208,23 +208,33 @@ none left, a `writer.read-back-unread` loss (severity error) names it.
 
 An edited compound-file part is written into a native envelope, and
 `export:native.records-omitted` names each compound-file stream that the write
-neither generates nor replaces. A global parameter has no owner feature whose
-record holds it, and its edit gets an `export:edit.dropped` loss.
+neither generates nor replaces. Each parameter is an entry of its owner
+feature's record. In a part with a feature history, an `export:edit.dropped`
+loss names the edit of a global parameter, which has no owner feature, and the
+written part keeps the stored state. A part with no feature history, such as a compound-file part or a
+document from another format, holds no record for a parameter, and the write
+leaves out each parameter it cannot place. Where the codec digests state no
+history baseline, a `writer.features-omitted` loss names it; otherwise an
+`export:edit.dropped` loss names it.
 
 An edited part that the patch path cannot write, or that it writes on another
 dialect than the source's, is synthesized without its SolidWorks history:
 `export:native.records-omitted` names each native record that the synthesis
 does not write. Where the synthesis also refuses the part, or lands on another
-dialect than the source's, the output is the stored part, and one
-`export:edit.dropped` loss (severity error) states that no edit is written.
+dialect than the source's, the output is the stored part. One
+`export:edit.dropped` loss (severity error) per arena names each record that
+the document adds, removes or edits against the decoded source; where no
+record differs, one such loss names the file.
 `cadmpeg convert --reject-lossy=export` refuses such a write;
 `--reject-errors` does not, because it judges the written file's check
 findings, not export losses.
 
-The writer regenerates no state. When it writes an edit over a decoded source,
-it marks the active configuration `swConfigurationNeedsUpdate="YES"` in the
-retained `swSolidWorks` document, and an `export:evaluation.stale` loss names
-the written edits. A configuration whose evaluation the document states
+The writer regenerates no state. When it writes an edit that shapes the stored
+solid, it marks the configuration of that solid, the active one for a model
+edit, `swConfigurationNeedsUpdate="YES"` in the retained `swSolidWorks`
+document or in the configuration row the synthesis generates, and an
+`export:evaluation.stale` loss names the written edits. An edit that shapes no
+solid, such as a dimension display, takes no mark. A configuration whose evaluation the document states
 `Stale` or `Failed` takes the same mark; where no written row takes it, an
 `export:evaluation.stale` loss names the evaluation. The native envelope
 stores at most 65535 members and 32-bit offsets: a section past these limits,

@@ -412,6 +412,7 @@ pub(crate) fn write_in_native_envelope(
         &fidelity.codec_digests,
         &records,
         &[],
+        &[],
         writer,
     )
 }

@@ -10,35 +10,45 @@ use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
+use crate::history::write::brep_agreement::ShapingEdit;
+
 /// The states of one write that take the stale mark.
 #[derive(Default)]
 pub(super) struct StaleStates {
     /// The configurations, by name, whose row takes the mark.
     pub(super) configurations: BTreeSet<String>,
-    /// The active configuration and the features and parameters whose
-    /// written edit its stored state does not show.
-    edited: Option<(String, Vec<String>)>,
+    /// The records whose written edit the stored state of a configuration
+    /// does not show, by the name of that configuration; `None` for those of
+    /// no named configuration.
+    edited: BTreeMap<Option<String>, BTreeSet<String>>,
     /// The evaluations the document states `Stale` or `Failed`, by the name
     /// of their configuration; `None` for those of no named configuration.
     evaluations: BTreeMap<Option<String>, Vec<String>>,
 }
 
 impl StaleStates {
-    /// The states of `ir` that take the stale mark: the active
-    /// configuration's, where the write carries the `edits` (features and
-    /// parameters, by id) and regenerates no state, and the configuration of
-    /// each evaluation the document states `Stale` or `Failed`.
-    pub(super) fn of(ir: &CadIr, edits: Vec<String>) -> Self {
+    /// The states of `ir` that take the stale mark: the configuration of
+    /// each edit in `shaped`, which the write carries without regenerating
+    /// the solid it shapes, and the configuration of each evaluation the
+    /// document states `Stale` or `Failed`.
+    pub(super) fn of(ir: &CadIr, shaped: &[ShapingEdit]) -> Self {
         let mut states = Self::default();
-        let active = ir
-            .model
-            .configurations
-            .iter()
-            .find(|configuration| configuration.active)
-            .and_then(|configuration| configuration.name.clone());
-        if let Some(active) = active.filter(|_| !edits.is_empty()) {
-            states.configurations.insert(active.clone());
-            states.edited = Some((active, edits));
+        for (configuration, record) in shaped {
+            let name = match configuration {
+                Some(id) => ir
+                    .model
+                    .configurations
+                    .iter()
+                    .find(|candidate| &candidate.id == id)
+                    .and_then(|configuration| configuration.name.clone()),
+                None => Some(super::active_configuration_name(ir)),
+            };
+            states.configurations.extend(name.clone());
+            states
+                .edited
+                .entry(name)
+                .or_default()
+                .insert(record.clone());
         }
         let names = ir
             .design
@@ -66,22 +76,24 @@ impl StaleStates {
     }
 
     /// The `export:evaluation.stale` losses of the write, given the
-    /// configurations whose row the output marks: one naming the edits of the
-    /// active configuration, and one naming each `Stale` or `Failed`
+    /// configurations whose row the output marks: one naming the edits of
+    /// each configuration, and one naming each `Stale` or `Failed`
     /// evaluation whose configuration has no row the output marks.
     pub(super) fn losses(&self, marked: &BTreeSet<String>) -> Vec<LossNote> {
         let mut losses = Vec::new();
-        if let Some((active, edits)) = &self.edited {
-            let reason = if marked.contains(active) {
-                format!(
+        for (name, edits) in &self.edited {
+            let reason = match name {
+                Some(name) if marked.contains(name) => format!(
                     "writes these edits without regenerating the state they shape, and marks \
-                     configuration {active} swConfigurationNeedsUpdate"
-                )
-            } else {
-                format!(
+                     configuration {name} swConfigurationNeedsUpdate"
+                ),
+                Some(name) => format!(
                     "writes these edits without regenerating the state they shape, and holds no \
-                     row of configuration {active} to mark"
-                )
+                     row of configuration {name} to mark"
+                ),
+                None => "writes these edits without regenerating the state they shape, and holds \
+                         no named configuration row to mark"
+                    .to_owned(),
             };
             losses.extend(evaluation_stale("SLDPRT", &reason, edits.iter().cloned()));
         }
@@ -148,4 +160,24 @@ pub(super) fn mark(payload: &[u8], names: &BTreeSet<String>) -> Option<(Vec<u8>,
         output.replace_range(range, &replacement);
     }
     Some((crate::container::xml_bytes(payload, &output), marked))
+}
+
+/// Sets the stale mark of each configuration in `names` on the
+/// `swSolidWorks` documents of `sections`, and returns the names of the rows
+/// that carry it.
+pub(super) fn mark_sections(
+    sections: &mut [(String, Vec<u8>)],
+    names: &BTreeSet<String>,
+) -> Vec<String> {
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let mut marked = Vec::new();
+    for (_, payload) in sections {
+        if let Some((patched, rows)) = mark(payload, names) {
+            *payload = patched;
+            marked.extend(rows);
+        }
+    }
+    marked
 }

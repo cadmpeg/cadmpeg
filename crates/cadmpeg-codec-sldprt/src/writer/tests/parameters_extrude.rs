@@ -739,6 +739,83 @@ fn semantic_writer_patch_declines_conflicting_parameter_edits() {
     assert!(error.contains("conflicting neutral and native SLDPRT parameter edits"));
 }
 
+/// The patch declines the edited part, and the synthesis writes the edited
+/// depth over the stored solid: the generated configuration row takes the
+/// stale mark, and `export:evaluation.stale` names the edit (§3.4, States).
+#[test]
+fn a_synthesized_edit_marks_its_configuration_stale() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::report::export::WritePath;
+    use cadmpeg_ir::scalar::Length;
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let depth = {
+        let mut ir_edit = decoded.ir_mut();
+        let parameter = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        parameter.expression = "20mm".into();
+        parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
+        let depth = parameter.id.clone();
+        update_sldprt_native(&mut ir_edit, |native| {
+            native.feature_histories[0].features[0]
+                .parameters
+                .insert(cadmpeg_core::nonblank_literal!("Depth"), "30mm".into());
+        });
+        depth
+    };
+
+    let mut output = Vec::new();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut output)
+        .unwrap();
+
+    assert!(
+        matches!(report.write_path(), WritePath::Synthesized { .. }),
+        "{:?}",
+        report.write_path()
+    );
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let marked = written
+        .ir()
+        .source
+        .iter()
+        .flat_map(|source| &source.attributes)
+        .filter(|(key, value)| {
+            key.as_str().starts_with("sw_configuration_")
+                && key.as_str().ends_with("_needs_update")
+                && value.eq_ignore_ascii_case("yes")
+        })
+        .count();
+    assert_eq!(marked, 1, "{:#?}", report.losses);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "evaluation.stale"
+                && loss.message.contains(depth.as_str())
+                && loss.message.contains("swConfigurationNeedsUpdate")
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+
 #[test]
 fn semantic_writer_patch_declines_conflicting_dimension_property_edits() {
     let mut source = sldprt_with_body(&triangle_body());

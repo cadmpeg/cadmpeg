@@ -207,13 +207,14 @@ impl SldprtCodec {
                 .zip(Self::unrestored_loss())
             {
                 writer.write_all(image)?;
-                return Ok(Written::Stored { loss });
+                return Ok(Written::Stored { losses: vec![loss] });
             }
             return Self::write_semantic(
                 ir,
                 annotations,
                 digests,
                 records,
+                &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
                 writer,
             );
@@ -224,6 +225,7 @@ impl SldprtCodec {
                 annotations,
                 digests,
                 records,
+                &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
                 writer,
             );
@@ -249,12 +251,14 @@ impl SldprtCodec {
     /// Runs the semantic writer and names the path it stands for: `Patched` when
     /// retained source records fed the write, `Synthesized` when the document was
     /// built from the neutral IR alone. `digests` are the codec digests the
-    /// decode recorded.
+    /// decode recorded. `shaped` names the edits that shape the stored solid
+    /// beyond those the write compares with its retained source.
     fn write_semantic(
         ir: &CadIr,
         annotations: &Annotations,
         digests: &CodecDigests,
         records: &[SourceRecord<'_>],
+        shaped: &[history::write::brep_agreement::ShapingEdit],
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
@@ -284,6 +288,7 @@ impl SldprtCodec {
                 &source.source_fidelity.codec_digests,
                 records,
                 &[],
+                &[],
                 &mut bytes,
             )
             .ok()?;
@@ -300,6 +305,7 @@ impl SldprtCodec {
                     digests,
                     records,
                     withheld,
+                    shaped,
                     &mut bytes,
                 )?;
                 Ok((bytes, output))
@@ -323,14 +329,15 @@ impl SldprtCodec {
             .namespace("sldprt")
             .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
-        let stale_solid = history::write::brep_agreement::stale_solid_losses(
+        let stale_solid = history::write::brep_agreement::agreement(
             ir,
             digests,
             native.as_ref(),
-            image,
+            image.map(history::write::brep_agreement::Source::Image),
             &written,
             &read_back.misread,
-        )?;
+        )?
+        .losses;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
@@ -422,9 +429,10 @@ enum Written {
     /// The retained source image, byte for byte, written for an edited
     /// document that neither the patch nor the synthesis path writes in the
     /// source's dialect, or whose history its retained source does not
-    /// restore (§3.4, Paths item 4): `loss` states that no edit is written.
+    /// restore (§3.4, Paths item 4): `losses` name each edit it keeps as
+    /// stored, or the file where no record is isolated.
     Stored {
-        loss: cadmpeg_ir::report::loss::LossNote,
+        losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     },
     /// A semantic write, in the dialect the emitted `swSolidWorks` envelope
     /// declares.

@@ -103,13 +103,16 @@ pub(crate) struct SemanticOutput {
 /// Writes a semantic document and returns the dialect and arena coverage it
 /// wrote. Each feature of `withheld` keeps its stored definition record, for
 /// the reason it is paired with. `digests` are the codec digests the decode
-/// recorded.
+/// recorded. The configuration of each edit in `shaped`, and of each edit the
+/// write finds to shape the solid against its retained source, takes the
+/// stale mark.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
     withheld: &[(cadmpeg_ir::features::FeatureId, String)],
+    shaped: &[crate::history::write::brep_agreement::ShapingEdit],
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let digest_arena = DecodeArena::new();
@@ -287,23 +290,28 @@ pub(crate) fn write_semantic_with_records(
         edited_parameters,
         source_lanes,
     } = edit_outcome;
-    let stale = stale::StaleStates::of(
-        &normalized,
-        if source_baseline.is_some() {
-            claims
-                .written_features()
-                .map(|id| id.as_str().to_owned())
-                .chain(
-                    edited_parameters
-                        .iter()
-                        .filter(|id| !written.parameters.contains_key(*id))
-                        .map(|id| id.as_str().to_owned()),
-                )
-                .collect()
-        } else {
-            Vec::new()
-        },
-    );
+    let mut shaping = shaped.to_vec();
+    if let Some(baseline) = &source_baseline {
+        let input_native = ir
+            .native
+            .namespace("sldprt")
+            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .transpose()?;
+        shaping.extend(
+            crate::history::write::brep_agreement::agreement(
+                ir,
+                digests,
+                input_native.as_ref(),
+                Some(crate::history::write::brep_agreement::Source::Decoded(
+                    &baseline.ir,
+                )),
+                &written,
+                &HashSet::new(),
+            )?
+            .shaped,
+        );
+    }
+    let stale = stale::StaleStates::of(&normalized, &shaping);
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
     losses.extend(renamed.note(&normalized));
@@ -629,7 +637,7 @@ pub(crate) fn write_semantic_with_records(
         },
     )?;
     unwritten_edits.extend(opaque.kept_edits);
-    losses.extend(stale.losses(&opaque.marked));
+    let mut marked = opaque.marked;
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -653,12 +661,14 @@ pub(crate) fn write_semantic_with_records(
             &mut sections,
         );
         let skeleton = written.is_ok();
+        marked.extend(stale::mark_sections(&mut sections, &stale.configurations));
         losses.extend(written.unwrap_or_else(|reason| {
             vec![crate::loss::SldprtLossCode::WriterNativeSkeletonOmitted
                 .note(format!("the native skeleton is not written: {reason}"))]
         }));
         skeleton
     };
+    losses.extend(stale.losses(&marked));
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
@@ -772,13 +782,7 @@ fn native_skeleton(
         .map(|name| native_part_name(name))
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "Part1".to_owned());
-    let active = ir
-        .model
-        .configurations
-        .iter()
-        .find(|value| value.active)
-        .and_then(|value| value.name.clone())
-        .unwrap_or_else(|| "Default".to_owned());
+    let active = active_configuration_name(ir);
     // The skeleton's stored bodies, parameters and last folders take
     // identifiers after the history summary's, so the decoder binds no
     // summary feature to a skeleton object.
@@ -1225,6 +1229,16 @@ fn assign_configuration_indices(
         }
     }
     Ok(assigned)
+}
+
+/// The name of the configuration row that states the active state of `ir`.
+fn active_configuration_name(ir: &CadIr) -> String {
+    ir.model
+        .configurations
+        .iter()
+        .find(|value| value.active)
+        .and_then(|value| value.name.clone())
+        .unwrap_or_else(|| "Default".to_owned())
 }
 
 fn generated_solidworks_xml(ir: &CadIr, active: &str) -> Vec<u8> {

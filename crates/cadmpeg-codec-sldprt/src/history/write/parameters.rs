@@ -422,9 +422,20 @@ fn sync_neutral_parameters(
         owner_parameters.push(parameter);
     }
     let Some(native) = native.as_mut() else {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT parameters require feature records".into(),
-        ));
+        let mut held = desired.values().flatten().collect::<Vec<_>>();
+        held.sort_by(|left, right| left.id.cmp(&right.id));
+        for parameter in held {
+            edits.parameter_unwritten(
+                &parameter.id,
+                UnwrittenPart::Whole,
+                format!(
+                    "Parameter {} is not written: each written parameter is an entry of its \
+                     owner feature's record, and the part holds no feature record.",
+                    parameter.id.as_str()
+                ),
+            );
+        }
+        return Ok(());
     };
     let record_ids = ir
         .model

@@ -318,8 +318,9 @@ fn an_edited_compound_file_part_drops_a_global_parameter() {
 
 /// An edit that the patch path cannot write, of a part whose synthesis
 /// without its `SolidWorks` history lands on another dialect than the
-/// source's, leaves the part as stored: one `export:edit.dropped` loss names
-/// the file and why each path declines it (§3.4, Paths item 4).
+/// source's, leaves the part as stored. The decoded source isolates the
+/// edited record: one `export:edit.dropped` loss names it and why each path
+/// declines it (§3.4, Paths item 4).
 #[test]
 fn an_edit_no_path_writes_leaves_the_part_as_stored() {
     use cadmpeg_ir::sketches::{
@@ -344,12 +345,13 @@ fn an_edit_no_path_writes_leaves_the_part_as_stored() {
         .unwrap()
         .id()
         .clone();
+    let constraint = SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap();
     decoded
         .ir_mut()
         .model
         .sketch_constraints
         .push(SketchConstraint {
-            id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),
+            id: constraint.clone(),
             sketch,
             definition: SketchConstraintDefinition::try_from(
                 SketchConstraintDefinitionInput::Horizontal { entity },
@@ -374,7 +376,8 @@ fn an_edit_no_path_writes_leaves_the_part_as_stored() {
     assert_eq!(losses.len(), 1, "{:?}", report.losses);
     assert!(
         losses[0].contains(&format!("as stored ({})", crate::SOURCE_IMAGE_ID))
-            && losses[0].contains("sketch relation editing"),
+            && losses[0].contains("sketch relation editing")
+            && losses[0].contains(constraint.as_str()),
         "{}",
         losses[0]
     );
@@ -460,43 +463,107 @@ fn a_parameter_edit_keeps_every_other_record(source_part: &DecodeResult) {
     );
 }
 
+/// The active configuration of `ir`.
+fn active(ir: &CadIr) -> &cadmpeg_ir::features::parameters::DesignConfiguration {
+    ir.model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.active)
+        .unwrap()
+}
+
+/// Whether the active configuration's row of `ir` carries the stale mark.
+fn active_stale(ir: &CadIr) -> bool {
+    crate::decode::configuration_source_needs_update(ir, active(ir))
+}
+
+/// The messages of the `export:evaluation.stale` losses.
+fn evaluation_stale(report: &ExportReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "evaluation.stale")
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
 /// The writer regenerates no state: a written parameter edit marks the
 /// active configuration's row `swConfigurationNeedsUpdate`, and an
 /// `export:evaluation.stale` loss names the edit (§3.4, States).
 #[test]
 fn a_written_parameter_edit_marks_the_active_configuration_stale() {
     let mut decoded = EditableDecodeResult::from(ftc_06().clone());
-    let active = |ir: &CadIr| {
-        ir.model
-            .configurations
-            .iter()
-            .find(|configuration| configuration.active)
-            .unwrap()
-            .clone()
-    };
-    assert!(!crate::decode::configuration_source_needs_update(
-        decoded.ir(),
-        &active(decoded.ir())
-    ));
+    assert!(!active_stale(decoded.ir()));
     let (owner, name, _) = edit_extrusion_length(&mut decoded);
     let parameter = named_parameter(decoded.ir(), &owner, &name).id.clone();
 
     let (report, output) = write(&decoded);
 
-    let written = decode(output);
-    assert!(crate::decode::configuration_source_needs_update(
-        written.ir(),
-        &active(written.ir())
-    ));
+    assert!(active_stale(decode(output).ir()));
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code.local_code() == "evaluation.stale"
-                && loss.message.contains(parameter.as_str())
-                && loss.message.contains("swConfigurationNeedsUpdate")
+        evaluation_stale(&report).iter().any(|message| {
+            message.contains(parameter.as_str()) && message.contains("swConfigurationNeedsUpdate")
         }),
         "{:#?}",
         report.losses
     );
+}
+
+/// A suppression edit is no construction edit, and it shapes the stored
+/// solid: it marks the active configuration's row, and
+/// `export:evaluation.stale` names the feature (§3.4, States).
+#[test]
+fn a_suppression_edit_marks_the_active_configuration_stale() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let feature = {
+        let mut ir = decoded.ir_mut();
+        let feature = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| is_extrusion(feature) && feature.suppressed != Some(true))
+            .unwrap();
+        feature.suppressed = Some(true);
+        feature.id.clone()
+    };
+
+    let (report, output) = write(&decoded);
+
+    assert!(active_stale(decode(output).ir()), "{:#?}", report.losses);
+    assert!(
+        evaluation_stale(&report)
+            .iter()
+            .any(|message| message.contains(feature.as_str())),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// A parameter's display is a record difference that shapes no state: the
+/// write marks no configuration and charges no `export:evaluation.stale`.
+#[test]
+fn a_parameter_display_edit_marks_no_configuration_stale() {
+    use cadmpeg_ir::features::parameters::DimensionDisplay;
+
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| {
+                parameter.display.is_none()
+                    && matches!(parameter.value, Some(ParameterValue::Length(_)))
+            })
+            .unwrap();
+        parameter.display = Some(DimensionDisplay::Radius);
+    }
+
+    let (report, output) = write(&decoded);
+
+    assert!(!active_stale(decode(output).ir()), "{:#?}", report.losses);
+    assert_eq!(evaluation_stale(&report), Vec::<&str>::new());
 }
 
 #[test]
