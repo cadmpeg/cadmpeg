@@ -6,6 +6,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::products::ExternalDocument;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
@@ -62,8 +64,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
                 let mut candidate = brep::project(ctx, &records, stream, &mut partition_losses)?;
                 candidate.finalize();
+                // A partition is admitted as a document of its own; the decoded
+                // document states one root over the bodies of every partition.
+                candidate.state_root_definition(
+                    ctx,
+                    root_definition_id(),
+                    ExternalDocument::default(),
+                )?;
                 let report =
                     cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &candidate, Vec::new())?;
+                candidate
+                    .model
+                    .product_definitions
+                    .retain(|definition| !definition.is_root());
                 if !report.is_ok() {
                     return Err(CodecError::Malformed(
                         report
@@ -131,6 +144,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             layers,
             std::collections::BTreeMap::default(),
         ));
+        ir.state_root_definition(ctx, root_definition_id(), ExternalDocument::default())?;
         body.losses.push(
             SolidEdgeLossCode::AttributesPending
                 .note("body names, colours, and visibility remain undecoded"),
@@ -146,4 +160,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         body,
         source_fidelity: SourceFidelity::new(Sha256Digest::digest(root.window())),
     })
+}
+
+fn root_definition_id() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("solidedge", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    )
 }

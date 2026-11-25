@@ -14,7 +14,7 @@ use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::{CadIr, Topology};
 use crate::ids::ProductDefinitionId;
-use crate::topology::{EdgeCarrier, ShellMember};
+use crate::topology::EdgeCarrier;
 
 use super::records::PositionKey;
 use super::resolved::{records, Arena};
@@ -342,10 +342,7 @@ impl<'a> Reach<'a> {
         for shell in &topology.shells {
             add(shell.region.as_str(), shell.id.as_str());
             for member in &shell.members {
-                match member {
-                    ShellMember::WireEdge { id } => add(shell.id.as_str(), id.as_str()),
-                    ShellMember::FreeVertex { id } => add(shell.id.as_str(), id.as_str()),
-                }
+                add(shell.id.as_str(), member.as_str());
             }
         }
         for face in &topology.faces {
