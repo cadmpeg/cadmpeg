@@ -1018,35 +1018,33 @@ fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
     }
 }
 
-#[test]
-fn free_composite_curve_is_written_as_one_nurbs_curve() {
+/// A document of free lines joined by one composite curve over `range`:
+/// each line is `(key, origin, direction, domain)`.
+fn free_composite_of_lines(
+    lines: &[(&str, Point3, cadmpeg_ir::math::Vector3, [f64; 2])],
+    range: [f64; 2],
+) -> CadIr {
     use cadmpeg_ir::geometry::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
         CurveGeometry,
     };
     use cadmpeg_ir::ids::CurveId;
 
-    let line = |key: &str, origin: Point3, direction: cadmpeg_ir::math::Vector3| Curve {
-        parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0]),
-        id: CurveId::mint(format!("rhino:test:curve#{key}")).expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).expect("a line"),
-        )),
-        source_object: None,
-        native_ref: None,
-    };
-    let first = line(
-        "first",
-        Point3::new(0.0, 0.0, 0.0),
-        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-    );
-    let second = line(
-        "second",
-        Point3::new(1.0, 0.0, 0.0),
-        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-    );
-    let segments = [&first, &second]
-        .into_iter()
+    let curves = lines
+        .iter()
+        .map(|(key, origin, direction, domain)| Curve {
+            parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(*domain),
+            id: CurveId::mint(format!("rhino:test:curve#{key}")).expect("identity grammar"),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(*origin, *direction)
+                    .expect("a line"),
+            )),
+            source_object: None,
+            native_ref: None,
+        })
+        .collect::<Vec<_>>();
+    let segments = curves
+        .iter()
         .map(|curve| CompositeCurveSegment {
             curve: curve.id.clone(),
             same_sense: true,
@@ -1054,19 +1052,27 @@ fn free_composite_curve_is_written_as_one_nurbs_curve() {
         })
         .collect::<Vec<_>>();
     let joined = Curve {
-        parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 2.0]),
+        parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(range),
         id: CurveId::mint("rhino:test:curve#joined").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-            segments: CompositeCurveSegments::try_from(segments).expect("two segments"),
+            segments: CompositeCurveSegments::try_from(segments).expect("segments"),
             self_intersect: None,
         }),
         source_object: None,
         native_ref: None,
     };
     let mut ir = CadIr::empty();
-    ir.geometry.curves.extend([first, second, joined]);
+    ir.geometry.curves.extend(curves);
+    ir.geometry.curves.push(joined);
+    ir
+}
 
-    let (decoded, losses) = super::written(&ir);
+/// The one NURBS curve a written document decodes to, where no curve is
+/// omitted.
+fn written_joined_nurbs(ir: &CadIr) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let (decoded, losses) = super::written(ir);
     assert!(
         losses
             .iter()
@@ -1079,6 +1085,29 @@ fn free_composite_curve_is_written_as_one_nurbs_curve() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry else {
         panic!("a NURBS curve: {:?}", curve.geometry);
     };
+    nurbs.clone()
+}
+
+#[test]
+fn free_composite_curve_is_written_as_one_nurbs_curve() {
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, 2.0],
+    );
+    let nurbs = written_joined_nurbs(&ir);
     let ends = [0, nurbs.pole_count() - 1].map(|index| {
         nurbs
             .pole_rows()
@@ -1089,5 +1118,32 @@ fn free_composite_curve_is_written_as_one_nurbs_curve() {
     assert_eq!(
         ends,
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
+    );
+}
+
+#[test]
+fn composite_with_abutting_domains_keeps_its_stated_range() {
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [-3.0, -2.9],
+            ),
+            (
+                "second",
+                Point3::new(-2.9, 2.9, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [-2.9, -0.8],
+            ),
+        ],
+        [-3.0, -0.8],
+    );
+    let nurbs = written_joined_nurbs(&ir);
+    let degree = usize::try_from(nurbs.degree()).expect("a degree");
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [-3.0, -0.8]
     );
 }

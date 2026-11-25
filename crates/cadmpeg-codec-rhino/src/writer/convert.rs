@@ -276,7 +276,8 @@ impl<'a> CompoundIndex<'a> {
     /// `[breaks[i], breaks[i + 1]]`. A compound states them. A composite
     /// lays its components end to end, each as long as its own domain, from
     /// the start of `curve`'s range, else from the start of its first
-    /// component's domain.
+    /// component's domain. A component whose domain starts at its break ends
+    /// at its own stored domain end.
     fn breaks(
         &self,
         ctx: &DecodeContext<'_>,
@@ -310,7 +311,7 @@ impl<'a> CompoundIndex<'a> {
                             start
                         }
                     };
-                    breaks.push(start + (d1 - d0));
+                    breaks.push(if d0 == start { d1 } else { start + (d1 - d0) });
                 }
                 Ok(breaks)
             }
