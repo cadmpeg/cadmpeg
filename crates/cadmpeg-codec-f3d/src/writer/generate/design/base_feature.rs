@@ -838,7 +838,7 @@ impl Writer<'_> {
             .chain(
                 self.geometry
                     .iter()
-                    .filter_map(|item| item.records.place.rolled.map(|body| body.node)),
+                    .filter_map(|item| item.records.place.rolled().map(|body| body.node)),
             )
             .collect::<Vec<_>>();
         out.record(&self.classes.context, indices.context)
