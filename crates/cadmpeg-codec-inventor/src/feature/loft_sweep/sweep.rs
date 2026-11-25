@@ -282,11 +282,20 @@ fn prove(
     .ok_or(NativeReason::ResultTopology)
 }
 
+/// The loss of the slot 9 orientation law for a typed sweep whose section is
+/// not one whole circle.
+pub(super) fn orientation_law_loss() -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::InventorLossCode::FeatureSweepControlsUnresolved.note(
+        "Typed Inventor sweep leaves its orientation law unstated: slot 9 value 0 turns the section with the path, and the neutral sweep carries no orientation for a non-circular section."
+            .to_owned(),
+    )
+}
+
 pub(super) fn project(
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
-) -> Result<FeatureOperation, NativeReason> {
+) -> Result<(FeatureOperation, Option<cadmpeg_ir::report::loss::LossNote>), NativeReason> {
     let token = source.identity.segment_token.as_str();
     let links = operands(
         source,
@@ -371,7 +380,12 @@ pub(super) fn project(
         &path,
         section.as_ref(),
     )?;
-    Ok(FeatureOperation::Sweep {
+    // `orientation: None` states no orientation rule. The IR has no variant for
+    // "turns with the path", so a non-circular section, whose built shape
+    // depends on that law, reports it as dropped. A whole circle is unchanged
+    // by the in-plane turn about its normal.
+    let law_loss = circle.is_none().then(orientation_law_loss);
+    let operation = FeatureOperation::Sweep {
         shape: SweepShape::Solid {
             op: links.op,
             section: SweepSection::Profile(profile),
@@ -389,7 +403,8 @@ pub(super) fn project(
         taper: None,
         scale: None,
         allow_multi_profile_faces: None,
-    })
+    };
+    Ok((operation, law_loss))
 }
 
 pub(crate) fn validates<'a>(

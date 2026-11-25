@@ -28,9 +28,13 @@ pub(in crate::feature) fn project(
     family: FeatureFamily,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let mut pending_loss = None;
     let operation = match family {
         FeatureFamily::Sweep => match super::sweep::project(source, label, index) {
-            Ok(operation) => operation,
+            Ok((operation, law_loss)) => {
+                pending_loss = law_loss;
+                operation
+            }
             Err(reason) => {
                 losses.push(reason.note());
                 return None;
@@ -61,6 +65,7 @@ pub(in crate::feature) fn project(
     if let Err(error) = ctx.charge_entities(1, "project Inventor loft or sweep") {
         return Some(Err(error));
     }
+    losses.extend(pending_loss);
     Some(Ok((
         Feature {
             product_definition: None,

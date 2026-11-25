@@ -627,3 +627,11 @@ mod proof {
         );
     }
 }
+
+#[test]
+fn a_non_circular_typed_sweep_reports_the_dropped_orientation_law() {
+    let note = orientation_law_loss();
+    assert_eq!(note.code.local_code(), "feature.sweep-controls-unresolved");
+    assert!(note.message.contains("orientation law"), "{}", note.message);
+    assert!(note.message.contains("slot 9"), "{}", note.message);
+}
