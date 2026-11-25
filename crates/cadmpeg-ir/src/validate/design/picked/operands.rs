@@ -16,9 +16,8 @@ use crate::design::selection::{
 
 use super::super::constructions::input_selections;
 use super::super::matching::{Matcher, StateTopology};
-use super::super::ops::assembly::{listed_participants, occurrence_steps, under_none};
 use super::super::sheets;
-use super::{all_entities, entities, picks, resolved_entities, straight_length, Entity, Probe};
+use super::{all_entities, entities, resolved_entities, straight_length, Entity, Probe};
 
 /// The bodies and faces an operand selection resolves to in a state.
 struct Operands<'a> {
@@ -139,11 +138,6 @@ impl<'a> Probe<'_, 'a> {
                 kept: Some(Kept::Pieces { keep, remove }),
                 ..
             } => self.pieces(targets, [keep, remove]),
-            SplitMode::ByTools {
-                targets: None,
-                kept: Some(Kept::Pieces { keep, remove }),
-                ..
-            } => self.participant_pieces([keep, remove]),
             SplitMode::Mutual {
                 elements,
                 kept: Some(Kept::Pieces { keep, remove }),
@@ -178,40 +172,6 @@ impl<'a> Probe<'_, 'a> {
             self.error(crate::rule!(
                 "design.piece-pick-outside-split-operands",
                 "a Kept::Pieces piece pick resolves to {entity}, which is no entity of the split's targets or elements"
-            ));
-        }
-    }
-
-    /// Where a split's `targets` is `None`, its piece picks target entities
-    /// of its assembly participants (§6.5): a pick judged where it and every
-    /// participant name their occurrences by paths of occurrence steps.
-    fn participant_pieces(&mut self, lists: [&'a Option<Box<SetSelection>>; 2]) {
-        let Some(context) = &self.definition.assembly else {
-            return;
-        };
-        let roots: Option<Vec<Vec<&str>>> = context
-            .participants
-            .values()
-            .map(|selection| {
-                listed_participants(selection)?
-                    .iter()
-                    .map(occurrence_steps)
-                    .collect::<Option<Vec<_>>>()
-            })
-            .collect::<Option<Vec<_>>>()
-            .map(|roots| roots.into_iter().flatten().collect());
-        let Some(roots) = roots.filter(|roots| !roots.is_empty()) else {
-            return;
-        };
-        let outside = lists
-            .into_iter()
-            .flatten()
-            .flat_map(|list| picks(&**list))
-            .any(|pick| under_none(pick, &roots));
-        if outside {
-            self.error(crate::rule!(
-                "design.piece-pick-outside-split-operands",
-                "a Kept::Pieces piece pick names an occurrence under no participant of the split"
             ));
         }
     }

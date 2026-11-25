@@ -94,8 +94,10 @@ fn under<O: MemberOrder>(
     }
 }
 
+/// A piece pick of a split without targets that lies under no participant
+/// gets one finding, from the participant rule alone.
 #[test]
-fn a_split_of_the_participants_picks_pieces_under_a_participant() {
+fn a_piece_pick_under_no_participant_is_reported_once() {
     let split = |piece: &[&str]| {
         FeatureOperation::Split(Box::new(Split {
             mode: SplitMode::ByTools {
@@ -111,7 +113,8 @@ fn a_split_of_the_participants_picks_pieces_under_a_participant() {
             source_settings: BTreeMap::new(),
         }))
     };
-    let rule = "design.piece-pick-outside-split-operands";
+    let participant = "design.piece-pick-targets-entity-no-participant";
+    let operands = "design.piece-pick-outside-split-operands";
     let mut ir = fixture::document();
     ir.design.features[0].definition.assembly = Some(AssemblyContext {
         participants: BTreeMap::from([(
@@ -120,9 +123,11 @@ fn a_split_of_the_participants_picks_pieces_under_a_participant() {
         )]),
     });
     with(&mut ir, |_| split(&["a", "c"]));
-    assert!(ruled(&ir, rule).is_empty());
+    assert!(ruled(&ir, participant).is_empty());
+    assert!(ruled(&ir, operands).is_empty());
     with(&mut ir, |_| split(&["b"]));
-    assert_eq!(ruled(&ir, rule).len(), 1);
+    assert_eq!(ruled(&ir, participant).len(), 1);
+    assert!(ruled(&ir, operands).is_empty());
 }
 
 #[test]
