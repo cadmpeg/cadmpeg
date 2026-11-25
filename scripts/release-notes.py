@@ -4,10 +4,10 @@
 
 The notes have these sections, each only when it has content:
 
-* Compatibility: an IR_VERSION change, every line of the
-  ``## Breaking change`` section of a pull-request description, and every
-  line of a ``### Breaking`` section of a changelog fragment.
-* One section per other fragment heading (``### Added``, ``### Fixed``, ...).
+* Compatibility: an IR_VERSION change, curated ``### Breaking`` lines from
+  changelog fragments added by the release, and every line of the
+  ``## Breaking change`` section of a pull-request description (collapsed
+  below the curated lines when fragments supply ``### Breaking`` notes).
 * Support levels: changed headline levels in ``dialect-support.toml``.
 * Changes: one collapsed list per area, from the commit subject scope.
 * Contributors: the GitHub logins of the change authors, without bots.
@@ -47,9 +47,7 @@ FIRST_SENTENCE = re.compile(r"[.:;](?:\s|$)")
 FRAGMENT_DIR = "changelog.d"
 FRAGMENT_README = "README.md"
 FRAGMENT_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
-FRAGMENT_DEFAULT = "Changed"
 FRAGMENT_BREAKING = re.compile(r"^breaking(?: changes?)?$", re.IGNORECASE)
-FRAGMENT_ORDER = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 GRAPHQL_BATCH = 40
 SHORT_SHA = 10
 
@@ -252,29 +250,34 @@ def breaking_notes(body: str) -> list[str]:
     return notes
 
 
-def fragment_sections(texts: list[str]) -> dict[str, list[str]]:
-    """Bullet lines of changelog fragments by heading, in fragment order.
+def fragment_breaking_notes(texts: list[str]) -> list[str]:
+    """Bullet lines under ``### Breaking`` headings in changelog fragments, in order.
 
-    A bullet before any heading is under ``Changed``; an indented line after a
-    bullet continues it.
+    An indented line after a bullet continues it. Bullets outside a
+    ``### Breaking`` (or ``### Breaking change(s)``) section are ignored.
     """
-    sections: dict[str, list[str]] = {}
+    notes: list[str] = []
     for text in texts:
-        heading = FRAGMENT_DEFAULT
-        lines: list[str] | None = None
+        inside = False
+        continuing = False
         for line in COMMENT.sub("", text).splitlines():
             stripped = line.strip()
             match = FRAGMENT_HEADING.match(stripped)
             if match:
-                heading, lines = match.group(1), None
-            elif stripped.startswith(("- ", "* ")):
-                lines = sections.setdefault(heading, [])
-                lines.append(stripped[2:].strip())
-            elif stripped and lines is not None and line[:1].isspace():
-                lines[-1] = f"{lines[-1]} {stripped}"
+                inside = bool(FRAGMENT_BREAKING.match(match.group(1)))
+                continuing = False
+            elif inside and stripped.startswith(("- ", "* ")):
+                bullet_text = stripped[2:].strip()
+                if bullet_text:
+                    notes.append(bullet_text)
+                    continuing = True
+                else:
+                    continuing = False
+            elif inside and stripped and continuing and line[:1].isspace():
+                notes[-1] = f"{notes[-1]} {stripped}"
             else:
-                lines = None
-    return {heading: notes for heading, notes in sections.items() if notes}
+                continuing = False
+    return notes
 
 
 def added_fragments(previous: str, tag: str) -> list[str]:
@@ -381,15 +384,9 @@ def render(
     dependency_updates: int,
     ir_line: str | None,
     support: list[str],
-    fragments: dict[str, list[str]] | None = None,
+    curated_breaking: list[str] | None = None,
 ) -> str:
-    fragments = fragments or {}
-    curated = [
-        line
-        for heading, lines in fragments.items()
-        if FRAGMENT_BREAKING.match(heading)
-        for line in lines
-    ]
+    curated = list(curated_breaking or ())
     compatibility = ([ir_line] if ir_line else []) + curated
     by_pull_request = [
         f"{BREAKING.sub('', note)} {change.reference()}"
@@ -406,10 +403,6 @@ def render(
         )
     elif compatibility or by_pull_request:
         parts.append(f"## Compatibility\n\n{bullets(compatibility + by_pull_request)}")
-    others = [heading for heading in fragments if not FRAGMENT_BREAKING.match(heading)]
-    rank = {heading.lower(): index for index, heading in enumerate(FRAGMENT_ORDER)}
-    for heading in sorted(others, key=lambda heading: rank.get(heading.lower(), len(rank))):
-        parts.append(f"## {heading}\n\n{bullets(fragments[heading])}")
     if support:
         parts.append(f"## Support levels\n\n{bullets(support)}")
     groups = group_changes(changes, dependency_updates)
@@ -451,7 +444,7 @@ def main(argv: list[str] | None = None) -> int:
             dependency_updates,
             ir_change(git_file(previous, IR_FILE), git_file(args.tag, IR_FILE)),
             support_changes(git_file(previous, SUPPORT_FILE), git_file(args.tag, SUPPORT_FILE)),
-            fragment_sections(added_fragments(previous, args.tag)),
+            fragment_breaking_notes(added_fragments(previous, args.tag)),
         )
     )
     return 0
