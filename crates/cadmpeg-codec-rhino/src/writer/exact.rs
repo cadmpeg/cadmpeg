@@ -416,9 +416,10 @@ impl ArcAxis {
     /// The start of the arc that holds `value`.
     fn span_start(&self, value: f64) -> f64 {
         let position = ((value - self.lo) / (2.0 * self.half)).floor().max(0.0);
+        let last = self.spans - 1;
         let span = cadmpeg_core::convert::truncate_f64_to_usize(position)
-            .unwrap_or(usize::MAX)
-            .min(self.spans - 1);
+            .filter(|span| *span < last)
+            .unwrap_or(last);
         // The span index is at most MAX_ARCS, which f64 holds exactly.
         let index = cadmpeg_core::convert::f64_from_index(span).unwrap_or(0.0);
         self.lo + 2.0 * self.half * index
@@ -794,13 +795,17 @@ pub(super) fn clamped_surface(
 
 /// The point of the pcurve `geometry` at `parameter`.
 fn pcurve_point(geometry: &PcurveGeometry, parameter: f64) -> Result<Point2, String> {
-    cadmpeg_ir::eval::decode::pcurve_uv(
+    match cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         geometry,
         parameter,
-    )
-    .map(cadmpeg_ir::units::FinitePoint2::get)
-    .map_err(|_| format!("the pcurve has no finite point at {parameter}"))
+    )) {
+        Ok(Some(point)) => Ok(point.get()),
+        Ok(None) => Err(format!("the pcurve has no finite point at {parameter}")),
+        Err(limit) => Err(format!(
+            "the evaluation of the pcurve at {parameter} is refused: {limit:?}"
+        )),
+    }
 }
 
 /// The clamped 2D spline (in x and y) that equals the pcurve `geometry`

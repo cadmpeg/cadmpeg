@@ -2213,8 +2213,13 @@ fn closest_edge_distance(
         )
     };
     let at = |a: f64, b: f64, fraction: f64| cadmpeg_ir::math::interpolate(a, b, fraction);
-    let mut a = parameters[closest.saturating_sub(1)];
-    let mut b = parameters[(closest + 1).min(parameters.len() - 1)];
+    let mut a = closest
+        .checked_sub(1)
+        .map_or(parameters[closest], |index| parameters[index]);
+    let mut b = parameters
+        .get(closest + 1)
+        .copied()
+        .unwrap_or(parameters[closest]);
     let mut fc = distance(at(a, b, 1.0 - ratio))?;
     let mut fd = distance(at(a, b, ratio))?;
     for _ in 0..CLOSEST_POINT_STEPS {
