@@ -264,10 +264,20 @@ pub(super) fn exact_component_insert_construction(
                         Some(at) => Some(rigid_transform_at(bytes, at)?),
                         None => None,
                     };
-                    if carrier_transform != transform_at.map(|_| transform) {
+                    if carrier_transform == transform_at.map(|_| transform) {
+                        placements.push((
+                            carrier.role,
+                            carrier.role_offset,
+                            carrier.transform_offset,
+                        ));
+                    } else if frame_length == 400 && carrier_transform.is_some() {
+                        // The relation names this carrier and the scope both ways; the
+                        // carrier keeps a different matrix: the occurrence moved after
+                        // its insertion, and the carrier's matrix is the current one.
+                        placements.push((carrier.role, carrier.role_offset, None));
+                    } else {
                         return None;
                     }
-                    placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
                     occurrence_key = Some(carrier.occurrence_key);
                 }
             }

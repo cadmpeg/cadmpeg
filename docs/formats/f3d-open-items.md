@@ -3780,6 +3780,8 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** Controlled assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
 
+**Settled in part (25 Nov 2026).** A 400-byte matrix scope whose relation names an attributed carrier with a different matrix selects that carrier's external occurrence; the carrier matrix is the current pose (`f3d.md` §3.1, `corpus/f3d/component_insert_moved_by_joint.f3z`). Before this, the matrix mismatch left such a scope unbound and it supplied an unresolved occurrence beside the external one.
+
 **Note.** Each authored insertion scope with a decoded placement can produce one unresolved-prototype occurrence at the document root. The per-scope membership reading is assumed. `assembly.component-insert-container-assumed` records that container-frame reading. A feature with unresolved source membership uses its native selection in a neutral component insertion and reports `feature.component-insert-membership-assumed`. The native scope retains the relation reference, occurrence identity, and decoded placement.
 
 ### DR-506. Motion roles of additional Assemble owners

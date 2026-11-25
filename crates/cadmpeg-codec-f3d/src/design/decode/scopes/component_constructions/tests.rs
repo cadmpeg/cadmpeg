@@ -1417,6 +1417,7 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
         assert_eq!(construction.neutron_role, role);
         assert_eq!(construction.occurrence_identity, Some(19));
         assert_eq!(construction.carrier_record_index, 10);
+        assert!(!construction.carrier_moved());
         let key = construction
             .occurrence_key
             .as_ref()
@@ -1442,7 +1443,18 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
         if with_matrix {
             let at = start + 50 + delta + 8 * 3;
             bytes[at..at + 8].copy_from_slice(&3.5_f64.to_le_bytes());
-            assert!(tested_component_insert_construction(&bytes, &records, &scope).is_none());
+            let moved = tested_component_insert_construction(&bytes, &records, &scope);
+            if frame == 400 {
+                // The relation names the carrier and the scope both ways: the
+                // occurrence moved after its insertion and the carrier keeps the
+                // current matrix.
+                let moved = moved.expect("400-byte insert with a moved carrier");
+                assert!(moved.carrier_moved());
+                assert_eq!(moved.carrier_record_index, 10);
+                assert_eq!(moved.carrier_transform_offset(), None);
+            } else {
+                assert!(moved.is_none());
+            }
         }
     }
 }
