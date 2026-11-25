@@ -939,6 +939,38 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
 }
 
 #[test]
+fn loopless_plane_face_is_stated_partial_with_a_boundary_loss() {
+    let source = b"23200 0 2 2 \n16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n\
+1 9.999999999999999547e-07 1.000000000000000036e-10 \n\
+asmheader $-1 -1 @13 232.4.0.65535 #\n\
+body $-1 -1 $-1 $2 $-1 $-1 #\n\
+lump $-1 -1 $-1 $-1 $3 $1 #\n\
+shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n\
+face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n\
+plane-surface $-1 -1 $-1 1 2 0 0 0 1 1 0 0 forward_v I I I I #\n\
+End-of-ASM-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    let [face] = result.ir().geometry.faces.as_slice() else {
+        panic!("one face")
+    };
+    assert_eq!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let boundary_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SatLossCode::TopologyFaceBoundaryUnstated.kind())
+        .collect::<Vec<_>>();
+    let [loss] = boundary_losses.as_slice() else {
+        panic!("one boundary loss: {boundary_losses:?}")
+    };
+    assert!(loss.message.contains(face.id.as_str()), "{}", loss.message);
+    assert!(loss.message.contains("plane"), "{}", loss.message);
+}
+
+#[test]
 fn empty_shell_is_retained_without_dangling_region_references() {
     let source = b"105 0 1 0\n\
 body $-1 $1 $-1 $-1 #\n\

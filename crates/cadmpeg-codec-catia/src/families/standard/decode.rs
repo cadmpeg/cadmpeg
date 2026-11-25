@@ -3914,6 +3914,7 @@ fn attach_standard_faces(
             annotations.derived(&face_id, field)?;
         }
         admission.charge()?;
+        let loops = crate::assemble::unspecified_loops_on(ir, surface, Vec::new());
         ir.geometry.faces.push(Face {
             id: face_id,
             shell: shell_id.clone(),
@@ -3923,7 +3924,7 @@ fn attach_standard_faces(
             } else {
                 Sense::Reversed
             },
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+            loops,
             name: None,
             color: None,
             tolerance: None,
@@ -6174,7 +6175,10 @@ fn standard_face_loops(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<cadmpeg_ir::topology::FaceLoops, CodecError> {
     let Some(face_topology) = topology.faces().get(face_index) else {
-        return Ok(cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()));
+        return Ok(match bindings.get(face_index) {
+            Some((surface, _, _)) => crate::assemble::unspecified_loops_on(ir, surface, Vec::new()),
+            None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        });
     };
     let mut ids = Vec::new();
 
@@ -6191,7 +6195,10 @@ fn standard_face_loops(
             let id = id.clone();
             copy.push(id);
         }
-        Ok(cadmpeg_ir::topology::FaceLoops::unspecified(copy))
+        Ok(match bindings.get(face_index) {
+            Some((surface, _, _)) => crate::assemble::unspecified_loops_on(ir, surface, copy),
+            None => cadmpeg_ir::topology::FaceLoops::unspecified(copy),
+        })
     };
     if let [single] = ids.as_slice() {
         return Ok(cadmpeg_ir::topology::FaceLoops::classified(

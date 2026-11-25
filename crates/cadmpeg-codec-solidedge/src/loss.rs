@@ -32,6 +32,7 @@ pub(crate) enum SolidEdgeLossCode {
     SurfaceUnresolved,
     CurveUnresolved,
     LoopUnreadable,
+    TopologyFaceBoundaryUnstated,
     FaceSenseUnresolved,
     ChainTruncated,
     VertexUnresolved,
@@ -117,6 +118,10 @@ impl SolidEdgeLossCode {
             Self::SurfaceUnresolved => ("surface.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::CurveUnresolved => ("curve.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::LoopUnreadable => ("loop.unreadable", LossTaxonomy::TopologyNotTransferred),
+            Self::TopologyFaceBoundaryUnstated => (
+                "topology.face-boundary-unstated",
+                LossTaxonomy::TopologyNotTransferred,
+            ),
             Self::FaceSenseUnresolved => {
                 ("face.sense-unresolved", LossTaxonomy::SourceTopologyInvalid)
             }

@@ -3411,9 +3411,31 @@ impl<'a> F3dDecodeSession<'a> {
             unknowns,
             stats: _,
             annotation_records,
+            unbounded_faces: _,
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
-        ir.geometry.subds = subds;
+        // No v11 form states a `cage` yet (its forms are unresolved), so each
+        // cage lies outside every form's `cage` and belongs to a body of its
+        // own (§5.6). Interim: the source states no display name, colour, or
+        // visibility for that body.
+        for surface in subds {
+            let key = surface.id.key();
+            ir.geometry.push_cage_object(
+                surface,
+                cadmpeg_ir::ids::BodyId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "body"),
+                    key.clone(),
+                ),
+                cadmpeg_ir::ids::RegionId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "region"),
+                    key.clone(),
+                ),
+                cadmpeg_ir::ids::ShellId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "shell"),
+                    key,
+                ),
+            );
+        }
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
@@ -6191,6 +6213,16 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
             format_args!(
                 "{} sketch-region body record(s) of a keyless BREP blob are not model bodies and stay in the BREP stream.",
                 decoded.sketch_region_bodies_omitted
+            ),
+        );
+    }
+    for face in &decoded.asm.unbounded_faces {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::TopologyFaceBoundaryUnstated,
+            format_args!(
+                "ASM face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
+                face.record_index, face.surface_kind, face.face.as_str()
             ),
         );
     }

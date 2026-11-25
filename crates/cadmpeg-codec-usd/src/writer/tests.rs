@@ -288,3 +288,36 @@ fn an_extent_keeps_the_zero_bound_it_holds() {
         [0.0_f32, -0.0, 1.0].map(f32::to_bits)
     );
 }
+
+#[test]
+fn a_cage_body_is_left_out_with_its_cage() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut ir, "usd");
+    let (text, report) = encode(&ir);
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    assert_eq!(decode(&text).ir().geometry.bodies.len(), 1, "{text}");
+}
+
+fn written_empty(report: &cadmpeg_ir::report::export::ExportReport) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty")
+}
+
+/// A document that states nothing USD holds is written as the layer metadata
+/// alone, with `export:output.empty`.
+#[test]
+fn a_document_that_states_nothing_is_written_empty() {
+    let (text, report) = encode(&cadmpeg_ir::CadIr::empty());
+    assert!(text.starts_with("#usda 1.0\n("), "{text}");
+    assert!(!text.contains("def "), "{text}");
+    assert!(written_empty(&report), "{:#?}", report.losses);
+}
+
+#[test]
+fn a_document_with_a_body_is_not_empty() {
+    let (text, report) = encode(&cadmpeg_ir::examples::unit_cube().unwrap());
+    assert!(text.contains("def "), "{text}");
+    assert!(!written_empty(&report), "{:#?}", report.losses);
+}
