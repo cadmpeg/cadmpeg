@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Faces whose loops the writer moves by whole turns of a periodic parameter
-//! to the period of a reference loop.
+//! into one window of a turn.
 
 use std::f64::consts::{PI, TAU};
 
 use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, LineCurve, TorusSurface};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Coedge, FaceLoops, Loop, LoopBoundary, LoopRing, Sense};
+use cadmpeg_ir::topology::{Coedge, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Sense};
 use cadmpeg_ir::CadIr;
 
 use super::{
-    assert_boundary_in_domain, azimuth, boundary, id, origin, parameter_line, read_back, ring_loop,
-    torus_point, z_axis, Sheet, BAND_HEIGHT, CYLINDER_RADIUS, MIRROR_STRETCH, ON_SURFACE, STRETCH,
-    TORUS_MAJOR, TORUS_MINOR,
+    assert_boundary_in_domain, azimuth, boundary, charged, id, origin, parameter_line, read_back,
+    ring_loop, torus_point, written_under, z_axis, Sheet, BAND_HEIGHT, BAND_LOW, CYLINDER_RADIUS,
+    MIRROR_STRETCH, ON_SURFACE, STRETCH, TORUS_MAJOR, TORUS_MINOR,
 };
 
 /// A support in its parameters: the point at `(u, v)`, the curve of constant
@@ -309,6 +309,268 @@ fn a_torus_hole_stated_a_turn_away_around_the_tube_moves_into_the_face() {
                     "{point:?} lies outside the patch"
                 );
             }
+        }
+    }
+}
+
+fn torus_sheet() -> Sheet {
+    Sheet::new(SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            TORUS_MAJOR,
+            TORUS_MINOR,
+        )
+        .expect("a torus"),
+    ))
+}
+
+/// The face loops `lower`, `upper` and `hole`: the lower loop is the outer
+/// loop where `classified`.
+fn band_loops(lower: LoopId, upper: LoopId, hole: LoopId, classified: bool) -> FaceLoops {
+    if classified {
+        FaceLoops::classified(lower, vec![upper, hole])
+    } else {
+        FaceLoops::unspecified(vec![lower, upper, hole])
+    }
+}
+
+/// The band of the torus about `+z` above the parallel at tube angle `low`
+/// and below the parallel at `high`, each one closed edge in a loop of its
+/// own, with the parameter rectangle `hole` cut out. The parameter lines of
+/// the hole move by `shift`.
+fn torus_parallel_band(
+    [low, high]: [f64; 2],
+    hole: [[f64; 2]; 2],
+    shift: [f64; 2],
+    classified: bool,
+) -> CadIr {
+    let mut sheet = torus_sheet();
+    for (key, v) in [("lower", low), ("upper", high)] {
+        sheet.vertex(key, (TORUS.point)(0.0, v));
+        sheet.edge(key, (TORUS.along_u)(v), [0.0, TAU], [key, key]);
+    }
+    let lower = parameter_line(&mut sheet.ir, "lower", [0.0, low], [1.0, 0.0], TAU);
+    let upper = parameter_line(&mut sheet.ir, "upper", [TAU, high], [-1.0, 0.0], TAU);
+    let lower = ring_loop(
+        &mut sheet.ir,
+        ["lower", "face", "lower"],
+        Sense::Forward,
+        lower,
+    );
+    let upper = ring_loop(
+        &mut sheet.ir,
+        ["upper", "face", "upper"],
+        Sense::Reversed,
+        upper,
+    );
+    let hole = rectangle_loop(&mut sheet, &TORUS, "hole", hole, shift, true);
+    sheet.faced(band_loops(lower, upper, hole, classified))
+}
+
+/// The band of the torus about `+z` between the meridians at azimuths `low`
+/// and `high`, each one closed edge in a loop of its own, with the parameter
+/// rectangle `hole` cut out.
+fn torus_meridian_band([low, high]: [f64; 2], hole: [[f64; 2]; 2], classified: bool) -> CadIr {
+    let mut sheet = torus_sheet();
+    for (key, u) in [("lower", low), ("upper", high)] {
+        sheet.vertex(key, (TORUS.point)(u, 0.0));
+        sheet.edge(key, (TORUS.along_v)(u), [0.0, TAU], [key, key]);
+    }
+    let lower = parameter_line(&mut sheet.ir, "lower", [low, TAU], [0.0, -1.0], TAU);
+    let upper = parameter_line(&mut sheet.ir, "upper", [high, 0.0], [0.0, 1.0], TAU);
+    let lower = ring_loop(
+        &mut sheet.ir,
+        ["lower", "face", "lower"],
+        Sense::Reversed,
+        lower,
+    );
+    let upper = ring_loop(
+        &mut sheet.ir,
+        ["upper", "face", "upper"],
+        Sense::Forward,
+        upper,
+    );
+    let hole = rectangle_loop(&mut sheet, &TORUS, "hole", hole, [0.0, 0.0], true);
+    sheet.faced(band_loops(lower, upper, hole, classified))
+}
+
+/// Assert that the face `band` builds, with its loops unclassified and
+/// classified, is written and read back under each stretch with its three
+/// loops in the domain of its support, and that its boundary lies on the
+/// torus where `inside` holds for the azimuth and tube angle.
+fn assert_torus_band(band: impl Fn(bool) -> CadIr, inside: impl Fn(f64, f64) -> bool) {
+    for classified in [false, true] {
+        for stretch in [STRETCH, MIRROR_STRETCH] {
+            let read = read_back(band(classified), stretch);
+            assert_eq!(read.geometry.faces.len(), 1);
+            assert_eq!(read.geometry.faces[0].loops.stated().count(), 3);
+            assert_boundary_in_domain(&read);
+            let (points, _) = boundary(&read);
+            for point in points.into_iter().map(|point| stretch.source(point)) {
+                let radial = point.x.hypot(point.y) - TORUS_MAJOR;
+                assert!(
+                    (radial.hypot(point.z) - TORUS_MINOR).abs() <= ON_SURFACE,
+                    "{point:?} lies off the torus"
+                );
+                assert!(
+                    inside(point.y.atan2(point.x), point.z.atan2(radial)),
+                    "{point:?} lies outside the band"
+                );
+            }
+        }
+    }
+}
+
+/// The tube angles of the parallels of the band that holds a hole near its
+/// upper parallel.
+const TUBE_BAND: [f64; 2] = [-1.5, 2.5];
+
+#[test]
+fn a_hole_near_the_upper_parallel_of_a_torus_band_stays_in_the_band() {
+    assert_torus_band(
+        |classified| {
+            torus_parallel_band(TUBE_BAND, [[1.0, 1.3], [1.8, 2.1]], [0.0, 0.0], classified)
+        },
+        |_, tube| (TUBE_BAND[0] - ON_SURFACE..=TUBE_BAND[1] + ON_SURFACE).contains(&tube),
+    );
+}
+
+/// The azimuths of the meridians of the band that holds a hole near its
+/// upper meridian.
+const AZIMUTH_BAND: [f64; 2] = [-1.5, 2.5];
+
+#[test]
+fn a_hole_near_the_upper_meridian_of_a_torus_band_stays_in_the_band() {
+    assert_torus_band(
+        |classified| torus_meridian_band(AZIMUTH_BAND, [[1.8, 2.1], [0.5, 0.9]], classified),
+        |azimuth, _| {
+            (AZIMUTH_BAND[0] - ON_SURFACE..=AZIMUTH_BAND[1] + ON_SURFACE).contains(&azimuth)
+        },
+    );
+}
+
+#[test]
+fn a_hole_across_the_tube_seam_of_a_torus_band_moves_into_the_band() {
+    // The band runs up from `BAND_LOW` across the tube angle `π`; the hole
+    // states its parameter lines one turn below its edges.
+    assert_torus_band(
+        |classified| {
+            torus_parallel_band(
+                [BAND_LOW, -BAND_LOW],
+                [[1.0, 1.3], [PI - 0.15, PI + 0.15]],
+                [0.0, -TAU],
+                classified,
+            )
+        },
+        |_, tube| tube.abs() >= BAND_LOW - ON_SURFACE,
+    );
+}
+
+/// The heights of the cylinder patch beside the band in
+/// [`band_and_patch_on_one_cylinder`].
+const PATCH_HEIGHTS: [f64; 2] = [10.0, 12.0];
+
+/// Two faces on one cylinder about `+z`: the band between the circles at
+/// heights 0 and [`BAND_HEIGHT`], whose circles run over azimuths `[0, 2π]`,
+/// with a hole across the azimuth `0`; and a patch at [`PATCH_HEIGHTS`].
+fn band_and_patch_on_one_cylinder() -> CadIr {
+    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            CYLINDER_RADIUS,
+        )
+        .expect("a cylinder"),
+    ));
+    for (key, height) in [("lower", 0.0), ("upper", BAND_HEIGHT)] {
+        sheet.vertex(key, (CYLINDER.point)(0.0, height));
+        sheet.edge(key, (CYLINDER.along_u)(height), [0.0, TAU], [key, key]);
+    }
+    let lower = parameter_line(&mut sheet.ir, "lower", [0.0, 0.0], [1.0, 0.0], TAU);
+    let upper = parameter_line(&mut sheet.ir, "upper", [TAU, BAND_HEIGHT], [-1.0, 0.0], TAU);
+    let loops = vec![
+        ring_loop(
+            &mut sheet.ir,
+            ["lower", "face", "lower"],
+            Sense::Forward,
+            lower,
+        ),
+        ring_loop(
+            &mut sheet.ir,
+            ["upper", "face", "upper"],
+            Sense::Reversed,
+            upper,
+        ),
+        rectangle_loop(
+            &mut sheet,
+            &CYLINDER,
+            "hole",
+            [[-0.1, 0.1], [3.0, 5.0]],
+            [0.0, 0.0],
+            true,
+        ),
+    ];
+    let patch = rectangle_loop(
+        &mut sheet,
+        &CYLINDER,
+        "patch",
+        [[1.0, 2.0], PATCH_HEIGHTS],
+        [0.0, 0.0],
+        false,
+    );
+    sheet
+        .ir
+        .geometry
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == patch)
+        .expect("the patch loop")
+        .face = id(FaceId::mint, "face", "patch");
+    let mut ir = sheet.faced(FaceLoops::unspecified(loops));
+    ir.geometry.faces.push(Face {
+        id: id(FaceId::mint, "face", "patch"),
+        shell: id(ShellId::mint, "shell", "sheet"),
+        surface: id(SurfaceId::mint, "surface", "face"),
+        sense: Sense::Forward,
+        loops: FaceLoops::classified(patch, Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    ir
+}
+
+#[test]
+fn a_face_that_no_turn_holds_is_dropped_and_the_other_faces_keep_the_support() {
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let (losses, read) = written_under(band_and_patch_on_one_cylinder(), stretch);
+        let omitted = charged(&losses, "iges/writer.face-omitted");
+        assert_eq!(omitted.len(), 1, "{losses:#?}");
+        assert!(
+            omitted[0].starts_with("face test:model:face#face ")
+                && omitted[0].contains("no one turn of the azimuth"),
+            "{omitted:#?}"
+        );
+        assert!(
+            charged(&losses, "iges/writer.body-omitted").is_empty(),
+            "{losses:#?}"
+        );
+        assert_eq!(read.geometry.faces.len(), 1);
+        assert_boundary_in_domain(&read);
+        let (points, _) = boundary(&read);
+        assert!(!points.is_empty());
+        for point in points.into_iter().map(|point| stretch.source(point)) {
+            assert!(
+                (point.x.hypot(point.y) - CYLINDER_RADIUS).abs() <= ON_SURFACE
+                    && (PATCH_HEIGHTS[0] - ON_SURFACE..=PATCH_HEIGHTS[1] + ON_SURFACE)
+                        .contains(&point.z),
+                "{point:?} lies off the patch"
+            );
         }
     }
 }
