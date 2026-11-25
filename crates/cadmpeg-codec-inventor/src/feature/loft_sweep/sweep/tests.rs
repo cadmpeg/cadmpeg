@@ -51,7 +51,7 @@ impl Fixture {
                 refs(PmDcFeatureReferenceFamily::FeatureDimensions, &[21]),
             ),
             test_property(8, enumeration(PmDcFeatureEnumFamily::Auxiliary, 3, 0)),
-            test_property(9, enumeration(PmDcFeatureEnumFamily::Auxiliary, 2, 0)),
+            test_property(9, enumeration(PmDcFeatureEnumFamily::Auxiliary, 1, 0)),
             test_property(10, enumeration(PmDcFeatureEnumFamily::Auxiliary, 2, 0)),
             test_property(
                 15,
@@ -83,7 +83,7 @@ impl Fixture {
             parameter.identity.segment_token.clone(),
             20,
         );
-        Self {
+        let mut fixture = Self {
             source: test_feature(
                 30,
                 16,
@@ -104,7 +104,10 @@ impl Fixture {
             parameter,
             dimension,
             value: ParameterValue::Angle(Angle::from_assigned_real(FiniteReal::ZERO)),
-        }
+        };
+        // Major 19 is the lowest segment major with an evidenced orientation type.
+        fixture.source = edited(&fixture.source, |s| s.save_version_major = 19);
+        fixture
     }
 
     fn admitted(&self) -> Result<Operands, NativeReason> {
@@ -174,7 +177,8 @@ fn circular_operands_and_validator_share_every_control_gate() {
         f.admitted(),
         Ok(Operands {
             section: reference(102),
-            path: reference(101)
+            path: reference(101),
+            op: SolidSweepOperation::NewBody,
         })
     );
     assert!(f.validates(&definition()));
@@ -197,11 +201,19 @@ fn circular_operands_and_validator_share_every_control_gate() {
                 };
                 if discriminator {
                     *type_value += 1;
+                } else if slot == 2 {
+                    // Values 1 to 3 are the new body, cut, and join operations.
+                    *value += 3;
                 } else {
                     *value += 1;
                 }
             });
-            assert_eq!(f.admitted(), Err(NativeReason::Slot(slot)));
+            let reason = if slot == 2 && !discriminator {
+                NativeReason::Operation
+            } else {
+                NativeReason::Slot(slot)
+            };
+            assert_eq!(f.admitted(), Err(reason));
             assert!(!f.validates(&definition()));
         }
         let mut f = Fixture::new();
@@ -278,9 +290,11 @@ fn native_sweep_refusal_notes_pin_each_reason_and_the_existing_loss_code() {
         (NativeReason::Angle, "slot 3"),
         (NativeReason::Dimension, "slot 7"),
         (NativeReason::SectionSelection, "slot 0"),
-        (NativeReason::CircularSection, "circular profile"),
+        (NativeReason::Operation, "slot 2"),
+        (NativeReason::Section, "closed profile"),
         (NativeReason::PathSelection, "slot 1"),
         (NativeReason::Path, "ordered open wire"),
+        (NativeReason::PathCorner, "corner"),
         (NativeReason::ResultTopology, "generator-owned result"),
         (NativeReason::ResultIdentity, "result body identity"),
     ] {
@@ -326,9 +340,18 @@ fn validator_refuses_unrepresented_sweep_controls() {
 #[test]
 fn versioned_extent_and_absent_dimension_keep_the_same_predicate() {
     let mut f = Fixture::new();
+    // Major 25 is the first major from major 22, where the extent type is 12, with an
+    // evidenced orientation type.
     f.source = edited(&f.source, |s| {
-        s.save_version_major = crate::feature::EXTENT_TYPE_12_FIRST_MAJOR;
+        s.save_version_major = 25;
     });
+    f.change_kind(6, |kind| {
+        let PmDcFeaturePropertyKind::Enumeration { type_value, .. } = kind else {
+            panic!("orientation")
+        };
+        *type_value = 2;
+    });
+    assert!(25 >= crate::feature::EXTENT_TYPE_12_FIRST_MAJOR);
     assert_eq!(f.admitted(), Err(NativeReason::Slot(4)));
     assert!(!f.validates(&definition()));
     f.change_kind(3, |kind| {
