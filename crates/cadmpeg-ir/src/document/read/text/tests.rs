@@ -32,14 +32,14 @@ fn a_value_keeps_one_copy_of_a_key_restated_with_one_value_and_none_otherwise() 
             Found::Restated("a".into()),
             Found::Conflicting {
                 key: "b".into(),
-                positions: vec![17, 25],
+                copies: vec![(17, 23), (25, 31)],
             },
         ]
     );
 }
 
 #[test]
-fn an_invalid_utf8_sequence_in_a_string_is_replaced_and_in_a_key_is_unreadable() {
+fn an_invalid_utf8_sequence_in_a_string_is_replaced_and_in_a_key_or_an_id_is_unreadable() {
     let text = b"{\"a\": \"x\xFFy\"}";
     let span = Scanner::new(text, 0).value();
     let mut found = Vec::new();
@@ -52,6 +52,14 @@ fn an_invalid_utf8_sequence_in_a_string_is_replaced_and_in_a_key_is_unreadable()
     let text = b"{\"\xFF\": 1}";
     let span = Scanner::new(text, 0).value();
     assert_eq!(value(text, span, &mut Vec::new()), Err(Unreadable::Key(1)));
+
+    let text = b"{\"id\": \"x\xFFy\"}";
+    let span = Scanner::new(text, 0).value();
+    assert_eq!(value(text, span, &mut Vec::new()), Err(Unreadable::Id(7)));
+
+    let text = b"[\"a:b:c#\xFF\"]";
+    let span = Scanner::new(text, 0).value();
+    assert_eq!(value(text, span, &mut Vec::new()), Err(Unreadable::Id(1)));
 }
 
 #[test]

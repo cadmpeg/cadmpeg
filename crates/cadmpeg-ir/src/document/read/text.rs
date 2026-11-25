@@ -403,8 +403,12 @@ pub(super) enum Found {
     Replaced(usize),
     /// A key was stated twice and every copy holds one value.
     Restated(String),
-    /// A key was stated twice with different values; no copy is kept.
-    Conflicting { key: String, positions: Vec<usize> },
+    /// A key was stated twice with different values; no copy is kept. Each
+    /// copy is the extent from its key's opening quote to its value's end.
+    Conflicting {
+        key: String,
+        copies: Vec<(usize, usize)>,
+    },
 }
 
 /// Why a part's text has no value.
@@ -414,6 +418,9 @@ pub(super) enum Unreadable {
     Text(Stop),
     /// A key holds an invalid UTF-8 sequence.
     Key(usize),
+    /// A string a record reads as an id holds an invalid UTF-8 sequence: the
+    /// value of an `id` member, or text in the identity grammar.
+    Id(usize),
     /// A number is past the range of a 64-bit float.
     Number(usize),
 }
@@ -423,6 +430,7 @@ impl std::fmt::Display for Unreadable {
         match self {
             Self::Text(stop) => stop.fmt(f),
             Self::Key(at) => write!(f, "the key at offset {at} holds an invalid UTF-8 sequence"),
+            Self::Id(at) => write!(f, "the id at offset {at} holds an invalid UTF-8 sequence"),
             Self::Number(at) => {
                 write!(
                     f,
@@ -437,11 +445,12 @@ impl std::fmt::Display for Unreadable {
 /// bound, which bounds the recursion.
 pub(super) fn value(bytes: &[u8], span: Span, found: &mut Vec<Found>) -> Result<Value, Unreadable> {
     let mut scanner = Scanner::new(bytes, span.start);
-    scanner.read(found)
+    scanner.read(found, None)
 }
 
 impl Scanner<'_> {
-    fn read(&mut self, found: &mut Vec<Found>) -> Result<Value, Unreadable> {
+    /// Reads the value at the cursor; `member` is the key that holds it.
+    fn read(&mut self, found: &mut Vec<Found>, member: Option<&str>) -> Result<Value, Unreadable> {
         self.whitespace();
         let at = self.at;
         match self.peek() {
@@ -454,7 +463,7 @@ impl Scanner<'_> {
                     return Ok(Value::Array(values));
                 }
                 loop {
-                    values.push(self.read(found)?);
+                    values.push(self.read(found, None)?);
                     self.whitespace();
                     match self.peek() {
                         Some(b',') => self.at += 1,
@@ -469,6 +478,9 @@ impl Scanner<'_> {
             Some(b'"') => {
                 let (text, invalid) = self.string().map_err(Unreadable::Text)?;
                 if invalid {
+                    if member == Some("id") || crate::ids::is_valid_identity(&text) {
+                        return Err(Unreadable::Id(at));
+                    }
                     found.push(Found::Replaced(at));
                 }
                 Ok(Value::String(text))
@@ -490,7 +502,7 @@ impl Scanner<'_> {
 
     fn read_object(&mut self, found: &mut Vec<Found>) -> Result<Value, Unreadable> {
         self.at += 1;
-        let mut copies: Vec<(String, usize, Value)> = Vec::new();
+        let mut copies: Vec<(String, (usize, usize), Value)> = Vec::new();
         if self.next_is(b'}') {
             self.at += 1;
         } else {
@@ -502,8 +514,8 @@ impl Scanner<'_> {
                     return Err(Unreadable::Key(at));
                 }
                 self.eat(b':', "`:`").map_err(Unreadable::Text)?;
-                let value = self.read(found)?;
-                copies.push((key, at, value));
+                let value = self.read(found, Some(&key))?;
+                copies.push((key, (at, self.at), value));
                 self.whitespace();
                 match self.peek() {
                     Some(b',') => self.at += 1,
@@ -516,11 +528,11 @@ impl Scanner<'_> {
             }
         }
         let mut object = Map::new();
-        let mut positions: std::collections::BTreeMap<String, Vec<usize>> =
+        let mut extents: std::collections::BTreeMap<String, Vec<(usize, usize)>> =
             std::collections::BTreeMap::new();
         let mut conflicting = std::collections::BTreeSet::new();
-        for (key, at, value) in copies {
-            positions.entry(key.clone()).or_default().push(at);
+        for (key, extent, value) in copies {
+            extents.entry(key.clone()).or_default().push(extent);
             match object.get(&key) {
                 Some(held) if *held == value => found.push(Found::Restated(key)),
                 Some(_) => {
@@ -534,7 +546,7 @@ impl Scanner<'_> {
         for key in conflicting {
             object.remove(&key);
             found.push(Found::Conflicting {
-                positions: positions.remove(&key).unwrap_or_default(),
+                copies: extents.remove(&key).unwrap_or_default(),
                 key,
             });
         }

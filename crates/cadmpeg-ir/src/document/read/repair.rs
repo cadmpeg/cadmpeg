@@ -109,11 +109,19 @@ pub(super) enum MemberRepair {
     Renamed { from: String, to: String },
     /// The member is not stated.
     Ignored(String),
+    /// The member's letter case varies the name `to`, which the object also
+    /// states. Where both hold one value, `to` is kept; otherwise neither is.
+    Restated {
+        from: String,
+        to: String,
+        one_value: bool,
+    },
 }
 
 /// Repairs the member `name` that a type refused, in the object of `value`
 /// that holds it and the most of the `expected` names: renames it to the one
-/// expected name its letter case varies, or removes it.
+/// expected name its letter case varies, or removes it. Where the object also
+/// states that name, the two are one member stated twice.
 pub(super) fn member(value: &mut Value, name: &str, expected: &[String]) -> Option<MemberRepair> {
     let holder = objects(value)
         .into_iter()
@@ -134,7 +142,18 @@ pub(super) fn member(value: &mut Value, name: &str, expected: &[String]) -> Opti
         .1;
     let object = at_mut(value, &holder)?.as_object_mut()?;
     let member = object.remove(name)?;
-    match case_variant(name, expected).filter(|to| !object.contains_key(*to)) {
+    match case_variant(name, expected) {
+        Some(to) if object.contains_key(to) => {
+            let one_value = object.get(to) == Some(&member);
+            if !one_value {
+                object.remove(to);
+            }
+            Some(MemberRepair::Restated {
+                from: name.to_owned(),
+                to: to.to_owned(),
+                one_value,
+            })
+        }
         Some(to) => {
             object.insert(to.to_owned(), member);
             Some(MemberRepair::Renamed {
