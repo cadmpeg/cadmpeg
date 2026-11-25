@@ -346,16 +346,8 @@ impl MergeSession<'_, '_> {
             }
             let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
                 self.ctx.charge_entities(
-                    cadmpeg_core::decode::u64_from_index(
-                        member
-                            .occurrences
-                            .len()
-                            .checked_add(member.joints.len())
-                            .ok_or_else(|| {
-                                CodecError::malformed("F3Z repeated member entity count overflows")
-                            })?,
-                    ),
-                    "F3Z repeated member occurrences and joints",
+                    cadmpeg_core::decode::u64_from_index(member.occurrences.len()),
+                    "F3Z repeated member occurrences",
                 )?;
                 member.clone()
             } else {
@@ -439,7 +431,9 @@ impl MergeSession<'_, '_> {
                         }
                     }
                 }
-                rescope_partial_pattern_sources(&mut component_ir.model, &occurrence);
+                rescope_partial_pattern_sources(&mut component_ir.model, &|text| {
+                    rescope(text, &occurrence)
+                });
                 let native_text = TextReplacements::build(targets.iter())?;
                 let mut scope = OccurrenceScope {
                     native_text: &native_text,
@@ -483,12 +477,18 @@ impl MergeSession<'_, '_> {
                     component_ir.native,
                     &occurrence,
                 )?;
+                let file_digest = component_fidelity.decode_digest.clone();
                 let decode_digest = parent_fidelity.decode_digest.clone();
                 parent_fidelity.append(rescope_fidelity(
                     component_fidelity,
                     &occurrence,
                     decode_digest,
                 )?)?;
+                if component_ir.source.is_some() {
+                    parent_fidelity
+                        .file_digests
+                        .insert(member.definition.clone(), file_digest);
+                }
                 if component_report.transfer.geometry_transferred() {
                     parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
                         parent_report.transfer.depth(),
@@ -1987,21 +1987,7 @@ impl MemberDefinition {
                 .ok_or_else(|| CodecError::malformed("invalid F3Z member instance scope"))?;
             Ok((id, format!("f3d:{scope}@{tail}")))
         });
-        // A joint outlives the folding of the instance's occurrences onto the
-        // first instance's, so its copy stays a record of the member's file
-        // and states the placement in its key.
-        let joints = self.joints.iter().map(|joint| {
-            let id = joint.id.as_str();
-            let copy = if scope == self.scope {
-                id.to_owned()
-            } else {
-                format!("{id}@{scope}")
-            };
-            Ok((id, copy))
-        });
-        let ids = occurrences
-            .chain(joints)
-            .collect::<Result<std::collections::BTreeMap<_, _>, CodecError>>()?;
+        let ids = occurrences.collect::<Result<std::collections::BTreeMap<_, _>, CodecError>>()?;
         let rewrite =
             |id: &str| Ok::<_, CodecError>(ids.get(id).cloned().unwrap_or_else(|| id.to_owned()));
         let occurrences = self
@@ -2011,8 +1997,14 @@ impl MemberDefinition {
                 cadmpeg_ir::schema::rewrite::identities(ctx, occurrence.clone(), rewrite)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let assembly_joints = self
-            .joints
+        // A member's joints are records of its file, so only the placement
+        // the member is read at states them.
+        let joints = if scope == self.scope {
+            self.joints.as_slice()
+        } else {
+            &[]
+        };
+        let assembly_joints = joints
             .iter()
             .map(|joint| {
                 let mut joint =
@@ -2306,9 +2298,10 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
     }
 }
 
-/// `text` read from the member merged at `occurrence`, whose definition key
-/// it is. The member's own root definition becomes its `File` definition, a
-/// record of the file that places it.
+/// `text` read from the member merged at `occurrence`, qualified by that
+/// placement scope until `member_keys` gives the member its definition key.
+/// The member's own root definition becomes its `File` definition, a record
+/// of the file that places it.
 fn rescope(text: &str, occurrence: &str) -> Option<String> {
     if text == crate::ids::ARCHIVE_PRODUCT_DEFINITION_ID {
         let placing = occurrence.rsplit_once("/xref/").map(|(placing, _)| placing);
@@ -2333,7 +2326,10 @@ fn native_record_targets(
         .collect()
 }
 
-fn rescope_partial_pattern_sources(model: &mut Model, occurrence: &str) {
+pub(super) fn rescope_partial_pattern_sources(
+    model: &mut Model,
+    scope: &dyn Fn(&str) -> Option<String>,
+) {
     use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
     use cadmpeg_ir::features::profiles::PathRef;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -2351,13 +2347,13 @@ fn rescope_partial_pattern_sources(model: &mut Model, occurrence: &str) {
                 return;
             }
             if let Some(Some(PathRef::Native(path))) = pattern.curve_path_mut() {
-                if let Some(target) = rescope(path, occurrence) {
+                if let Some(target) = scope(path) {
                     *path = target;
                 }
             }
             for seed in seeds {
                 if let PatternSeed::Native(source) = seed {
-                    if let Some(target) = rescope(source, occurrence) {
+                    if let Some(target) = scope(source) {
                         *source = target;
                     }
                 }
@@ -2415,22 +2411,24 @@ fn extend_native(
         let arena = target.arenas_mut().entry(key).or_default();
 
         for record in records {
-            arena.push(rescope_record(ctx, &record, name, occurrence)?);
+            arena.push(rescope_record(ctx, &record, name, &|text| {
+                rescope(text, occurrence)
+            })?);
         }
     }
     Ok(())
 }
 
 /// Rescopes one native record's identity and every identity it references.
-fn rescope_record(
+pub(super) fn rescope_record(
     ctx: &DecodeContext<'_>,
     record: &NativeRecord,
     arena: &str,
-    occurrence: &str,
+    scope: &dyn Fn(&str) -> Option<String>,
 ) -> Result<NativeRecord, CodecError> {
-    let mut fields = typed_fields(ctx, record, arena, occurrence)?;
-    rescope_native_reference_fields(ctx, arena, &mut fields, occurrence)?;
-    let id = rescope(record.id(), occurrence).unwrap_or_else(|| record.id().to_string());
+    let mut fields = typed_fields(ctx, record, arena, scope)?;
+    rescope_native_reference_fields(ctx, arena, &mut fields, scope)?;
+    let id = scope(record.id()).unwrap_or_else(|| record.id().to_string());
     NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?,
         fields,
@@ -2449,11 +2447,11 @@ fn typed_fields(
     ctx: &DecodeContext<'_>,
     record: &NativeRecord,
     arena: &str,
-    occurrence: &str,
+    scope: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Map<String, Value>, CodecError> {
     macro_rules! typed {
         ($type:path) => {
-            record.rewrite_fields::<$type, _>(ctx, |id| match rescope(id, occurrence) {
+            record.rewrite_fields::<$type, _>(ctx, |id| match scope(id) {
                 Some(rewritten) => Ok(rewritten),
                 None => Ok(id.to_owned()),
             })?
@@ -2497,7 +2495,7 @@ fn rescope_native_reference_fields(
     ctx: &DecodeContext<'_>,
     arena: &str,
     fields: &mut Map<String, Value>,
-    occurrence: &str,
+    scope: &dyn Fn(&str) -> Option<String>,
 ) -> Result<(), CodecError> {
     let direct_fields: &[&str] = match arena {
         "asm_bulletin_boards"
@@ -2530,7 +2528,7 @@ fn rescope_native_reference_fields(
     };
     for field in direct_fields {
         if let Some(value) = fields.get_mut(*field) {
-            scope_identity_value(value, occurrence);
+            scope_identity_value(value, scope);
         }
     }
 
@@ -2543,7 +2541,7 @@ fn rescope_native_reference_fields(
             | "design_edge_identity_operands"
             | "design_extrude_selection_members"
     ) {
-        scope_named_fields(ctx, fields, &["history_id"], occurrence)?;
+        scope_named_fields(ctx, fields, &["history_id"], scope)?;
     }
 
     // WorkPoint, mesh and edge-operand records contain native identities as ordinary strings
@@ -2560,24 +2558,24 @@ fn rescope_native_reference_fields(
                     "preceding_face_boundary_ids",
                     "preceding_support_face_boundary_ids",
                 ],
-                occurrence,
+                scope,
             )?;
         }
         "design_edge_treatment_vertex_operands" => {
-            scope_named_fields(ctx, fields, &["recipe_id"], occurrence)?;
+            scope_named_fields(ctx, fields, &["recipe_id"], scope)?;
         }
         "design_mesh_features" => {
-            scope_named_fields(ctx, fields, &["tessellation_id"], occurrence)?;
+            scope_named_fields(ctx, fields, &["tessellation_id"], scope)?;
         }
         "xref_references" => {
-            scope_named_fields(ctx, fields, &["stream"], occurrence)?;
+            scope_named_fields(ctx, fields, &["stream"], scope)?;
         }
         "design_parameter_scopes" => {
             scope_named_fields(
                 ctx,
                 fields,
                 &["history_id", "operand_id", "point_native_id", "recipe_id"],
-                occurrence,
+                scope,
             )?;
         }
         _ => {}
@@ -2585,17 +2583,17 @@ fn rescope_native_reference_fields(
     Ok(())
 }
 
-fn scope_identity_value(value: &mut Value, occurrence: &str) {
+fn scope_identity_value(value: &mut Value, scope: &dyn Fn(&str) -> Option<String>) {
     match value {
         Value::String(text) => {
-            if let Some(rescoped) = rescope(text, occurrence) {
+            if let Some(rescoped) = scope(text) {
                 *text = rescoped;
             }
         }
         Value::Array(items) => {
             for item in items {
                 if let Value::String(text) = item {
-                    if let Some(rescoped) = rescope(text, occurrence) {
+                    if let Some(rescoped) = scope(text) {
                         *text = rescoped;
                     }
                 }
@@ -2605,7 +2603,7 @@ fn scope_identity_value(value: &mut Value, occurrence: &str) {
         // typed identity and all other members are its discriminator/value.
         Value::Object(fields) => {
             if let Some(Value::String(text)) = fields.get_mut("id") {
-                if let Some(rescoped) = rescope(text, occurrence) {
+                if let Some(rescoped) = scope(text) {
                     *text = rescoped;
                 }
             }
@@ -2618,14 +2616,14 @@ fn scope_named_fields(
     ctx: &DecodeContext<'_>,
     fields: &mut Map<String, Value>,
     names: &[&str],
-    occurrence: &str,
+    scope: &dyn Fn(&str) -> Option<String>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("walk F3Z native identity fields")?;
     for (name, value) in fields {
         if names.contains(&name.as_str()) {
-            scope_identity_value(value, occurrence);
+            scope_identity_value(value, scope);
         } else {
-            scope_named_values(ctx, value, names, occurrence)?;
+            scope_named_values(ctx, value, names, scope)?;
         }
     }
     Ok(())
@@ -2635,14 +2633,14 @@ fn scope_named_values(
     ctx: &DecodeContext<'_>,
     value: &mut Value,
     names: &[&str],
-    occurrence: &str,
+    scope: &dyn Fn(&str) -> Option<String>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("walk F3Z native identity values")?;
     match value {
-        Value::Object(fields) => scope_named_fields(ctx, fields, names, occurrence)?,
+        Value::Object(fields) => scope_named_fields(ctx, fields, names, scope)?,
         Value::Array(items) => {
             for item in items {
-                scope_named_values(ctx, item, names, occurrence)?;
+                scope_named_values(ctx, item, names, scope)?;
             }
         }
         Value::String(_) | Value::Null | Value::Bool(_) | Value::Number(_) => {}

@@ -23,6 +23,7 @@ pub(super) fn check_products(
             add(definition.id.as_str(), ());
         }
     });
+    decode_set::check_component_records(ir, findings);
     for (id, owner) in ir
         .model
         .features

@@ -579,16 +579,12 @@ fn a_referenced_design_is_a_document_of_its_own() {
 }
 
 #[test]
-fn a_referenced_design_without_a_definition_is_hosted_by_its_enclosing_scope() {
-    const OUTER: &str = "role-1/reference-0/occurrence-0@";
+fn a_referenced_design_without_a_definition_is_hosted_by_the_root_scope() {
+    const OUTER: &str = "assembly/outer.f3d@";
     let scopes = BTreeMap::from([(String::new(), 0_u8), (OUTER.to_owned(), 0)]);
-    let inner = "role-1/reference-0/occurrence-0/xref/role-2/reference-0/occurrence-1@";
-    assert_eq!(super::host(&scopes, inner), OUTER);
-    assert_eq!(super::host(&scopes, "role-3/reference-0/occurrence-0@"), "");
-    assert_eq!(
-        super::host(&scopes, "role-1/reference-0/occurrence-01@"),
-        ""
-    );
+    assert_eq!(super::host(&scopes, OUTER), OUTER);
+    assert_eq!(super::host(&scopes, "assembly/outer.f3d/inner.f3d@"), "");
+    assert_eq!(super::host(&scopes, "inner.f3d@"), "");
     assert_eq!(super::host(&BTreeMap::<String, u8>::new(), OUTER), "");
 }
 

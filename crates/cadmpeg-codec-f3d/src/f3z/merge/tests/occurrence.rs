@@ -399,7 +399,9 @@ fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
     for occurrence in ["left", "right"] {
         let targets = super::super::native_record_targets(&Native::default(), occurrence);
         let mut scoped_model = model.clone();
-        super::super::rescope_partial_pattern_sources(&mut scoped_model, occurrence);
+        super::super::rescope_partial_pattern_sources(&mut scoped_model, &|text| {
+            super::super::rescope(text, occurrence)
+        });
         let native_text = TextReplacements::build(targets.iter()).unwrap();
         let rewritten = OccurrenceScope {
             ctx: &ctx,
@@ -901,7 +903,7 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
             ctx,
             "xref_references",
             &mut fields,
-            "part/occurrence-2",
+            &|text| super::super::rescope(text, "part/occurrence-2"),
         )
         .unwrap();
     });
@@ -1050,7 +1052,7 @@ fn shared_members_check_cycles_for_each_instance_path() {
 }
 
 #[test]
-fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operands() {
+fn a_repeated_member_states_its_joints_once() {
     use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
     use cadmpeg_ir::products::JointId;
     use cadmpeg_ir::products::{
@@ -1114,36 +1116,33 @@ fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operan
         first.assembly_joints[0].id.as_str(),
         "f3d:first@model:joint#group"
     );
-    assert_eq!(
-        second.assembly_joints[0].id.as_str(),
-        "f3d:first@model:joint#group@second/instance-child"
-    );
-    for (instance, parent) in [(&first, first_parent), (&second, second_parent)] {
+    assert!(second.assembly_joints.is_empty());
+    for instance in [&first, &second] {
         assert!(instance.product_definitions.is_empty());
         assert_eq!(instance.occurrences[0].prototype, definition);
-        assert_eq!(
-            instance.assembly_joints[0].native_ref.as_deref(),
-            Some(native_ref)
-        );
-        let connectors = instance.assembly_joints[0].connectors().collect::<Vec<_>>();
-        assert_eq!(
-            connectors[0].operand.container,
-            OperandContainer::Occurrence {
-                occurrence: parent,
-                occurrence_path: Vec::new()
-            }
-        );
-        assert_eq!(
-            connectors[1].operand.container,
-            OperandContainer::Occurrence {
-                occurrence: instance.occurrences[0].id.clone(),
-                occurrence_path: Vec::new()
-            }
-        );
-        assert!(connectors
-            .iter()
-            .all(|connector| connector.frame == Transform::identity()));
     }
+    assert_eq!(
+        first.assembly_joints[0].native_ref.as_deref(),
+        Some(native_ref)
+    );
+    let connectors = first.assembly_joints[0].connectors().collect::<Vec<_>>();
+    assert_eq!(
+        connectors[0].operand.container,
+        OperandContainer::Occurrence {
+            occurrence: first_parent,
+            occurrence_path: Vec::new()
+        }
+    );
+    assert_eq!(
+        connectors[1].operand.container,
+        OperandContainer::Occurrence {
+            occurrence: first.occurrences[0].id.clone(),
+            occurrence_path: Vec::new()
+        }
+    );
+    assert!(connectors
+        .iter()
+        .all(|connector| connector.frame == Transform::identity()));
 }
 
 #[test]

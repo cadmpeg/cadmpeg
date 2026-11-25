@@ -91,6 +91,19 @@ fn a_qualified_scope_begins_with_the_key_of_a_file_definition() {
     );
 }
 
+#[test]
+fn records_of_a_component_file_carry_its_key() {
+    const FRAGMENT: &str = "does not begin its scope with that file's key `pin@`";
+    assert_eq!(
+        messages(&decode_set("test:pin@model:occurrence#a"), FRAGMENT),
+        []
+    );
+    assert_eq!(
+        messages(&decode_set("test:model:occurrence#a"), FRAGMENT),
+        [(Severity::Error, Some("test:model:occurrence#a".to_owned()))]
+    );
+}
+
 fn digest_findings(ir: &CadIr, key: &str) -> Vec<Finding> {
     let mut fidelity = SourceFidelity::new(Sha256Digest::digest(&[]));
     fidelity

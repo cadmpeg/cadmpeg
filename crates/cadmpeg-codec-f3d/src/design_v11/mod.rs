@@ -275,8 +275,7 @@ fn rollback_position(
 }
 
 /// The scope that holds the timelines of the document at `prefix`, which has
-/// no definition of its own: the scope of the longest document prefix that
-/// begins it, else the root scope.
+/// no definition of its own: the root scope.
 fn host<T>(scopes: &BTreeMap<String, T>, prefix: &str) -> String {
     scopes
         .keys()
@@ -322,8 +321,8 @@ struct Span {
 }
 
 /// What each scope spans, keyed by document prefix: its own definition and
-/// every `Embedded` definition without a scope whose id the scope's document
-/// prefix begins, the longest such prefix winning (§5.1). A definition stored
+/// every `Embedded` definition without a scope that its document stores, or
+/// the root scope where that document has no scope (§5.1). A definition stored
 /// as a file of its own, or held outside the document, is spanned by no scope
 /// here.
 fn span<T>(

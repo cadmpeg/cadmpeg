@@ -55,6 +55,69 @@ pub(in crate::validate) fn check_qualified_scope(
     }
 }
 
+/// The scope of every id of a record read from a component file begins with
+/// that file's definition key and `@`: the bodies, sketches, and occurrences
+/// its `File` definition owns, and the root containers of its design scope
+/// (§2.2, §3.1). The `File` definition is a record of the placing file.
+pub(in crate::validate) fn check_component_records(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for definition in &ir.model.product_definitions {
+        if !matches!(
+            definition.storage,
+            Storage::File {
+                source: Some(_),
+                ..
+            }
+        ) {
+            continue;
+        }
+        let Some(key) = definition_key(definition) else {
+            continue;
+        };
+        let roots = ir
+            .design
+            .scopes
+            .iter()
+            .filter(|scope| scope.definition == definition.id)
+            .flat_map(|scope| {
+                scope
+                    .roots
+                    .iter()
+                    .map(crate::design::ids::ContainerId::as_str)
+            });
+        let owned = definition
+            .bodies
+            .iter()
+            .map(crate::ids::BodyId::as_str)
+            .chain(
+                definition
+                    .sketches
+                    .iter()
+                    .map(crate::sketches::SketchId::as_str),
+            )
+            .chain(
+                definition
+                    .occurrences
+                    .iter()
+                    .map(crate::ids::OccurrenceId::as_str),
+            )
+            .chain(roots);
+        for id in owned {
+            if qualifier(id) != Some(key) {
+                crate::validate::record_finding(
+                    findings,
+                    Check::Identity,
+                    Severity::Error,
+                    Some(id),
+                    crate::rule!("products.component-record-scope-unqualified",
+                        "id of a record read from the component file of `{}` does not begin its scope with that file's key `{key}@`",
+                        definition.id
+                    ),
+                );
+            }
+        }
+    }
+}
+
 /// Every key of `SourceFidelity.file_digests` names a `File` definition
 /// read from a component file; the root definition has none (§8.1).
 pub(in crate::validate) fn check_file_digests(
