@@ -118,28 +118,45 @@ pub(crate) fn f3d_with_smbh_and_manifest_version(smbh: &[u8], version: &str) -> 
 }
 
 /// `archive` with `version` as the document version of its root
-/// `Manifest.dat`, which leads that record as a length-prefixed string.
+/// `Manifest.dat`, which leads that record as a length-prefixed string. The
+/// other members are copied as stored.
 pub(crate) fn with_manifest_version(archive: &[u8], version: &str) -> Vec<u8> {
     use std::io::Read;
 
+    let archive_len = u64::try_from(archive.len()).unwrap();
     let mut source = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     for index in 0..source.len() {
-        let mut entry = source.by_index(index).unwrap();
-        let name = entry.name().unwrap().into_owned();
-        let mut payload = Vec::new();
-        entry.read_to_end(&mut payload).unwrap();
-        if name == "Manifest.dat" {
-            let length =
-                usize::try_from(u32::from_le_bytes(payload[..4].try_into().unwrap())).unwrap();
-            let mut manifest = u32::try_from(version.len()).unwrap().to_le_bytes().to_vec();
-            manifest.extend_from_slice(version.as_bytes());
-            manifest.extend_from_slice(&payload[4 + length..]);
-            payload = manifest;
+        let name = source
+            .by_index_raw(index)
+            .unwrap()
+            .name()
+            .unwrap()
+            .into_owned();
+        if name != "Manifest.dat" {
+            zip.raw_copy_file(source.by_index_raw(index).unwrap())
+                .unwrap();
+            continue;
         }
+        let payload = if crate::zip_write::is_zstd_member(&mut source, index).unwrap() {
+            let mut entry = source.by_index_raw(index).unwrap();
+            crate::zip_write::expand_zstd_member(&mut entry, &name, archive_len).unwrap()
+        } else {
+            let mut payload = Vec::new();
+            source
+                .by_index(index)
+                .unwrap()
+                .read_to_end(&mut payload)
+                .unwrap();
+            payload
+        };
+        let length = usize::try_from(u32::from_le_bytes(payload[..4].try_into().unwrap())).unwrap();
+        let mut manifest = u32::try_from(version.len()).unwrap().to_le_bytes().to_vec();
+        manifest.extend_from_slice(version.as_bytes());
+        manifest.extend_from_slice(&payload[4 + length..]);
         zip.start_file(name, stored).unwrap();
-        zip.write_all(&payload).unwrap();
+        zip.write_all(&manifest).unwrap();
     }
     zip.finish().unwrap().into_inner()
 }
