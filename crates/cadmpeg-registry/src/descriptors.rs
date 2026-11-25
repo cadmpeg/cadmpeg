@@ -30,7 +30,10 @@ type CompoundScanProbe = fn(
     feature = "iges",
     feature = "sat",
     feature = "pvz",
-    feature = "usd"
+    feature = "usd",
+    feature = "solidedge",
+    feature = "edrawings",
+    feature = "onshape"
 ))]
 macro_rules! scan_backend {
     (F3D) => {
@@ -60,7 +63,10 @@ macro_rules! scan_backend {
     feature = "iges",
     feature = "sat",
     feature = "pvz",
-    feature = "usd"
+    feature = "usd",
+    feature = "solidedge",
+    feature = "edrawings",
+    feature = "onshape"
 ))]
 macro_rules! compound_scan_probe {
     (SLDPRT) => {
@@ -87,7 +93,10 @@ macro_rules! compound_scan_probe {
     feature = "iges",
     feature = "sat",
     feature = "pvz",
-    feature = "usd"
+    feature = "usd",
+    feature = "solidedge",
+    feature = "edrawings",
+    feature = "onshape"
 ))]
 macro_rules! zip_scan_probe {
     (FCSTD) => {

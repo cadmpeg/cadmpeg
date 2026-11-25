@@ -13,11 +13,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::design::units::Quantity;
+use crate::features::FeatureId;
 use crate::ids::{
     ArticulationId, BodyId, ColliderId, OccurrenceId, PhysicalMaterialId, PhysicsSceneId,
     ProductDefinitionId, SolverSettingsId,
 };
-use crate::products::JointId;
 use crate::references::InstanceTarget;
 use crate::scalar::FiniteReal;
 
@@ -51,10 +51,10 @@ pub enum SolverTarget {
         /// The collider.
         collider: ColliderId,
     },
-    /// An assembly joint.
+    /// A design feature whose operation is a joint (§6.7).
     Joint {
-        /// The joint.
-        joint: JointId,
+        /// The joint feature.
+        joint: FeatureId,
     },
     /// A physical material.
     PhysicalMaterial {
