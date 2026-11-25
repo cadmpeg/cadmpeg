@@ -376,9 +376,10 @@ type CombineSideBinding = (
 /// Bind the target and the tools of a Combine resolved in its input state to
 /// their producers, each side on its own. A slot that the bound history's
 /// BREP source keeps, and that no transition after the Combine's result state
-/// updates or deletes, names its model body. A slot that the source omits
-/// names the body that its generating feature produces. A side keeps its
-/// input-state bodies when its slots mix both readings or name neither.
+/// updates or deletes, names its model body. A slot that the source omits, or
+/// that a later transition updates, names the body that its generating
+/// feature produces. A side keeps its input-state bodies when its slots mix
+/// both readings or name neither.
 fn bind_combine_producers(
     context: &ReverseContext<'_>,
     feature: &mut cadmpeg_ir::features::Feature,
@@ -496,10 +497,12 @@ fn combine_side_binding(
     };
     let later = later_body_changes(history, scope)
         .ok_or("its result state has no unique place in the history's state order")?;
-    let live = side
+    let unchanged = side
         .slots
         .iter()
-        .filter(|slot| context.active.contains_in_source(**slot, Some(source)))
+        .filter(|slot| {
+            context.active.contains_in_source(**slot, Some(source)) && !later.contains(slot)
+        })
         .count();
     let natives = |count: usize| -> Vec<String> {
         if side.single_native {
@@ -508,12 +511,7 @@ fn combine_side_binding(
             side.natives.clone()
         }
     };
-    if live == side.slots.len() {
-        if let Some(slot) = side.slots.iter().find(|slot| later.contains(slot)) {
-            return Err(format!(
-                "a later transition changes slot {slot}, so the model body is not the operand"
-            ));
-        }
+    if unchanged == side.slots.len() {
         let bodies = context
             .active
             .resolve(&side.slots, Some(source))
@@ -544,9 +542,9 @@ fn combine_side_binding(
         };
         return Ok((selection, Vec::new(), dependencies));
     }
-    if live != 0 {
+    if unchanged != 0 {
         return Err(format!(
-            "BREP source {source} keeps some of the slots and omits the others"
+            "BREP source {source} keeps some of the slots unchanged, and the model bodies do not represent the others"
         ));
     }
     let producers = side

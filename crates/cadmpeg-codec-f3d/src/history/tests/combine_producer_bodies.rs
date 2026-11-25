@@ -252,14 +252,16 @@ fn a_live_target_names_its_model_body_beside_a_generated_tool() {
 }
 
 #[test]
-fn a_live_target_that_a_later_transition_updates_stays_historical() {
-    let (combine, _, losses) = combine_case(&["f3d:brep/root.smbh/brep:entity#1"], vec![1], true);
-    assert!(matches!(
-        operands(&combine).target(),
-        BodySelection::Historical { .. }
-    ));
+fn a_live_target_that_a_later_transition_updates_names_the_feature_that_inserted_it() {
+    let (combine, results, losses) =
+        combine_case(&["f3d:brep/root.smbh/brep:entity#1"], vec![1], true);
+    assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
-    assert_eq!(producer_unresolved(&losses), 1);
+    assert!(depends_on(&combine, FIRST) && depends_on(&combine, SECOND));
+    assert!(results
+        .iter()
+        .any(|result| result.output_of.as_str() == FIRST));
+    assert_eq!(producer_unresolved(&losses), 0);
 }
 
 #[test]
