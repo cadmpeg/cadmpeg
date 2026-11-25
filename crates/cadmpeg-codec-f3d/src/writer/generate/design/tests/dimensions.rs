@@ -1122,7 +1122,7 @@ fn a_driven_parameter_names_its_owner_and_its_display_with_its_dimension() {
 #[test]
 fn a_failure_in_one_dimension_drops_that_dimension_alone() {
     let gap = constraint_id(SKETCH, "gap");
-    super::fail_records([gap.as_str()]);
+    let _failing = super::fail_records([gap.as_str()]);
     let (report, decoded) = write(&on_xy());
     assert_eq!(decoded.model.sketches.len(), 1);
     let bound = bound_kinds(&decoded);

@@ -992,7 +992,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
 
 #[test]
 fn a_failure_in_the_extrude_records_keeps_the_sketches_and_the_base_feature() {
-    super::fail_records([EXTRUDE]);
+    let _failing = super::fail_records([EXTRUDE]);
     let (report, decoded) = write(&sketch_and_extrude(blind(), false));
     assert_eq!(kinds(&decoded), ["sketch", "base"], "{:#?}", report.losses);
     let missing = loss(&report, EVALUATION_MISSING).join("\n");

@@ -13,8 +13,9 @@
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
 //! form; only a failure to write that is returned. A failure of the design
-//! scope's records takes one fallback: the design scope is not written. A
-//! failure of the ASM history of the timeline items drops those items first.
+//! scope's records or of the ASM history of its timeline items drops the
+//! records it names and each record that needs them, then the next part of
+//! the design scope's form, then the design scope.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -96,10 +97,9 @@ pub(super) enum Stage {
     Brep,
     /// The Design, configuration and appearance streams.
     Design,
-    /// The records of the root definition's design scope.
+    /// The records of the root definition's design scope, with the ASM
+    /// history of its timeline items.
     NeutralDesign,
-    /// The ASM history of the design scope's timeline items.
-    History,
     /// The archive itself: nothing in the document can avoid it.
     Archive,
 }
@@ -142,12 +142,9 @@ impl Failure {
     /// concerns where it names one.
     pub(super) fn history(error: CodecError, cause: Option<FeatureId>) -> Self {
         Self {
-            stage: Stage::History,
+            stage: Stage::NeutralDesign,
             error,
-            culprit: cause.map(|feature| Culprit::Item {
-                feature,
-                rolled: false,
-            }),
+            culprit: Some(Culprit::History(cause)),
         }
     }
 
@@ -179,6 +176,9 @@ pub(super) struct Reduction<'a> {
     missing_states: MissingStateForm,
     /// The parts of the design scope's form dropped after a failure.
     fallback: super::design::Fallback,
+    /// The number of features that end the history-true run in the
+    /// fallback the document was staged with.
+    staged_ends: usize,
     /// The faces omitted from each opened body, charged at [`Self::finish`]
     /// for the bodies still written.
     opened: BTreeMap<String, Vec<String>>,
@@ -188,14 +188,20 @@ pub(super) struct Reduction<'a> {
 }
 
 impl<'a> Reduction<'a> {
-    pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
+    /// The reduction of `ir`, the document staged with `fallback`.
+    pub(super) fn new(
+        ir: &'a CadIr,
+        missing_states: MissingStateForm,
+        fallback: super::design::Fallback,
+    ) -> Self {
         Self {
             missing_states,
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
             design_dropped: false,
             neutral_dropped: false,
-            fallback: super::design::Fallback::default(),
+            staged_ends: fallback.run_ends(),
+            fallback,
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
         }
@@ -229,6 +235,18 @@ impl<'a> Reduction<'a> {
     /// them.
     pub(super) fn fallback(&self) -> &super::design::Fallback {
         &self.fallback
+    }
+
+    /// Whether a fallback ended the history-true run before the end the
+    /// document was staged for: the state at the new timeline marker is
+    /// staged from the source document again.
+    pub(super) fn restages(&self) -> bool {
+        self.fallback.run_ends() > self.staged_ends
+    }
+
+    /// The fallback, to stage the document again with.
+    pub(super) fn into_fallback(self) -> super::design::Fallback {
+        self.fallback
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -342,21 +360,6 @@ impl<'a> Reduction<'a> {
             Stage::Archive => false,
             Stage::NeutralDesign => {
                 culprit.is_some_and(|culprit| self.drop_records(&reason, &culprit))
-                    || self.drop_design_part(&reason)
-                    || self.drop_neutral_design(&reason)
-            }
-            Stage::History => {
-                let cause = match culprit {
-                    Some(Culprit::Item { feature, .. }) => Some(feature),
-                    Some(
-                        Culprit::Sketch(_)
-                        | Culprit::Plane(_)
-                        | Culprit::Dimension(_)
-                        | Culprit::Part(_),
-                    )
-                    | None => None,
-                };
-                self.drop_history_items(&reason, cause)
                     || self.drop_design_part(&reason)
                     || self.drop_neutral_design(&reason)
             }
@@ -1438,15 +1441,6 @@ impl<'a> Reduction<'a> {
             && self
                 .fallback
                 .drop_records(&self.ir, self.missing_states, culprit, reason)
-    }
-
-    /// Drop the timeline items whose states the history holds, the first
-    /// part a history failure concerns.
-    fn drop_history_items(&mut self, reason: &str, cause: Option<FeatureId>) -> bool {
-        self.writes_neutral_design()
-            && self
-                .fallback
-                .drop_item_history(&self.ir, self.missing_states, cause, reason)
     }
 
     /// Write no design scope: every design scope, container, feature and

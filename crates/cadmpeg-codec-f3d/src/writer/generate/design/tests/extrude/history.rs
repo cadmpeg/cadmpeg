@@ -556,7 +556,7 @@ fn a_native_design_rolled_back_writes_the_chosen_form() {
 /// to 10 mm with `boolean`, before the datum. The current state holds the
 /// cube and the prism of the second square. Returns the design and the
 /// second extrude.
-fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
+pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
     let mut ir = sketch_and_extrude(blind(), false);
     let corners = [[20.0, 0.0], [30.0, 0.0], [30.0, SIDE], [20.0, SIDE]];
     let mut square = Source::new(
@@ -923,36 +923,42 @@ fn an_extrude_that_changes_an_earlier_body_stays_in_the_base_feature() {
 /// state after the first extrude, the cube alone, held by an evaluation
 /// where `held`.
 fn joined_after_the_cube(held: bool) -> (CadIr, FeatureId) {
-    use cadmpeg_ir::design::evaluation::{
-        Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
-    };
-    use cadmpeg_ir::design::ids::EvaluationId;
-    use cadmpeg_ir::design::refs::Evaluated;
     let (mut ir, second) = with_a_second_extrude(Boolean::Apply {
         op: BooleanOp::Join,
         targets: None,
     });
     if held {
-        let cube = sketch_and_extrude(blind(), false).geometry;
-        ir.design.evaluations.push(Evaluation {
-            id: EvaluationId::mint("test:design:evaluation#cube").expect("identity grammar"),
-            scope: ir.design.scopes[0].definition.clone(),
-            configuration: None,
-            of: Evaluated::State(Position::After(Member::Feature(
-                FeatureId::mint(EXTRUDE).expect("identity grammar"),
-            ))),
-            status: EvaluationStatus::Current,
-            content: Some(StateContent {
-                base: StateBase::Empty,
-                delta: StateDelta {
-                    records: cube,
-                    ..StateDelta::default()
-                },
-            }),
-            native_ref: None,
-        });
+        hold_the_cube(&mut ir);
     }
     (ir, second)
+}
+
+/// Adds a current evaluation of the state after the first extrude to `ir`:
+/// the unit cube.
+pub(super) fn hold_the_cube(ir: &mut CadIr) {
+    use cadmpeg_ir::design::evaluation::{
+        Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+    };
+    use cadmpeg_ir::design::ids::EvaluationId;
+    use cadmpeg_ir::design::refs::Evaluated;
+    let cube = sketch_and_extrude(blind(), false).geometry;
+    ir.design.evaluations.push(Evaluation {
+        id: EvaluationId::mint("test:design:evaluation#cube").expect("identity grammar"),
+        scope: ir.design.scopes[0].definition.clone(),
+        configuration: None,
+        of: Evaluated::State(Position::After(Member::Feature(
+            FeatureId::mint(EXTRUDE).expect("identity grammar"),
+        ))),
+        status: EvaluationStatus::Current,
+        content: Some(StateContent {
+            base: StateBase::Empty,
+            delta: StateDelta {
+                records: cube,
+                ..StateDelta::default()
+            },
+        }),
+        native_ref: None,
+    });
 }
 
 #[test]
@@ -1181,9 +1187,10 @@ fn has_gap(decoded: &CadIr) -> bool {
 
 /// A history failure drops the geometry items before the sketch
 /// dimensions. Geometry-true writes the current bodies as the Base Feature;
-/// history-true writes the items after the timeline marker, rolled back
-/// with no body. The feature whose result body is not written takes the
-/// failure in its entry.
+/// history-true ends the run at the feature whose result body is not
+/// written, and with no held state before it writes the items after the
+/// timeline marker, rolled back with no body. The feature whose result body
+/// is not written takes the failure in its entry.
 #[test]
 fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
     let (ir, second, body) = dimensioned_second_extrude();
@@ -1201,16 +1208,18 @@ fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
         assert!(has_gap(&decoded), "{:#?}", report.losses);
         super::super::super::HIDE_NEXT_RESULT_BODY.with(|hide| hide.set(true));
         let (report, decoded, _) = write_bytes_as(&ir, form);
-        let (written, bodies, held) = match form {
+        let (written, bodies, held, first) = match form {
             MissingStateForm::GeometryTrue => (
                 &["sketch", "sketch", "base"][..],
                 2,
                 "the Base Feature holds it",
+                format!("the writer cannot write {second} with its state"),
             ),
             MissingStateForm::HistoryTrue => (
                 &["sketch", "extrude", "sketch", "extrude"][..],
                 0,
                 "the writer writes it without its state",
+                "the current state stands after the timeline marker".to_owned(),
             ),
         };
         assert_eq!(kinds(&decoded), written, "{form:?}: {:#?}", report.losses);
@@ -1222,9 +1231,7 @@ fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
         assert!(has_gap(&decoded), "{form:?}: {:#?}", report.losses);
         let missing = loss(&report, EVALUATION_MISSING).join("\n");
         assert!(
-            missing.contains(&format!(
-                "{EXTRUDE} ({held}: the writer cannot write {second} with its state"
-            )),
+            missing.contains(&format!("{EXTRUDE} ({held}: {first}")),
             "{form:?}: {missing}"
         );
         assert!(
@@ -1234,4 +1241,38 @@ fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
             "{form:?}: {missing}"
         );
     }
+}
+
+/// A history failure of a later item ends the history-true run at it: the
+/// items before it keep the held state and its body, and the item follows
+/// the timeline marker.
+#[test]
+fn a_history_failure_after_a_held_state_ends_the_run_at_its_item() {
+    let (mut ir, second, body) = dimensioned_second_extrude();
+    hold_the_cube(&mut ir);
+    super::super::super::HIDE_NEXT_RESULT_BODY.with(|hide| hide.set(true));
+    let (report, decoded, bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude", "sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(rollback, Some(Rollback::Before(members[3].clone())));
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert_eq!(decoded.geometry.faces.len(), 6);
+    assert_eq!(
+        history_chain(&bytes),
+        [(3, -1, 1, 0, vec![(0, 2, true)]), (2, 0, -1, 1, Vec::new()),]
+    );
+    assert!(has_gap(&decoded), "{:#?}", report.losses);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(!missing.contains(&format!("{EXTRUDE} (")), "{missing}");
+    assert!(
+        missing.contains(&format!(
+            "{second} (the writer writes it without its state: the writer cannot write its history state (not implemented yet: the history state of {second} holds its result body {body}, which the B-rep stream does not write)"
+        )),
+        "{missing}"
+    );
 }

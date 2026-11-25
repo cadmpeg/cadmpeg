@@ -814,13 +814,15 @@ impl Context<'_> {
     /// at `body` in [`Self::bodies`] names: the scope of the geometry item
     /// whose state makes it, else the `Base Feature` scope.
     pub(super) fn item_scope(&self, body: usize) -> u32 {
-        self.roster
-            .items
-            .iter()
-            .find(
-                |item| matches!(item.place.standing, Standing::Built(state) if state.body == body),
-            )
-            .map_or(SCOPE, ItemRecords::scope)
+        self.built(body).map_or(SCOPE, ItemRecords::scope)
+    }
+
+    /// The geometry item whose state makes the result body at `body` in
+    /// [`Self::bodies`].
+    fn built(&self, body: usize) -> Option<&ItemRecords<'_>> {
+        self.roster.items.iter().find(
+            |item| matches!(item.place.standing, Standing::Built(state) if state.body == body),
+        )
     }
 
     /// The number of result bodies as a u32.

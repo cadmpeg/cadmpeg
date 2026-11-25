@@ -577,7 +577,7 @@ fn a_failure_in_one_plane_drops_that_plane_and_its_sketches() {
         ],
     );
     let plane = format!("WorkPlane {}", feature_id("top"));
-    super::fail_records([plane.as_str()]);
+    let _failing = super::fail_records([plane.as_str()]);
     let (report, decoded) = write(&ir);
     assert_eq!(decoded.model.sketches.len(), 2, "{:#?}", report.losses);
     let planes = datum_planes(&decoded);

@@ -18,12 +18,15 @@
 //! failure. A failure that names its records ([`Culprit`]) drops those
 //! records and each record that needs them: a rolled-back item, a sketch, a
 //! construction plane with the sketches on it, or a sketch dimension alone;
-//! for the item of a feature written with its state, the items written with
-//! their states; for the records of a [`Part`] that name no one record, that
-//! part. The other fallbacks, in [`Part`] order, write the sketches without
-//! their dimensions, the geometry item in the Base Feature, the design
-//! without its construction planes and the sketches on them, the design
-//! without its `Sketch` items, then no design ([`dropped_records`]).
+//! for the records or the history state of the item of a feature written
+//! with its state, the history-true form ends the run at that feature, and
+//! the geometry-true form writes the Base Feature; a dropped sketch also ends
+//! the history-true run at the first item on it; for the records of a
+//! [`Part`] that name no one record, that part. The other fallbacks, in
+//! [`Part`] order, write the sketches without their dimensions, the
+//! geometry item in the Base Feature, the design without its construction
+//! planes and the sketches on them, the design without its `Sketch` items,
+//! then no design ([`dropped_records`]).
 
 mod base_feature;
 mod expression;
@@ -232,6 +235,9 @@ pub(super) enum Culprit {
     Dimension(SketchConstraintId),
     /// The records of a part, where the failure names no one record of it.
     Part(Part),
+    /// The ASM history state of the item of the feature, or of every item
+    /// where it names none.
+    History(Option<FeatureId>),
 }
 
 /// A failure to write the records of the design scope, and the records it
@@ -269,6 +275,9 @@ pub(super) struct Fallback {
     /// The failure that dropped the geometry items written with their
     /// states, where it names what failed.
     fault: Option<ItemFault>,
+    /// The features that end the run of the history-true form, each with
+    /// why the writer cannot write it with its state.
+    ends: BTreeMap<FeatureId, String>,
     /// The rolled-back items whose records the writer cannot write, each
     /// with the failure.
     rolled: BTreeMap<FeatureId, String>,
@@ -305,10 +314,7 @@ impl Fallback {
     fn item_failure(&self) -> Option<(String, Option<&FeatureId>)> {
         let reason = self.reason(Part::Item)?;
         Some(match &self.fault {
-            Some(ItemFault::History(cause)) => (
-                format!("the writer cannot write its history state ({reason})"),
-                cause.as_ref(),
-            ),
+            Some(ItemFault::History(cause)) => (history_reason(reason), cause.as_ref()),
             Some(ItemFault::Records(feature)) => (records_reason(reason), Some(feature)),
             None => (records_reason(reason), None),
         })
@@ -328,6 +334,11 @@ impl Fallback {
             .map(|reason| records_reason(reason))
     }
 
+    /// The number of features that end the run of the history-true form.
+    pub(super) fn run_ends(&self) -> usize {
+        self.ends.len()
+    }
+
     /// Drop the records `culprit` names for `reason`. Returns whether the
     /// writer had not dropped them yet.
     pub(super) fn drop_records(
@@ -342,11 +353,22 @@ impl Fallback {
                 feature,
                 rolled: true,
             } => newly(&mut self.rolled, feature, reason.to_owned()),
-            Culprit::Sketch(feature) => newly(
-                &mut self.sketches,
-                feature,
-                format!("is dropped because the writer cannot write its records ({reason})"),
-            ),
+            Culprit::Sketch(feature) => {
+                let dropped = newly(
+                    &mut self.sketches,
+                    feature,
+                    format!("is dropped because the writer cannot write its records ({reason})"),
+                );
+                if let Some(item) = dropped.then(|| first_item_on(target, feature)).flatten() {
+                    self.end_run(
+                        target,
+                        missing_states,
+                        item,
+                        item::SKETCH_NOT_WRITTEN.to_owned(),
+                    );
+                }
+                dropped
+            }
             Culprit::Plane(features) => {
                 let mut dropped = false;
                 for feature in features {
@@ -365,26 +387,55 @@ impl Fallback {
             Culprit::Item {
                 feature,
                 rolled: false,
-            } => self.drop_items(
-                target,
-                missing_states,
-                ItemFault::Records(feature.clone()),
-                reason,
-            ),
+            } => {
+                self.end_run(target, missing_states, feature, records_reason(reason))
+                    || self.drop_items(
+                        target,
+                        missing_states,
+                        ItemFault::Records(feature.clone()),
+                        reason,
+                    )
+            }
+            Culprit::History(Some(feature)) => {
+                self.end_run(target, missing_states, feature, history_reason(reason))
+                    || self.drop_items(
+                        target,
+                        missing_states,
+                        ItemFault::History(Some(feature.clone())),
+                        reason,
+                    )
+            }
+            Culprit::History(None) => {
+                self.drop_items(target, missing_states, ItemFault::History(None), reason)
+            }
         }
     }
 
-    /// Drop the geometry items for `reason`, a failure of their ASM history
-    /// that concerns `cause` where it names a feature. Returns whether they
-    /// were dropped.
-    pub(super) fn drop_item_history(
+    /// End the run of the history-true form at `feature` for `reason`, where
+    /// the feature stands before the run's end: the features before it keep
+    /// their states, and the features from it on follow the timeline marker
+    /// (cadir-v11.md §3.4, Features without their state). Returns whether
+    /// the run's end moved.
+    fn end_run(
         &mut self,
         target: &CadIr,
         missing_states: MissingStateForm,
-        cause: Option<FeatureId>,
-        reason: &str,
+        feature: &FeatureId,
+        reason: String,
     ) -> bool {
-        self.drop_items(target, missing_states, ItemFault::History(cause), reason)
+        if missing_states != MissingStateForm::HistoryTrue {
+            return false;
+        }
+        let Some(scope) = root_scope(target) else {
+            return false;
+        };
+        let features = scope_features(target, scope);
+        let Some(at) = features.iter().position(|candidate| *candidate == feature) else {
+            return false;
+        };
+        let end =
+            run_end(target, scope, &features, &self.ends).map_or(features.len(), |(end, _)| end);
+        at < end && newly(&mut self.ends, feature, reason)
     }
 
     /// Drop the geometry items written with their states for `reason`, a
@@ -526,10 +577,12 @@ pub(super) fn plan<'a>(
     } else {
         let marker = match missing_states {
             MissingStateForm::GeometryTrue => None,
-            MissingStateForm::HistoryTrue => run_end(target, scope, &features),
+            MissingStateForm::HistoryTrue => run_end(target, scope, &features, &fallback.ends),
         };
-        cause = marker.and_then(|(end, reason)| Some((features[end], reason?)));
-        let marker = marker.map(|(end, _)| end);
+        let marker = marker.map(|(end, reason)| {
+            cause = reason.map(|reason| (features[end], reason));
+            end
+        });
         let first_stateful = match missing_states {
             MissingStateForm::GeometryTrue => None,
             MissingStateForm::HistoryTrue => features
@@ -614,8 +667,8 @@ pub(super) fn plan<'a>(
         body_less
             .as_ref()
             .and_then(|run| run.reason(feature))
-            .or_else(|| match cause {
-                Some((before, reason)) if before == feature => Some(reason.to_owned()),
+            .or_else(|| match &cause {
+                Some((before, reason)) if *before == feature => Some(reason.clone()),
                 _ => None,
             })
     };
@@ -766,6 +819,22 @@ fn records_reason(reason: &str) -> String {
     format!("the writer cannot write its records ({reason})")
 }
 
+/// Why the writer writes no state of an item whose ASM history failed with
+/// `reason`.
+fn history_reason(reason: &str) -> String {
+    format!("the writer cannot write its history state ({reason})")
+}
+
+/// The first stateful feature of the root scope of `target` whose profile
+/// lies on the sketch of `sketch`.
+fn first_item_on<'a>(target: &'a CadIr, sketch: &FeatureId) -> Option<&'a FeatureId> {
+    let scope = root_scope(target)?;
+    scope_features(target, scope).into_iter().find(|feature| {
+        !target.is_stateless(feature, None).unwrap_or(false)
+            && item::profile_sketch(target, feature) == Some(sketch)
+    })
+}
+
 /// Why a rolled-back item is not written where its parameters exceed the
 /// source ordinals.
 const ORDINALS_EXCEEDED: &str = "its parameters exceed the source ordinals";
@@ -785,25 +854,30 @@ struct Marker<'a> {
 /// The position in `features` of the first feature the history-true form
 /// rolls back: the first feature that can change a state and that the
 /// writer cannot write with its state as a geometry item of the run
-/// ([`item::carries`]), which the form leaves without its state
-/// (cadir-v11.md §3.4, Features without their state), with the reason the
-/// writer cannot, or the feature the timeline's stated rollback stands
-/// before (§5.2) with no reason, whichever comes first. `None` where the run
-/// is the whole timeline.
+/// ([`item::carries`]), or that an earlier attempt `ends` the run at, which
+/// the form leaves without its state (cadir-v11.md §3.4, Features without
+/// their state), with the reason the writer cannot, or the feature the
+/// timeline's stated rollback stands before (§5.2) with no reason,
+/// whichever comes first. `None` where the run is the whole timeline.
 fn run_end(
     target: &CadIr,
     root: &DesignScope,
     features: &[&FeatureId],
-) -> Option<(usize, Option<&'static str>)> {
+    ends: &BTreeMap<FeatureId, String>,
+) -> Option<(usize, Option<String>)> {
     let second = features
         .iter()
         .enumerate()
         .filter(|(_, feature)| !target.is_stateless(feature, None).unwrap_or(false))
         .enumerate()
         .find_map(|(earlier, (at, feature))| {
-            item::carries(target, feature, earlier == 0)
-                .err()
-                .map(|reason| (at, Some(reason)))
+            let reason = match ends.get(*feature) {
+                Some(reason) => reason.clone(),
+                None => item::carries(target, feature, earlier == 0)
+                    .err()?
+                    .to_owned(),
+            };
+            Some((at, Some(reason)))
         });
     let rollback = match written_timeline(target, root) {
         Some(Container::Ordered {
@@ -827,9 +901,11 @@ fn run_end(
 /// an evaluation holds the state at the marker (cadir-v11.md §3.4, Features
 /// without their state; §5.4): `target` with that state as its current
 /// state, and the loss of the records of the current state the document then
-/// does not hold. `None` where the form writes `target` itself.
+/// does not hold. The marker stands before the features `fallback` ends the
+/// run at. `None` where the form writes `target` itself.
 pub(in crate::writer::generate) fn state_at_marker(
     target: &CadIr,
+    fallback: &Fallback,
 ) -> Option<(CadIr, Option<LossNote>)> {
     // A native Design names the records of the current state.
     if target.native.namespace("f3d").is_some() {
@@ -837,7 +913,7 @@ pub(in crate::writer::generate) fn state_at_marker(
     }
     let scope = root_scope(target)?;
     let features = scope_features(target, scope);
-    let (end, _) = run_end(target, scope, &features)?;
+    let (end, _) = run_end(target, scope, &features, &fallback.ends)?;
     let run = &features[..end];
     let [current] = scope.current.as_slice() else {
         return None;

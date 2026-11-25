@@ -9,6 +9,7 @@
 use cadmpeg_core::CodecError;
 
 use super::super::frames::{Bind, DesignRecords};
+use super::super::{Culprit, RecordFailure};
 use super::component::{Assets, MATERIAL, MATERIAL_LIBRARY};
 use super::fixed::DATA_MODEL_OBJECT;
 use super::{
@@ -50,7 +51,9 @@ pub(super) fn geometry_guid(ctx: &Context<'_>, record: u32) -> String {
     ctx.values.lower_guid(&format!("act-geometry-{record}"))
 }
 
-pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), CodecError> {
+/// A failure in the records of one result body names the item that makes
+/// it.
+pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), RecordFailure> {
     let indices = &ctx.roster.bodies;
     let design = indices.iter().map(|body| body.design).collect::<Vec<_>>();
     let parameter = indices
@@ -149,62 +152,93 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
 
     let assets = Assets::new(ctx);
     for (position, (body, records)) in ctx.bodies.iter().zip(indices).enumerate() {
-        let ordinal = count(position + 1)?;
-        let scene = ctx
-            .values
-            .boxes
-            .get(position)
-            .copied()
-            .flatten()
-            .map_or(UNIT_BOX, |measured| measured.scene());
-        for side in [Side::Design, Side::Parameter] {
-            reference(
+        let item = ctx.built(position);
+        let mut written = || {
+            #[cfg(test)]
+            if let Some(error) = item.and_then(|item| {
+                super::super::requested_record_failure(&format_args!("body of {}", item.feature()))
+            }) {
+                return Err(error);
+            }
+            let ordinal = count(position + 1)?;
+            let scene = ctx
+                .values
+                .boxes
+                .get(position)
+                .copied()
+                .flatten()
+                .map_or(UNIT_BOX, |measured| measured.scene());
+            for side in [Side::Design, Side::Parameter] {
+                reference(
+                    ctx,
+                    out,
+                    &Reference::of(ctx, body, records, ordinal, side),
+                    &assets,
+                )?;
+            }
+            scene_records(ctx, out, records.design_scene, &scene)?;
+            scene_records(ctx, out, records.parameter_scene, &EMPTY_BOX)?;
+            node(
                 ctx,
                 out,
-                &Reference::of(ctx, body, records, ordinal, side),
-                &assets,
-            )?;
-        }
-        scene_records(ctx, out, records.design_scene, &scene)?;
-        scene_records(ctx, out, records.parameter_scene, &EMPTY_BOX)?;
-        node(
-            ctx,
-            out,
-            records.node,
-            &body.node_guid,
-            false,
-            records.design,
-            ctx.item_scope(position),
-        )?;
+                records.node,
+                &body.node_guid,
+                false,
+                records.design,
+                ctx.item_scope(position),
+            )
+        };
+        written().map_err(|error| RecordFailure {
+            error,
+            culprit: item.map(|item| Culprit::Item {
+                feature: item.feature().clone(),
+                rolled: false,
+            }),
+        })?;
     }
     for (position, item) in (ctx.bodies.len()..).zip(&ctx.roster.rolled) {
         let Some(body) = item.place.rolled() else {
             continue;
         };
-        let guid = super::swept::rolled_node_guid(ctx, body.node);
-        let rolled = Reference {
-            record: body.reference,
-            property: None,
-            owner: DESIGN_OWNER,
-            scene: body.scene[0],
-            guid: &guid,
-            mass_guid: geometry_guid(ctx, body.reference),
-            accuracy: 0.0,
-            sheet: false,
-            ordinal: count(position + 1)?,
-            design: true,
+        let mut written = || {
+            #[cfg(test)]
+            if let Some(error) =
+                super::super::requested_record_failure(&format_args!("body of {}", item.feature()))
+            {
+                return Err(error);
+            }
+            let guid = super::swept::rolled_node_guid(ctx, body.node);
+            let rolled = Reference {
+                record: body.reference,
+                property: None,
+                owner: DESIGN_OWNER,
+                scene: body.scene[0],
+                guid: &guid,
+                mass_guid: geometry_guid(ctx, body.reference),
+                accuracy: 0.0,
+                sheet: false,
+                ordinal: count(position + 1)?,
+                design: true,
+            };
+            reference(ctx, out, &rolled, &assets)?;
+            scene_records(ctx, out, body.scene, &EMPTY_BOX)?;
+            node(
+                ctx,
+                out,
+                body.node,
+                &guid,
+                true,
+                body.reference,
+                item.scope(),
+            )
         };
-        reference(ctx, out, &rolled, &assets)?;
-        scene_records(ctx, out, body.scene, &EMPTY_BOX)?;
-        node(
-            ctx,
-            out,
-            body.node,
-            &guid,
-            true,
-            body.reference,
-            item.scope(),
-        )?;
+        written().map_err(|error| RecordFailure {
+            error,
+            culprit: Some(Culprit::Item {
+                feature: item.feature().clone(),
+                rolled: true,
+            }),
+        })?;
     }
     Ok(())
 }
