@@ -65,9 +65,9 @@ pub(super) fn check_dimension_tolerance(
 /// What a PMI dimension states beside its nominal (part 10, §8): a fit's
 /// designations are capital letters and a grade; a tolerance goes with a
 /// length or angle, and a fit with a length; `Basic` and `SingleLimit` go
-/// with a stated nominal, and `decimals` with a length or angle nominal; and a tolerance, compared in the dimension's sign,
-/// or `decimals` equal to the bound parameter's is a second spelling of it
-/// (D60, D61).
+/// with a stated nominal, and `decimals` with a length or angle nominal; and
+/// a tolerance, compared in the dimension's sign, or `decimals` equal to the
+/// bound parameter's is a second spelling of it (D60, D61).
 pub(super) fn check_dimension_statements(
     parameters: &BoundParameters<'_>,
     annotation: &str,
