@@ -499,7 +499,12 @@ fn orientation_type_follows_the_segment_major_and_value_zero() {
             "major {major} orientation {orientation:?}"
         );
         if !admitted {
-            assert_eq!(f.admitted(), Err(NativeReason::Slot(9)));
+            let reason = if [19, 23, 25, 31].contains(&major) {
+                NativeReason::Slot(9)
+            } else {
+                NativeReason::OrientationMajor(major)
+            };
+            assert_eq!(f.admitted(), Err(reason));
         }
     }
 }
