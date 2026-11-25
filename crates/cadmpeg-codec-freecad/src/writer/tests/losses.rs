@@ -123,6 +123,65 @@ fn a_property_the_patch_cannot_write_names_no_removed_optional_entry() {
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
 }
 
+/// A removed entry named by a `file` attribute on a nested value element,
+/// which the patch cannot write empty from the record or from the stored
+/// record, leaves the property as stored. `export:edit.dropped` names the
+/// property, and the ledger span of the left-out member names the member, so
+/// the report states that the written property still names the entry.
+#[test]
+fn a_property_the_patch_cannot_empty_is_reported_dropped() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"><Note/></FileIncluded></Property></Properties></Object></ObjectData></Document>"#;
+    let mut ir = decode(&archive_entries(&[
+        ("Document.xml", xml.as_bytes()),
+        ("Payload.bin", b"payload"),
+    ]));
+    let spans = payload_spans(&ir, "Payload.bin");
+    assert!(!spans.is_empty());
+    let mut entries = native_arena::<EntryRecord>(&ir, "entries");
+    entries.retain(|entry| entry.name() != "Payload.bin");
+    replace_arena(&mut ir, "entries", &entries);
+    let naming = properties_naming(&ir, "Payload.bin");
+    let [payload] = naming.as_slice() else {
+        panic!("one property names Payload.bin, got {naming:?}");
+    };
+
+    let (report, bytes, round_trip) = write_and_read_back(&ir);
+    assert!(!archive_payloads(&bytes).contains_key("Payload.bin"));
+    let written = native_arena::<PropertyRecord>(round_trip.ir(), "properties")
+        .into_iter()
+        .find(|property| property.id == payload.id)
+        .expect("Payload written");
+    assert_eq!(
+        written.values()[0]
+            .attributes
+            .get("file")
+            .map(String::as_str),
+        Some("Payload.bin")
+    );
+    let dropped = export_messages(&report, "edit.dropped");
+    let [message] = dropped.as_slice() else {
+        panic!("expected one dropped line, got {dropped:?}");
+    };
+    assert!(message.contains(payload.id.as_str()), "{message}");
+    let omitted = export_messages(&report, "native.records-omitted");
+    assert!(
+        omitted
+            .iter()
+            .all(|message| !message.contains(payload.id.as_str())),
+        "{omitted:?}"
+    );
+    for span in &spans {
+        assert_eq!(
+            omitted
+                .iter()
+                .filter(|message| message.contains(span.as_str()))
+                .count(),
+            1,
+            "{span}: {omitted:?}"
+        );
+    }
+}
+
 /// Each member the output no longer holds is named on one
 /// `export:native.records-omitted` line. The property that names a member
 /// accounts for it, so no ledger span of that member is named; a member that

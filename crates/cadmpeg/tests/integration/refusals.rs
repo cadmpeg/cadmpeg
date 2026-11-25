@@ -564,9 +564,9 @@ fn rhino_word_5_is_refused_with_the_encoder_catalog() {
 /// The same Creo file loses content on both sides, and the two scopes name
 /// different stages for it: `decode` reports what the reader could not carry,
 /// `export` what the writer will not emit. Both are negative verdicts, so both
-/// exit 1 rather than 2: `strict_decode_rejected` and `strict_export_rejected`. A file that loses nothing is written under every
-/// scope, which is what proves the scope is a predicate and not a switch that
-/// refuses on sight.
+/// exit 1 rather than 2: `strict_decode_rejected` and `strict_export_rejected`. A file that loses nothing,
+/// written to the row it names, is written under every scope, which is what
+/// proves the scope is a predicate and not a switch that refuses on sight.
 #[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn reject_lossy_scopes_select_which_losses_refuse() {
@@ -612,10 +612,13 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["kind"], "native");
     let losses = report["export"]["losses"].as_array().unwrap();
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 3);
     assert!(losses
         .iter()
         .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
+    assert!(losses
+        .iter()
+        .any(|loss| loss["code"]["value"]["code"] == "target.source-dialect-displaced"));
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &{
         let mut cube = unit_cube().expect("unit cube fixture is admitted");
@@ -629,7 +632,13 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     ] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args(["convert", lossless.to_str().unwrap(), "-f", "step", scope])
+            .args([
+                "convert",
+                lossless.to_str().unwrap(),
+                "--to",
+                "step:ap214",
+                scope,
+            ])
             .assert()
             .success();
     }
