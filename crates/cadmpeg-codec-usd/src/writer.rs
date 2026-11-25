@@ -215,7 +215,11 @@ pub(crate) fn plan(
         .scene
         .meters_per_unit
         .map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
-    let mut writer = Writer::new(input.ir, version, input.scene, metres);
+    // USD holds no cage, so a cage body is not written either (§5.6); the
+    // `subds` coverage charges the cage.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let written = cageless.as_ref().unwrap_or(input.ir);
+    let mut writer = Writer::new(written, version, input.scene, metres);
     if packaged {
         writer.package = Some(Vec::new());
         writer.assets = input.assets;
@@ -233,7 +237,7 @@ pub(crate) fn plan(
         bytes: text.into_bytes(),
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: written.census(),
         },
         write_path: WritePath::Synthesized {
             consumption: Consumption::NotConsumed,

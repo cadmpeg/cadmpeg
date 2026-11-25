@@ -1395,13 +1395,18 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: Some(source_object.clone()),
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-        native_ref: None,
-    });
+    ir.geometry.push_cage_object(
+        cadmpeg_ir::SubdSurface {
+            id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
+            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+            source_object: Some(source_object.clone()),
+            cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
+        },
+        cadmpeg_ir::ids::BodyId::mint("test:step:body#cage").expect("identity grammar"),
+        cadmpeg_ir::ids::RegionId::mint("test:step:region#cage").expect("identity grammar"),
+        cadmpeg_ir::ids::ShellId::mint("test:step:shell#cage").expect("identity grammar"),
+    );
     ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#0")
@@ -1416,13 +1421,17 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         .with_source_object(Some(source_object)),
     );
 
+    let mut bytes = Vec::new();
     let report = write_step(
         &ir,
-        &mut Vec::new(),
+        &mut bytes,
         StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
+    // The cage's body is not written as an empty sheet beside the cube.
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(!text.contains("OPEN_SHELL") && !text.contains("SHELL_BASED_SURFACE_MODEL"));
     assert!(report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Warning

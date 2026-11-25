@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::ids::SubdId;
+use crate::ids::{BodyId, RegionId, ShellId, SubdId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::subd::{
@@ -15,7 +15,7 @@ use crate::CadIr;
 #[test]
 fn subd_round_trip_and_directed_ring_validation() {
     let mut ir = CadIr::empty();
-    ir.geometry.subds.push(SubdSurface {
+    let surface = SubdSurface {
         id: SubdId::mint("synthetic:subd:surface#0").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         source_object: None,
@@ -49,7 +49,13 @@ fn subd_round_trip_and_directed_ring_validation() {
         )
         .unwrap(),
         native_ref: None,
-    });
+    };
+    ir.geometry.push_cage_object(
+        surface,
+        BodyId::mint("synthetic:subd:body#0").unwrap(),
+        RegionId::mint("synthetic:subd:region#0").unwrap(),
+        ShellId::mint("synthetic:subd:shell#0").unwrap(),
+    );
     crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
@@ -253,6 +259,45 @@ fn triangle_cage() -> crate::subd::SubdCage {
         Vec::new(),
     )
     .unwrap()
+}
+
+#[test]
+fn a_cage_is_closed_where_every_edge_borders_two_faces() {
+    assert!(!triangle_cage().is_closed());
+    let ring = |uses: [(u32, bool); 3]| {
+        SubdFace::from_edge_uses(
+            uses.into_iter()
+                .map(|(edge, reversed)| SubdEdgeUse { edge, reversed })
+                .collect(),
+        )
+        .unwrap()
+    };
+    let tetrahedron = crate::subd::SubdCage::new(
+        [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .map(|point| SubdVertex::new(point, SubdVertexTag::Smooth, None).unwrap())
+        .collect(),
+        [[0, 1], [1, 2], [2, 0], [0, 3], [1, 3], [2, 3]]
+            .into_iter()
+            .map(|vertices| {
+                SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).unwrap()
+            })
+            .collect(),
+        vec![
+            ring([(0, false), (1, false), (2, false)]),
+            ring([(3, false), (4, true), (0, true)]),
+            ring([(4, false), (5, true), (1, true)]),
+            ring([(5, false), (3, true), (2, true)]),
+        ],
+        Vec::new(),
+    )
+    .unwrap();
+    assert!(tetrahedron.is_closed());
 }
 
 fn rejects_cage_wire(wire: serde_json::Value) {

@@ -109,9 +109,15 @@ pub(crate) fn write_step_outcome(
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
+    // STEP holds no cage, so a cage body is not written as an empty shell
+    // either (§5.6); the cage's `geometry.subd-omitted` loss names both.
+    let cage_bodies = cadmpeg_ir::codec::write::cage_bodies(ir);
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(ir);
+    let ir = cageless.as_ref().unwrap_or(ir);
     let (ir, dangling) = without_dangling_occurrences(ir);
     let mut b = Builder::new(&ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
+    b.cage_bodies = cage_bodies;
     if let Some(note) = dangling {
         b.losses.push(note);
     }
@@ -289,6 +295,8 @@ pub(crate) struct Builder<'a> {
     schema: StepSchema,
     recovered_edges: HashSet<EdgeId>,
     model_name: &'a str,
+    /// The bodies of the input that hold only the omitted cages.
+    cage_bodies: Vec<cadmpeg_ir::ids::BodyId>,
     emitter: Emitter,
     losses: Vec<LossNote>,
 
@@ -522,6 +530,7 @@ impl<'a> Builder<'a> {
             schema,
             recovered_edges,
             model_name: "cadmpeg_model",
+            cage_bodies: Vec::new(),
             emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
             points: ir
@@ -6660,12 +6669,22 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.geometry.subds.is_empty() {
+            let ir = self.ir;
+            let mut subds = ir
+                .geometry
+                .subds
+                .iter()
+                .map(|subd| subd.id.as_str())
+                .collect::<Vec<_>>();
+            subds.sort_unstable();
             self.loss(
                 StepLossCode::SubdOmitted,
                 format!(
                     "{} subdivision surface(s) were omitted because this STEP writer \
-                     does not encode SubD control cages",
-                    self.ir.geometry.subds.len()
+                     does not encode SubD control cages: {}{}",
+                    subds.len(),
+                    subds.join(", "),
+                    cadmpeg_ir::codec::write::cage_bodies_clause(&self.cage_bodies)
                 ),
             );
         }
