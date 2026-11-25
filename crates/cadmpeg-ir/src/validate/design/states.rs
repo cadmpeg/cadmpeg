@@ -8,11 +8,12 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::design::evaluation::{CurrentState, Evaluation, StateBase};
+use crate::design::evaluation::{CurrentState, Evaluation, StateBase, StateDelta};
 use crate::design::names::NameEntry;
 use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::{CadIr, Topology};
+use crate::ids::ProductDefinitionId;
 use crate::topology::{EdgeCarrier, ShellMember};
 
 use super::records::PositionKey;
@@ -65,9 +66,9 @@ pub(super) struct Chain<'s, 'a> {
 }
 
 /// Where a lookup in an evaluation's chain stops.
-enum Bottom<'a> {
+enum Bottom<'s, 'a> {
     Empty,
-    Current(&'a Extent<'a>),
+    Current(&'s Extent<'a>),
 }
 
 impl<'a> States<'a> {
@@ -252,28 +253,66 @@ impl<'a> States<'a> {
     /// The instance paths with bodies in the resolved state of a stored
     /// evaluation, down to the first base outside the evaluations.
     pub(super) fn instance_paths(&self, evaluation: &str) -> Vec<&'a OccurrencePath> {
-        let mut paths = BTreeMap::new();
+        let (paths, _) = self.merged(evaluation, |delta| &delta.instance_bodies);
+        paths
+            .into_iter()
+            .filter_map(|(path, bodies)| bodies.map(|_| path))
+            .collect()
+    }
+
+    /// The owner of each occurrence that the resolved state of a stored
+    /// evaluation restates in `members`.
+    pub(super) fn members(&self, evaluation: &str) -> BTreeMap<&'a str, &'a ProductDefinitionId> {
+        let (members, _) = self.merged(evaluation, |delta| &delta.members);
+        members
+            .into_iter()
+            .filter_map(|(occurrence, owner)| owner.map(|owner| (occurrence.as_str(), owner)))
+            .collect()
+    }
+
+    /// The paths with a pose in the resolved state of a stored evaluation,
+    /// the poses of the current state its chain ends on included.
+    pub(super) fn pose_paths(&self, evaluation: &str) -> Vec<&'a OccurrencePath> {
+        let (mut poses, bottom) = self.merged(evaluation, |delta| &delta.poses);
+        if let Some(extent) = bottom {
+            for (path, pose) in &extent.state.poses {
+                poses.entry(path).or_insert(Some(pose));
+            }
+        }
+        poses
+            .into_iter()
+            .filter_map(|(path, pose)| pose.map(|_| path))
+            .collect()
+    }
+
+    /// Each key of one delta map in a stored evaluation's chain, with its
+    /// entry in the topmost delta that states it (`None` removes it), and the
+    /// current state's extent the chain ends on, where it ends on one.
+    fn merged<K: Ord, V>(
+        &self,
+        evaluation: &str,
+        map: impl Fn(&'a StateDelta) -> &'a BTreeMap<K, Option<V>>,
+    ) -> (BTreeMap<&'a K, Option<&'a V>>, Option<&Extent<'a>>) {
+        let mut entries = BTreeMap::new();
         let Some(mut at) = self.layers.get(evaluation) else {
-            return Vec::new();
+            return (entries, None);
         };
         for _ in 0..=self.layers.len() {
             if let Some(content) = &at.evaluation.content {
-                for (path, bodies) in &content.delta.instance_bodies {
-                    paths.entry(path).or_insert(bodies.is_some());
+                for (key, value) in map(&content.delta) {
+                    entries.entry(key).or_insert(value.as_ref());
                 }
             }
             match self.bottom_or_next(at) {
                 Some(Ok(next)) => at = next,
-                Some(Err(_)) | None => break,
+                Some(Err(Bottom::Current(extent))) => return (entries, Some(extent)),
+                Some(Err(Bottom::Empty)) | None => break,
             }
         }
-        paths
-            .into_iter()
-            .filter_map(|(path, held)| held.then_some(path))
-            .collect()
+        (entries, None)
     }
 
-    fn bottom_or_next(&self, layer: &Layer<'a>) -> Option<Result<&Layer<'a>, Bottom<'_>>> {
+    fn bottom_or_next(&self, layer: &Layer<'a>) -> Option<Result<&Layer<'a>, Bottom<'_, 'a>>> {
         let evaluation = layer.evaluation;
         let content = evaluation.content.as_ref()?;
         Some(match &content.base {
