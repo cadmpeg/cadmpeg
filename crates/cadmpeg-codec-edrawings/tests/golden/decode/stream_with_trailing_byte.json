@@ -152,8 +152,7 @@
           "value": {
             "code": "model.malformed",
             "kind": "geometry_not_transferred",
-            "namespace": "edrawings",
-            "strict_floor": "warning"
+            "namespace": "edrawings"
           }
         },
         "message": "the model stream broke a record rule (bracket record is not the 24 byte trailer at byte 1315); the package carries no model data",

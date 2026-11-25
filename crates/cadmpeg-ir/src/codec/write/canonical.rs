@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 
 use super::loss::{value_unwritable, ExportLossCode};
 use super::{CadirEncoder, EncoderBackend};
-use crate::document::{ArenaName, CadIr, DifferingCopies};
+use crate::document::{ArenaName, CadIr, DifferingCopies, ScopeViolation};
 use crate::give_up::Arena;
 use crate::report::loss::LossNote;
 
@@ -23,7 +23,7 @@ use crate::report::loss::LossNote;
 ///
 /// A native record whose text no longer reads as an object.
 pub(super) fn canonical_form(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
-    let breach = ir.check_scope().is_err();
+    let breach = holds_out_of_scope(ir);
     if !breach && ir.ids_in_order() && unwritten_links(ir).is_empty() {
         return Ok(None);
     }
@@ -45,6 +45,14 @@ pub(super) fn canonical_form(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)
         ));
     }
     Ok(Some((written, losses)))
+}
+
+/// Whether an arena of `ir` holds a record of a class its scope excludes or
+/// a reference into one. The write states the scope as given.
+fn holds_out_of_scope(ir: &CadIr) -> bool {
+    ir.scope_violations()
+        .iter()
+        .any(|violation| !matches!(violation, ScopeViolation::Unmet { .. }))
 }
 
 /// Each id that a native-record link of `ir` names, that a record of an
@@ -105,7 +113,7 @@ fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     let scope = ir.scope();
     let marked = drop_excluded(ir, scope)?;
     debug_assert!(
-        ir.check_scope().is_ok(),
+        !holds_out_of_scope(ir),
         "a document without the records of the classes its scope excludes and without model \
          references into an excluded design class meets its scope"
     );

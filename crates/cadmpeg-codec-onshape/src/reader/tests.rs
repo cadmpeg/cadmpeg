@@ -155,6 +155,109 @@ fn part_studio_parts_are_one_design_but_moved_parts_stay_placed() {
     assert!(!moved.ir.model.occurrences.is_empty());
 }
 
+/// The two-product studio with both placements owned by one root file product.
+fn rooted_two_part_studio() -> Model {
+    let model = two_part_studio(0.0);
+    let mut wire = serde_json::to_value(&model.ir).unwrap();
+    wire["model"]["product_definitions"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id":"synthetic:test:component#whole", "storage":{"kind":"file", "document":{}},
+            "bodies":[], "bom_properties":{},
+            "occurrences":["synthetic:test:occurrence#0", "synthetic:test:occurrence#1"],
+            "instance_bodies":[], "representations":[]
+        }));
+    Model {
+        ir: cadmpeg_ir::CadIr::from_json(&wire.to_string()).unwrap(),
+        ..model
+    }
+}
+
+#[test]
+fn part_studio_flattening_flattens_a_rooted_studio_in_the_unmodified_state() {
+    let mut model = rooted_two_part_studio();
+    part_studio_bodies(&mut model);
+    assert!(model.ir.model.occurrences.is_empty());
+    assert!(model.ir.model.product_definitions[2].occurrences.is_empty());
+}
+
+#[test]
+fn part_studio_flattening_keeps_insertion_state_and_nested_ownership() {
+    for state in [
+        "override",
+        "suppressed",
+        "unstated-placement",
+        "hidden",
+        "representation",
+        "nested",
+        "shared",
+        "external",
+    ] {
+        let mut model = rooted_two_part_studio();
+        let child = model.ir.model.occurrences[0].id.clone();
+        match state {
+            "override" => {
+                model.ir.model.occurrences[0].overrides = serde_json::from_value(json!([
+                    {"path":[{"occurrence":{"kind":"occurrence","value":child}}], "visible":false}
+                ]))
+                .unwrap();
+            }
+            "suppressed" => model.ir.model.occurrences[0].suppressed = Some(true),
+            "unstated-placement" => model.ir.model.occurrences[0].transform = None,
+            "hidden" => model.ir.model.occurrences[0].visible = Some(false),
+            "representation" => {
+                model.ir.model.occurrences[0].representation =
+                    serde_json::from_value(json!("stored-view")).unwrap();
+            }
+            "nested" => {
+                model.ir.model.product_definitions[2].occurrences.remove(0);
+                model.ir.model.product_definitions[1]
+                    .occurrences
+                    .push(child);
+            }
+            "shared" => {
+                model.ir.model.occurrences[1].prototype =
+                    model.ir.model.occurrences[0].prototype.clone();
+            }
+            "external" => {
+                let child = model.ir.model.occurrences[0].prototype.as_str().to_owned();
+                let definition = model
+                    .ir
+                    .model
+                    .product_definitions
+                    .iter_mut()
+                    .find(|d| d.id.as_str() == child)
+                    .unwrap();
+                definition.storage = cadmpeg_ir::products::Storage::External(
+                    cadmpeg_ir::products::ExternalDocument::default(),
+                );
+            }
+            _ => panic!("unknown synthetic insertion state"),
+        }
+        let before = model.ir.clone();
+        part_studio_bodies(&mut model);
+        assert_eq!(model.ir, before, "{state}");
+    }
+}
+
+#[test]
+fn thin_scope_requires_direct_body_ownership_without_child_insertions() {
+    let mut model = two_part_studio(0.0);
+    model.ir.model.product_definitions.truncate(1);
+    model.ir.model.occurrences.clear();
+    let definition = model.ir.model.product_definitions[0].id.clone();
+    assert_eq!(super::thin::owner(&model.ir).unwrap(), definition);
+
+    model.ir.model.product_definitions[0]
+        .occurrences
+        .push(cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#child").unwrap());
+    assert!(super::thin::owner(&model.ir).is_err());
+    model.ir.model.product_definitions[0].occurrences.clear();
+    model.ir.model.product_definitions[0].bodies.clear();
+    assert!(super::thin::owner(&model.ir).is_err());
+}
+
 #[test]
 fn failed_thin_scope_restores_design_and_downgrades_wall_losses() {
     let mut report = Report::default();

@@ -4,6 +4,7 @@
 
 use super::covered_uses::visit_pole_uses;
 use super::exact::nurbs_form;
+use super::same_range;
 use super::{edge_span, flatten_curve, solved_curve, TopologyIndex};
 use crate::entities::curve_conversion::{elliptical_arc_nurbs, ANGULAR_TOLERANCE};
 use crate::loss::IgesLossCode;
@@ -19,7 +20,7 @@ use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
-use cadmpeg_ir::topology::{Face, LoopBoundary, LoopRing, PcurveUse, Sense};
+use cadmpeg_ir::topology::{Face, FaceLoops, LoopBoundary, LoopRing, PcurveUse, Sense};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -508,10 +509,11 @@ impl LoopImages {
     }
 
     /// The middle of the azimuths of the loop, absent for a loop of no curve.
-    fn azimuth_centre(&self) -> Option<f64> {
-        let [low, high] = self.span().extent[0];
-        let centre = 0.5 * (low + high);
-        centre.is_finite().then_some(centre)
+    /// The least and greatest value of the parameter `axis` on the loop,
+    /// absent for a loop of no curve.
+    fn extent(&self, axis: usize) -> Option<[f64; 2]> {
+        let [low, high] = self.span().extent[axis];
+        (low.is_finite() && high.is_finite()).then_some([low, high])
     }
 
     fn span(&self) -> LoopSpan {
@@ -607,7 +609,7 @@ fn exact_image(
     };
     if let Some(used) = pcurve_use.parameter_range {
         let used = used.endpoints();
-        if used != range && used != [range[1], range[0]] {
+        if !same_range(used, range) && !same_range(used, [range[1], range[0]]) {
             return Some(Err(format!(
                 "a use of parameter curve {id} restricts its range"
             )));
@@ -728,15 +730,14 @@ fn restated_support(
         }
         match face_images(ends, index, face, circular)? {
             Ok(mut loops) => {
-                // Each loop moves by whole turns of azimuth to the period of
-                // the first loop of the face.
-                if let Some(reference) = loops.iter().find_map(LoopImages::azimuth_centre) {
-                    for images in &mut loops {
-                        if let Some(centre) = images.azimuth_centre() {
-                            let turns = ((reference - centre) / TAU).round();
-                            images.shift(Point2::new(turns * TAU, 0.0));
-                        }
-                    }
+                let outer = matches!(
+                    face.loops,
+                    FaceLoops::Classified { .. }
+                        | FaceLoops::PartialClassified { outer: Some(_), .. }
+                );
+                aligned(&mut loops, 0, outer);
+                if form.v_periodic() {
+                    aligned(&mut loops, 1, outer);
                 }
                 let spans = loops.iter().map(LoopImages::span).collect::<Vec<_>>();
                 let (shifts, reach) = form.face_sides(face.sense, &spans).unwrap_or_else(|| {
@@ -958,6 +959,56 @@ fn restated_support(
         model_space,
         copies,
     })
+}
+
+/// Moves each loop of a face that does not wind about the other parameter by
+/// whole turns of the periodic parameter `axis` to the period of a reference
+/// loop: the outer loop where the face states one (`outer`, the first loop),
+/// else a loop that winds about `axis`, else the loop of the widest extent
+/// in `axis`. A loop that winds about the other parameter keeps its place in
+/// `axis`, where its side of the face sets its period.
+fn aligned(loops: &mut [LoopImages], axis: usize, outer: bool) {
+    let other = 1 - axis;
+    let reference = outer
+        .then_some(0)
+        .filter(|_| {
+            loops
+                .first()
+                .and_then(|images| images.extent(axis))
+                .is_some()
+        })
+        .or_else(|| {
+            loops
+                .iter()
+                .position(|images| images.winding[axis] != 0 && images.extent(axis).is_some())
+        })
+        .or_else(|| {
+            loops
+                .iter()
+                .enumerate()
+                .filter_map(|(position, images)| {
+                    images
+                        .extent(axis)
+                        .map(|[low, high]| (position, high - low))
+                })
+                .max_by(|first, second| first.1.total_cmp(&second.1))
+                .map(|(position, _)| position)
+        });
+    let Some([low, high]) = reference.and_then(|position| loops[position].extent(axis)) else {
+        return;
+    };
+    let reference = 0.5 * (low + high);
+    for images in loops.iter_mut().filter(|images| images.winding[other] == 0) {
+        let Some([low, high]) = images.extent(axis) else {
+            continue;
+        };
+        let turns = ((reference - 0.5 * (low + high)) / TAU).round() * TAU;
+        images.shift(if axis == 0 {
+            Point2::new(turns, 0.0)
+        } else {
+            Point2::new(0.0, turns)
+        });
+    }
 }
 
 /// Whether two parameter curve images start and end at the same points.

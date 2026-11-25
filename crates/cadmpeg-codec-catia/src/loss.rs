@@ -396,7 +396,7 @@ impl CatiaLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::GeometryCarrierSummary => Severity::Info,
+            Self::GeometryCarrierSummary | Self::GeometryVertexToleranceWidened => Severity::Info,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::TopologyBoundaryGraphNotEmitted
