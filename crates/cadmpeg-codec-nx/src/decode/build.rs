@@ -164,6 +164,9 @@ pub(super) fn try_decode_geometry(
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
     let mut topology_losses = parsed.primary_losses();
+    // Losses that state a face partial, kept for the faces the document holds
+    // once inactive bodies are pruned.
+    let mut partial_face_losses = Vec::new();
     let mut native_losses: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
@@ -1304,7 +1307,10 @@ pub(super) fn try_decode_geometry(
                 adaptive_geometry: &adaptive_geometry_budget,
                 completion_geometry: &completion_geometry_budget,
             },
-            &mut topology_losses,
+            crate::decode::emit::TopologyLosses {
+                losses: &mut topology_losses,
+                partial_faces: &mut partial_face_losses,
+            },
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
@@ -1533,6 +1539,14 @@ pub(super) fn try_decode_geometry(
         &ir,
         &model,
     )?;
+    let stated_faces: std::collections::BTreeSet<_> =
+        ir.geometry.faces.iter().map(|face| &face.id).collect();
+    topology_losses.extend(
+        partial_face_losses
+            .into_iter()
+            .filter(|(face, _)| stated_faces.contains(face))
+            .map(|(_, note)| note),
+    );
     for losses in [carrier_refusals, topology_losses, native_losses] {
         report.losses.extend(losses);
     }
