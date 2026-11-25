@@ -183,6 +183,14 @@ pub(crate) fn resolve_side_entries(
     Ok(())
 }
 
+/// Whether a value attribute `attribute` of a property of type `type_name`
+/// names an archive entry.
+pub(crate) fn names_side_entry(type_name: &str, attribute: &str) -> bool {
+    (matches!(attribute, "file" | "File") && !is_xlink_type(type_name))
+        || (property_family(type_name) == PropertyFamily::File
+            && matches!(attribute, "name" | "Name"))
+}
+
 /// Recover the persistence graph from an already admitted document.
 pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
@@ -658,11 +666,7 @@ fn parse_properties(
         let mut side_entries = Vec::new();
         for value in &values {
             for (name, entry_name) in &value.attributes {
-                let selected = (matches!(name.as_str(), "file" | "File")
-                    && !is_xlink_type(&type_name))
-                    || (property_family(&type_name) == PropertyFamily::File
-                        && matches!(name.as_str(), "name" | "Name"));
-                if selected && !entry_name.is_empty() {
+                if names_side_entry(&type_name, name) && !entry_name.is_empty() {
                     side_entries.push(entry_name.to_owned());
                 }
             }
