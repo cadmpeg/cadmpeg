@@ -1819,3 +1819,35 @@ fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_rec
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_eq!(written, CadIr::empty());
 }
+
+/// The CADIR wire leaves out the legacy model arenas (§3.4): a document whose
+/// records all lie in them writes no record, so its output is the empty
+/// CADIR document, with `export:output.empty`.
+#[test]
+fn the_cadir_writer_writes_the_empty_document_for_records_the_wire_omits() {
+    use crate::features::{
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+    };
+
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("test:writer:feature#legacy").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    });
+
+    let (losses, written) = written_with_losses(&ir, "output.empty");
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(written, CadIr::empty());
+}

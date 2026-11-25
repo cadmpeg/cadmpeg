@@ -727,7 +727,7 @@ impl EncoderBackend for CadirEncoder {
             &written
         };
         let empty;
-        let ir = if holds_records(input.ir) && !holds_records(ir) {
+        let ir = if holds_records(input.ir) && !writes_records(ir) {
             losses.push(output_empty(
                 "the written CADIR document holds no record: each record of the document is \
                  dropped or needs one that is",
@@ -823,13 +823,25 @@ fn within_the_bounds(
 
 /// Whether `ir` holds a record of a home or native arena.
 fn holds_records(ir: &CadIr) -> bool {
-    ir.entity_count() > 0
-        || ir.native.0.values().any(|namespace| {
-            namespace
-                .arenas()
-                .values()
-                .any(|records| !records.is_empty())
+    ir.entity_count() > 0 || holds_native_records(ir)
+}
+
+/// Whether `ir` holds a record that its CADIR text writes: a record of a
+/// native arena or of a home arena the wire carries.
+fn writes_records(ir: &CadIr) -> bool {
+    holds_native_records(ir)
+        || ir.arenas().record_ids().iter().any(|(arena, (_, ids))| {
+            !crate::document::ArenaName::WIRE_OMITTED.contains(arena) && !ids.is_empty()
         })
+}
+
+fn holds_native_records(ir: &CadIr) -> bool {
+    ir.native.0.values().any(|namespace| {
+        namespace
+            .arenas()
+            .values()
+            .any(|records| !records.is_empty())
+    })
 }
 
 /// States `Source` with no tokens each expression past its bound in the
