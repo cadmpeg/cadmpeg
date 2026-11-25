@@ -1112,3 +1112,109 @@ fn a_reflected_sphere_lune_moves_each_pole_use_to_the_coedge_that_arrives_at_its
         }
     }
 }
+
+/// The tube angle of the torus band's lower parallel. The band reaches past
+/// the tube angle `π` to the upper parallel at `TAU - BAND_LOW`.
+const BAND_LOW: f64 = 5.0 * PI / 6.0;
+
+/// The band of the torus about `+z` between the parallels at tube angles
+/// [`BAND_LOW`] and `TAU - BAND_LOW`, each one closed edge in a loop of its
+/// own. The coedges carry their parameter lines with the tube angle in
+/// `(-π, π]`.
+fn torus_band_across_the_seam() -> CadIr {
+    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            TORUS_MAJOR,
+            TORUS_MINOR,
+        )
+        .expect("a torus"),
+    ));
+    let high = TAU - BAND_LOW;
+    for (key, v) in [("lower", BAND_LOW), ("upper", high)] {
+        sheet.vertex(key, torus_point(0.0, v));
+        let parallel = CircleCurve::try_new(
+            Point3::new(0.0, 0.0, TORUS_MINOR * v.sin()),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            TORUS_MINOR.mul_add(v.cos(), TORUS_MAJOR),
+        )
+        .expect("a parallel");
+        sheet.edge(
+            key,
+            SolvedCurveGeometry::Circle(parallel),
+            [0.0, TAU],
+            [key, key],
+        );
+    }
+    let lower = parameter_line(&mut sheet.ir, "lower", [0.0, BAND_LOW], [1.0, 0.0], TAU);
+    let upper = parameter_line(&mut sheet.ir, "upper", [TAU, high - TAU], [-1.0, 0.0], TAU);
+    let mut loops = Vec::new();
+    for (key, sense, pcurve) in [
+        ("lower", Sense::Forward, lower),
+        ("upper", Sense::Reversed, upper),
+    ] {
+        let geometry = &mut sheet.ir.geometry;
+        geometry.coedges.push(Coedge {
+            id: id(CoedgeId::mint, "coedge", key),
+            owner_loop: id(LoopId::mint, "loop", key),
+            edge: id(EdgeId::mint, "edge", key),
+            radial_next: id(CoedgeId::mint, "coedge", key),
+            sense,
+            pcurves: vec![pcurve],
+            use_curve: None,
+            native_ref: None,
+        });
+        geometry.loops.push(Loop {
+            id: id(LoopId::mint, "loop", key),
+            face: id(FaceId::mint, "face", "face"),
+            boundary: LoopBoundary::Ring(
+                LoopRing::new(vec![id(CoedgeId::mint, "coedge", key)], Vec::new()).expect("a ring"),
+            ),
+            native_ref: None,
+        });
+        loops.push(id(LoopId::mint, "loop", key));
+    }
+    sheet.faced(FaceLoops::unspecified(loops))
+}
+
+#[test]
+fn a_torus_band_across_the_tube_seam_takes_its_domain_from_the_side_its_loops_bound() {
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(torus_band_across_the_seam(), stretch);
+        assert_eq!(read.geometry.faces.len(), 1);
+        let points = support_points(&read)
+            .into_iter()
+            .map(|point| stretch.source(point))
+            .collect::<Vec<_>>();
+        let mut tube_angles = Vec::new();
+        for point in &points {
+            let radial = point.x.hypot(point.y) - TORUS_MAJOR;
+            assert!(
+                (radial.hypot(point.z) - TORUS_MINOR).abs() <= ON_SURFACE,
+                "{point:?} lies off the torus"
+            );
+            let tube = point.z.atan2(radial);
+            assert!(
+                tube.abs() >= BAND_LOW - ON_SURFACE,
+                "{point:?} at tube angle {tube} lies outside the band"
+            );
+            tube_angles.push(tube);
+        }
+        for bound in [BAND_LOW, -BAND_LOW] {
+            assert!(
+                tube_angles
+                    .iter()
+                    .any(|tube| (tube - bound).abs() <= ON_SURFACE),
+                "the support misses the parallel at tube angle {bound}"
+            );
+        }
+        let azimuths = points.iter().map(|point| point.y.atan2(point.x)).collect();
+        assert!(
+            largest_gap(azimuths) <= TURN_GAP,
+            "the face misses azimuths"
+        );
+    }
+}

@@ -17,16 +17,11 @@ use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
-use cadmpeg_ir::topology::{Face, LoopBoundary, LoopRing, PcurveUse};
+use cadmpeg_ir::topology::{Face, LoopBoundary, LoopRing, PcurveUse, Sense};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
-
-/// Parameter values that the restated domain of a support includes besides
-/// the parameter curves of its faces, by surface and by parameter: the pole
-/// or the period that a face reaches past its boundary loops.
-pub(super) type DomainHints = BTreeMap<String, [Vec<f64>; 2]>;
 
 /// The largest degree `|p| + |q|` of the exact image of a parameter line of
 /// slope `p / q` on a sphere or torus that the writer states.
@@ -43,11 +38,10 @@ const RATIONAL_PIECE_SPLITS: u32 = 8;
 /// support keeps its model-space boundary: its parameter curves are removed
 /// and each is charged `writer.pcurve-omitted`. Only the supports that
 /// `admit` names are restated.
-pub(super) fn rational_analytic_supports<'ir>(
-    ir: &'ir CadIr,
+pub(super) fn rational_analytic_supports(
+    ir: &CadIr,
     admit: impl Fn(&str) -> bool,
-    hints: &DomainHints,
-) -> Result<(Cow<'ir, CadIr>, Vec<LossNote>), CodecError> {
+) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), CodecError> {
     let forms = ir
         .geometry
         .surfaces
@@ -69,8 +63,7 @@ pub(super) fn rational_analytic_supports<'ir>(
     let mut pcurves = BTreeMap::new();
     let mut model_space = Vec::new();
     for (surface, form) in forms {
-        let Some(restated) = restated_support(&ends, &index, surface, &form, hints.get(surface))
-        else {
+        let Some(restated) = restated_support(&ends, &index, surface, &form) else {
             continue;
         };
         if restated
@@ -310,6 +303,85 @@ impl Revolved {
         }
     }
 
+    /// The face side of each loop in `loops` that winds once around the
+    /// support, as the whole periods each loop moves by so that the upper
+    /// loop on a periodic parameter lies above the lower one, and the
+    /// parameter values the domain must reach past the loops: a pole or apex
+    /// that bounds the face, or one period past a lone loop on a periodic
+    /// parameter. None where the loops do not bound one face on the support.
+    pub(super) fn face_sides(
+        &self,
+        sense: Sense,
+        loops: &[LoopSpan],
+    ) -> Option<(Vec<Point2>, [Vec<f64>; 2])> {
+        let orientation = self.orientation() * if sense == Sense::Reversed { -1.0 } else { 1.0 };
+        let mut sides: [(Vec<usize>, Vec<usize>); 2] = Default::default();
+        for (position, span) in loops.iter().enumerate() {
+            let (axis, side) = match span.winding {
+                [0, 0] => continue,
+                [turn, 0] => (1, f64::from(turn) * orientation),
+                [0, turn] => (0, -f64::from(turn) * orientation),
+                _ => return None,
+            };
+            let (lowers, uppers) = &mut sides[axis];
+            if side > 0.0 {
+                lowers.push(position);
+            } else {
+                uppers.push(position);
+            }
+        }
+        let mut shifts = vec![Point2::new(0.0, 0.0); loops.len()];
+        let mut reach: [Vec<f64>; 2] = Default::default();
+        for (axis, (lowers, uppers)) in sides.into_iter().enumerate() {
+            let periodic = axis == 0 || self.v_periodic();
+            let poles = if periodic { Vec::new() } else { self.poles() };
+            match (lowers.as_slice(), uppers.as_slice()) {
+                ([], []) => {}
+                ([lower], [upper]) => {
+                    let [_, low] = loops[*lower].extent[axis];
+                    let [high, _] = loops[*upper].extent[axis];
+                    if periodic {
+                        let gap = high - low;
+                        let moved = gap - TAU * ((gap / TAU).ceil() - 1.0);
+                        let shift = moved - gap;
+                        let shifted = &mut shifts[*upper];
+                        if axis == 0 {
+                            shifted.u += shift;
+                        } else {
+                            shifted.v += shift;
+                        }
+                    } else if high <= low {
+                        return None;
+                    }
+                }
+                ([lower], []) => {
+                    let [_, low] = loops[*lower].extent[axis];
+                    reach[axis].push(if periodic {
+                        low + TAU
+                    } else {
+                        poles
+                            .into_iter()
+                            .filter(|pole| *pole > low)
+                            .min_by(f64::total_cmp)?
+                    });
+                }
+                ([], [upper]) => {
+                    let [high, _] = loops[*upper].extent[axis];
+                    reach[axis].push(if periodic {
+                        high - TAU
+                    } else {
+                        poles
+                            .into_iter()
+                            .filter(|pole| *pole < high)
+                            .max_by(f64::total_cmp)?
+                    });
+                }
+                _ => return None,
+            }
+        }
+        Some((shifts, reach))
+    }
+
     /// The second parameters of the poles of a sphere and the apex of a cone.
     pub(super) fn poles(&self) -> Vec<f64> {
         match self.profile {
@@ -318,6 +390,14 @@ impl Revolved {
             Profile::Ruled { .. } | Profile::Circular { .. } => Vec::new(),
         }
     }
+}
+
+/// One closed loop of a face in the parameter plane of a revolved support:
+/// its winding about each parameter in whole turns, and its least and
+/// greatest value of each parameter.
+pub(super) struct LoopSpan {
+    pub(super) winding: [i32; 2],
+    pub(super) extent: [[f64; 2]; 2],
 }
 
 struct Restated {
@@ -358,15 +438,40 @@ impl Slope {
     }
 }
 
-/// The parameter curves of one face on a revolved support, or the reason the
-/// face keeps its model-space boundary.
+/// The exact parameter curves of one loop, and the loop's winding about
+/// each parameter in whole turns.
+struct LoopImages {
+    images: Vec<Exact>,
+    winding: [i32; 2],
+}
+
+impl LoopImages {
+    fn span(&self) -> LoopSpan {
+        let extent = |coordinate: fn(&Point2) -> f64| {
+            self.images
+                .iter()
+                .flat_map(|image| [&image.start, &image.end])
+                .map(coordinate)
+                .fold([f64::INFINITY, f64::NEG_INFINITY], |[low, high], value| {
+                    [low.min(value), high.max(value)]
+                })
+        };
+        LoopSpan {
+            winding: self.winding,
+            extent: [extent(|point| point.u), extent(|point| point.v)],
+        }
+    }
+}
+
+/// The parameter curves of each loop of one face on a revolved support, or
+/// the reason the face keeps its model-space boundary.
 fn face_images(
     ends: &BTreeMap<&str, [Point2; 2]>,
     index: &TopologyIndex<'_>,
     face: &Face,
     circular: bool,
-) -> Option<Result<Vec<Exact>, String>> {
-    let mut images = Vec::new();
+) -> Option<Result<Vec<LoopImages>, String>> {
+    let mut loops = Vec::new();
     for loop_id in face.loops.stated() {
         let loop_ = index.loops.get(loop_id.as_str()).copied()?;
         let mut uses = Vec::<&PcurveUse>::new();
@@ -385,14 +490,35 @@ fn face_images(
                 }
             }
         }
+        let mut images = Vec::new();
+        let mut travel = [0.0; 2];
         for pcurve_use in uses {
-            match exact_image(ends, index, pcurve_use, circular)? {
-                Ok(image) => images.push(image),
+            let image = match exact_image(ends, index, pcurve_use, circular)? {
+                Ok(image) => image,
                 Err(reason) => return Some(Err(reason)),
-            }
+            };
+            let backward = pcurve_use.parameter_range.is_some_and(|range| {
+                let [start, end] = range.endpoints();
+                end < start
+            });
+            let sign = if backward { -1.0 } else { 1.0 };
+            travel[0] += sign * (image.end.u - image.start.u);
+            travel[1] += sign * (image.end.v - image.start.v);
+            images.push(image);
         }
+        let winding = travel.map(|travel| {
+            let turns = (travel / TAU).round();
+            if turns >= 1.0 {
+                1
+            } else if turns <= -1.0 {
+                -1
+            } else {
+                0
+            }
+        });
+        loops.push(LoopImages { images, winding });
     }
-    Some(Ok(images))
+    Some(Ok(loops))
 }
 
 /// The exact image of one parameter curve use on the restated support, or
@@ -505,7 +631,6 @@ fn restated_support(
     index: &TopologyIndex<'_>,
     surface: &str,
     form: &Revolved,
-    hints: Option<&[Vec<f64>; 2]>,
 ) -> Option<Restated> {
     let geometry = &index.ir.geometry;
     let faces = geometry
@@ -533,16 +658,30 @@ fn restated_support(
             continue;
         }
         match face_images(ends, index, face, circular)? {
-            Ok(images) => {
-                for image in images {
-                    if !seen.insert(image.id.clone()) {
-                        continue;
+            Ok(loops) => {
+                let spans = loops.iter().map(LoopImages::span).collect::<Vec<_>>();
+                let (shifts, reach) = form.face_sides(face.sense, &spans).unwrap_or_else(|| {
+                    (vec![Point2::new(0.0, 0.0); loops.len()], Default::default())
+                });
+                for (loop_images, shift) in loops.into_iter().zip(shifts) {
+                    for mut image in loop_images.images {
+                        if !seen.insert(image.id.clone()) {
+                            continue;
+                        }
+                        for point in [&mut image.start, &mut image.end] {
+                            *point = Point2::new(point.u + shift.u, point.v + shift.v);
+                            u_extent.include(point.u);
+                            v_extent.include(point.v);
+                        }
+                        curves.push(image);
                     }
-                    for point in [&image.start, &image.end] {
-                        u_extent.include(point.u);
-                        v_extent.include(point.v);
-                    }
-                    curves.push(image);
+                }
+                let [u_reach, v_reach] = reach;
+                for u in u_reach {
+                    u_extent.include(u);
+                }
+                for v in v_reach {
+                    v_extent.include(v);
                 }
             }
             Err(reason) => {
@@ -562,14 +701,6 @@ fn restated_support(
                     reason,
                 });
             }
-        }
-    }
-    if let Some([u_hints, v_hints]) = hints {
-        for u in u_hints {
-            u_extent.include(*u);
-        }
-        for v in v_hints {
-            v_extent.include(*v);
         }
     }
     let full = |extent: &Extent| {

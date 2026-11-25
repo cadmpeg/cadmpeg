@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact restatements that let the writer encode a document in IGES entities.
 
-use super::rational_support::{DomainHints, Revolved};
+use super::rational_support::{LoopSpan, Revolved};
 use super::{
     edge_span, effective_topology_tolerance, flatten_curve, lifted_pcurve, polyline_knots,
     polyline_parameters, reverse_nurbs, solved_curve, topology_edge_explicit_tolerance,
@@ -28,27 +28,24 @@ use std::f64::consts::TAU;
 
 /// The document with a parameter curve for each coedge on an `admitted`
 /// support that Type 144, a Type 143 whose loops already carry parameter
-/// curves, or a rational restatement of the support requires, and the
-/// parameter values that the restated domain of each revolved support must
-/// include besides those curves. On a plane each computed curve is the
-/// image of the edge curve under the plane's inverse frame. On a cylinder,
-/// cone, sphere or torus face whose coedges carry none, each computed curve
-/// is the parameter line of an edge line or circle that lies on one
-/// parameter line of the support, followed, where the next coedge starts at
-/// another parameter of the same pole or apex, by the parameter line along
-/// that pole. Each is exact.
+/// curves, or a rational restatement of the support requires. On a plane
+/// each computed curve is the image of the edge curve under the plane's
+/// inverse frame. On a cylinder, cone, sphere or torus face whose coedges
+/// carry none, each computed curve is the parameter line of an edge line or
+/// circle that lies on one parameter line of the support, followed, where
+/// the next coedge starts at another parameter of the same pole or apex, by
+/// the parameter line along that pole. Each is exact.
 pub(super) fn state_pcurves(
     ir: &CadIr,
     admitted: impl Fn(&str) -> bool,
-) -> Result<(Cow<'_, CadIr>, DomainHints), CodecError> {
-    let mut hints = DomainHints::new();
+) -> Result<Cow<'_, CadIr>, CodecError> {
     if ir
         .geometry
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty())
     {
-        return Ok((Cow::Borrowed(ir), hints));
+        return Ok(Cow::Borrowed(ir));
     }
     let index = TopologyIndex::new(ir);
     let mut computed = Vec::new();
@@ -87,13 +84,10 @@ pub(super) fn state_pcurves(
                 if let Some(form) = Revolved::of(geometry).filter(|_| unstated) {
                     if let Some(segments) = revolved_loop_segments(&index, surface, &form, &loops)?
                     {
-                        if let Some((pcurves, [u, v])) =
+                        if let Some(pcurves) =
                             revolved_pcurves(&index, surface, &form, face.sense, segments)?
                         {
                             computed.extend(pcurves);
-                            let entry = hints.entry(surface.id.as_str().to_owned()).or_default();
-                            entry[0].extend(u);
-                            entry[1].extend(v);
                         }
                     }
                 }
@@ -114,7 +108,7 @@ pub(super) fn state_pcurves(
         }
     }
     if computed.is_empty() {
-        return Ok((Cow::Borrowed(ir), hints));
+        return Ok(Cow::Borrowed(ir));
     }
     let mut stated = ir.clone();
     for (coedge_id, pcurves) in computed {
@@ -135,7 +129,7 @@ pub(super) fn state_pcurves(
             stated.geometry.pcurves.extend(pcurves);
         }
     }
-    Ok((Cow::Owned(stated), hints))
+    Ok(Cow::Owned(stated))
 }
 
 /// The parameter curve of `coedge` on `plane`, in the coedge's traversal.
@@ -522,87 +516,10 @@ fn closed_chain<'ir>(
     Ok(Some(LoopChain { pieces, winding }))
 }
 
-/// The face side of each loop that winds once around the support, and the
-/// parameter values the support's domain must reach past the loops: a pole
-/// or apex that bounds the face, or one period past a loop on a periodic
-/// parameter. Moves the upper loop on a periodic parameter by whole periods
-/// to lie above the lower one. None where the loops do not bound one face
-/// on the support.
-fn face_sides(
-    form: &Revolved,
-    sense: Sense,
-    chains: &mut [LoopChain<'_>],
-) -> Option<[Vec<f64>; 2]> {
-    let orientation = form.orientation() * if sense == Sense::Reversed { -1.0 } else { 1.0 };
-    let mut sides: [(Vec<usize>, Vec<usize>); 2] = Default::default();
-    for (position, chain) in chains.iter().enumerate() {
-        let (axis, side) = match chain.winding {
-            [0, 0] => continue,
-            [turn, 0] => (1, f64::from(turn) * orientation),
-            [0, turn] => (0, -f64::from(turn) * orientation),
-            _ => return None,
-        };
-        let (lowers, uppers) = &mut sides[axis];
-        if side > 0.0 {
-            lowers.push(position);
-        } else {
-            uppers.push(position);
-        }
-    }
-    let mut hints: [Vec<f64>; 2] = Default::default();
-    for (axis, (lowers, uppers)) in sides.into_iter().enumerate() {
-        let periodic = axis == 0 || form.v_periodic();
-        let poles = if periodic { Vec::new() } else { form.poles() };
-        match (lowers.as_slice(), uppers.as_slice()) {
-            ([], []) => {}
-            ([lower], [upper]) => {
-                let [_, low] = chains[*lower].extent(axis);
-                let [high, _] = chains[*upper].extent(axis);
-                if periodic {
-                    let gap = high - low;
-                    let moved = gap - TAU * ((gap / TAU).ceil() - 1.0);
-                    let shift = moved - gap;
-                    chains[*upper].shift(if axis == 0 {
-                        Point2::new(shift, 0.0)
-                    } else {
-                        Point2::new(0.0, shift)
-                    });
-                } else if high <= low {
-                    return None;
-                }
-            }
-            ([lower], []) => {
-                let [_, low] = chains[*lower].extent(axis);
-                hints[axis].push(if periodic {
-                    low + TAU
-                } else {
-                    poles
-                        .into_iter()
-                        .filter(|pole| *pole > low)
-                        .min_by(f64::total_cmp)?
-                });
-            }
-            ([], [upper]) => {
-                let [high, _] = chains[*upper].extent(axis);
-                hints[axis].push(if periodic {
-                    high - TAU
-                } else {
-                    poles
-                        .into_iter()
-                        .filter(|pole| *pole < high)
-                        .max_by(f64::total_cmp)?
-                });
-            }
-            _ => return None,
-        }
-    }
-    Some(hints)
-}
-
 /// The parameter curves of each coedge in `loops` on the revolved support,
 /// moved by whole periods so that each loop closes and the loops bound the
-/// face, and the domain values [`face_sides`] adds. None where a loop does
-/// not close in the parameter plane or the loops do not bound the face.
+/// face. None where a loop does not close in the parameter plane or the
+/// loops do not bound the face.
 fn revolved_pcurves(
     index: &TopologyIndex<'_>,
     surface: &Surface,
@@ -638,9 +555,19 @@ fn revolved_pcurves(
             0.0,
         ));
     }
-    let Some(hints) = face_sides(form, sense, &mut chains) else {
+    let spans = chains
+        .iter()
+        .map(|chain| LoopSpan {
+            winding: chain.winding,
+            extent: [chain.extent(0), chain.extent(1)],
+        })
+        .collect::<Vec<_>>();
+    let Some((shifts, _)) = form.face_sides(sense, &spans) else {
         return Ok(None);
     };
+    for (chain, shift) in chains.iter_mut().zip(shifts) {
+        chain.shift(shift);
+    }
     let mut computed = Vec::new();
     for piece in chains.into_iter().flat_map(|chain| chain.pieces) {
         let Some(pcurves) = piece_pcurves(index, &piece) else {
@@ -648,11 +575,11 @@ fn revolved_pcurves(
         };
         computed.push((piece.segment.coedge.id.clone(), pcurves));
     }
-    Ok(Some((computed, hints)))
+    Ok(Some(computed))
 }
 
-/// Computed parameter curves by coedge, and the domain values by parameter.
-type ComputedPcurves = (Vec<(CoedgeId, Vec<Pcurve>)>, [Vec<f64>; 2]);
+/// Computed parameter curves by coedge.
+type ComputedPcurves = Vec<(CoedgeId, Vec<Pcurve>)>;
 
 /// The parameter curve of `piece` in the coedge's traversal, followed by its
 /// pole line.
