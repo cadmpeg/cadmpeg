@@ -184,8 +184,8 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
             assert_eq!(decoded.source_fidelity()
                 .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
                 .and_then(|record| record.data()), Some(document.as_slice()), "{label}");
-            let _: cadmpeg_ir::CadIr = serde_json::from_slice(
-                &serde_json::to_vec(decoded.ir()).unwrap()
+            let _: cadmpeg_ir::CadIr = cadmpeg_core::serde_erase::json::from_slice(
+                &cadmpeg_core::serde_erase::json::to_vec(decoded.ir()).unwrap()
             ).expect("complete CADIR admission");
         }
     }
@@ -249,14 +249,20 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
     let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
     rows[0][3] = 1.0;
     table.references[0].transform = Some(rows.try_into().unwrap());
-    let wire = serde_json::to_value(&table.references[0]).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&table.references[0]).unwrap();
     assert_eq!(
-        serde_json::from_value::<crate::records::xref::XrefReference>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<crate::records::xref::XrefReference>(
+            wire.clone()
+        )
+        .unwrap(),
         table.references[0]
     );
     let mut invalid = wire;
     invalid["transform"][3][0] = serde_json::json!(1.0);
-    assert!(serde_json::from_value::<crate::records::xref::XrefReference>(invalid).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<crate::records::xref::XrefReference>(invalid)
+            .is_err()
+    );
     let reflected = serde_json::json!({
         "id": "f3d:xref:reference#0",
         "ordinal": 0,
@@ -272,7 +278,12 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
             [0.0, 0.0, 0.0, 1.0]
         ]
     });
-    assert!(serde_json::from_value::<crate::records::xref::XrefReference>(reflected).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<crate::records::xref::XrefReference>(
+            reflected
+        )
+        .is_err()
+    );
     rows[0][3] = f64::MAX;
     table.references[0].transform = Some(rows.try_into().unwrap());
     assert!(matches!(

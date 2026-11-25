@@ -29,8 +29,10 @@ fn radius_construction_moves_typed_storage_and_shares_serde_admission() {
     let law = VariableRadii::new(raw()).expect("valid");
     ctx.finish_session().expect("no scratch or duplicate scan");
     assert_eq!(
-        serde_json::from_str::<VariableRadii>(&serde_json::to_string(&law).expect("wire"))
-            .expect("context-free serde"),
+        serde_json::from_str::<VariableRadii>(
+            &cadmpeg_core::serde_erase::json::to_string(&law).expect("wire")
+        )
+        .expect("context-free serde"),
         law
     );
     let arena = DecodeArena::new();

@@ -2,7 +2,14 @@
 import unittest
 
 from scripts.ci_cargo import command, low_ram_rustc_wrapper, low_ram_test_command
-from scripts.ci_rustc_lock import EXCLUSIVE_CRATES, MEDIUM_HEAVY_CRATES, crate_name
+from scripts.ci_rustc_lock import (
+    EXCLUSIVE_CRATES,
+    EXCLUSIVE_TEST_CRATES,
+    MEDIUM_LIB_CRATES,
+    MEDIUM_TEST_CRATES,
+    classify,
+    crate_name,
+)
 
 
 class CommandTests(unittest.TestCase):
@@ -41,10 +48,17 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(crate_name(["--crate-name", "cadmpeg_ir", "src/lib.rs"]), "cadmpeg_ir")
         self.assertEqual(crate_name(["--crate-name=cadmpeg_codec_f3d"]), "cadmpeg_codec_f3d")
         self.assertIsNone(crate_name(["-vV"]))
-        self.assertIn("cadmpeg_ir", EXCLUSIVE_CRATES)
-        self.assertIn("cadmpeg_codec_f3d", EXCLUSIVE_CRATES)
-        self.assertIn("cadmpeg_codec_sldprt", EXCLUSIVE_CRATES)
-        self.assertTrue(EXCLUSIVE_CRATES.isdisjoint(MEDIUM_HEAVY_CRATES))
+        self.assertEqual(classify(["--crate-name", "cadmpeg_ir", "src/lib.rs"]), "exclusive")
+        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_f3d", "--test"]), "exclusive")
+        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_sldprt", "src/lib.rs"]), "medium")
+        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_sldprt", "--test"]), "exclusive")
+        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_catia", "src/lib.rs"]), "medium")
+        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_catia", "--test"]), "exclusive")
+        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_inventor", "--test"]), "medium")
+        self.assertEqual(classify(["--crate-name", "cadmpeg_core", "src/lib.rs"]), "light")
+        self.assertTrue(EXCLUSIVE_CRATES.isdisjoint(EXCLUSIVE_TEST_CRATES))
+        self.assertTrue(EXCLUSIVE_CRATES.isdisjoint(MEDIUM_LIB_CRATES))
+        self.assertTrue(EXCLUSIVE_TEST_CRATES.isdisjoint(MEDIUM_TEST_CRATES))
 
 
 if __name__ == "__main__":

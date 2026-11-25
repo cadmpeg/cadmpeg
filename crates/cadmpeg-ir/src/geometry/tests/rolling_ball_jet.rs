@@ -36,7 +36,7 @@ fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
         )
         .unwrap(),
     );
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
     assert_eq!(wire["stations"][0]["knot"], json!(2.0));
     assert_eq!(wire["stations"][1]["multiplicity"], json!(3));
     assert_eq!(
@@ -49,7 +49,8 @@ fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
     assert!(wire.get("multiplicities").is_none());
     assert!(wire.get("sites").is_none());
     assert_eq!(
-        serde_json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire.clone())
+            .unwrap(),
         definition
     );
     for column in ["knot", "multiplicity", "site"] {
@@ -58,7 +59,9 @@ fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
             .as_object_mut()
             .unwrap()
             .remove(column);
-        let error = serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(malformed)
+                .unwrap_err();
         assert!(error.to_string().contains(column), "{error}");
     }
 }
@@ -111,11 +114,14 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
         RollingBallJetStations::try_new(5, valid()).unwrap(),
     );
-    let wire = serde_json::to_value(definition).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(definition).unwrap();
     for (field, value) in [("degree", json!(0)), ("degree", json!(u32::MAX))] {
         let mut malformed = wire.clone();
         malformed[field] = value;
-        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(malformed)
+                .is_err()
+        );
     }
     for (path, value) in [
         (["stations", "0", "knot"], json!(8.0)),
@@ -124,11 +130,17 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
     ] {
         let mut malformed = wire.clone();
         malformed[path[0]][path[1].parse::<usize>().unwrap()][path[2]] = value;
-        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(malformed)
+                .is_err()
+        );
     }
     let mut malformed = wire;
     malformed["stations"][0]["site"]["first_limit"]["x"] = json!(2.0);
-    assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(malformed)
+            .is_err()
+    );
 }
 
 #[test]
@@ -189,9 +201,12 @@ fn rolling_ball_typed_constructor_moves_owned_rows_without_allocation() {
     assert_eq!(jet.stations().as_ptr(), pointer);
     assert_eq!(jet.stations(), expected);
     ctx.finish_session().unwrap();
-    let wire = serde_json::to_value(&jet).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&jet).unwrap();
     assert_eq!(
-        serde_json::from_value::<crate::geometry::blends::RollingBallJetStations>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<
+            crate::geometry::blends::RollingBallJetStations,
+        >(wire)
+        .unwrap(),
         jet
     );
 }

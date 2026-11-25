@@ -20,7 +20,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
             )),
             BTreeMap::new(),
         ),
-        None => serde_json::from_value(serde_json::json!({
+        None => cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": format},
             "attributes": {},
         }))
@@ -129,7 +129,7 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
         panic!("expected an unsupported target");
     };
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
+        cadmpeg_core::serde_erase::json::to_value(&refusal).expect("serialize refusal")["refusal"],
         serde_json::json!({"kind": "unknown_explicit", "requested": "test:missing"})
     );
     assert_eq!(

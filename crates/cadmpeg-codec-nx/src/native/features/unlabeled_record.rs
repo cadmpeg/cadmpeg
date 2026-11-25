@@ -165,10 +165,14 @@ mod tests {
     #[test]
     fn unlabeled_record_borrowed_wire_preserves_bytes() {
         let record: FeatureUnlabeledOperationRecord = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&UnlabeledRecordWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            WIRE.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&UnlabeledRecordWire::from(record.clone()))
+                .unwrap()
         );
     }
 
@@ -185,7 +189,10 @@ mod tests {
     #[test]
     fn unlabeled_record_wire_retains_header_widths_and_payload_extent() {
         let record: FeatureUnlabeledOperationRecord = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), WIRE);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
+            WIRE
+        );
         assert_eq!(
             record
                 .header
@@ -224,7 +231,10 @@ mod tests {
             let mut invalid: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             invalid[field] = value;
             assert!(
-                serde_json::from_value::<FeatureUnlabeledOperationRecord>(invalid).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<FeatureUnlabeledOperationRecord>(
+                    invalid
+                )
+                .is_err(),
                 "{field}"
             );
         }
@@ -238,11 +248,15 @@ mod tests {
         wire["object_index_source_offsets"] =
             serde_json::json!([start + 15, start + 16, start + 17, start + 19]);
         wire["payload_source_offset"] = serde_json::json!(start + 22);
-        let record: FeatureUnlabeledOperationRecord = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record: FeatureUnlabeledOperationRecord =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            wire
+        );
         wire["payload_byte_len"] = serde_json::json!(4);
         assert!(
-            serde_json::from_value::<FeatureUnlabeledOperationRecord>(wire)
+            cadmpeg_core::serde_erase::json::from_value::<FeatureUnlabeledOperationRecord>(wire)
                 .unwrap_err()
                 .to_string()
                 .contains("payload_byte_len")

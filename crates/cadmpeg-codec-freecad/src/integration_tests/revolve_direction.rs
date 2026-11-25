@@ -100,7 +100,7 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
             },
         )
         .expect("stored shape measurement");
-        let report = serde_json::to_value(measured).expect("measurement JSON");
+        let report = cadmpeg_core::serde_erase::json::to_value(measured).expect("measurement JSON");
         let (start, end) = if symmetric {
             (-first / 2.0, first / 2.0)
         } else {

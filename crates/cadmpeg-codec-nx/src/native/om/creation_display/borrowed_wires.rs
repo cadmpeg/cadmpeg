@@ -128,8 +128,8 @@ mod tests {
                 r#"{{"id":"nx:rm-creation-display:relation#0","ordinal":0{first},"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{encoding},"source_entry":"entry","source_offset":5}}"#
             );
             let record: RmCreationDisplayDataRelation = serde_json::from_str(&json).unwrap();
-            let borrowed = serde_json::to_vec(&record).unwrap();
-            let owned = serde_json::to_vec(
+            let borrowed = cadmpeg_core::serde_erase::json::to_vec(&record).unwrap();
+            let owned = cadmpeg_core::serde_erase::json::to_vec(
                 &super::super::wire::RmCreationDisplayDataRelationWire::from(record.clone()),
             )
             .unwrap();

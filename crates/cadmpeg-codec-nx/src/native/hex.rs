@@ -103,11 +103,11 @@ mod tests {
         let expected = "0123456789abcdef0123456789abcdef";
         let identity = ToggleId::try_from(expected.to_owned())?;
         assert_eq!(
-            serde_json::to_value(&identity)?,
+            cadmpeg_core::serde_erase::json::to_value(&identity)?,
             serde_json::json!(expected)
         );
         assert_eq!(
-            serde_json::from_value::<ToggleId>(serde_json::json!(expected))?,
+            cadmpeg_core::serde_erase::json::from_value::<ToggleId>(serde_json::json!(expected))?,
             identity
         );
         for invalid in [
@@ -118,7 +118,10 @@ mod tests {
             "é".repeat(16),
         ] {
             assert!(ToggleId::try_from(invalid.clone()).is_err());
-            assert!(serde_json::from_value::<ToggleId>(serde_json::json!(invalid)).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ToggleId>(serde_json::json!(invalid))
+                    .is_err()
+            );
         }
         Ok(())
     }

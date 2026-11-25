@@ -85,7 +85,7 @@ pub(super) fn id(kind: &str, native: &str) -> String {
 
 fn push<T: serde::de::DeserializeOwned>(arena: &mut Vec<T>, row: Value) -> Mapping<()> {
     arena.push(
-        serde_json::from_value(row)
+        cadmpeg_core::serde_erase::json::from_value(row)
             .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?,
     );
     Ok(())
@@ -194,7 +194,7 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
     {
         return;
     }
-    let Ok(text) = serde_json::to_string(&model.ir) else {
+    let Ok(text) = cadmpeg_core::serde_erase::json::to_string(&model.ir) else {
         return;
     };
     let named = |id: &str| text.matches(&format!("\"{id}\"")).count();
@@ -687,7 +687,7 @@ fn studio(
                 &unresolved_variables,
             )
             .and_then(|definition| {
-                serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
+                cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;

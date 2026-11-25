@@ -98,8 +98,13 @@ fn every_unselected_deltas_family_preserves_its_paired_primary_model() {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value((&paired.ir().geometry, &paired.ir().model)).unwrap(),
-            serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+            cadmpeg_core::serde_erase::json::to_value((&paired.ir().geometry, &paired.ir().model))
+                .unwrap(),
+            cadmpeg_core::serde_erase::json::to_value((
+                &baseline.ir().geometry,
+                &baseline.ir().model
+            ))
+            .unwrap()
         );
         assert!(
             cadmpeg_ir::validate::validate_neutral(paired.ir(), Vec::new())

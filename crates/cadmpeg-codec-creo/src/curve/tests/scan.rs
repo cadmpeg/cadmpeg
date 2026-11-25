@@ -276,7 +276,8 @@ fn absent_pcurve_faces_remain_zero_in_native_records() {
         let records = &decoded.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
         assert_eq!(records.len(), 1);
         assert_eq!(
-            serde_json::to_string(&records[0].fields().unwrap()["faces"]).unwrap(),
+            cadmpeg_core::serde_erase::json::to_string(&records[0].fields().unwrap()["faces"])
+                .unwrap(),
             "[0,11]"
         );
     }

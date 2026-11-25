@@ -144,20 +144,22 @@ fn align_motion_validator_checks_form_links_leading_fields_and_omitted_identity(
         assert!(!valid(&changed), "field {field}");
     }
     let envelope = scope.align_envelope().unwrap();
-    let scope_wire = serde_json::to_value(&scope).unwrap();
+    let scope_wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
     assert_eq!(
-        serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
-            scope_wire.clone()
-        )
+        cadmpeg_core::serde_erase::json::from_value::<
+            crate::records::feature::scope::DesignParameterScope,
+        >(scope_wire.clone())
         .unwrap(),
         scope
     );
     assert!(scope_wire.get("move_operation").is_none());
-    let wire = serde_json::to_value(envelope).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(envelope).unwrap();
     assert_eq!(wire["motion"]["form"], 4);
     assert_eq!(
-        serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(wire.clone())
-            .unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<
+            crate::records::feature::align::DesignAlignEnvelope,
+        >(wire.clone())
+        .unwrap(),
         *envelope
     );
     for field in ["motion", "leading", "scalar"] {
@@ -168,17 +170,19 @@ fn align_motion_validator_checks_form_links_leading_fields_and_omitted_identity(
             _ => changed["motion"]["prefix"]["leading"]["scalar"] = serde_json::Value::Null,
         }
         assert!(
-            serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(changed)
-                .is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<
+                crate::records::feature::align::DesignAlignEnvelope,
+            >(changed)
+            .is_err(),
             "field {field}"
         );
     }
     let mut legacy = wire;
     legacy.as_object_mut().unwrap().remove("motion");
-    assert!(
-        serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(legacy)
-            .unwrap()
-            .motion
-            .is_none()
-    );
+    assert!(cadmpeg_core::serde_erase::json::from_value::<
+        crate::records::feature::align::DesignAlignEnvelope,
+    >(legacy)
+    .unwrap()
+    .motion
+    .is_none());
 }

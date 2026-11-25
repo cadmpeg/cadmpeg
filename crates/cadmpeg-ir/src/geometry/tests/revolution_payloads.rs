@@ -42,13 +42,18 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
             let mut intervals = [[0.0, 1.0]; 3];
             intervals[slot] = range;
             assert!(revolution(intervals).is_err());
-            let mut wire = serde_json::to_value(revolution([[0.0, 1.0]; 3]).unwrap()).unwrap();
+            let mut wire =
+                cadmpeg_core::serde_erase::json::to_value(revolution([[0.0, 1.0]; 3]).unwrap())
+                    .unwrap();
             wire[[
                 "angular_interval",
                 "angular_parameter_interval",
                 "parameter_interval",
             ][slot]] = serde_json::json!(range);
-            assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire)
+                    .is_err()
+            );
         }
     }
     let definition = ProceduralSurfaceDefinition::Revolution(
@@ -64,7 +69,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
         .unwrap(),
     );
     let surface = ProceduralSurface::new(id(), definition, None);
-    let wire = serde_json::to_value(&surface).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&surface).unwrap();
     assert_eq!(
         wire["definition"]["angular_interval"],
         serde_json::json!([-1.0, 0.0])
@@ -74,7 +79,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
         .is_none());
     assert!(wire["definition"].get("parameter_interval").is_none());
     assert_eq!(
-        serde_json::from_value::<ProceduralSurface>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(wire).unwrap(),
         surface
     );
 }
@@ -87,14 +92,17 @@ fn reject_on_serde_routes<T: serde::Serialize>(
     value: T,
 ) {
     let surface = ProceduralSurface::new(id(), valid.clone(), None);
-    let mut definition_wire = serde_json::to_value(valid).unwrap();
-    definition_wire[field] = serde_json::to_value(value).unwrap();
+    let mut definition_wire = cadmpeg_core::serde_erase::json::to_value(valid).unwrap();
+    definition_wire[field] = cadmpeg_core::serde_erase::json::to_value(value).unwrap();
     assert!(
-        serde_json::from_value::<ProceduralSurfaceDefinition>(definition_wire.clone()).is_err()
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(
+            definition_wire.clone()
+        )
+        .is_err()
     );
-    let mut wire = serde_json::to_value(surface).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(surface).unwrap();
     wire["definition"] = definition_wire;
-    assert!(serde_json::from_value::<ProceduralSurface>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(wire).is_err());
 }
 
 #[test]

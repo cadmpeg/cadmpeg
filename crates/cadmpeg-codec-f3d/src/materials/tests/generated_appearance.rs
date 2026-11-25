@@ -78,8 +78,8 @@ fn decode_transfers_generated_protein_appearance() {
         12
     );
     assert_eq!(
-        serde_json::to_value(&f3d_native(result.ir()).act_component_links[0]).unwrap()
-            ["tracked_entity_record"],
+        cadmpeg_core::serde_erase::json::to_value(&f3d_native(result.ir()).act_component_links[0])
+            .unwrap()["tracked_entity_record"],
         3
     );
     assert_eq!(

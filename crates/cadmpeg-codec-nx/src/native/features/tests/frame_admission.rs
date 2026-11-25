@@ -158,7 +158,8 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
                     "terminal_reference": "terminal", "terminal_data_block": id,
                 });
                 let inputs: FeatureSketchConstructionInputs =
-                    serde_json::from_value(inputs).expect("sketch name inputs");
+                    cadmpeg_core::serde_erase::json::from_value(inputs)
+                        .expect("sketch name inputs");
                 let names =
                     feature_sketch_payload_names(&container, std::slice::from_ref(&inputs))?;
                 FramePayload::SketchInputs {

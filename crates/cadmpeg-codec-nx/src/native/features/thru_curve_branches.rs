@@ -297,7 +297,10 @@ mod tests {
     #[test]
     fn group_wire_derives_both_lane_forms_and_mixed_token_widths() {
         let group: FeatureThruCurveConstructionBranchGroup = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_string(&group).unwrap(), WIRE);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
+            WIRE
+        );
         assert_eq!(group.frame.branch_offsets().collect::<Vec<_>>(), [101, 125]);
     }
 
@@ -366,8 +369,10 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             *invalid.pointer_mut(path).unwrap() = replacement;
-            let error = serde_json::from_value::<FeatureThruCurveConstructionBranchGroup>(invalid)
-                .unwrap_err();
+            let error = cadmpeg_core::serde_erase::json::from_value::<
+                FeatureThruCurveConstructionBranchGroup,
+            >(invalid)
+            .unwrap_err();
             assert!(error.to_string().contains(field), "{path}: {error}");
         }
     }

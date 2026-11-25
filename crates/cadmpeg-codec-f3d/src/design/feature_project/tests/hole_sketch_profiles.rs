@@ -85,7 +85,7 @@ fn hole_scope(reference_type: u32, locations: Vec<DesignHoleLocation>) -> Design
         32,
     );
     let mut construction: crate::records::feature::hole::DesignHoleConstruction =
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "point_record_index": 1, "point_record_byte_offset": 2,
             "position": [0.0, 0.0, 0.0], "position_offset": 3,
             "direction": [0.0, 0.0, 1.0], "direction_offset": 4,

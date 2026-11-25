@@ -35,7 +35,8 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
+            let wire =
+                cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -67,7 +68,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
+        cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal")["refusal"],
         serde_json::json!({
             "kind": "default_unavailable",
             "target": "fcstd:schema-4",
@@ -629,7 +630,7 @@ fn inherit_writes_a_source_that_records_no_dialect_as_its_declared_dialect() {
         .clone();
     let meta = ir.source.take().expect("the decode records a source");
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": meta.format()},
             "attributes": meta.attributes,
         }))

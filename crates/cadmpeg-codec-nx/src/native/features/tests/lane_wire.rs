@@ -121,7 +121,9 @@ fn boolean_operation_rejects_inconsistent_reference_tokens() {
     ] {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
-        let error = serde_json::from_value::<FeatureBooleanOperation>(malformed).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureBooleanOperation>(malformed)
+                .unwrap_err();
         assert!(error.to_string().contains(error_field));
     }
 }
@@ -139,7 +141,9 @@ fn sketch_scalar_lane_rejects_inconsistent_or_zero_atoms() {
         invalid["values"][0] = serde_json::json!(value);
         invalid["raw_values"][0] =
             serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
-        let error = serde_json::from_value::<FeatureSketchPayloadScalarLane>(invalid).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureSketchPayloadScalarLane>(invalid)
+                .unwrap_err();
         assert!(error.to_string().contains("raw_values"));
     }
 }
@@ -167,10 +171,18 @@ fn binary64_lanes_reject_mismatched_values_and_unknown_markers() {
     ] {
         let mut invalid: serde_json::Value = serde_json::from_str(pattern).unwrap();
         invalid[key] = value.clone();
-        assert!(serde_json::from_value::<FeaturePatternConstructionBinary64Lane>(invalid).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
+            FeaturePatternConstructionBinary64Lane,
+        >(invalid)
+        .is_err());
         let mut invalid: serde_json::Value = serde_json::from_str(&draft).unwrap();
         invalid[key] = value;
-        assert!(serde_json::from_value::<FeatureDraftConstructionBinary64Lane>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureDraftConstructionBinary64Lane>(
+                invalid
+            )
+            .is_err()
+        );
     }
 }
 
@@ -235,7 +247,9 @@ fn sketch_scalar_run_derives_payload_positions_across_split_source_blocks() {
     ] {
         let mut invalid = original.clone();
         invalid[field] = value;
-        let error = serde_json::from_value::<FeatureSketchPayloadScalarLane>(invalid).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureSketchPayloadScalarLane>(invalid)
+                .unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
 }
@@ -273,7 +287,7 @@ fn draft_and_pattern_runs_reject_payload_gaps_and_empty_atoms() {
         empty[field] = serde_json::json!([]);
     }
     assert!(
-        serde_json::from_value::<FeatureDraftConstructionBinary32Lane>(empty)
+        cadmpeg_core::serde_erase::json::from_value::<FeatureDraftConstructionBinary32Lane>(empty)
             .unwrap_err()
             .to_string()
             .contains("values")
@@ -314,7 +328,9 @@ fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
     ] {
         let mut invalid = original.clone();
         invalid[field] = value;
-        let error = serde_json::from_value::<FeatureExtrudePayload32Branch>(invalid).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureExtrudePayload32Branch>(invalid)
+                .unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
 }
@@ -323,7 +339,10 @@ fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
 fn datum_plane_descriptor_derives_suffix_and_preserves_native_wire() {
     let json = r#"{"id":"descriptor","operation_label":"operation","datum_plane_header":"header","ordinal":0,"data_block":"block","identity":"012345678901234567890123456789","suffix":"3f4101ff020161626364","schema_index":1,"label":"abcd","source_offset":10}"#;
     let descriptor: FeatureDatumPlaneDescriptor = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&descriptor).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&descriptor).unwrap(),
+        json
+    );
     for (field, value) in [
         ("schema_index", serde_json::json!(2)),
         ("label", serde_json::json!("other")),
@@ -332,24 +351,31 @@ fn datum_plane_descriptor_derives_suffix_and_preserves_native_wire() {
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire[field] = value;
-        let error = serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureDatumPlaneDescriptor>(wire)
+                .unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["identity"] = serde_json::json!("012345678901234567890123456789?");
     let suffix = wire["suffix"].as_str().unwrap();
     wire["suffix"] = serde_json::json!(&suffix[2..]);
-    assert!(serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire)
-        .unwrap_err()
-        .to_string()
-        .contains("identity"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FeatureDatumPlaneDescriptor>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("identity")
+    );
 }
 
 #[test]
 fn datum_csys_descriptor_preserves_wire_and_rejects_invalid_identity_or_position() {
     let json = r#"{"id":"descriptor","operation_label":"operation","construction":"construction","reference_ordinal":7,"data_block":"block","prefix":"0201","identity":"012345678901234567890123456789","suffix":"3f41","source_offset":10,"identity_source_offset":12}"#;
     let descriptor: FeatureDatumCsysDescriptor = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&descriptor).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&descriptor).unwrap(),
+        json
+    );
     for (field, value) in [
         ("reference_ordinal", serde_json::json!(4)),
         ("identity", serde_json::json!("abcd")),
@@ -359,7 +385,8 @@ fn datum_csys_descriptor_preserves_wire_and_rejects_invalid_identity_or_position
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire[field] = value;
-        let error = serde_json::from_value::<FeatureDatumCsysDescriptor>(wire).unwrap_err();
+        let error = cadmpeg_core::serde_erase::json::from_value::<FeatureDatumCsysDescriptor>(wire)
+            .unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
 }
@@ -370,10 +397,15 @@ fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
     let payload = r#"{"id":"lane","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":17,"encoding":"payload_object_index","object_indices":[1,256],"raw_object_indices":["f001","f10100"],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#;
     for json in [compact, payload] {
         let lane: FeatureOperationBodyReferenceLane = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
+            json
+        );
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["object_indices"][0] = serde_json::json!(2);
-        let error = serde_json::from_value::<FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureOperationBodyReferenceLane>(wire)
+                .unwrap_err();
         assert!(error.to_string().contains("object_indices"), "{error}");
     }
     for (json, raw) in [
@@ -390,7 +422,9 @@ fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["raw_object_indices"][0] =
             serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
-        let error = serde_json::from_value::<FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureOperationBodyReferenceLane>(wire)
+                .unwrap_err();
         assert!(error.to_string().contains("raw_object_indices"), "{error}");
     }
 }
@@ -403,7 +437,9 @@ fn operation_body_reference_lane_rejects_unknown_branch() {
         "object_indices": [1], "raw_object_indices": ["01"], "data_blocks": [null],
         "source_offsets": [100]
     });
-    let error = serde_json::from_value::<FeatureOperationBodyReferenceLane>(json).unwrap_err();
+    let error =
+        cadmpeg_core::serde_erase::json::from_value::<FeatureOperationBodyReferenceLane>(json)
+            .unwrap_err();
     assert!(error.to_string().contains("branch"));
 }
 

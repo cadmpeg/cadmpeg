@@ -63,7 +63,10 @@ mod tests {
                 .zip([(0, 7), (1, 11), (2, 15), (3, 19)])
         {
             let json = value.to_string();
-            assert_eq!(serde_json::to_string(&slot).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&slot).unwrap(),
+                json
+            );
             assert_eq!(serde_json::from_str::<ExtrefSlot>(&json).unwrap(), slot);
             assert_eq!(slot.offset(), offset);
         }

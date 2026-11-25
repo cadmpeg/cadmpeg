@@ -257,7 +257,8 @@ pub(super) fn emit_values(
         }
         println!(
             "{}",
-            serde_json::to_string_pretty(value).context("serializing a record")?
+            cadmpeg_core::serde_erase::json::to_string_pretty(value)
+                .context("serializing a record")?
         );
     }
     Ok(())
@@ -383,7 +384,7 @@ pub(super) fn field_cell(value: &serde_json::Value) -> String {
         serde_json::Value::Number(n) => n.to_string(),
         serde_json::Value::String(s) => s.replace('\t', "\\t").replace('\n', "\\n"),
         serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-            serde_json::to_string(value).unwrap_or_default()
+            cadmpeg_core::serde_erase::json::to_string(value).unwrap_or_default()
         }
     }
 }

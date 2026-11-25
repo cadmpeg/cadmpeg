@@ -53,7 +53,7 @@ fn a_face_report_serializes_members_in_contract_order() {
             ..Selection::default()
         },
     );
-    let text = serde_json::to_string(&report).expect("finite report");
+    let text = cadmpeg_core::serde_erase::json::to_string(&report).expect("finite report");
     assert_eq!(
         keys(&text),
         [
@@ -68,7 +68,7 @@ fn a_face_report_serializes_members_in_contract_order() {
     );
     let face = &report.faces()[0];
     assert_eq!(
-        keys(&serde_json::to_string(face).unwrap()),
+        keys(&cadmpeg_core::serde_erase::json::to_string(face).unwrap()),
         [
             "face",
             "placement",
@@ -84,7 +84,7 @@ fn a_face_report_serializes_members_in_contract_order() {
         ]
     );
     assert_eq!(
-        keys(&serde_json::to_string(face.measures().area()).unwrap()),
+        keys(&cadmpeg_core::serde_erase::json::to_string(face.measures().area()).unwrap()),
         [
             "status",
             "value",
@@ -102,7 +102,7 @@ fn a_face_report_serializes_members_in_contract_order() {
         },
     );
     assert_eq!(
-        keys(&serde_json::to_string(&surfaces.surfaces()[0]).unwrap()),
+        keys(&cadmpeg_core::serde_erase::json::to_string(&surfaces.surfaces()[0]).unwrap()),
         [
             "surface",
             "placement",
@@ -136,12 +136,13 @@ fn quantities_that_do_not_apply_are_absent() {
             ..Selection::default()
         },
     );
-    let value = serde_json::to_value(&faces).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(&faces).unwrap();
     let document = value["document"].as_object().unwrap();
     for member in ["area", "closed_volume", "bbox"] {
         assert!(!document.contains_key(member), "{member}");
     }
-    let bodies = serde_json::to_value(measure(&ir, &Selection::default())).unwrap();
+    let bodies =
+        cadmpeg_core::serde_erase::json::to_value(measure(&ir, &Selection::default())).unwrap();
     for member in ["area", "bbox"] {
         assert!(bodies["document"][member].is_object(), "{member}");
     }
@@ -173,7 +174,7 @@ fn quantities_that_do_not_apply_are_absent() {
             Some(cadmpeg_ir::transform::Transform::identity()),
         ));
     assembly.finalize();
-    let unplaced = serde_json::to_value(measure(
+    let unplaced = cadmpeg_core::serde_erase::json::to_value(measure(
         &assembly,
         &Selection {
             occurrence: Some(occurrence),
@@ -197,10 +198,10 @@ fn mass_properties_are_value_objects() {
         .second_moments()
         .as_ref()
         .expect("tensor");
-    let body = &serde_json::to_value(&report).unwrap()["bodies"][0];
+    let body = &cadmpeg_core::serde_erase::json::to_value(&report).unwrap()["bodies"][0];
     let tensor = &body["second_moments"];
     assert_eq!(
-        keys(&serde_json::to_string(typed).unwrap()),
+        keys(&cadmpeg_core::serde_erase::json::to_string(typed).unwrap()),
         [
             "status",
             "value",
