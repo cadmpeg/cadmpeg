@@ -321,9 +321,11 @@ impl SldprtCodec {
                 &source.ir,
                 &source.source_fidelity.annotations,
                 source_digests,
-                records,
-                &[],
-                &[],
+                writer::Retained {
+                    records,
+                    withheld: &[],
+                    shaped: &[],
+                },
                 &mut cache,
                 &mut bytes,
             )
@@ -346,9 +348,11 @@ impl SldprtCodec {
                     ir,
                     annotations,
                     digests,
-                    records,
-                    withheld,
-                    shaped,
+                    writer::Retained {
+                        records,
+                        withheld,
+                        shaped,
+                    },
                     &mut cache,
                     &mut bytes,
                 )?;

@@ -138,25 +138,39 @@ pub(crate) fn write_semantic_with_records(
         ir,
         annotations,
         digests,
-        retained_records,
-        withheld,
-        shaped,
+        Retained {
+            records: retained_records,
+            withheld,
+            shaped,
+        },
         &mut cache,
         writer,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The source records a semantic write keeps, the features that keep their
+/// stored definition records for the reasons they are paired with, and the
+/// edits whose configurations take the stale mark.
+#[derive(Clone, Copy)]
+pub(crate) struct Retained<'a, 's> {
+    pub(crate) records: &'a [SourceRecord<'s>],
+    pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
+    pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
+}
+
 pub(crate) fn write_semantic_with_records_cached(
     ir: &CadIr,
     annotations: &Annotations,
     digests: &CodecDigests,
-    retained_records: &[SourceRecord<'_>],
-    withheld: &[(cadmpeg_ir::features::FeatureId, String)],
-    shaped: &[crate::history::write::brep_agreement::ShapingEdit],
+    retained: Retained<'_, '_>,
     cache: &mut SemanticWriteCache,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let Retained {
+        records: retained_records,
+        withheld,
+        shaped,
+    } = retained;
     let source_baseline = &mut cache.source_baseline;
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
