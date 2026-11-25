@@ -589,30 +589,41 @@ fn sketch_bindings_abstain_without_eligible_source_declarations() {
 #[test]
 fn sketch_target_optional_keys_have_one_absence_spelling() {
     let target = serde_json::json!({"entity":"entity", "object":"object", "group":"group"});
-    let parsed: super::CatiaSketchMemberTarget = serde_json::from_value(target.clone()).unwrap();
+    let parsed: super::CatiaSketchMemberTarget =
+        cadmpeg_core::serde_erase::json::from_value(target.clone()).unwrap();
     assert!(parsed.child.is_none());
     let mut stated = target.clone();
     stated["child"] = serde_json::json!("child");
-    assert!(serde_json::from_value::<super::CatiaSketchMemberTarget>(stated.clone()).is_ok());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<super::CatiaSketchMemberTarget>(
+            stated.clone()
+        )
+        .is_ok()
+    );
     stated["child"] = serde_json::Value::Null;
     assert!(
-        serde_json::from_value::<super::CatiaSketchMemberTarget>(stated)
+        cadmpeg_core::serde_erase::json::from_value::<super::CatiaSketchMemberTarget>(stated)
             .unwrap_err()
             .to_string()
             .contains("child")
     );
     let mut member = serde_json::json!({"ordinal":0,"payload_offset":0,"entity_id":1});
     assert!(
-        serde_json::from_value::<super::CatiaSketchMember>(member.clone())
+        cadmpeg_core::serde_erase::json::from_value::<super::CatiaSketchMember>(member.clone())
             .unwrap()
             .target
             .is_none()
     );
     member["target"] = target;
-    assert!(serde_json::from_value::<super::CatiaSketchMember>(member.clone()).is_ok());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<super::CatiaSketchMember>(member.clone())
+            .is_ok()
+    );
     member["target"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<super::CatiaSketchMember>(member)
-        .unwrap_err()
-        .to_string()
-        .contains("target"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<super::CatiaSketchMember>(member)
+            .unwrap_err()
+            .to_string()
+            .contains("target")
+    );
 }

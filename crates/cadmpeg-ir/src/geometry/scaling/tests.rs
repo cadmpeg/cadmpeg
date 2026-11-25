@@ -326,8 +326,8 @@ fn an_inline_placement_scales_as_its_solved_spelling() {
         .expect("fixture scaling admission")
         .expect("a finite scaled placement");
     assert_eq!(
-        serde_json::to_value(&scaled_inline).unwrap(),
-        serde_json::to_value(&scaled_solved).unwrap()
+        cadmpeg_core::serde_erase::json::to_value(&scaled_inline).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&scaled_solved).unwrap()
     );
 
     let line = |x: f64| {

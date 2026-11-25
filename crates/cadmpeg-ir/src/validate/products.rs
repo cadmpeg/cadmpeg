@@ -584,13 +584,14 @@ mod tests {
             "test:model:product#placed".try_into().unwrap(),
             Some(Transform::identity()),
         ));
-        let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&ir.model.assembly_joints[0])
+            .expect("joint wire");
         wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
             serde_json::json!(occurrence.as_str());
         wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
             "path": "external.f3d"
         });
-        assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<AssemblyJoint>(wire).is_err());
     }
 
     #[test]

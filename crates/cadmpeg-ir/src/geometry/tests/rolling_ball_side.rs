@@ -13,11 +13,14 @@ fn empty_side_wire() -> Value {
 #[test]
 fn rolling_ball_side_keeps_flat_support_and_extension_fields() {
     let empty = empty_side_wire();
-    let side: RollingBallSide = serde_json::from_value(empty.clone()).unwrap();
+    let side: RollingBallSide = cadmpeg_core::serde_erase::json::from_value(empty.clone()).unwrap();
     assert!(side.surface.is_none());
     assert!(side.curve.is_none());
     assert!(side.extension.is_none());
-    assert_eq!(serde_json::to_value(side).unwrap(), empty);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(side).unwrap(),
+        empty
+    );
 
     let mut wire = empty_side_wire();
     wire["surface"] = json!({
@@ -29,7 +32,7 @@ fn rolling_ball_side_keeps_flat_support_and_extension_fields() {
         "parameter_range": [null, 6.0]
     });
     wire["extension"] = json!({"value": 7});
-    let side: RollingBallSide = serde_json::from_value(wire.clone()).unwrap();
+    let side: RollingBallSide = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(
         side.surface.as_ref().unwrap().parameter_ranges,
         [[Some(1.0), None], [None, Some(4.0)]]
@@ -39,7 +42,10 @@ fn rolling_ball_side_keeps_flat_support_and_extension_fields() {
         [None, Some(6.0)]
     );
     assert!(side.extension.as_ref().unwrap().pcurve.is_none());
-    assert_eq!(serde_json::to_value(side).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(side).unwrap(),
+        wire
+    );
 
     wire["extension"] = json!({
         "value": 7,
@@ -49,9 +55,12 @@ fn rolling_ball_side_keeps_flat_support_and_extension_fields() {
             "direction": {"u": 2.0, "v": 3.0}
         }
     });
-    let side: RollingBallSide = serde_json::from_value(wire.clone()).unwrap();
+    let side: RollingBallSide = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert!(side.extension.as_ref().unwrap().pcurve.is_some());
-    assert_eq!(serde_json::to_value(side).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(side).unwrap(),
+        wire
+    );
 }
 
 #[test]
@@ -70,7 +79,8 @@ fn rolling_ball_side_rejects_orphaned_wire_payloads() {
     ] {
         let mut wire = empty_side_wire();
         wire[field] = payload;
-        let error = serde_json::from_value::<RollingBallSide>(wire).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<RollingBallSide>(wire).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("unknown field"), "{error}");
         assert!(message.contains(field), "{error}");

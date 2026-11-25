@@ -83,7 +83,10 @@ mod tests {
             let position = FieldPosition::try_from(reference).unwrap();
             let wire = reference.to_string();
             assert_eq!(position.field_ordinal(), reference - 5);
-            assert_eq!(serde_json::to_string(&position).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&position).unwrap(),
+                wire
+            );
             assert_eq!(
                 serde_json::from_str::<FieldPosition>(&wire).unwrap(),
                 position

@@ -130,7 +130,7 @@ fn frame_findings(
 #[test]
 fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     let (scope, recipe, operand) = decoded(true);
-    let wire = serde_json::to_value(operand.clone()).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(operand.clone()).unwrap();
     assert_eq!(
         wire["registered_recipe_frame"],
         serde_json::json!({
@@ -138,14 +138,21 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
             "next_primary_index": 104
         })
     );
-    let restored: DesignFaceOperand = serde_json::from_value(wire.clone()).unwrap();
+    let restored: DesignFaceOperand =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(restored, operand);
-    assert_eq!(serde_json::to_value(restored.clone()).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(restored.clone()).unwrap(),
+        wire
+    );
     let rewritten = crate::test_support::with_decode_context(|ctx| {
         let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
         restored.clone().rewrite_identities(ctx, &mut map).unwrap()
     });
-    assert_eq!(serde_json::to_value(rewritten).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(rewritten).unwrap(),
+        wire
+    );
     assert_eq!(
         frame_findings(
             scope.clone(),
@@ -211,7 +218,8 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     );
     let mut forged_end = wire.clone();
     forged_end["registered_recipe_frame"]["next_primary_index"] = serde_json::Value::Null;
-    let forged_end: DesignFaceOperand = serde_json::from_value(forged_end).unwrap();
+    let forged_end: DesignFaceOperand =
+        cadmpeg_core::serde_erase::json::from_value(forged_end).unwrap();
     assert_eq!(
         frame_findings(
             scope.clone(),
@@ -223,7 +231,8 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     );
     let mut forged_later = wire.clone();
     forged_later["registered_recipe_frame"]["next_primary_index"] = 105.into();
-    let forged_later: DesignFaceOperand = serde_json::from_value(forged_later).unwrap();
+    let forged_later: DesignFaceOperand =
+        cadmpeg_core::serde_erase::json::from_value(forged_later).unwrap();
     assert_eq!(
         frame_findings(
             scope.clone(),
@@ -238,7 +247,7 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
         .as_object_mut()
         .unwrap()
         .remove("registered_recipe_frame");
-    let generic: DesignFaceOperand = serde_json::from_value(generic).unwrap();
+    let generic: DesignFaceOperand = cadmpeg_core::serde_erase::json::from_value(generic).unwrap();
     assert_eq!(
         frame_findings(
             scope,
@@ -257,17 +266,17 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     ] {
         let mut forged = wire.clone();
         forged["registered_recipe_frame"][field] = value.into();
-        assert!(serde_json::from_value::<DesignFaceOperand>(forged).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<DesignFaceOperand>(forged).is_err());
     }
     let mut forged = wire;
     forged["next_byte_offset"] = 88.into();
-    assert!(serde_json::from_value::<DesignFaceOperand>(forged).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignFaceOperand>(forged).is_err());
 }
 
 #[test]
 fn decoded_secondary_recipe_frame_can_end_at_stream_end() {
     let (scope, recipe, operand) = decoded(false);
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&operand).unwrap();
     assert_eq!(
         wire["registered_recipe_frame"]["next_primary_index"],
         serde_json::Value::Null

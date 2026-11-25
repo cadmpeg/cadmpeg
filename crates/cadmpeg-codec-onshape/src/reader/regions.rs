@@ -217,7 +217,7 @@ pub(super) fn profile(
                 .iter()
                 .find(|e| e.id().as_str() == entity_id)
                 .ok_or("a sketch-region boundary has no solved source curve")?;
-            let mut entity = serde_json::to_value(entity)
+            let mut entity = cadmpeg_core::serde_erase::json::to_value(entity)
                 .map_err(|_| "a sketch-region source curve is unreadable")?;
             if entity.get("construction").and_then(Value::as_bool) == Some(true) {
                 return Err("a sketch-region boundary selects construction geometry".into());
@@ -667,7 +667,7 @@ fn attach_tangencies(
         {
             continue;
         }
-        let wire = serde_json::to_value(constraint)
+        let wire = cadmpeg_core::serde_erase::json::to_value(constraint)
             .map_err(|_| "a stored tangent constraint is unreadable")?;
         let Some(definition) = wire.get("definition") else {
             continue;
@@ -1556,7 +1556,7 @@ fn source_loops(sketch: &str, model: &Model, budget: &mut Budget) -> Mapping<Loo
         if entity.sketch.as_str() != sketch || entity.construction {
             continue;
         }
-        let wire = serde_json::to_value(entity).map_err(|_| refused)?;
+        let wire = cadmpeg_core::serde_erase::json::to_value(entity).map_err(|_| refused)?;
         if wire.pointer("/geometry/kind").and_then(Value::as_str) == Some("point") {
             continue;
         }

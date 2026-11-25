@@ -150,7 +150,7 @@ impl Parser<'_> {
             if found.next().is_some() {
                 return Err("variable reassignment is not supported yet".into());
             }
-            let wire = serde_json::to_value(param).map_err(|_| REFUSED)?;
+            let wire = cadmpeg_core::serde_erase::json::to_value(param).map_err(|_| REFUSED)?;
             let value = wire.get("value").ok_or(REFUSED)?;
             let dim = match value.get("kind").and_then(Value::as_str) {
                 Some("length") => Dimension::Length,

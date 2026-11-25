@@ -33,7 +33,7 @@ fn empty_first_run_does_not_select_the_trailing_form() {
         assert!(value.first_references.is_empty());
         assert_eq!(value.second_references[0].target(), Some(u64::MAX));
         assert!(!value.second_references[0].is_null());
-        let encoded = serde_json::to_string(&value).expect("native JSON");
+        let encoded = cadmpeg_core::serde_erase::json::to_string(&value).expect("native JSON");
         let decoded: DesignBodyReferenceTail = serde_json::from_str(&encoded).expect("native read");
         assert_eq!(decoded, value);
     }

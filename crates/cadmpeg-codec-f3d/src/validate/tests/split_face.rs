@@ -20,7 +20,7 @@ fn document() -> cadmpeg_ir::CadIr {
         draft.feature_ordinal_offset = 1330;
         draft.paired_byte_offset = 1408;
         let DesignScopePayload::SplitFace(value) = &mut draft.payload else { panic!("SplitFace payload") };
-        *value = Some(serde_json::from_slice(br#"{"method_offset":1032,"control":{"family":0,"projection":1,"extension":0},"direction_reference":{"kind":"local","target":{"value":55,"offset":1022},"inline_type_guid":null},"carrier_frame":{"primary_offset":120,"secondary_offset":228,"end_offset":239,"version":1},"direction":{"value":[2.4,0.0,0.0],"offset":169},"input_count":{"value":1,"offset":213},"inputs":[{"value":{"kind":"local","target":{"value":88,"offset":218},"inline_type_guid":null},"offset":217}],"inputs_complete":true}"#).unwrap());
+        *value = Some(cadmpeg_core::serde_erase::json::from_slice(br#"{"method_offset":1032,"control":{"family":0,"projection":1,"extension":0},"direction_reference":{"kind":"local","target":{"value":55,"offset":1022},"inline_type_guid":null},"carrier_frame":{"primary_offset":120,"secondary_offset":228,"end_offset":239,"version":1},"direction":{"value":[2.4,0.0,0.0],"offset":169},"input_count":{"value":1,"offset":213},"inputs":[{"value":{"kind":"local","target":{"value":88,"offset":218},"inline_type_guid":null},"offset":217}],"inputs_complete":true}"#).unwrap());
     }).unwrap();
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     {

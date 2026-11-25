@@ -70,7 +70,8 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
     let result = InventorCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode Inventor specimen");
-    let topology = serde_json::to_value(&result.ir().geometry).expect("serialize geometry");
+    let topology = cadmpeg_core::serde_erase::json::to_value(&result.ir().geometry)
+        .expect("serialize geometry");
     let half_degree = 0.5_f64.to_radians();
     let expected = [
         (

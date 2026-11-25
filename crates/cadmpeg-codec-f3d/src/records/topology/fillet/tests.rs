@@ -28,8 +28,8 @@ fn fillet_radius_law_borrowed_wire_matches_owned_wire_bytes() {
     for law in cases {
         let owned = super::DesignFilletRadiusLawWire::from(law.clone());
         assert_eq!(
-            serde_json::to_vec(&law).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&law).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -64,7 +64,10 @@ fn fillet_radius_law_native_retained_limit_refuses_before_clone() {
 fn variable_fillet_midpoints_preserve_wire_and_reject_unpaired_records() {
     let wire = r#"{"kind":"variable","start_radius_parameter_record_index":51,"end_radius_parameter_record_index":61,"middle_radius_parameter_record_indices":[71],"middle_parameter_record_indices":[81]}"#;
     let law: super::DesignFilletRadiusLaw = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&law).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&law).unwrap(),
+        wire
+    );
     for invalid in [wire.replace("[71]", "[]"), wire.replace("[81]", "[]")] {
         let error = serde_json::from_str::<super::DesignFilletRadiusLaw>(&invalid)
             .unwrap_err()
@@ -89,6 +92,6 @@ fn the_flattened_historical_binding_names_the_null_key_it_refuses() {
     for key in ["historical_entity_kind", "historical_entity_ref"] {
         states_the_key(key, &refusal::<Probe>(key));
     }
-    let absent: Probe = serde_json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
     assert!(absent.binding.is_none());
 }

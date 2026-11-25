@@ -193,10 +193,14 @@ mod tests {
             fn $name() {
                 let json = $json;
                 let record: $record = serde_json::from_str(json).unwrap();
-                assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
                 assert_eq!(
-                    serde_json::to_vec(&record).unwrap(),
-                    serde_json::to_vec(&<$wire>::from(record.clone())).unwrap()
+                    cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                    json.as_bytes()
+                );
+                assert_eq!(
+                    cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                    cadmpeg_core::serde_erase::json::to_vec(&<$wire>::from(record.clone()))
+                        .unwrap()
                 );
                 cadmpeg_test_support::native_serialization::assert_native_limit(
                     &record,

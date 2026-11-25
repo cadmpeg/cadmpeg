@@ -195,7 +195,8 @@ fn every_design_type_has_a_schema() {
 
 #[test]
 fn a_neutral_schema_is_its_wire_form() {
-    let schema = serde_json::to_value(schema_for!(Neutral<ParameterRef>)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schema_for!(Neutral<ParameterRef>)).unwrap();
     let properties = &schema["properties"];
     for field in ["text", "refs", "measures"] {
         assert!(properties.get(field).is_some(), "{field}: {schema}");

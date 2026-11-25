@@ -100,8 +100,9 @@ fn a_subset_that_cannot_be_restated_on_its_source_is_written_as_its_cache() {
         .find(|curve| &curve.id == written_curve)
         .and_then(|curve| curve.geometry.solved())
         .expect("the written carrier is solved geometry");
-    let [written, cache] = [written, cache]
-        .map(|geometry| serde_json::to_value(geometry).expect("curve geometry serializes"));
+    let [written, cache] = [written, cache].map(|geometry| {
+        cadmpeg_core::serde_erase::json::to_value(geometry).expect("curve geometry serializes")
+    });
     assert!(agree(&written, &cache), "{written:#}\n{cache:#}");
 }
 
