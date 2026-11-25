@@ -155,18 +155,51 @@ fn zero_angle_elliptical_cone_round_trips_as_an_extruded_ellipse() {
     }
 }
 
-#[test]
-fn zero_angle_cone_of_zero_radius_is_refused_at_planning() {
-    let (ir, _) = zero_angle_cone_cube(0.0, 1.0);
-    let error = StepCodec::default()
+/// Plans `ir`, whose first surface has no STEP surface record, and reads the
+/// written file back: the faces on that surface are left out, the loss names
+/// them, and the other faces are written.
+pub(super) fn assert_first_surface_faces_omitted(ir: &CadIr) {
+    let plan = StepCodec::default()
         .plan(
-            EncodeInput::new(&ir, None),
+            EncodeInput::new(ir, None),
             TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
         )
-        .expect_err("a semi-angle 0 cone of radius 0 is a line");
+        .expect("a face on a surface STEP cannot hold is left out");
+    let surface = &ir.geometry.surfaces[0].id;
+    let omitted = ir
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| &face.surface == surface)
+        .map(|face| face.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(!omitted.is_empty());
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("is a line"))
+        plan.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::UnknownSurfaceFaceOmitted.kind()
+                && omitted.iter().all(|face| loss.message.contains(face))
+        }),
+        "{:?}",
+        plan.report().losses
     );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write the planned file");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the written file")
+        .into_parts()
+        .0;
+    assert_eq!(
+        decoded.geometry.faces.len(),
+        ir.geometry.faces.len() - omitted.len()
+    );
+}
+
+/// A semi-angle 0 cone of radius 0 is a line, which no STEP surface states.
+#[test]
+fn a_face_on_a_zero_angle_cone_of_zero_radius_is_left_out() {
+    let (ir, _) = zero_angle_cone_cube(0.0, 1.0);
+    assert_first_surface_faces_omitted(&ir);
 }
 
 #[test]
@@ -325,10 +358,8 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
     }));
 }
 
-/// Plans a document whose single surface is a circular cone of `half_angle`.
-fn circular_cone_plan(
-    half_angle: f64,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+/// A unit cube whose first surface is a circular cone of `half_angle`.
+fn circular_cone_cube(half_angle: f64) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -341,9 +372,15 @@ fn circular_cone_plan(
         )
         .unwrap(),
     ));
+    ir
+}
 
+/// Plans a document whose first surface is a circular cone of `half_angle`.
+fn circular_cone_plan(
+    half_angle: f64,
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
     crate::StepCodec::default().plan(
-        EncodeInput::new(&ir, None),
+        EncodeInput::new(&circular_cone_cube(half_angle), None),
         TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
     )
 }
@@ -363,20 +400,13 @@ fn negative_cone_semi_angle_inside_wr2_is_planned() {
     assert!(circular_cone_plan(-0.715_584_993_317_674_8).is_ok());
 }
 
+/// A semi-angle of `pi/2` is outside `conical_surface` WR2.
 #[test]
-fn right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
-        .expect_err("right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+fn a_face_on_a_right_angle_cone_is_left_out() {
+    assert_first_surface_faces_omitted(&circular_cone_cube(std::f64::consts::FRAC_PI_2));
 }
 
 #[test]
-fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
-        .expect_err("negative right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+fn a_face_on_a_negative_right_angle_cone_is_left_out() {
+    assert_first_surface_faces_omitted(&circular_cone_cube(-std::f64::consts::FRAC_PI_2));
 }

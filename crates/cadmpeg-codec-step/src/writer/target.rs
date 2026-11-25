@@ -31,9 +31,14 @@ pub(crate) fn plan(
     let Some(index) = resolved.index() else {
         return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
-    let schema = StepSchema::from_target_index(index).ok_or_else(|| {
-        resolved.unavailable("the resolved target index is outside the STEP schema catalog")
-    })?;
+    // The index names a row of the catalog `StepSchema::TARGETS` projects
+    // from `StepSchema::ALL`.
+    let schema = StepSchema::from_target_index(index);
+    debug_assert!(
+        schema.is_some(),
+        "target index {index} is outside the STEP schema catalog"
+    );
+    let schema = schema.unwrap_or(StepSchema::Ap214);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(

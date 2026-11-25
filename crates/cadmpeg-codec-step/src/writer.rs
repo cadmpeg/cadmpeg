@@ -4,12 +4,8 @@
 //! The emitter allocates instance names, formats scalar values, counts entity
 //! types, and interns repeated points and directions.
 
-use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::transform::Transform;
 
 use crate::options::StepSchema;
 
@@ -25,26 +21,33 @@ impl std::fmt::Display for Ref {
     }
 }
 
-/// A value the emitter was asked to state and Part 21 cannot state.
-#[derive(Clone, Copy)]
-enum Refusal {
-    /// A non-finite number [`Emitter::real`] was asked to format.
-    NonFiniteReal(f64),
-    /// A transform [`Emitter::refuse_operator`] was given, which is not a
-    /// similarity.
-    NonSimilarOperator(Transform),
+/// The text [`Emitter::real`] writes for a non-finite number. No Part 21
+/// token holds a NUL character (strings write control characters as `\X\`
+/// escapes), so a line that contains it holds a value Part 21 cannot state.
+const NON_FINITE: &str = "\0";
+
+/// A DATA instance [`Emitter::drop_non_finite`] left out of the section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DroppedInstance {
+    /// The instance name the instance would have had.
+    pub(crate) name: Ref,
+    /// Its entity-count key.
+    pub(crate) tally: &'static str,
 }
 
 /// Accumulates DATA instances in allocation order and counts their entity types.
 pub(crate) struct Emitter {
     schema: StepSchema,
-    lines: Vec<String>,
+    /// Each emitted instance, with its entity-count key; a dropped one is
+    /// `None`.
+    lines: Vec<Option<(String, &'static str)>>,
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
     interned: HashMap<String, Ref>,
-    /// The first value the emitter could not state. The emitted lines are
-    /// not handed out once one is recorded.
-    refusal: Cell<Option<Refusal>>,
+    /// The index in `lines` of each instance that holds a non-finite number,
+    /// in emission order, with whether a [`Self::take_non_finite_since`]
+    /// caller answered for it.
+    non_finite: Vec<(usize, bool)>,
 }
 
 impl Emitter {
@@ -59,7 +62,7 @@ impl Emitter {
             lines: Vec::new(),
             counts: BTreeMap::new(),
             interned: HashMap::new(),
-            refusal: Cell::new(None),
+            non_finite: Vec::new(),
         }
     }
 
@@ -70,29 +73,41 @@ impl Emitter {
         }
     }
 
-    /// Record `refusal` unless an earlier one is recorded.
-    fn refuse(&self, refusal: Refusal) {
-        if self.refusal.get().is_none() {
-            self.refusal.set(Some(refusal));
-        }
-    }
-
-    /// Record that `transform` has no `CARTESIAN_TRANSFORMATION_OPERATOR_3D`
-    /// statement. [`Self::into_lines`] then refuses the whole DATA section.
-    pub(crate) fn refuse_operator(&self, transform: Transform) {
-        self.refuse(Refusal::NonSimilarOperator(transform));
-    }
-
     /// Format `v` as a Part 21 real literal.
     ///
-    /// A Part 21 real states a finite number only. A non-finite `v` is
-    /// recorded, and [`Self::into_lines`] then refuses the whole DATA section,
-    /// so the placeholder this returns never reaches a file.
-    pub(crate) fn real(&self, v: f64) -> String {
-        part21_real(v).unwrap_or_else(|| {
-            self.refuse(Refusal::NonFiniteReal(v));
-            String::new()
-        })
+    /// A Part 21 real states a finite number only. For a non-finite `v` this
+    /// returns a marker, and the instance whose parameters hold it is left
+    /// out of the section with every instance that references it
+    /// ([`Self::drop_non_finite`]).
+    pub(crate) fn real(v: f64) -> String {
+        part21_real(v).unwrap_or_else(|| NON_FINITE.to_owned())
+    }
+
+    /// A mark for [`Self::take_non_finite_since`].
+    pub(crate) fn non_finite_mark(&self) -> usize {
+        self.non_finite.len()
+    }
+
+    /// Whether an instance emitted since `mark` holds a non-finite number
+    /// that no nested caller answered for. Every such instance is answered
+    /// for from now on, so an enclosing caller does not answer for it again.
+    pub(crate) fn take_non_finite_since(&mut self, mark: usize) -> bool {
+        let mut fresh = false;
+        for (_, answered) in self.non_finite.iter_mut().skip(mark) {
+            fresh |= !*answered;
+            *answered = true;
+        }
+        fresh
+    }
+
+    fn push(&mut self, tally: &'static str, line: String) -> Ref {
+        let index = self.lines.len();
+        if line.contains(NON_FINITE) {
+            self.non_finite.push((index, false));
+        }
+        self.lines.push(Some((line, tally)));
+        *self.counts.entry(tally).or_insert(0) += 1;
+        Ref(cadmpeg_core::decode::u64_from_index(index) + 1)
     }
 
     /// Append `#id = TYPE(params);` and return the allocated reference.
@@ -101,9 +116,7 @@ impl Emitter {
     /// keyword as the key.
     pub(crate) fn emit(&mut self, type_: &'static str, params: &str) -> Ref {
         let id = cadmpeg_core::decode::u64_from_index(self.lines.len()) + 1;
-        self.lines.push(format!("#{id} = {type_}({params});"));
-        *self.counts.entry(type_).or_insert(0) += 1;
-        Ref(id)
+        self.push(type_, format!("#{id} = {type_}({params});"))
     }
 
     /// Append a preformatted entity or complex-instance body.
@@ -111,13 +124,15 @@ impl Emitter {
     /// `tally` supplies its entity-count key.
     pub(crate) fn emit_raw(&mut self, tally: &'static str, body: &str) -> Ref {
         let id = cadmpeg_core::decode::u64_from_index(self.lines.len()) + 1;
-        self.lines.push(format!("#{id} = {body};"));
-        *self.counts.entry(tally).or_insert(0) += 1;
-        Ref(id)
+        self.push(tally, format!("#{id} = {body};"))
     }
 
-    /// Emit a value-like leaf or reuse an identical encoded instance.
+    /// Emit a value-like leaf or reuse an identical encoded instance. A leaf
+    /// that holds a non-finite number is emitted each time and never reused.
     pub(crate) fn emit_interned(&mut self, type_: &'static str, params: &str) -> Ref {
+        if params.contains(NON_FINITE) {
+            return self.emit(type_, params);
+        }
         let key = format!("{type_}|{params}");
         if let Some(r) = self.interned.get(&key) {
             return *r;
@@ -134,24 +149,117 @@ impl Emitter {
             .collect()
     }
 
-    /// Consume the emitter and return one encoded DATA instance per element,
-    /// or refuse the section when [`Self::real`] was handed a non-finite
-    /// number or [`Self::refuse_operator`] a transform.
-    pub(crate) fn into_lines(self) -> Result<Vec<String>, CodecError> {
-        match self.refusal.get() {
-            None => Ok(self.lines),
-            Some(Refusal::NonFiniteReal(value)) => Err(CodecError::NotImplemented(format!(
-                "STEP writer computed the non-finite real {value}, which Part 21 cannot state"
-            ))),
-            Some(Refusal::NonSimilarOperator(transform)) => {
-                Err(CodecError::NotImplemented(format!(
-                    "STEP writer cannot state the transform with rows {:?} as a \
-                     CARTESIAN_TRANSFORMATION_OPERATOR_3D, which states a similarity",
-                    transform.rows()
-                )))
+    /// Leaves out of the section every instance that holds a non-finite
+    /// number and every instance that references one left out, as a record
+    /// that needs a dropped record is dropped (CADIR §3.3). The others keep
+    /// their instance names; Part 21 does not require them to be
+    /// consecutive. Returns the instances left out whose non-finite number
+    /// no [`Self::take_non_finite_since`] caller answered for, with those
+    /// that need them: a caller that answered for one discarded what it
+    /// wrote, so no kept instance references it.
+    pub(crate) fn drop_non_finite(&mut self) -> Vec<DroppedInstance> {
+        if self.non_finite.is_empty() {
+            return Vec::new();
+        }
+        let all = self.non_finite.iter().map(|(index, _)| *index);
+        let unanswered = self
+            .non_finite
+            .iter()
+            .filter(|(_, answered)| !*answered)
+            .map(|(index, _)| *index);
+        let dropped = dependents(&self.lines, all);
+        let reported = dependents(&self.lines, unanswered);
+        self.non_finite.clear();
+        let mut out = Vec::new();
+        for index in dropped {
+            let Some((_, tally)) = self.lines[index].take() else {
+                continue;
+            };
+            if let Some(count) = self.counts.get_mut(tally) {
+                *count -= 1;
+                if *count == 0 {
+                    self.counts.remove(tally);
+                }
+            }
+            if reported.contains(&index) {
+                out.push(DroppedInstance {
+                    name: Ref(cadmpeg_core::decode::u64_from_index(index) + 1),
+                    tally,
+                });
             }
         }
+        out
     }
+
+    /// Consume the emitter and return one encoded DATA instance per element,
+    /// without the instances [`Self::drop_non_finite`] leaves out.
+    pub(crate) fn into_lines(mut self) -> Vec<String> {
+        self.drop_non_finite();
+        self.lines
+            .into_iter()
+            .flatten()
+            .map(|(line, _)| line)
+            .collect()
+    }
+}
+
+/// The indices of `seeds` and of every line that references one of them,
+/// directly or through other such lines.
+///
+/// An instance references only instances emitted before it, so one pass in
+/// emission order finds them all.
+fn dependents(
+    lines: &[Option<(String, &'static str)>],
+    seeds: impl Iterator<Item = usize>,
+) -> std::collections::BTreeSet<usize> {
+    let mut out: std::collections::BTreeSet<usize> = seeds.collect();
+    let Some(&first) = out.first() else {
+        return out;
+    };
+    for (index, line) in lines.iter().enumerate().skip(first + 1) {
+        let Some((line, _)) = line else {
+            continue;
+        };
+        if instance_references(line)
+            .iter()
+            .any(|referenced| out.contains(referenced))
+        {
+            out.insert(index);
+        }
+    }
+    out
+}
+
+/// The line index of each instance name `#n` that the parameters of the
+/// DATA line `line` reference, outside its string literals.
+fn instance_references(line: &str) -> Vec<usize> {
+    let parameters = line.split_once('=').map_or("", |(_, rest)| rest);
+    let mut quoted = false;
+    let mut out = Vec::new();
+    let bytes = parameters.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'\'' => quoted = !quoted,
+            b'#' if !quoted => {
+                let digits = bytes[at + 1..]
+                    .iter()
+                    .take_while(|byte| byte.is_ascii_digit())
+                    .count();
+                if let Some(index) = parameters[at + 1..at + 1 + digits]
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|name| name.checked_sub(1))
+                {
+                    out.push(index);
+                }
+                at += digits;
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    out
 }
 
 /// Format a finite `f64` as a Part 21 real literal, or `None` for a

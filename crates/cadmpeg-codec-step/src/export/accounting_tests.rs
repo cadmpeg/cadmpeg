@@ -154,7 +154,7 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
 }
 
 #[test]
-fn missing_local_product_refuses_occurrences_of_the_root_and_nested_definitions_before_output() {
+fn an_occurrence_of_a_missing_product_is_left_out_of_the_root_and_nested_definitions() {
     use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
     use cadmpeg_ir::transform::Transform;
     for nested in [false, true] {
@@ -191,17 +191,31 @@ fn missing_local_product_refuses_occurrences_of_the_root_and_nested_definitions_
             "test:model:product-definition#missing".try_into().unwrap(),
             Some(Transform::identity()),
         ));
-        let mut output = vec![0xaa];
-        let error = write_step(
+        let mut output = Vec::new();
+        let report = write_step(
             &ir,
             &mut output,
             StepSchema::Ap242Edition3,
             &StepWriteOptions::default(),
         )
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("1 occurrence record(s) whose local product definition is missing"));
-        assert_eq!(output, [0xaa]);
+        .expect("an occurrence of a missing product is left out");
+        assert!(
+            report.losses.iter().any(|loss| {
+                loss.code.to_string() == "export/record.invalid"
+                    && loss.message.contains("test:model:occurrence#missing")
+            }),
+            "{:?}",
+            report.losses
+        );
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("decode the written file")
+            .into_parts()
+            .0;
+        assert_eq!(
+            decoded.model.occurrences.len(),
+            ir.model.occurrences.len() - 1,
+            "nested: {nested}"
+        );
     }
 }

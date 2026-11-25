@@ -282,7 +282,7 @@ fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::surface(&mut e, g.solved().expect("solved surface"))
         .expect("surface geometry is writable");
-    e.into_lines().expect("finite reals").join("\n")
+    e.into_lines().join("\n")
 }
 
 #[test]
@@ -452,7 +452,7 @@ fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::curve(&mut e, g.solved().expect("solved curve"))
         .expect("curve geometry is writable");
-    e.into_lines().expect("finite reals").join("\n")
+    e.into_lines().join("\n")
 }
 
 fn buf_line_count(buf: &[u8]) -> usize {
@@ -1716,9 +1716,9 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
 }
 
 /// The sweep vector's components are finite, and its length is past the
-/// largest finite `f64`.
+/// largest finite `f64`: the sweep is not written, and the file is.
 #[test]
-fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
+fn a_linear_sweep_whose_magnitude_overflows_is_left_out() {
     use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
 
@@ -1740,6 +1740,7 @@ fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
             )
         })
         .expect("the fixture states a linear sweep");
+    let sweep_id = sweep.id.as_str().to_owned();
     sweep.edit_definition(|definition| {
         let ProceduralSurfaceDefinition::LinearSweep(construction) = definition else {
             panic!("the selected surface is a linear sweep");
@@ -1752,90 +1753,124 @@ fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
     });
 
     let mut bytes = Vec::new();
-    let written = write_step(
+    let report = write_step(
         &ir,
         &mut bytes,
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
-    );
-    let text = String::from_utf8_lossy(&bytes);
-    let error = written.expect_err(&format!(
-        "an overflowing sweep magnitude has no STEP real: {}",
-        text.lines()
-            .filter(|line| line.contains("VECTOR") || line.contains("SURFACE_OF_LINEAR"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    ));
+    )
+    .expect("an overflowing sweep magnitude is left out");
+    let text = String::from_utf8(bytes.clone()).expect("STEP output is UTF-8");
+    assert!(!text.contains('\0'), "{text}");
+    assert!(!text.contains("SURFACE_OF_LINEAR_EXTRUSION"), "{text}");
     assert!(
-        error
-            .to_string()
-            .contains("not implemented yet: STEP writer computed the non-finite real inf"),
-        "{error}"
+        report.losses.iter().any(|loss| {
+            loss.code.to_string() == "export/value.unwritable" && loss.message.contains(&sweep_id)
+        }),
+        "{:?}",
+        report.losses
     );
+    StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the written file");
 }
 
-/// The formatter states a finite number and refuses the section for any
-/// other, where it wrote `0.` in its place.
+/// The section leaves out an instance that holds a non-finite number and
+/// every instance that references it, where it wrote `0.` in its place, and
+/// keeps the others under their instance names.
 #[test]
-fn the_part21_real_formatter_refuses_a_non_finite_value() {
+fn the_section_leaves_out_an_instance_with_a_non_finite_value() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let emitter = crate::writer::Emitter::new();
-        assert_eq!(emitter.real(1.5), "1.5");
-        assert_eq!(emitter.real(value), "", "{value}");
-        let Err(error) = emitter.into_lines() else {
-            panic!("a non-finite real refuses the section: {value}");
-        };
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-            "{error}"
+        let mut emitter = crate::writer::Emitter::new();
+        assert_eq!(crate::writer::Emitter::real(1.5), "1.5");
+        let kept = emitter.emit(
+            "CARTESIAN_POINT",
+            &format!("'',({},0.,0.)", crate::writer::Emitter::real(1.5)),
+        );
+        let left_out = emitter.emit(
+            "CARTESIAN_POINT",
+            &format!("'',({},0.,0.)", crate::writer::Emitter::real(value)),
+        );
+        let user = emitter.emit("VERTEX_POINT", &format!("'',{left_out}"));
+        let other = emitter.emit("VERTEX_POINT", &format!("'',{kept}"));
+        let dropped = emitter.drop_non_finite();
+        assert_eq!(
+            dropped
+                .iter()
+                .map(|instance| instance.name)
+                .collect::<Vec<_>>(),
+            [left_out, user],
+            "{value}"
+        );
+        assert_eq!(
+            emitter.into_lines(),
+            [
+                format!("{kept} = CARTESIAN_POINT('',(1.5,0.,0.));"),
+                format!("{other} = VERTEX_POINT('',{kept});"),
+            ],
+            "{value}"
         );
     }
 }
 
+/// A model written by [`replica_written_with`].
+struct WrittenReplica {
+    /// The STEP text.
+    text: String,
+    /// The losses of the write.
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The identity of the model's one procedural replica.
+    replica: String,
+}
+
 /// Decodes `records`, gives each procedural replica `transform`, and writes
 /// the model.
-fn replica_written_with(
-    records: &str,
-    transform: Transform,
-) -> Result<String, cadmpeg_core::CodecError> {
+fn replica_written_with(records: &str, transform: Transform) -> WrittenReplica {
     use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = crate::test_support::exchange::decode_inline(records);
     let mut ir = source.ir().clone();
-    let mut replicas = 0;
+    let mut replicas = Vec::new();
     for surface in &mut ir.geometry.procedural_surfaces {
+        let id = surface.id.as_str().to_owned();
         surface.edit_definition(|definition| {
             if let ProceduralSurfaceDefinition::Replica {
                 transform: held, ..
             } = definition
             {
                 *held = transform;
-                replicas += 1;
+                replicas.push(id);
             }
         });
     }
     for curve in &mut ir.geometry.procedural_curves {
+        let id = curve.id.as_str().to_owned();
         curve.edit_definition(|definition| {
             if let ProceduralCurveDefinition::Replica {
                 transform: held, ..
             } = definition
             {
                 *held = transform;
-                replicas += 1;
+                replicas.push(id);
             }
         });
     }
-    assert_eq!(replicas, 1, "the exchange states one replica");
+    assert_eq!(replicas.len(), 1, "the exchange states one replica");
     let mut bytes = Vec::new();
-    crate::export::write_step_outcome(
+    let outcome = crate::export::write_step_outcome(
         &ir,
         &mut bytes,
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
         std::collections::HashSet::new(),
-    )?;
-    Ok(String::from_utf8(bytes).expect("STEP output is UTF-8"))
+    )
+    .expect("a replica is written or left out");
+    WrittenReplica {
+        text: String::from_utf8(bytes).expect("STEP output is UTF-8"),
+        losses: outcome.losses,
+        replica: replicas.remove(0),
+    }
 }
 
 const SURFACE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -1863,15 +1898,48 @@ const CURVE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #10=GEOMETRIC_CURVE_SET('',(#9));
 #11=SHAPE_REPRESENTATION('',(#10),$);";
 
-/// A procedural replica refuses the file for `rows`.
-fn assert_replica_is_refused(exchange: &str, rows: [[f64; 4]; 3]) {
-    let written = replica_written_with(exchange, Transform::affine(rows).expect("affine"));
-    let Err(error) = written else {
-        panic!("{written:?}");
-    };
+/// A procedural replica under `rows` is not written: the loss names it, the
+/// solved carrier stands in, and no replica of the file read back holds
+/// `rows`.
+fn assert_replica_is_left_out(exchange: &str, rows: [[f64; 4]; 3]) {
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+
+    let transform = Transform::affine(rows).expect("affine");
+    let written = replica_written_with(exchange, transform);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-        "{error}"
+        written.losses.iter().any(|loss| {
+            loss.code.to_string() == "export/value.unwritable"
+                && loss.message.contains(&written.replica)
+        }),
+        "{:?}",
+        written.losses
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&written.text), &DecodeOptions::default())
+        .expect("decode the written file")
+        .into_parts()
+        .0;
+    let surfaces = decoded
+        .geometry
+        .procedural_surfaces
+        .iter()
+        .filter_map(|surface| match surface.definition() {
+            ProceduralSurfaceDefinition::Replica { transform, .. } => Some(*transform),
+            _ => None,
+        });
+    let curves = decoded
+        .geometry
+        .procedural_curves
+        .iter()
+        .filter_map(|curve| match curve.definition() {
+            ProceduralCurveDefinition::Replica { transform, .. } => Some(*transform),
+            _ => None,
+        });
+    assert!(
+        surfaces.chain(curves).all(|held| held != transform),
+        "{}",
+        written.text
     );
 }
 
@@ -1895,30 +1963,30 @@ fn a_procedural_replica_with_a_similarity_is_written() {
         (SURFACE_REPLICA_EXCHANGE, "SURFACE_REPLICA"),
         (CURVE_REPLICA_EXCHANGE, "CURVE_REPLICA"),
     ] {
-        let text = replica_written_with(exchange, similarity).expect("a similarity is written");
+        let text = replica_written_with(exchange, similarity).text;
         assert!(text.contains(replica), "{text}");
     }
 }
 
-/// A sheared surface replica refuses the file, where it was written as a
+/// A sheared surface replica is left out, where it was written as a
 /// different transform.
 #[test]
-fn a_surface_replica_refuses_a_shear() {
-    assert_replica_is_refused(SURFACE_REPLICA_EXCHANGE, SHEAR);
+fn a_sheared_surface_replica_is_left_out() {
+    assert_replica_is_left_out(SURFACE_REPLICA_EXCHANGE, SHEAR);
 }
 
-/// A sheared curve replica refuses the file, where it was written as a
+/// A sheared curve replica is left out, where it was written as a
 /// different transform.
 #[test]
-fn a_curve_replica_refuses_a_shear() {
-    assert_replica_is_refused(CURVE_REPLICA_EXCHANGE, SHEAR);
+fn a_sheared_curve_replica_is_left_out() {
+    assert_replica_is_left_out(CURVE_REPLICA_EXCHANGE, SHEAR);
 }
 
-/// A replica transform with a zero column refuses the file, where the column
-/// was written as the direction `(0,0,1)`.
+/// A replica transform with a zero column is left out, where the column was
+/// written as the direction `(0,0,1)`.
 #[test]
-fn a_replica_refuses_a_zero_column() {
-    assert_replica_is_refused(
+fn a_replica_with_a_zero_column_is_left_out() {
+    assert_replica_is_left_out(
         CURVE_REPLICA_EXCHANGE,
         [
             [1.0, 0.0, 0.0, 0.0],

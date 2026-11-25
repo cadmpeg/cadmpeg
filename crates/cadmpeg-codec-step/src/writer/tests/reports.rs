@@ -8,7 +8,6 @@ use cadmpeg_test_support::edit;
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -1744,17 +1743,9 @@ fn transformed_cone_basis(ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry 
 }
 
 #[test]
-fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
+fn a_face_on_a_transformed_cone_outside_wr2_is_left_out() {
     let ir = transformed_surface_ir(transformed_cone_basis(1.0, std::f64::consts::FRAC_PI_2));
-    let error = StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
-        )
-        .expect_err("transformed cone basis remains outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+    super::cones::assert_first_surface_faces_omitted(&ir);
 }
 
 #[test]
@@ -1857,7 +1848,7 @@ fn degenerate_torus_with_a_negative_tube_radius_is_reported() {
 }
 
 #[test]
-fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
+fn a_face_on_a_cone_cache_outside_wr2_of_an_unwritable_construction_is_left_out() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1893,15 +1884,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
         )
         .expect("a cone carrier admits a compound construction");
 
-    let error = StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
-        )
-        .expect_err("a cached cone outside WR2 cannot be written");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+    super::cones::assert_first_surface_faces_omitted(&ir);
 }
 
 #[test]
