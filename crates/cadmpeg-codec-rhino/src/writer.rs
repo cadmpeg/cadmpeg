@@ -604,11 +604,11 @@ fn brep_pieces(
     ctx: &DecodeContext<'_>,
     compounds: &convert::CompoundIndex<'_>,
     scope: &BrepScope,
-) -> (Vec<BrepScope>, convert::ScopeFindings) {
+) -> Result<(Vec<BrepScope>, convert::ScopeFindings), CodecError> {
     use cadmpeg_ir::topology::BodyKind;
 
     let convert::ConvertedScope { mut ir, findings } =
-        convert::convert_scope(ctx, compounds, &scope.ir);
+        convert::convert_scope(ctx, compounds, &scope.ir)?;
     if !findings.dropped.is_empty() || !findings.unjoined.is_empty() {
         for body in &mut ir.geometry.bodies {
             if body.kind == BodyKind::Solid {
@@ -631,7 +631,7 @@ fn brep_pieces(
             curves: BTreeSet::new(),
             pcurves: BTreeSet::new(),
         };
-        return (vec![piece], findings);
+        return Ok((vec![piece], findings));
     };
     let index = TopologyIndex::new(&ir);
     let components = face_components(&ir);
@@ -647,7 +647,7 @@ fn brep_pieces(
             brep_scope(&ir, &index, identity, body, region, &shell.id, &faces)
         })
         .collect();
-    (pieces, findings)
+    Ok((pieces, findings))
 }
 
 /// The faces of `ir`, in sets joined through shared edges, each set in
@@ -1188,7 +1188,7 @@ fn prepare_write(
     let mut written_carriers = BTreeSet::new();
     let mut parts = Vec::new();
     for scope in &breps {
-        let (pieces, scope_findings) = brep_pieces(&ctx, &compounds, scope);
+        let (pieces, scope_findings) = brep_pieces(&ctx, &compounds, scope)?;
         records.omitted.extend(scope_findings.dropped);
         let mut unjoined_edges = std::collections::BTreeMap::<_, Vec<&str>>::new();
         for (reason, edge) in &scope_findings.unjoined {
@@ -1262,11 +1262,14 @@ fn prepare_write(
                 losses.push(RhinoLossCode::WriterEdgeSplit.note(format!(
                     "edge {} of {} is written as the edges {}, one for each run of its curve \
                      pieces that meet within the edge tolerance, with a vertex at the midpoint \
-                     of each gap; the gaps are up to {} wide",
+                     of each gap; the gaps are up to {} wide; each trim breaks where its image \
+                     comes closest to the gap vertex, and the edges at a gap take a tolerance \
+                     of up to {} that reaches the vertex and the trim ends",
                     split.edge,
                     scope.identity,
                     split.pieces.join(", "),
-                    split.gap
+                    split.gap,
+                    split.tolerance
                 )));
             }
         }
@@ -2761,25 +2764,49 @@ fn closest_edge_distance(
     points: &[cadmpeg_ir::math::Point3],
     point: cadmpeg_ir::math::Point3,
 ) -> Result<f64, CodecError> {
-    let Some((closest, mut best)) = points
+    let distances = points
         .iter()
         .map(|sample| cadmpeg_ir::math::Point3::distance(*sample, point))
-        .enumerate()
-        .min_by(|left, right| left.1.total_cmp(&right.1))
-    else {
-        return Ok(f64::INFINITY);
-    };
-    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-    let distance = |parameter: Option<cadmpeg_ir::scalar::FiniteReal>| -> Result<f64, CodecError> {
-        let Some(parameter) = parameter else {
-            return Ok(f64::INFINITY);
-        };
-        Ok(
-            edge_curve_point(edge, parameter.get())?.map_or(f64::INFINITY, |sample| {
+        .collect::<Vec<_>>();
+    let closest = refine_closest(parameters, &distances, |parameter| {
+        Ok::<_, CodecError>(
+            edge_curve_point(edge, parameter)?.map_or(f64::INFINITY, |sample| {
                 cadmpeg_ir::math::Point3::distance(sample, point)
             }),
         )
+    })?;
+    Ok(closest.map_or(f64::INFINITY, |(_, distance)| distance))
+}
+
+/// The parameter where `distance` is least and that distance: the sample of
+/// `parameters` with the least of `distances`, refined by golden-section
+/// search over the sample spans on either side of it. `None` where there
+/// are no samples.
+fn refine_closest<E>(
+    parameters: &[f64],
+    distances: &[f64],
+    mut distance: impl FnMut(f64) -> Result<f64, E>,
+) -> Result<Option<(f64, f64)>, E> {
+    let Some((closest, least)) = distances
+        .iter()
+        .copied()
+        .enumerate()
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+    else {
+        return Ok(None);
     };
+    let mut best = (parameters[closest], least);
+    let mut measure = |parameter: Option<cadmpeg_ir::scalar::FiniteReal>| -> Result<f64, E> {
+        let Some(parameter) = parameter else {
+            return Ok(f64::INFINITY);
+        };
+        let measured = distance(parameter.get())?;
+        if measured < best.1 {
+            best = (parameter.get(), measured);
+        }
+        Ok(measured)
+    };
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
     let at = |a: f64, b: f64, fraction: f64| cadmpeg_ir::math::interpolate(a, b, fraction);
     let mut a = closest
         .checked_sub(1)
@@ -2788,21 +2815,20 @@ fn closest_edge_distance(
         .get(closest + 1)
         .copied()
         .unwrap_or(parameters[closest]);
-    let mut fc = distance(at(a, b, 1.0 - ratio))?;
-    let mut fd = distance(at(a, b, ratio))?;
+    let mut fc = measure(at(a, b, 1.0 - ratio))?;
+    let mut fd = measure(at(a, b, ratio))?;
     for _ in 0..CLOSEST_POINT_STEPS {
         if fc < fd {
             b = at(a, b, ratio).map_or(b, cadmpeg_ir::scalar::FiniteReal::get);
             fd = fc;
-            fc = distance(at(a, b, 1.0 - ratio))?;
+            fc = measure(at(a, b, 1.0 - ratio))?;
         } else {
             a = at(a, b, 1.0 - ratio).map_or(a, cadmpeg_ir::scalar::FiniteReal::get);
             fc = fd;
-            fd = distance(at(a, b, ratio))?;
+            fd = measure(at(a, b, ratio))?;
         }
-        best = best.min(fc).min(fd);
     }
-    Ok(best)
+    Ok(Some(best))
 }
 
 fn plane_uv(
