@@ -550,8 +550,8 @@ pub(super) fn empty_output(ir: &CadIr) -> Option<LossNote> {
 
 /// Each Error the written document's validation finds is written from the
 /// canonical side (§3.4, Refusals): one note per kind of the records the
-/// findings name, and one for the findings that name no record of a model
-/// arena.
+/// findings name, and one that names the rule of each finding that names no
+/// record of a model arena.
 pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<LossNote> {
     let index = ModelIndex::new_model_only(ir);
     let mut grouped = Vec::<(EntityKind, Vec<String>)>::new();
@@ -563,8 +563,8 @@ pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<
         let entity = finding.entity.as_deref();
         let Some((id, kind)) = entity.and_then(|id| Some((id, index.neutral_kind(id)?))) else {
             rules.push(match entity {
-                Some(id) => format!("{} ({id}: {})", finding.check, finding.message),
-                None => format!("{} ({})", finding.check, finding.message),
+                Some(id) => format!("{} ({id}: {})", finding.rule, finding.message),
+                None => format!("{} ({})", finding.rule, finding.message),
             });
             continue;
         };
