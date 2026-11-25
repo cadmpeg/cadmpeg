@@ -27,6 +27,10 @@ const EPS_SWEEP_PATH_MM: f64 = 1.0e-5;
 /// Largest sine of the angle between a cylinder axis and its path line.
 const EPS_SWEEP_AXIS: f64 = 1.0e-6;
 
+/// Largest distance between a cone apex and the line through the two ends of a
+/// section line that spans the cone.
+const EPS_SWEEP_APEX_MM: f64 = 1.0e-5;
+
 /// Largest deviation of a unit-axis cone ratio from one.
 const EPS_SWEEP_RATIO: f64 = 1.0e-6;
 
@@ -669,8 +673,9 @@ fn coplanar_with_axis(start: Point3, end: Point3, pivot: Point3, axis: Vector3) 
         <= EPS_SWEEP_PATH_MM * axis.norm() * along.norm()
 }
 
-/// Whether the circular cone is coaxial with the axis through `pivot` and
-/// holds both ends of a section line.
+/// Whether the circular cone is coaxial with the axis through `pivot`, holds
+/// both ends of a section line, and has the line through the ends pass through
+/// its apex, which makes the line a generator.
 fn on_cone_about(cone: &ConeSurface, pivot: Point3, axis: Vector3, ends: [Point3; 2]) -> bool {
     let cone_axis = *cone.frame().axis().as_raw();
     if !is_parallel(cone_axis, axis)
@@ -680,11 +685,21 @@ fn on_cone_about(cone: &ConeSurface, pivot: Point3, axis: Vector3, ends: [Point3
         return false;
     }
     let slope = cone.half_angle().get().tan();
-    ends.iter().all(|end| {
+    if !slope.is_finite() || slope.abs() < EPS_SWEEP_RATIO {
+        return false;
+    }
+    let on_cone = ends.iter().all(|end| {
         let height = end.vector_from(cone.origin().get()).dot(cone_axis);
         let radial = distance_to_line(*end, pivot, axis);
         (radial - (cone.radius().get() + height * slope)).abs() <= EPS_SWEEP_PATH_MM
-    })
+    });
+    // The radius is zero at the apex height below the origin.
+    let apex = cone.origin().get().translated(
+        cone_axis.scale(1.0 / cone_axis.norm()),
+        -cone.radius().get() / slope,
+    );
+    let along = ends[1].vector_from(ends[0]);
+    on_cone && along.norm() > 0.0 && distance_to_line(apex, ends[0], along) <= EPS_SWEEP_APEX_MM
 }
 
 /// Whether the torus is the one that a section circle, whose plane holds the
@@ -1092,7 +1107,12 @@ enum LegacyOwner {
     Refused,
 }
 
-/// The owner of a legacy naming attribute.
+/// The owner of a legacy naming attribute: five common fields, the carrier
+/// schema, a source-name count, and that many `(source, name)` pairs, then the
+/// ten-integer sweep tail. The tail belongs to the first source name, so a
+/// record that lists the generator after another feature's name is not the
+/// sweep's. A record whose first name is the sweep owns the face only with
+/// name value -1 and the tail `section`, `span`, `role`, and seven zeros.
 fn legacy_name_tail(values: &[Option<AttributeValue>], generator: u32) -> LegacyOwner {
     let [_, _, _, _, _, Some(AttributeValue::Integer(_)), Some(AttributeValue::Integer(count)), rest @ ..] =
         values
@@ -1118,10 +1138,14 @@ fn legacy_name_tail(values: &[Option<AttributeValue>], generator: u32) -> Legacy
             return None;
         }
         let (names, tail) = integers.split_at(pairs);
-        (names[1] == -1).then(|| tail.to_vec())
+        (names[1] == -1 && tail.len() == LEGACY_SWEEP_TAIL && tail[3..] == [0; 7])
+            .then(|| tail.to_vec())
     };
     owned().map_or(LegacyOwner::Refused, LegacyOwner::Generator)
 }
+
+/// Integers of a legacy sweep tail: `section`, `span`, `role`, and seven zeros.
+const LEGACY_SWEEP_TAIL: usize = 10;
 
 /// A face that carries a generator-owned naming attribute of the legacy class chains.
 struct LegacyFace<'a> {

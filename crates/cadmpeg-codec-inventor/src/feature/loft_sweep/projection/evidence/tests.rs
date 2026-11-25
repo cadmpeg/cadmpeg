@@ -1335,6 +1335,9 @@ fn a_line_that_skews_the_arc_axis_does_not_span_a_cone() {
     // The ends (2, 0, 0) and (1.8, 2.4, 1) both lie on the cone, but the line
     // between them misses the axis.
     assert!(!check(model_line([2.0, 0.0, 0.0], [1.8, 2.4, 1.0])));
+    // The ends (2, 0, 0) and (-3, 0, 1) lie on opposite generators in the one
+    // axial plane y = 0, but the line between them misses the apex (0, 0, -2).
+    assert!(!check(model_line([2.0, 0.0, 0.0], [-3.0, 0.0, 1.0])));
     let _ = z;
 }
 
@@ -1383,6 +1386,22 @@ fn a_malformed_legacy_name_leaves_its_face_unowned_unless_it_names_the_sweep() {
             check(&model, SolidSweepOperation::Cut).is_some(),
             "unrelated malformed record"
         );
+    }
+    // A tail of more or fewer than ten integers, or with a nonzero value after
+    // the role, is not the sweep tail: the record refuses the sweep.
+    for edit in [
+        |values: &mut Vec<Option<AttributeValue>>| values.push(Some(AttributeValue::Integer(0))),
+        |values: &mut Vec<Option<AttributeValue>>| {
+            values.pop();
+        },
+        |values: &mut Vec<Option<AttributeValue>>| {
+            let last = values.len() - 1;
+            values[last] = Some(AttributeValue::Integer(1));
+        },
+    ] {
+        let mut model = legacy.clone();
+        edit(&mut model.model.attributes[0].values);
+        assert!(check(&model, SolidSweepOperation::Cut).is_none());
     }
     // A record whose first source name is the sweep but that lacks the owned
     // form refuses the sweep.
