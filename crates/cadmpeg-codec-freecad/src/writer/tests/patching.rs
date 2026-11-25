@@ -6,7 +6,7 @@
 use super::super::target::retained_baseline;
 use crate::native::{PropertyRecord, ValueRecord};
 use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
-use crate::writer::{serialize_property, serialize_value, validate_entry_names};
+use crate::writer::{entry_order, serialize_property, serialize_value};
 use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
@@ -14,7 +14,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() {
+fn unsafe_entry_names_refuse_construction() {
     assert!(crate::native::EntryRecord::new(
         "test:native:entry#unsafe".into(),
         "../Document.xml".into(),
@@ -23,24 +23,256 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
         Vec::new()
     )
     .is_err());
-    let entry = crate::test_support::entry_record(
-        "test:native:entry#document".into(),
-        "Document.xml".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary,
+}
+
+/// The archive keeps the source's member order: each entry at the lowest
+/// local-header offset the ledger states for its name, and an entry the
+/// ledger places nowhere after them, in arena order.
+#[test]
+fn entries_follow_the_ledger_order_and_unplaced_entries_follow_them() {
+    let entry = |name: &str| {
+        crate::test_support::entry_record(
+            format!("test:native:entry#{name}"),
+            name.into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            Vec::new(),
+        )
+    };
+    let span = |id: &str, name: &str, start: u64| {
+        serde_json::from_value::<crate::native::ArchiveSpan>(serde_json::json!({
+            "id": id,
+            "start": start,
+            "end": start + 4,
+            "role": "local-signature",
+            "entry": name,
+        }))
+        .expect("ledger span fixture")
+    };
+    let entries = [
+        entry("Unplaced"),
+        entry("Late"),
+        entry("Early"),
+        entry("Last"),
+    ];
+    let ledger = [
+        span("test:ledger#0", "Late", 40),
+        span("test:ledger#1", "Early", 10),
+        span("test:ledger#2", "Late", 20),
+    ];
+    let names = |ledger: &[crate::native::ArchiveSpan]| {
+        entry_order(&entries, ledger)
+            .into_iter()
+            .map(crate::native::EntryRecord::name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(&ledger), ["Early", "Late", "Unplaced", "Last"]);
+    assert_eq!(names(&[]), ["Unplaced", "Late", "Early", "Last"]);
+}
+
+/// The message of each `export:` loss of `report` with this local code.
+pub(super) fn export_messages<'r>(
+    report: &'r cadmpeg_ir::report::export::ExportReport,
+    code: &str,
+) -> Vec<&'r str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export" && loss.code.local_code() == code)
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// Writes `ir` through `Inherit` and decodes the file.
+pub(super) fn write_and_read_back(
+    ir: &cadmpeg_ir::CadIr,
+) -> (
+    cadmpeg_ir::report::export::ExportReport,
+    Vec<u8>,
+    cadmpeg_ir::DecodeResult,
+) {
+    let mut bytes = Vec::new();
+    let report = FcstdCodec
+        .plan(EncodeInput::new(ir, None))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the retained document patches");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("the written file decodes");
+    (report, bytes, decoded)
+}
+
+pub(super) fn native_arena<T: serde::de::DeserializeOwned>(
+    ir: &cadmpeg_ir::CadIr,
+    arena: &str,
+) -> Vec<T> {
+    ir.native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<T>(arena)
+        .expect("typed arena")
+}
+
+pub(super) fn replace_arena<T: serde::Serialize>(
+    ir: &mut cadmpeg_ir::CadIr,
+    arena: &str,
+    records: &[T],
+) {
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+        .set_arena(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            arena,
+            records,
+        )
+        .expect("replace arena");
+}
+
+/// A second entry record that names an entry the archive already holds is
+/// left out, and the report names it.
+#[test]
+fn a_repeated_entry_name_is_written_once_and_reported() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut ir = decoded.ir().clone();
+    let mut entries = native_arena::<crate::native::EntryRecord>(&ir, "entries");
+    let source = entries
+        .iter()
+        .find(|entry| entry.name() != "Document.xml")
+        .expect("side entry")
+        .clone();
+    entries.push(crate::test_support::entry_record(
+        "fcstd:test:entry#repeated".into(),
+        source.name().to_owned(),
+        source.role,
         Vec::new(),
-        Vec::new(),
-    );
-    let missing_order_error = crate::writer::restore_entry_order(&mut [entry.clone()], &[])
-        .expect_err("output order cannot be inferred from identity");
-    assert!(missing_order_error
-        .to_string()
-        .contains("no retained restoration order"));
-    let duplicate_error = validate_entry_names(&[entry.clone(), entry])
-        .expect_err("duplicate output paths are refused");
-    assert!(matches!(
-        duplicate_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
+        b"repeated".to_vec(),
     ));
+    replace_arena(&mut ir, "entries", &entries);
+
+    let (report, bytes, _) = write_and_read_back(&ir);
+    let payloads = archive_payloads(&bytes);
+    assert_eq!(payloads[source.name()], source.data());
+    assert_eq!(payloads.len(), entries.len() - 1);
+    let omitted = export_messages(&report, "native.records-omitted");
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("fcstd:test:entry#repeated")),
+        "{omitted:?}"
+    );
+}
+
+/// An entry the document no longer holds is left out of the archive, and the
+/// report names the ledger span of its ZIP member.
+#[test]
+fn a_removed_entry_is_left_out_and_its_member_is_reported() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut ir = decoded.ir().clone();
+    let mut entries = native_arena::<crate::native::EntryRecord>(&ir, "entries");
+    let index = entries
+        .iter()
+        .position(|entry| entry.name() != "Document.xml")
+        .expect("side entry");
+    let removed = entries.remove(index);
+    let naming = properties_naming(&ir, removed.name());
+    replace_arena(&mut ir, "entries", &entries);
+    let payload_spans = native_arena::<crate::native::ArchiveSpan>(&ir, "physical_ledger")
+        .into_iter()
+        .filter(|span| {
+            matches!(&span.role, crate::native::ArchiveSpanRole::CompressedPayload(name)
+                if name == removed.name())
+        })
+        .map(|span| span.id)
+        .collect::<Vec<_>>();
+    assert!(!payload_spans.is_empty());
+
+    let (report, bytes, round_trip) = write_and_read_back(&ir);
+    assert!(!archive_payloads(&bytes).contains_key(removed.name()));
+    let omitted = export_messages(&report, "native.records-omitted");
+    for id in &payload_spans {
+        assert!(
+            omitted.iter().any(|message| message.contains(id.as_str())),
+            "{id}: {omitted:?}"
+        );
+    }
+    assert_unheld_entry_reported(&report, round_trip.ir(), &naming, removed.name());
+}
+
+/// The properties of `ir` that name the archive entry `name`.
+pub(super) fn properties_naming(
+    ir: &cadmpeg_ir::CadIr,
+    name: &str,
+) -> Vec<crate::native::PropertyRecord> {
+    native_arena::<crate::native::PropertyRecord>(ir, "properties")
+        .into_iter()
+        .filter(|property| property.side_entries().iter().any(|entry| entry == name))
+        .collect()
+}
+
+/// Each property in `naming` reads back naming no archive entry `name`, its
+/// object is marked for recompute, and the report names it.
+pub(super) fn assert_unheld_entry_reported(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    round_trip: &cadmpeg_ir::CadIr,
+    naming: &[crate::native::PropertyRecord],
+    name: &str,
+) {
+    assert!(!naming.is_empty());
+    let properties = native_arena::<crate::native::PropertyRecord>(round_trip, "properties");
+    let objects = native_arena::<crate::native::ObjectRecord>(round_trip, "objects");
+    let omitted = export_messages(report, "native.records-omitted");
+    for expected in naming {
+        let written = properties
+            .iter()
+            .find(|property| property.id == expected.id)
+            .expect("property written");
+        assert!(
+            written.side_entries().iter().all(|entry| entry != name),
+            "{}",
+            expected.id
+        );
+        assert!(
+            omitted
+                .iter()
+                .any(|message| message.contains(expected.id.as_str())),
+            "{}: {omitted:?}",
+            expected.id
+        );
+        let owner = objects
+            .iter()
+            .find(|object| *object.id() == expected.owner)
+            .expect("owner written");
+        assert_eq!(
+            owner.attributes.get("Touched").map(String::as_str),
+            Some("1"),
+            "{}",
+            expected.owner
+        );
+    }
+}
+
+/// Names every archive entry with its payload.
+pub(super) fn archive_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut zip = zip::ZipArchive::new(Cursor::new(archive.to_vec())).expect("readable ZIP");
+    (0..zip.len())
+        .map(|index| {
+            let mut entry = zip.by_index(index).expect("archive entry");
+            let name = entry.name().expect("entry name").into_owned();
+            let mut payload = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut payload).expect("inflate entry");
+            (name, payload)
+        })
+        .collect()
 }
 
 #[test]
@@ -102,8 +334,7 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
             r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
         ), 0).unwrap(),
     };
-    let output = String::from_utf8(serialize_property(&property).expect("required invariant"))
-        .expect("required invariant");
+    let output = serialize_property(&property).expect("required invariant");
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
     assert_eq!(output.matches(r#"value="changed""#).count(), 1);
     assert!(
@@ -251,8 +482,10 @@ fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
     assert!(crate::test_support::validate_native(&edited).is_empty());
 }
 
+/// A link value edited without its link record has no serializer here: the
+/// property stays as the source stores it, and the report names it.
 #[test]
-fn writer_rejects_direct_link_carrier_graph_drift() {
+fn a_link_value_edit_without_its_link_is_left_as_stored() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
 <ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
@@ -274,6 +507,7 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
     support.values_mut().expect("persisted property")[0]
         .attributes
         .insert("value".into(), "Missing".into());
+    let support_id = support.id.clone();
     namespace
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -282,11 +516,25 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         )
         .expect("replace properties");
 
-    let error = FcstdCodec
-        .plan(EncodeInput::new(&edited, None))
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("writer must check the written semantic graph");
-    assert!(error.to_string().contains("value or link graph"));
+    let (report, _, round_trip) = write_and_read_back(&edited);
+    let support = native_arena::<crate::native::PropertyRecord>(round_trip.ir(), "properties")
+        .into_iter()
+        .find(|property| property.id == support_id)
+        .expect("Support property");
+    assert_eq!(
+        support.values()[0]
+            .attributes
+            .get("value")
+            .map(String::as_str),
+        Some("Target")
+    );
+    let dropped = export_messages(&report, "edit.dropped");
+    assert!(
+        dropped
+            .iter()
+            .any(|message| message.contains(support_id.as_str())),
+        "{dropped:?}"
+    );
 }
 
 #[test]
@@ -310,20 +558,24 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .and_then(cadmpeg_ir::SourceMeta::dialect)
         .expect("decoded FCStd source is classified")
         .dialect();
-    let resolution = retained_baseline(decoded.ir(), source_dialect)
-        .expect("the decoded schema-4 baseline is preserved");
-    crate::writer::write_seekable(
-        &mut streamed,
-        &resolution,
+    let resolution = retained_baseline(
+        decoded.ir(),
+        source_dialect,
         cadmpeg_core::decode::ResourceLimits::desktop(),
     )
-    .expect("seekable writer");
+    .expect("the retained Document.xml reads")
+    .expect("the decoded schema-4 baseline is preserved");
+    crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
 }
 
+/// An object declaration edit has no serializer here, and an entry record
+/// whose payload disagrees with its digest does not read: the file is written
+/// with the declaration as the source stores it and without the entry, and
+/// the report names both.
 #[test]
-pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
+pub(crate) fn writes_around_declaration_edits_and_unreadable_entries() {
     let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(CORE_DESIGN_PRODUCT),
@@ -332,53 +584,114 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .expect("decode source");
 
     let mut declaration_edit = decoded.ir().clone();
-    let namespace = declaration_edit
-        .native
-        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
-    let mut objects = namespace
-        .arena_as::<crate::native::ObjectRecord>("objects")
-        .expect("objects");
+    let mut objects = native_arena::<crate::native::ObjectRecord>(&declaration_edit, "objects");
+    let source_type = objects[0].type_name.clone();
     objects[0].type_name = "App::FeaturePython".into();
-    namespace
-        .set_arena(
-            &cadmpeg_core::decode::test_support::service_decode_context(),
-            "objects",
-            &objects,
-        )
-        .expect("replace objects");
-    let error = FcstdCodec
-        .plan(EncodeInput::new(&declaration_edit, None))
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("unserialized declaration edit must fail");
-    assert!(error.to_string().contains("declaration edits"));
+    let object_id = objects[0].id().clone();
+    replace_arena(&mut declaration_edit, "objects", &objects);
+    let (report, _, round_trip) = write_and_read_back(&declaration_edit);
+    let written = native_arena::<crate::native::ObjectRecord>(round_trip.ir(), "objects");
+    assert_eq!(
+        written
+            .iter()
+            .find(|object| *object.id() == object_id)
+            .map(|object| object.type_name.as_str()),
+        Some(source_type.as_str())
+    );
+    let dropped = export_messages(&report, "edit.dropped");
+    assert!(
+        dropped
+            .iter()
+            .any(|message| message.contains(object_id.as_str())),
+        "{dropped:?}"
+    );
 
     let (mut stale_entry, _, _) = decoded.into_parts();
-    let namespace = stale_entry
-        .native
-        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
-    let mut entries = namespace
-        .arena_as::<serde_json::Value>("entries")
-        .expect("entries");
+    let source_entries = native_arena::<crate::native::EntryRecord>(&stale_entry, "entries");
+    let mut entries = native_arena::<serde_json::Value>(&stale_entry, "entries");
     let entry = entries
         .iter_mut()
         .find(|entry| entry["name"] != "Document.xml")
         .expect("side entry");
+    let (stale_id, stale_name) = (
+        entry["id"].as_str().expect("entry id").to_owned(),
+        entry["name"].as_str().expect("entry name").to_owned(),
+    );
     let data = entry["data"].as_str().expect("entry hex bytes");
     entry["data"] = serde_json::json!(format!("{data}00"));
-    namespace
-        .set_arena(
-            &cadmpeg_core::decode::test_support::service_decode_context(),
-            "entries",
-            &entries,
+    let naming = properties_naming(&stale_entry, &stale_name);
+    replace_arena(&mut stale_entry, "entries", &entries);
+    let (report, bytes, round_trip) = write_and_read_back(&stale_entry);
+    let payloads = archive_payloads(&bytes);
+    assert!(!payloads.contains_key(&stale_name));
+    for source in source_entries
+        .iter()
+        .filter(|entry| entry.name() != "Document.xml" && entry.name() != stale_name)
+    {
+        assert_eq!(payloads[source.name()], source.data(), "{}", source.name());
+    }
+    let omitted = export_messages(&report, "native.records-omitted");
+    assert!(
+        omitted.iter().any(|message| message.contains(&stale_id)),
+        "{omitted:?}"
+    );
+    assert_unheld_entry_reported(&report, round_trip.ir(), &naming, &stale_name);
+}
+
+/// A property declaration edit has no serializer here: that property stays
+/// as the source stores it, and the value edit beside it is written.
+#[test]
+fn a_property_declaration_edit_is_left_as_stored_beside_written_edits() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Box" name="Box"/></Objects><ObjectData Count="1"><Object name="Box"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Label" type="App::PropertyString"><String value="Box"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
         )
-        .expect("replace entries");
-    let error = FcstdCodec
-        .plan(EncodeInput::new(&stale_entry, None))
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("stale entry metadata must fail");
-    assert!(error
-        .to_string()
-        .contains("entry byte_len/sha256 disagrees with data"));
+        .expect("Box");
+    let mut ir = decoded.ir().clone();
+    FcstdCodec
+        .set_property_value_attribute(
+            &mut ir,
+            crate::FcstdPropertyOwner::Object("Box"),
+            "Label",
+            0,
+            "value",
+            "Renamed",
+        )
+        .expect("edit Label");
+    let mut properties = native_arena::<crate::native::PropertyRecord>(&ir, "properties");
+    let length = properties
+        .iter_mut()
+        .find(|property| property.name == "Length")
+        .expect("Length");
+    length.type_name = "App::PropertyDistance".into();
+    let length_id = length.id.clone();
+    replace_arena(&mut ir, "properties", &properties);
+
+    let (report, _, round_trip) = write_and_read_back(&ir);
+    let written = native_arena::<crate::native::PropertyRecord>(round_trip.ir(), "properties");
+    let type_and_value = |name: &str| {
+        let property = written
+            .iter()
+            .find(|property| property.name == name)
+            .expect("property");
+        (
+            property.type_name.clone(),
+            property.values()[0].attributes.get("value").cloned(),
+        )
+    };
+    assert_eq!(
+        type_and_value("Length"),
+        ("App::PropertyLength".to_owned(), Some("10".to_owned()))
+    );
+    assert_eq!(
+        type_and_value("Label"),
+        ("App::PropertyString".to_owned(), Some("Renamed".to_owned()))
+    );
+    let dropped = export_messages(&report, "edit.dropped");
+    assert_eq!(dropped.len(), 1, "{dropped:?}");
+    assert!(dropped[0].contains(length_id.as_str()), "{dropped:?}");
 }
 
 #[test]
@@ -518,8 +831,11 @@ fn typed_input_edits_persist_owner_recompute_state_without_touching_outputs_or_n
     }
 }
 
+/// Schema 2 declares no recompute mark. An input edit is written, the object
+/// keeps its stored shape, and the report names it stale; a label edit needs
+/// no recompute.
 #[test]
-fn schema_two_input_edits_refuse_an_ignored_recompute_marker_but_labels_remain_writable() {
+fn schema_two_input_edits_are_written_and_reported_stale() {
     let xml = r#"<Document SchemaVersion="2" FileVersion="1"><Features Count="1"><Feature type="Part::Box" name="Box"/></Features><FeatureData Count="1"><Feature name="Box"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Label" type="App::PropertyString"><String value="Box"/></Property></Properties></Feature></FeatureData></Document>"#;
     let decoded = FcstdCodec
         .decode(
@@ -527,7 +843,7 @@ fn schema_two_input_edits_refuse_an_ignored_recompute_marker_but_labels_remain_w
             &DecodeOptions::default(),
         )
         .expect("schema two Box");
-    for (property, value, writable) in [("Length", "15", false), ("Label", "Renamed", true)] {
+    for (property, value, stale) in [("Length", "15", true), ("Label", "Renamed", false)] {
         let mut ir = decoded.ir().clone();
         FcstdCodec
             .set_property_value_attribute(
@@ -539,15 +855,26 @@ fn schema_two_input_edits_refuse_an_ignored_recompute_marker_but_labels_remain_w
                 value,
             )
             .expect("edit property");
-        let plan = FcstdCodec.plan(EncodeInput::new(&ir, None));
-        if writable {
-            assert!(plan.is_ok());
-        } else {
-            assert!(plan
-                .expect_err("schema two has no recompute marker")
-                .to_string()
-                .contains("pending-recompute marker"));
-        }
+        let (report, bytes, round_trip) = write_and_read_back(&ir);
+        let written = native_arena::<crate::native::PropertyRecord>(round_trip.ir(), "properties")
+            .into_iter()
+            .find(|candidate| candidate.name == property)
+            .expect("property");
+        assert_eq!(
+            written.values()[0]
+                .attributes
+                .get("value")
+                .map(String::as_str),
+            Some(value)
+        );
+        let document = String::from_utf8(archive_payloads(&bytes)["Document.xml"].clone())
+            .expect("UTF-8 Document.xml");
+        assert!(!document.contains("Touched"), "{document}");
+        let box_id = crate::native::native_id("object", "Box");
+        let named_stale = export_messages(&report, "evaluation.stale")
+            .iter()
+            .any(|message| message.contains(box_id.as_str()));
+        assert_eq!(named_stale, stale, "{property}: {:#?}", report.losses);
     }
 }
 

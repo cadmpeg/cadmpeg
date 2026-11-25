@@ -60,6 +60,9 @@ pub(crate) struct Imported {
     pub(crate) kind: Option<BodyKind>,
     /// The IR face of each `brep:face:id`.
     pub(crate) face_ids: BTreeMap<i64, FaceId>,
+    /// Each face stated partial, with the reason its boundary is not stated
+    /// in full.
+    pub(crate) unstated: Vec<String>,
 }
 
 /// Why a B-rep has no neutral form.
@@ -837,21 +840,39 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     let written_loops: BTreeSet<LoopId> = out.loops.iter().map(|loop_| loop_.id.clone()).collect();
     for (face, record) in brep.faces.iter().enumerate() {
         let face_id = id::face(key, face);
+        let surface = &surface_ids[&(catalog_key(record.surface.0), record.surface.1)];
         let loops: Vec<LoopId> = record
             .loops
             .iter()
             .map(|loop_| id::loop_(key, *loop_))
             .filter(|loop_| written_loops.contains(loop_))
             .collect();
+        // A loop with no edge and no vertex, or only degenerate edges, is not
+        // written. A face left with no loop on a closed surface is whole; on
+        // a plane, cylinder, or cone it states no extent and is partial.
         let loops = match loops.split_first() {
             Some((outer, inner)) => FaceLoops::classified(outer.clone(), inner.to_vec()),
-            None => FaceLoops::unspecified(Vec::new()),
+            None => {
+                let geometry = out
+                    .surfaces
+                    .iter()
+                    .find(|candidate| &candidate.id == surface)
+                    .map(|candidate| &candidate.geometry);
+                let (loops, unbounded) = FaceLoops::unspecified_on(Vec::new(), geometry);
+                if let Some(kind) = unbounded {
+                    out.unstated.push(format!(
+                        "{face_id}: no loop with an edge or vertex on a {kind}, which no face \
+                         covers whole"
+                    ));
+                }
+                loops
+            }
         };
         let shell = face_shell[face].unwrap_or_default();
         out.faces.push(Face {
             id: face_id.clone(),
             shell: id::shell(key, shell),
-            surface: surface_ids[&(catalog_key(record.surface.0), record.surface.1)].clone(),
+            surface: surface.clone(),
             sense: if record.same_sense {
                 Sense::Forward
             } else {
@@ -882,6 +903,9 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests;
 
 /// The B-reps of the `BrepArray` prim `prim`.
 pub(super) fn decoded(
@@ -1189,6 +1213,7 @@ impl super::Builder<'_, '_, '_, '_> {
             regions,
             kind,
             face_ids: _,
+            unstated,
         } = imported;
         let geometry = &mut self.ir.geometry;
         geometry.points.extend(points);
@@ -1205,6 +1230,11 @@ impl super::Builder<'_, '_, '_, '_> {
         if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
             return Ok(Err(error.to_string()));
         }
+        self.tallies.unstated_boundaries.extend(
+            unstated
+                .into_iter()
+                .map(|face| format!("{}: {face}", prim.path)),
+        );
         let tolerance = records.tolerance * self.scale;
         if tolerance > self.ir.tolerances.linear.get() {
             if let Some(tolerance) = cadmpeg_ir::scalar::PositiveLength::new(tolerance) {

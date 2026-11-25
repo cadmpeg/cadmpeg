@@ -184,7 +184,7 @@ pub(crate) fn primary_envelope_fixture_with_unavailable_carrier() -> Vec<u8> {
     primary_envelope_fixture_with_carrier_and_failures(
         EnvelopeDeclarations::default(),
         &[0_u8; 8],
-        &[],
+        (&DESIGN_SEGMENT, &[]),
         false,
         false,
         [1, 1],
@@ -210,7 +210,7 @@ pub(crate) fn primary_envelope_fixture_with_design_compression(
     primary_envelope_fixture_with_carrier_and_failures(
         EnvelopeDeclarations::default(),
         &kernel_carrier_fixture(kernel),
-        design,
+        (&DESIGN_SEGMENT, design),
         false,
         false,
         methods,
@@ -230,7 +230,25 @@ pub(crate) fn primary_envelope_fixture_with_design_version(
             ..EnvelopeDeclarations::default()
         },
         &kernel_carrier_fixture(kernel),
-        design,
+        (&DESIGN_SEGMENT, design),
+        false,
+        false,
+        [1, 1],
+        None,
+    )
+}
+
+/// The primary envelope carrying `kernel` beside a second, drawing document
+/// segment whose records are `drawing`, framed in order at ordinals 0, 1, ...
+pub(crate) fn primary_envelope_fixture_with_drawing(
+    kernel: &[u8],
+    drawing: &[([u8; 16], Vec<u8>)],
+) -> Vec<u8> {
+    assert!(!drawing.is_empty(), "a drawing segment carries a record");
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(kernel),
+        (&DRAWING_SEGMENT, drawing),
         false,
         false,
         [1, 1],
@@ -255,7 +273,7 @@ pub(crate) fn base_envelope_fixture(
     primary_envelope_fixture_with_carrier_and_failures(
         EnvelopeDeclarations::default(),
         &carrier,
-        design,
+        (&DESIGN_SEGMENT, design),
         false,
         false,
         [1, 1],
@@ -297,6 +315,12 @@ const DESIGN_SEGMENT: SegmentIdentity = SegmentIdentity {
     type_name: "PmDcSegmentType",
 };
 
+const DRAWING_SEGMENT: SegmentIdentity = SegmentIdentity {
+    display_name: "DlDocDcSegment",
+    segment_id: [0x5d; 16],
+    type_name: "DlDocDcSegmentType",
+};
+
 /// The type id the kernel-carrier record is framed under.
 const CARRIER_TYPE_ID: [u8; 16] = [
     0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47, 0xb5,
@@ -312,7 +336,7 @@ fn primary_envelope_fixture_with_kernel_and_failures(
     primary_envelope_fixture_with_carrier_and_failures(
         declarations,
         &carrier,
-        &[],
+        (&DESIGN_SEGMENT, &[]),
         break_database_body,
         break_metadata_body,
         [1, 1],
@@ -324,7 +348,7 @@ pub(crate) fn primary_envelope_with_compression(kernel: &[u8], methods: [u8; 2])
     primary_envelope_fixture_with_carrier_and_failures(
         EnvelopeDeclarations::default(),
         &kernel_carrier_fixture(kernel),
-        &[],
+        (&DESIGN_SEGMENT, &[]),
         false,
         false,
         methods,
@@ -332,10 +356,12 @@ pub(crate) fn primary_envelope_with_compression(kernel: &[u8], methods: [u8; 2])
     )
 }
 
+type SegmentRecords<'a> = &'a [([u8; 16], Vec<u8>)];
+
 fn primary_envelope_fixture_with_carrier_and_failures(
     declarations: EnvelopeDeclarations,
     carrier: &[u8],
-    design: &[([u8; 16], Vec<u8>)],
+    (second, design): (&SegmentIdentity, SegmentRecords<'_>),
     break_database_body: bool,
     break_metadata_body: bool,
     methods: [u8; 2],
@@ -387,7 +413,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         registry_fixture(&[&BREP_SEGMENT], 18)
     } else {
         registry_fixture(
-            &[&BREP_SEGMENT, &DESIGN_SEGMENT],
+            &[&BREP_SEGMENT, second],
             base.map_or(declarations.design_version, |base| base.design_version),
         )
     };
@@ -420,7 +446,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         streams.push((
             DESIGN_META,
             "Mdc",
-            meta_stream_fixture(&DESIGN_SEGMENT, &records, declarations, methods[0], base),
+            meta_stream_fixture(second, &records, declarations, methods[0], base),
         ));
     }
 

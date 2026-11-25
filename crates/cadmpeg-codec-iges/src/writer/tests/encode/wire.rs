@@ -241,6 +241,12 @@ fn synthesized_wire_refuses_shared_vertex_identity() {
     )
     .err()
     .expect("shared wire vertex must be refused");
+    assert!(
+        error.records.contains(ir.geometry.bodies[0].id.as_str()),
+        "{:?}",
+        error.records
+    );
+    let error = error.error;
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error.to_string().contains("shared wire vertex"), "{error}");
 }
@@ -263,6 +269,12 @@ fn synthesized_owned_wire_refuses_unrepresented_body() {
     )
     .err()
     .expect("owned wire body must be refused");
+    assert!(
+        error.records.contains(ir.geometry.bodies[0].id.as_str()),
+        "{:?}",
+        error.records
+    );
+    let error = error.error;
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error.to_string().contains("owned wire body"), "{error}");
 }
@@ -281,6 +293,12 @@ fn synthesized_wire_reports_missing_edge_as_malformed() {
     )
     .err()
     .expect("missing edge must be refused");
+    assert!(
+        error.records.contains(ir.geometry.bodies[0].id.as_str()),
+        "{:?}",
+        error.records
+    );
+    let error = error.error;
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(error.to_string().contains("missing edge"), "{error}");
 }
