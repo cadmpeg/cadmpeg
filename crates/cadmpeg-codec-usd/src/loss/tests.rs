@@ -64,6 +64,7 @@ fn code_strings_are_pinned() {
             "export.carrier-not-written",
             "export.joint-not-written",
             "export.solver-property-not-written",
+            "export.design-not-written",
             "export.physics-not-written",
             "export.group-face-not-written",
         ]
