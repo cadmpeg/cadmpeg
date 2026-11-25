@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use super::dimension::Dimension;
 use super::names::{CodecId, CodecName, NativeNameValue};
 use super::options::NativeOptions;
-use super::read::{self, Ceiling};
 use super::selection::OrderedSelection;
 use crate::features::geometry::FinitePoint3;
 use crate::features::ConfigurationId;
@@ -87,7 +86,7 @@ pub mod kinds {
 #[serde(
     bound = "",
     rename(serialize = "ConstructionWire"),
-    try_from = "ConstructionWire<K>"
+    from = "ConstructionWire<K>"
 )]
 pub struct Construction<K: ConstructionKind> {
     /// The constraints the source stores, in the source's priority order.
@@ -158,11 +157,8 @@ struct ConstructionWire<K: ConstructionKind> {
     resolved_in: BTreeMap<ConfigurationId, K::Value>,
 }
 
-impl<K: ConstructionKind> TryFrom<ConstructionWire<K>> for Construction<K> {
-    type Error = String;
-
-    /// Admits a construction nested no deeper than the construction ceiling.
-    fn try_from(wire: ConstructionWire<K>) -> Result<Self, Self::Error> {
+impl<K: ConstructionKind> From<ConstructionWire<K>> for Construction<K> {
+    fn from(wire: ConstructionWire<K>) -> Self {
         let ConstructionWire {
             inputs,
             after,
@@ -171,33 +167,14 @@ impl<K: ConstructionKind> TryFrom<ConstructionWire<K>> for Construction<K> {
             resolved,
             resolved_in,
         } = wire;
-        let construction = Self {
+        Self {
             inputs,
             after,
             solution,
             mode,
             resolved,
             resolved_in,
-        };
-        read::within(Ceiling::Construction, construction.depth())?;
-        Ok(construction)
-    }
-}
-
-impl<K: ConstructionKind> Construction<K> {
-    /// The levels of this construction and the constructions nested in its
-    /// inputs.
-    fn depth(&self) -> u64 {
-        let below = self
-            .inputs
-            .iter()
-            .filter_map(|input| match &input.reference {
-                Some(InputReference::Built(nested)) => Some(nested.depth()),
-                Some(InputReference::Picks(_)) | None => None,
-            })
-            .max()
-            .unwrap_or(0);
-        below + 1
+        }
     }
 }
 
@@ -272,19 +249,6 @@ pub enum AnyConstruction {
     Frame(Construction<kinds::Frame>),
     /// A curve construction.
     Curve(Construction<kinds::Curve>),
-}
-
-impl AnyConstruction {
-    fn depth(&self) -> u64 {
-        match self {
-            Self::Point(construction) => construction.depth(),
-            Self::Direction(construction) => construction.depth(),
-            Self::Axis(construction) => construction.depth(),
-            Self::Plane(construction) => construction.depth(),
-            Self::Frame(construction) => construction.depth(),
-            Self::Curve(construction) => construction.depth(),
-        }
-    }
 }
 
 /// The subject and the relation of a construction input.
