@@ -31,7 +31,6 @@ pub fn record_unreadable_kind() -> LossKind {
         "record.unreadable",
         LossTaxonomy::DecodeDiagnostic,
     )
-    .with_strict_floor(Some(Severity::Error))
     .into()
 }
 

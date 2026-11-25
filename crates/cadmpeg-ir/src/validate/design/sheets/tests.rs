@@ -14,7 +14,7 @@ use crate::design::ops::shared::SheetCutNormal;
 use crate::design::ops::sheet_metal::{SheetMetal, SheetMetalKind};
 use crate::design::ops::swept::Extrude;
 use crate::design::options::{Boolean, BooleanOp, SolidOutput};
-use crate::design::refs::Member;
+use crate::design::refs::{EntityRef, Member};
 use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::document::CadIr;
 use crate::scalar::PositiveLength;
@@ -240,31 +240,205 @@ fn rules_applied_in_order_or_to_no_listed_body_are_not_paired() {
     assert_eq!(ruled(&ir, GOVERN), 0);
 }
 
+/// Gives the feature `key` the suppression `suppressed` in configuration
+/// "large".
+fn suppressed_in_large(ir: &mut CadIr, key: &str, suppressed: bool) {
+    let large = ir
+        .design
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.id.as_str().ends_with("#large"))
+        .unwrap();
+    large.overrides.features.insert(
+        fixture::feature(key),
+        FeatureStateOverride {
+            suppressed: Some(suppressed),
+            definition: None,
+        },
+    );
+}
+
+/// The feature `key` of the design.
+fn feature_mut<'d>(ir: &'d mut CadIr, key: &str) -> &'d mut crate::design::feature::Feature {
+    let feature = fixture::feature(key);
+    ir.design
+        .features
+        .iter_mut()
+        .find(|record| record.id == feature)
+        .unwrap()
+}
+
+#[test]
+fn rules_applied_that_are_never_in_force_together_govern_no_body_together() {
+    let mut ir = grouped(apply("a", Some(0)), apply("b", Some(0)));
+    assert_eq!(ruled(&ir, GOVERN), 1);
+    // "first" is suppressed in the base and in force in "large", where
+    // "second" is suppressed.
+    feature_mut(&mut ir, "first").suppressed = Some(Dimension::Literal(true));
+    suppressed_in_large(&mut ir, "first", false);
+    suppressed_in_large(&mut ir, "second", true);
+    assert_eq!(ruled(&ir, GOVERN), 0);
+    // In force in "large" too, the two govern one body there.
+    suppressed_in_large(&mut ir, "second", false);
+    assert_eq!(ruled(&ir, GOVERN), 1);
+}
+
+#[test]
+fn an_arrangement_overriding_a_definition_is_read_over_each_configuration() {
+    let mut ir = grouped(apply("a", Some(0)), wall());
+    assert_eq!(ruled(&ir, GOVERN), 0);
+    let mut definition = feature_mut(&mut ir, "second").definition.clone();
+    definition.operation = apply("b", Some(0));
+    let mut arrangement = fixture::arrangement(
+        "positional",
+        crate::design::configuration::ArrangementKind::Positional,
+    );
+    arrangement.overrides.features.insert(
+        fixture::feature("second"),
+        FeatureStateOverride {
+            suppressed: None,
+            definition: Some(definition),
+        },
+    );
+    ir.design.arrangements.push(arrangement);
+    assert_eq!(ruled(&ir, GOVERN), 1);
+}
+
+#[test]
+fn an_arrangement_suppression_takes_precedence_over_its_configuration() {
+    let mut ir = grouped(apply("a", Some(0)), apply("b", Some(0)));
+    feature_mut(&mut ir, "first").suppressed = Some(Dimension::Literal(true));
+    suppressed_in_large(&mut ir, "first", true);
+    assert_eq!(ruled(&ir, GOVERN), 0);
+    let large = ir
+        .design
+        .configurations
+        .iter()
+        .find(|configuration| configuration.id.as_str().ends_with("#large"))
+        .unwrap()
+        .id
+        .clone();
+    let mut arrangement = fixture::arrangement(
+        "positional",
+        crate::design::configuration::ArrangementKind::Positional,
+    );
+    arrangement.configuration = Some(large);
+    arrangement.overrides.features.insert(
+        fixture::feature("first"),
+        FeatureStateOverride {
+            suppressed: Some(false),
+            definition: None,
+        },
+    );
+    ir.design.arrangements.push(arrangement);
+    assert_eq!(ruled(&ir, GOVERN), 1);
+}
+
+#[test]
+fn a_suppressed_feature_makes_no_sheet_and_cuts_none() {
+    let rule = "design.sheet-cut-no-sheet-metal-body";
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.operation = wall();
+    ir.design.features[1].definition.operation = cutting();
+    assert_eq!(ruled(&ir, rule), 0);
+    ir.design.features[0].suppressed = Some(Dimension::Literal(true));
+    assert_eq!(ruled(&ir, rule), 1);
+    // The cut is suppressed wherever the sheet is.
+    ir.design.features[1].suppressed = Some(Dimension::Literal(true));
+    assert_eq!(ruled(&ir, rule), 0);
+    // In "large" the cut is in force and the sheet is not.
+    suppressed_in_large(&mut ir, "fillet", false);
+    assert_eq!(ruled(&ir, rule), 1);
+}
+
+/// A suppression bound to a parameter stores no value (§10, Bounded values),
+/// and the rules that read it judge no state that holds the feature.
+#[test]
+fn a_suppression_bound_to_a_parameter_is_not_judged() {
+    let bound = || Some(Dimension::Parameter(id("parameter", "p")));
+    let mut ir = grouped(apply("a", Some(0)), apply("b", Some(0)));
+    feature_mut(&mut ir, "first").suppressed = bound();
+    assert_eq!(ruled(&ir, GOVERN), 0);
+    let rule = "design.sheet-cut-no-sheet-metal-body";
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.operation = wall();
+    ir.design.features[1].definition.operation = cutting();
+    ir.design.features[0].suppressed = bound();
+    assert_eq!(ruled(&ir, rule), 0);
+    ir.design.features[0].suppressed = Some(Dimension::Literal(true));
+    assert_eq!(ruled(&ir, rule), 1);
+    ir.design.features[1].suppressed = bound();
+    assert_eq!(ruled(&ir, rule), 0);
+}
+
+/// A `DeleteBodies` that removes the results of the feature "extrude",
+/// narrowed to `resolved` where that is stated.
+fn delete_extrude(retain: Retention, resolved: Option<Vec<EntityRef>>) -> FeatureOperation {
+    let pick = Picked {
+        target: PickTarget::FeatureResult(fixture::feature("extrude")),
+        context: None,
+        native: None,
+        domain: None,
+        witness: None,
+        resolved,
+    };
+    FeatureOperation::DeleteBodies(Box::new(DeleteBodies {
+        bodies: Selection {
+            at: Anchor::Current,
+            picks: Picks::Named(Members::new(vec![pick]).unwrap()),
+            native: None,
+        },
+        retain: Some(retain),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+#[test]
+fn a_narrowed_delete_removes_no_sheet_whole() {
+    let rule = "design.sheet-cut-no-sheet-metal-body";
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.operation = wall();
+    let body = EntityRef::Body(ir.geometry.bodies[0].id.clone());
+    ir.design.features[1].definition.operation =
+        delete_extrude(Retention::DeleteSelected, Some(vec![body]));
+    add(&mut ir, "cut", cutting());
+    append(&mut ir, Member::Feature(fixture::feature("cut")));
+    assert_eq!(ruled(&ir, rule), 0);
+}
+
+#[test]
+fn a_feature_after_the_delete_keeps_no_sheet() {
+    let rule = "design.sheet-cut-no-sheet-metal-body";
+    // wall, `then`, `last`, cut.
+    let document = |then: FeatureOperation, last: FeatureOperation| {
+        let mut ir = fixture::document();
+        ir.design.features[0].definition.operation = wall();
+        ir.design.features[1].definition.operation = then;
+        add(&mut ir, "last", last);
+        append(&mut ir, Member::Feature(fixture::feature("last")));
+        add(&mut ir, "cut", cutting());
+        append(&mut ir, Member::Feature(fixture::feature("cut")));
+        ir
+    };
+    let delete = || delete_extrude(Retention::DeleteSelected, None);
+    assert_eq!(
+        ruled(&document(delete(), FeatureOperation::MaterialRemoval), rule),
+        1
+    );
+    assert_eq!(
+        ruled(&document(FeatureOperation::MaterialRemoval, delete()), rule),
+        0
+    );
+}
+
 #[test]
 fn a_sheet_cut_extrude_cuts_a_sheet_no_feature_before_it_deletes() {
     let rule = "design.sheet-cut-no-sheet-metal-body";
     let deleted = |retain| {
         let mut ir = fixture::document();
         ir.design.features[0].definition.operation = wall();
-        let pick = Picked {
-            target: PickTarget::FeatureResult(fixture::feature("extrude")),
-            context: None,
-            native: None,
-            domain: None,
-            witness: None,
-            resolved: None,
-        };
-        ir.design.features[1].definition.operation =
-            FeatureOperation::DeleteBodies(Box::new(DeleteBodies {
-                bodies: Selection {
-                    at: Anchor::Current,
-                    picks: Picks::Named(Members::new(vec![pick]).unwrap()),
-                    native: None,
-                },
-                retain: Some(retain),
-                native_options: BTreeMap::new(),
-                source_settings: BTreeMap::new(),
-            }));
+        ir.design.features[1].definition.operation = delete_extrude(retain, None);
         add(&mut ir, "cut", cutting());
         append(&mut ir, Member::Feature(fixture::feature("cut")));
         ir

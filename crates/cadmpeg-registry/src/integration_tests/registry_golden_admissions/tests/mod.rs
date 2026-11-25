@@ -51,19 +51,16 @@ fn layers(primary: DialectMatch, extras: Vec<DialectMatch>) -> DialectLayers {
         })
 }
 
-fn kernel_loss_note(host: &str) -> LossNote {
-    LossNote::new(
+fn kernel_loss(host: &str) -> Value {
+    serde_json::to_value(LossNote::new(
         LossKind::namespaced(
             LossNamespace::new(host).expect("host namespace is not reserved"),
             "source.kernel-dialect-unverified",
             LossTaxonomy::SourceDialectUnverified,
         ),
         "test kernel dialect loss",
-    )
-}
-
-fn kernel_loss(host: &str) -> Value {
-    serde_json::to_value(kernel_loss_note(host)).expect("typed kernel loss serializes")
+    ))
+    .expect("typed kernel loss serializes")
 }
 
 fn report_view(layers: &DialectLayers, losses: &[Value]) -> Value {

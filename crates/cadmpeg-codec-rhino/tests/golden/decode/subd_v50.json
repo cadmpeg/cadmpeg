@@ -399,8 +399,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xa77bfe90",
@@ -424,8 +423,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "f09ba4d9-455b-42c3-ba3b-e6ccacef853b: SubD anonymous CRC mismatch at offset 258",

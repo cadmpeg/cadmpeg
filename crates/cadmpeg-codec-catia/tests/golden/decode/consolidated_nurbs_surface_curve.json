@@ -1223,8 +1223,7 @@
           "value": {
             "code": "geometry.unresolved-carriers",
             "kind": "geometry_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "The transferred model retains 0 unresolved curve carriers and 1 unresolved surface carriers without exact procedural constructions. Surface carriers: catia:standard:surf#1.",
@@ -1248,8 +1247,7 @@
           "value": {
             "code": "topology.boundary-graph-not-emitted",
             "kind": "topology_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "The B-rep boundary graph was not emitted: 2 face outer-bound row(s) in 1 group(s) were detected, but the curve support table is absent or empty.",
@@ -1261,8 +1259,7 @@
           "value": {
             "code": "geometry.plane-parameters-invalid",
             "kind": "geometry_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "1 plane surface record(s) were located but not decoded because their tag-bridged parameter records were absent or invalid.",

@@ -283,8 +283,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "instance-definition record at offset 159: instance definition CRC mismatch at offset 227",
@@ -301,8 +300,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 159 for typecode 0x20008076: expected 0x0, got 0xf46c4ebe",
@@ -314,8 +312,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 582 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
