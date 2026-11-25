@@ -199,41 +199,188 @@ fn a_given_up_part_retains_the_canonical_json_of_its_text() {
     assert_eq!(retained.data(), Some(text.as_bytes()));
 }
 
-/// Each record that needs a given-up record is dropped, transitively, and
-/// the entry that gives the record up names it (§3.3).
+/// The ids a give-up entry lists under `field`.
+fn listed<'m>(message: &'m str, field: &str) -> Vec<&'m str> {
+    message
+        .split(&format!("{field}=["))
+        .nth(1)
+        .and_then(|tail| tail.split(']').next())
+        .map(|list| list.split(", ").filter(|id| !id.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// Each record that needs a given-up record is dropped, transitively, until
+/// no record of the document names a dropped one; each record that holds
+/// one as a member is kept with a mark; and the entry that gives the record
+/// up names both (§3.3).
 #[test]
 fn a_record_that_needs_a_given_up_record_is_dropped_and_named() {
     let (ir, mut value) = wire();
     let point = ir.geometry.points[0].id.as_str().to_owned();
+    let original = value.clone();
     points(&mut value)[0]["position"] = json!("not a point");
     let read = read(value.to_string().as_bytes());
-    let needing: Vec<&str> = ir
-        .geometry
-        .vertices
-        .iter()
-        .filter(|vertex| serde_json::to_string(vertex).unwrap().contains(&point))
-        .map(|vertex| vertex.id.as_str())
-        .collect();
-    assert!(!needing.is_empty());
     let [entry] = read.report.as_slice() else {
         panic!("one entry: {:?}", read.report);
     };
-    let dropped = entry
-        .message
-        .split("dropped=[")
-        .nth(1)
-        .and_then(|tail| tail.split(']').next())
-        .unwrap();
-    for vertex in needing {
-        assert!(dropped.contains(vertex), "{}", entry.message);
-        assert!(read
-            .document
-            .geometry
-            .vertices
+    let dropped = listed(&entry.message, "dropped");
+    let marked = listed(&entry.message, "marked");
+    assert!(dropped.contains(&point.as_str()), "{}", entry.message);
+    assert!(!marked.is_empty(), "{}", entry.message);
+
+    let names = |text: &str, id: &str| text.contains(&format!("\"{id}\""));
+    let records = |document: &Value| -> Vec<Value> {
+        let namespaces = document["native"]
+            .as_object()
+            .into_iter()
+            .flat_map(|native| {
+                native
+                    .values()
+                    .filter_map(Value::as_object)
+                    .flat_map(|namespace| namespace.values())
+            });
+        ["geometry", "model", "design", "process"]
+            .into_iter()
+            .filter_map(|home| document[home].as_object())
+            .flat_map(|home| home.values())
+            .chain(namespaces)
+            .filter_map(Value::as_array)
+            .flatten()
+            .cloned()
+            .collect()
+    };
+    let before = records(&original);
+    let record = |id: &str| {
+        before
             .iter()
-            .all(|kept| kept.id.as_str() != vertex));
+            .find(|record| record["id"] == json!(id))
+            .unwrap_or_else(|| panic!("{id} is a record of the document"))
+            .to_string()
+    };
+    let text = serde_json::to_string(&read.document).unwrap();
+    for id in &dropped {
+        assert!(!names(&text, id), "the document still names {id}");
     }
-    assert!(dropped.contains(&point), "{}", entry.message);
+    assert!(
+        dropped
+            .iter()
+            .any(|id| *id != point && !names(&record(id), &point)),
+        "the drop reaches a record that does not name {point}: {}",
+        entry.message
+    );
+    let after = records(&serde_json::to_value(&read.document).unwrap());
+    for id in &marked {
+        let held = record(id);
+        assert!(dropped.iter().any(|gone| names(&held, gone)), "{id}");
+        let kept = after
+            .iter()
+            .find(|record| record["id"] == json!(id))
+            .unwrap_or_else(|| panic!("{id} is kept"));
+        assert_ne!(kept.to_string(), held, "{id} is kept with a mark");
+    }
+}
+
+/// The entry that gives a record up names each native record that links to
+/// it, and the document keeps no link to it (§3.3).
+#[test]
+fn a_native_record_that_links_to_a_given_up_record_is_named() {
+    const ANNOTATION: &str = "test:native:annotation#1";
+    let mut ir = unit_cube().unwrap();
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    let annotation = crate::native::NativeRecord::new(
+        crate::ids::Identity::new(ANNOTATION).unwrap(),
+        json!({"links": [point]}).as_object().cloned().unwrap(),
+    )
+    .unwrap();
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("annotations"),
+            vec![annotation],
+        );
+    let mut value = serde_json::to_value(&ir).unwrap();
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    let entry = read
+        .report
+        .iter()
+        .find(|entry| entry.code == crate::unknown::part::record_unreadable_kind())
+        .unwrap_or_else(|| panic!("{:?}", read.report));
+    assert!(
+        listed(&entry.message, "dropped")
+            .into_iter()
+            .chain(listed(&entry.message, "marked"))
+            .any(|id| id == ANNOTATION),
+        "{}",
+        entry.message
+    );
+    let native = serde_json::to_string(&read.document.native).unwrap();
+    assert!(!native.contains(&format!("\"{point}\"")), "{native}");
+}
+
+/// A record nested past the depth bound is given up without a reading of
+/// its value, and each record that needs it is dropped (§2.5, §3.3).
+#[test]
+fn a_record_given_up_for_its_depth_drops_each_record_that_needs_it() {
+    let (ir, mut value) = wire();
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    let mut position = json!(0);
+    for _ in 0..140 {
+        position = json!([position]);
+    }
+    points(&mut value)[0]["position"] = position;
+    let read = read(value.to_string().as_bytes());
+    let vertex = ir
+        .geometry
+        .vertices
+        .iter()
+        .find(|vertex| serde_json::to_string(vertex).unwrap().contains(&point))
+        .unwrap()
+        .id
+        .as_str();
+    assert!(read
+        .document
+        .geometry
+        .vertices
+        .iter()
+        .all(|kept| kept.id.as_str() != vertex));
+    let entry = read
+        .report
+        .iter()
+        .find(|entry| entry.message.contains("past the bound"))
+        .unwrap_or_else(|| panic!("{:?}", read.report));
+    assert!(
+        listed(&entry.message, "dropped").contains(&vertex),
+        "{}",
+        entry.message
+    );
+}
+
+/// A record that states a member twice with different values is given up,
+/// and its part retains its text as stated, both values included (§3.3).
+#[test]
+fn a_record_that_states_a_member_twice_retains_both_values() {
+    let ir = unit_cube().unwrap();
+    let text = serde_json::to_string(&ir).unwrap();
+    let point = serde_json::to_string(&ir.geometry.points[0]).unwrap();
+    assert_eq!(text.matches(&point).count(), 1);
+    let restated = format!("{},\"position\":[9.5,8.5,7.5]}}", &point[..point.len() - 1]);
+    let read = read(text.replacen(&point, &restated, 1).as_bytes());
+    assert!(read
+        .document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id != ir.geometry.points[0].id));
+    assert!(
+        read.fidelity
+            .retained_records()
+            .values()
+            .any(|retained| retained.data() == Some(restated.as_bytes())),
+        "{:?}",
+        read.fidelity.retained_records()
+    );
 }
 
 /// A record that holds an expression deeper than the bound of an expression

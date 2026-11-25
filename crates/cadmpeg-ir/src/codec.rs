@@ -415,7 +415,7 @@ impl DecodeResult {
                     "the decoder emitted {} {} times in arena {}, and the copies differ, so the \
                      document states none of them; record={}; {}",
                     seed.id,
-                    copies.get(seed).copied().unwrap_or(released.copies),
+                    copies.get(seed).copied().unwrap_or_default(),
                     seed.arena,
                     retained.stub,
                     released.tail(&[&seed.id])
@@ -437,8 +437,10 @@ impl DecodeResult {
     /// §2.5, which §2.8 states none of. Each such record is given up as a
     /// part (§3.3), with a `decode/record.unreadable` Error that names it and
     /// the records its give-up drops and marks, and the document is digested
-    /// again without it. The walk admits at least
-    /// [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
+    /// again without it. Each value outside every record past a bound is
+    /// stated as the value it takes when unstated, with a
+    /// `decode/record.unreadable` Error that names its field. The walk admits
+    /// at least [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
     /// recursion ceiling, so that it digests a document within the bound and
     /// writes the first container past it before it is refused. A refused
     /// walk stops in the record it was refused in, so the wrapper walks again
@@ -466,13 +468,38 @@ impl DecodeResult {
         while self.give_up_records_past_the_bounds(&policy, format, &measured.records)? {
             (digest, measured) = walk(&self.ir)?;
         }
-        if let Some(bound) = measured.outside {
+        if !measured.outside.is_empty() {
+            for unstated in crate::bounds::unstate_outside(&mut self.ir, &measured.outside)? {
+                self.report.losses.push(
+                    DecodeLoss::new(
+                        crate::unknown::part::record_unreadable_kind(),
+                        format!(
+                            "the decode wrapper states {} ({})",
+                            unstated.what, unstated.field
+                        ),
+                    )
+                    .with_severity(crate::report::Severity::Error),
+                );
+            }
+            (digest, measured) = walk(&self.ir)?;
+            while self.give_up_records_past_the_bounds(&policy, format, &measured.records)? {
+                (digest, measured) = walk(&self.ir)?;
+            }
+        }
+        if let Some(bound) = measured.outside.values().next() {
+            let fields: std::collections::BTreeSet<&str> = measured
+                .outside
+                .keys()
+                .map(|outside| outside.field.as_str())
+                .collect();
             self.report.losses.push(
                 DecodeLoss::new(
                     crate::unknown::part::record_unreadable_kind(),
                     format!(
-                        "the document {} outside every record, which the decode wrapper keeps",
-                        bound.describe()
+                        "the document {} outside every record ({}), which the decode wrapper \
+                         keeps",
+                        bound.describe(),
+                        fields.into_iter().collect::<Vec<_>>().join(", ")
                     ),
                 )
                 .with_severity(crate::report::Severity::Error),

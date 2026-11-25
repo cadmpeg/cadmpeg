@@ -512,7 +512,7 @@ impl Shell {
         shell
     }
 
-    /// States the shell without the member `member`, which the document no
+    /// States the shell without its member `member`, which the document no
     /// longer holds, and marks it (§5.6, Unstated children). Returns whether
     /// it listed `member`.
     pub(crate) fn lose_member(&mut self, member: &str) -> bool {

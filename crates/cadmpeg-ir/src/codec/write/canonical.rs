@@ -90,9 +90,10 @@ fn repeated_ids(ir: &mut CadIr) -> Vec<LossNote> {
         .collect()
 }
 
-/// Drops each record of a class the scope of `ir` excludes, each model
-/// record that references an excluded design class, and each record that
-/// needs one, as §3.3 drops a record.
+/// Drops each record of a class the scope of `ir` excludes and each record
+/// that needs one, as §3.3 drops a record. Where the scope excludes the
+/// design class, each model reference into it is absent and each attribute
+/// whose target is a design record is left out (§2.1).
 fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     let format = CadirEncoder::FORMAT.as_str();
     let before: Vec<(ArenaName, _, BTreeSet<String>)> = ir
@@ -105,8 +106,8 @@ fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     let marked = drop_excluded(ir, scope)?;
     debug_assert!(
         ir.check_scope().is_ok(),
-        "a document without the records of the classes its scope excludes and without the \
-         model records that reference an excluded design class meets its scope"
+        "a document without the records of the classes its scope excludes and without model \
+         references into an excluded design class meets its scope"
     );
     let after = ir.arenas().record_ids();
     let mut losses = Vec::new();
@@ -131,29 +132,35 @@ fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     }
     losses.extend(value_unwritable(
         format,
-        "states in its partial form each record that held a record out of the document's scope",
+        "writes without its reference to a record out of the document's scope each record \
+         that held one",
         marked.difference(&dropped).cloned(),
     ));
     Ok(losses)
 }
 
 /// Drops the records `held` excludes and each record that needs one, and
-/// returns the records it states in their partial forms.
+/// returns the records it states without a reference or in their partial
+/// forms.
 fn drop_excluded(ir: &mut CadIr, held: ContentScope) -> Result<BTreeSet<String>, CodecError> {
-    let seeds = ArenaClass::ALL
-        .into_iter()
-        .filter(|class| !held.holds(*class))
-        .flat_map(|class| ir.arenas().seeds_of(class))
-        .collect();
     let mut marked = BTreeSet::new();
-    for (_, released) in crate::give_up::drop_records(ir, seeds)? {
-        marked.extend(released.marked);
-    }
+    let mut seeds = Vec::new();
     if !held.holds(ArenaClass::Design) {
-        let seeds = ir.design_reference_seeds();
-        for (_, released) in crate::give_up::drop_records(ir, seeds)? {
-            marked.extend(released.marked);
-        }
+        let (kept, left_out) = ir.leave_design_out();
+        marked.extend(kept);
+        seeds = left_out;
+    }
+    seeds.extend(
+        ArenaClass::ALL
+            .into_iter()
+            .filter(|class| !held.holds(*class))
+            .flat_map(|class| ir.arenas().seeds_of(class)),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    for (_, released) in crate::give_up::drop_records(&ctx, ir, seeds)? {
+        marked.extend(released.marked);
     }
     Ok(marked)
 }

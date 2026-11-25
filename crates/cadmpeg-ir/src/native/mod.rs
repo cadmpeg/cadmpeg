@@ -1196,14 +1196,79 @@ impl Native {
         before - records.len()
     }
 
-    /// Whether a record of any namespace arena has the id `id`.
-    pub(crate) fn holds_id(&self, id: &str) -> bool {
-        self.0.values().any(|namespace| {
-            namespace
-                .arenas
-                .values()
-                .flatten()
-                .any(|record| record.id() == id)
+    /// Counts each namespace record in `references`.
+    pub(crate) fn hold_ids(&self, references: &mut crate::give_up::References) {
+        for record in self
+            .0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+        {
+            references.hold(record.id());
+        }
+    }
+
+    /// Adds the names each namespace record holds to `references`, other
+    /// than the `unknowns` stubs, whose links are a set (§3.3).
+    pub(crate) fn add_holders(&self, references: &mut crate::give_up::References) {
+        for (codec, namespace) in &self.0 {
+            for (arena, records) in &namespace.arenas {
+                if arena.as_str() == "unknowns" {
+                    continue;
+                }
+                let arena = crate::give_up::Arena::Native {
+                    codec: codec.as_str().to_owned(),
+                    arena: arena.as_str().to_owned(),
+                };
+                for record in records {
+                    references.add(&arena, record.id(), record);
+                }
+            }
+        }
+    }
+
+    /// The records of `id` in the native arena `arena`, which is in identity
+    /// order.
+    fn records(&self, arena: &crate::give_up::Arena, id: &str) -> &[NativeRecord] {
+        let crate::give_up::Arena::Native { codec, arena } = arena else {
+            return &[];
+        };
+        let Some(records) = self
+            .0
+            .get(codec.as_str())
+            .and_then(|namespace| namespace.arenas.get(arena.as_str()))
+        else {
+            return &[];
+        };
+        let start = records.partition_point(|record| record.id() < id);
+        let length = records[start..]
+            .iter()
+            .take_while(|record| record.id() == id)
+            .count();
+        &records[start..start + length]
+    }
+
+    /// The holder the records of `id` in the native arena `arena` are, where
+    /// they name an id of `gone`.
+    pub(crate) fn holder(
+        &self,
+        arena: &crate::give_up::Arena,
+        id: &str,
+        gone: &std::collections::BTreeSet<String>,
+    ) -> Option<crate::give_up::Holder> {
+        let names: Vec<(String, String)> = self
+            .records(arena, id)
+            .iter()
+            .filter_map(|record| {
+                crate::give_up::Holder::of(arena, id, record, |text| {
+                    gone.get(text).map(String::as_str)
+                })
+            })
+            .flat_map(|holder| holder.names)
+            .collect();
+        (!names.is_empty()).then(|| crate::give_up::Holder {
+            arena: arena.clone(),
+            id: id.to_owned(),
+            names,
         })
     }
 
@@ -1274,6 +1339,35 @@ impl Native {
             }
         }
         Ok(lost)
+    }
+
+    /// Removes every record of the native arena `arena` whose id is in
+    /// `ids`, returning the number removed of each id.
+    pub(crate) fn remove_ids(
+        &mut self,
+        arena: &crate::give_up::Arena,
+        ids: &std::collections::BTreeSet<String>,
+    ) -> BTreeMap<String, usize> {
+        let mut removed = BTreeMap::new();
+        let crate::give_up::Arena::Native { codec, arena } = arena else {
+            return removed;
+        };
+        let Some(records) = self
+            .0
+            .get_mut(codec.as_str())
+            .and_then(|namespace| namespace.arenas.get_mut(arena.as_str()))
+        else {
+            return removed;
+        };
+        records.retain(|record| {
+            if ids.contains(record.id()) {
+                *removed.entry(record.id().to_owned()).or_insert(0) += 1;
+                false
+            } else {
+                true
+            }
+        });
+        removed
     }
 
     /// Sort every arena into canonical identity order.

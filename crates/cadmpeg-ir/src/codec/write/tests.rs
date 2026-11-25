@@ -115,9 +115,10 @@ fn cadir_encoder_drops_a_record_past_the_document_bound() {
 }
 
 /// A document whose scope excludes a class it holds records of writes
-/// without those records and without the model records that reference the
-/// excluded design class. Each loss names what the write leaves out, and
-/// the strict reader reads the output.
+/// without those records. Where the scope excludes design, a model record's
+/// reference into design is absent and an attribute whose target is a
+/// design record is left out (§2.1). Each loss names what the write leaves
+/// out, and the strict reader reads the output.
 #[test]
 fn cadir_encoder_drops_the_records_its_scope_excludes() {
     use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -199,8 +200,7 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
         [
             format!(
                 "the cadir write drops the records of arena `attributes` that the document's \
-                 scope excludes or that need one: 2 record(s) omitted: {NAMES_PARAMETER}, \
-                 {ON_CONFIGURATION}"
+                 scope excludes or that need one: 1 record(s) omitted: {ON_CONFIGURATION}"
             ),
             format!(
                 "the cadir write drops the records of arena `design.parameters` that the \
@@ -208,7 +208,11 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
             ),
         ]
     );
-    assert!(messages("value.unwritable").is_empty());
+    let unwritable = messages("value.unwritable");
+    let [unwritable] = unwritable.as_slice() else {
+        panic!("one value.unwritable: {unwritable:?}");
+    };
+    assert!(unwritable.contains(NAMES_PARAMETER), "{unwritable}");
     let mut encoded = Vec::new();
     plan.write_to(&mut encoded).unwrap();
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
@@ -223,7 +227,8 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
         .iter()
         .map(|attribute| attribute.id.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(attributes, [ON_DOCUMENT]);
+    assert_eq!(attributes, [NAMES_PARAMETER, ON_DOCUMENT]);
+    assert_eq!(written.model.attributes[0].values, [None]);
     assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
     assert_eq!(written.geometry.points.len(), ir.geometry.points.len());
 }
@@ -1149,6 +1154,83 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
             report.findings.iter().collect::<Vec<_>>()
         );
     }
+}
+
+#[test]
+fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.set_scope(cadmpeg_core::decode::ContentScope::full())
+        .unwrap();
+    let face = |at: usize| ir.geometry.faces[at].id.as_str().to_owned();
+    let (named, unnamed) = (face(0), face(1));
+    let deep = (0..crate::bounds::MAX_DOCUMENT_DEPTH / 2).fold(
+        serde_json::json!({"kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#f"}}),
+        |from, _| {
+            serde_json::json!({"kind": "modified", "value": {"feature": "test:design:feature#f", "from": from}})
+        },
+    );
+    let native = serde_json::json!({"codec": "test", "value": {"kind": "text", "value": "Face1"}});
+    ir.design.names = serde_json::from_value(serde_json::json!([
+        [{"kind": "face", "value": named}, {"name": deep, "native": native}],
+        [{"kind": "face", "value": unnamed}, {"name": deep}]
+    ]))
+    .unwrap();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a name past the bound does not refuse the write");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .collect::<Vec<_>>();
+    assert_eq!(unwritable.len(), 2, "{unwritable:?}");
+    assert!(unwritable
+        .iter()
+        .all(|loss| loss.message.contains("design.names")));
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(
+        crate::hash::finite_json::to_json_value(&written.design.names).unwrap(),
+        serde_json::json!([[{"kind": "face", "value": named}, {"native": native}]])
+    );
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+}
+
+#[test]
+fn cadir_encoder_writes_the_empty_document_when_every_record_is_dropped() {
+    const PAST: &str = "test:native:past#1";
+    let mut ir = CadIr::empty();
+    let field = (0..crate::bounds::MAX_DOCUMENT_DEPTH).fold(serde_json::Value::Null, |inner, _| {
+        serde_json::Value::Array(vec![inner])
+    });
+    let record = crate::NativeRecord::new(
+        crate::ids::Identity::new(PAST).unwrap(),
+        [("field".to_owned(), field)].into_iter().collect(),
+    )
+    .unwrap();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records("deep", vec![record])
+        .unwrap();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a document past the bound does not refuse the write");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "output.empty"),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(written, CadIr::empty());
 }
 
 struct LossyEncoder(Vec<crate::report::loss::LossNote>);

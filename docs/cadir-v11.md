@@ -274,7 +274,7 @@ A decoder gives up only the part it cannot read, decodes the rest, and reports w
   - Where the text stops being JSON, every record that closes before that point is read.
   - **Reading refuses** only another `ir_version` (§3.6), another `units` record (§2), input that holds no JSON object, `ResourceLimit` of `scope: Session`, and `Io`. The scope is read as written; a breach of §2.1 is a rule of part 10. The caller's `strictness` (§3.4, Refusals) refuses a read on its report, as it does a decode.
 
-`CadIr::read(bytes: &[u8], options: &ReadOptions) -> Result<CadirRead, ReadFailure>` is the reader of a document's text. `ReadOptions { limits: ResourceLimits, strictness: Strictness }` holds the caller's ceilings (§2.5) and strictness, and `CadirRead { document: CadIr, report: Vec<LossNote> }` the document and its report. Every refusal is one of six `ReadFailure` variants:
+`CadIr::read(bytes: &[u8], options: &ReadOptions) -> Result<CadirRead, ReadFailure>` is the reader of a document's text. `ReadOptions { limits: ResourceLimits, strictness: Strictness }` holds the caller's ceilings (§2.5) and strictness, and `CadirRead { document: CadIr, report: Vec<LossNote>, fidelity: SourceFidelity }` the document, its report, and the retained text of each part the read gave up, keyed by the id of its `unknowns` stub. Every refusal is one of six `ReadFailure` variants:
 
 | Variant | Applies when |
 |---|---|

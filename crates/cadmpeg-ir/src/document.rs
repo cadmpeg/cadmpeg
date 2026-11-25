@@ -960,6 +960,13 @@ macro_rules! declare_topology {
                 SortedTopology { $($field: sorted_model_value!(self, $field),)* }
             }
 
+            /// The id of each record of each arena.
+            pub(crate) fn identities(&self) -> Vec<&str> {
+                let mut ids = Vec::new();
+                $(ids.extend(self.$field.iter().map(crate::schema::ArenaRecord::record_identity));)*
+                ids
+            }
+
             /// Moves every arena from another topology.
             pub(crate) fn append(&mut self, mut other: Self) {
                 self.append_arenas(&mut other);
@@ -1211,17 +1218,6 @@ macro_rules! declare_document_arenas {
                     + self.process.entity_count()
             }
 
-            /// Each record that names an id of `gone` other than by its own
-            /// id, with the paths at which it names one (§3.3).
-            pub(crate) fn holders(self, gone: &std::collections::BTreeSet<String>) -> Vec<crate::give_up::Holder> {
-                use crate::schema::ArenaRecord;
-                let mut found = Vec::new();
-                $(found.extend(self.$home.$field.iter().filter_map(|entity| {
-                    crate::give_up::Holder::of(stringify!($home), stringify!($field), entity.record_identity(), entity, gone)
-                }));)*
-                found
-            }
-
             pub(crate) fn repro_graph(self, finding: &crate::report::check::Finding) -> Result<crate::repro::selection::Graph<'a>, CodecError> {
                 use crate::schema::ArenaRecord;
                 let roots: std::collections::BTreeSet<&str> = finding.entity.iter().chain(&finding.related).map(String::as_str).collect();
@@ -1273,12 +1269,126 @@ macro_rules! declare_document_arenas {
                 0
             }
 
-            /// Whether a record of any arena, neutral or native, has the id
-            /// `id`.
-            pub(crate) fn holds_id(&self, id: &str) -> bool {
+            /// The references of the document, from one walk of its records
+            /// (§3.3).
+            pub(crate) fn references(&self) -> crate::give_up::References {
+                self.references_from(crate::give_up::References::default())
+            }
+
+            /// The references of the document added to `references`, which
+            /// counts the ids it names that the document does not hold.
+            pub(crate) fn references_from(
+                &self,
+                mut references: crate::give_up::References,
+            ) -> crate::give_up::References {
                 use crate::schema::ArenaRecord;
-                $(self.$home.$field.iter().any(|entity| entity.record_identity() == id) ||)*
-                    self.native.holds_id(id)
+                $(for entity in &self.$home.$field {
+                    references.hold(entity.record_identity());
+                })*
+                self.native.hold_ids(&mut references);
+                $({
+                    let arena = crate::give_up::Arena::Home {
+                        home: stringify!($home),
+                        field: stringify!($field),
+                    };
+                    for entity in &self.$home.$field {
+                        references.add(&arena, entity.record_identity(), entity);
+                    }
+                })*
+                self.native.add_holders(&mut references);
+                references
+            }
+
+            /// The holder the records of `id` in `arena` are, where they name
+            /// an id of `gone`. The arena is in identity order.
+            pub(crate) fn holder(
+                &self,
+                arena: &crate::give_up::Arena,
+                id: &str,
+                gone: &std::collections::BTreeSet<String>,
+            ) -> Option<crate::give_up::Holder> {
+                let crate::give_up::Arena::Home { home, field } = arena else {
+                    return self.native.holder(arena, id, gone);
+                };
+                $(if *home == stringify!($home) && *field == stringify!($field) {
+                    let names: Vec<(String, String)> = crate::give_up::records(&self.$home.$field, id)
+                        .iter()
+                        .filter_map(|entity| {
+                            crate::give_up::Holder::of(arena, id, entity, |text| {
+                                gone.get(text).map(String::as_str)
+                            })
+                        })
+                        .flat_map(|holder| holder.names)
+                        .collect();
+                    return (!names.is_empty()).then(|| crate::give_up::Holder {
+                        arena: arena.clone(),
+                        id: id.to_owned(),
+                        names,
+                    });
+                })*
+                None
+            }
+
+            /// Removes every record of `arena` whose id is in `ids`,
+            /// returning the number removed of each id.
+            pub(crate) fn remove_ids(
+                &mut self,
+                arena: &crate::give_up::Arena,
+                ids: &std::collections::BTreeSet<String>,
+            ) -> std::collections::BTreeMap<String, usize> {
+                use crate::schema::ArenaRecord;
+                let mut removed = std::collections::BTreeMap::new();
+                let crate::give_up::Arena::Home { home, field } = arena else {
+                    return self.native.remove_ids(arena, ids);
+                };
+                $(if *home == stringify!($home) && *field == stringify!($field) {
+                    self.$home.$field.retain(|entity| {
+                        let id = entity.record_identity();
+                        if ids.contains(id) {
+                            *removed.entry(id.to_owned()).or_insert(0) += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                })*
+                removed
+            }
+
+            /// Rewrites the JSON of each record of `id` in `arena` by
+            /// `rewrite`, and replaces the records where `rewrite` accepts
+            /// each and each reads back. Returns whether it replaced them.
+            /// The arena is in identity order.
+            pub(crate) fn rewrite_records(
+                &mut self,
+                arena: &crate::give_up::Arena,
+                id: &str,
+                mut rewrite: impl FnMut(&mut serde_json::Value) -> bool,
+            ) -> bool {
+                let crate::give_up::Arena::Home { home, field } = arena else {
+                    return false;
+                };
+                $(if *home == stringify!($home) && *field == stringify!($field) {
+                    let records = crate::give_up::records_mut(&mut self.$home.$field, id);
+                    let mut rewritten: Vec<$ty> = Vec::with_capacity(records.len());
+                    for entity in records.iter() {
+                        let Ok(mut value) = crate::hash::finite_json::to_json_value(entity) else {
+                            return false;
+                        };
+                        if !rewrite(&mut value) {
+                            return false;
+                        }
+                        let Ok(entity) = serde_json::from_value(value) else {
+                            return false;
+                        };
+                        rewritten.push(entity);
+                    }
+                    for (record, entity) in records.iter_mut().zip(rewritten) {
+                        *record = entity;
+                    }
+                    return true;
+                })*
+                false
             }
         }
     };
@@ -3164,21 +3274,23 @@ impl CadIr {
             && self.native.unordered_arena().is_none()
     }
 
-    /// Each model record that references the design class, as the give-up
-    /// names it (§2.1).
-    pub(crate) fn design_reference_seeds(&self) -> Vec<crate::give_up::Seed> {
-        design_references::holders(&self.model)
+    /// Leaves the design class out of the model (§2.1): states each model
+    /// record without its references into the design class, and returns the
+    /// ids of those records with the give-up seeds of the records whose own
+    /// target is a design record.
+    pub(crate) fn leave_design_out(&mut self) -> (Vec<String>, Vec<crate::give_up::Seed>) {
+        let (kept, left_out) = design_references::leave_out(&mut self.model);
+        let seeds = left_out
             .into_iter()
-            .flat_map(|(arena, ids)| {
-                ids.into_iter().map(move |id| crate::give_up::Seed {
-                    arena: crate::give_up::Arena::Home {
-                        home: arena.home().as_str(),
-                        field: arena.key(),
-                    },
-                    id: id.to_owned(),
-                })
+            .map(|(arena, id)| crate::give_up::Seed {
+                arena: crate::give_up::Arena::Home {
+                    home: arena.home().as_str(),
+                    field: arena.key(),
+                },
+                id,
             })
-            .collect()
+            .collect();
+        (kept, seeds)
     }
 
     /// The record at `place`, as the give-up names it.
@@ -3215,22 +3327,31 @@ impl CadIr {
 
     /// Removes each id of `gone`, which no record of the document holds, from
     /// the collections keyed by their members' own ids: the current name
-    /// table and the regeneration parents of features (§3.3).
+    /// table and the regeneration parents of features (§3.3). An entry of
+    /// the name table whose name names an id of `gone` keeps its native name
+    /// alone, and is released with its key where it has none (§5.7).
     pub(crate) fn release_keyed(&mut self, gone: &std::collections::BTreeSet<String>) {
-        if self
-            .design
-            .names
-            .entries()
-            .keys()
-            .any(|entity| gone.contains(entity.id()))
-        {
+        let lost = |name: &crate::design::names::TopoName| {
+            crate::hash::finite_json::to_json_value(name)
+                .is_ok_and(|name| crate::give_up::names(&name, gone))
+        };
+        if self.design.names.entries().iter().any(|(entity, entry)| {
+            gone.contains(entity.id()) || entry.name.as_ref().is_some_and(lost)
+        }) {
             self.design.names = self
                 .design
                 .names
                 .entries()
                 .iter()
                 .filter(|(entity, _)| !gone.contains(entity.id()))
-                .map(|(entity, entry)| (entity.clone(), entry.clone()))
+                .filter_map(|(entity, entry)| match &entry.name {
+                    Some(name) if lost(name) => entry.native.is_some().then(|| {
+                        let mut entry = entry.clone();
+                        entry.name = None;
+                        (entity.clone(), entry)
+                    }),
+                    _ => Some((entity.clone(), entry.clone())),
+                })
                 .collect::<BTreeMap<_, _>>()
                 .into();
         }

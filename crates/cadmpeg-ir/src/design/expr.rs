@@ -126,6 +126,25 @@ pub enum ExpressionDialect {
     Native(NonBlankString),
 }
 
+impl ExpressionDialect {
+    /// The expression language of the sources the codec `codec` reads: the
+    /// language of their process records where `process`, and of their
+    /// design otherwise. `None` where `codec` is blank.
+    pub(crate) fn of_codec(codec: &str, process: bool) -> Option<Self> {
+        Some(match (codec, process) {
+            ("catia", _) => Self::Catia,
+            ("creo", _) => Self::Creo,
+            ("f3d", false) => Self::Fusion,
+            ("f3d", true) => Self::FusionCam,
+            ("fcstd", _) => Self::FreeCad,
+            ("inventor", _) => Self::Inventor,
+            ("nx", _) => Self::Nx,
+            ("sldprt", _) => Self::SolidWorks,
+            (codec, _) => Self::Native(NonBlankString::new(codec)?),
+        })
+    }
+}
+
 /// A node of a neutral expression tree. Its clone, comparison, and drop
 /// walk the tree without recursion.
 #[derive(Debug, Serialize, Deserialize)]

@@ -692,11 +692,11 @@ impl EncoderBackend for CadirEncoder {
         let (mut bytes, measured) =
             crate::hash::measured_canonical_json(source).map_err(malformed)?;
         let written;
-        let ir = if measured.records.is_empty() {
+        let ir = if measured.records.is_empty() && measured.outside.is_empty() {
             source
         } else {
-            let (ir, dropped) = drop_records_past_the_bounds(source, &measured.records)?;
-            losses.extend(dropped);
+            let (ir, unwritable) = within_the_bounds(source, &measured)?;
+            losses.extend(unwritable);
             bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
                 .map_err(malformed)?
                 .into_bytes();
@@ -716,22 +716,113 @@ impl EncoderBackend for CadirEncoder {
     }
 }
 
-/// A copy of `ir` without each record of `records`, which it holds past a
-/// bound of §2.5, and without each record that needs one, as §3.3 drops a
-/// record (§3.4). Each such record charges one `export:value.unwritable`
-/// that names it, the bound, and the records dropped and marked with it.
-fn drop_records_past_the_bounds(
+/// A copy of `ir` within the bounds of §2.5 (§3.4). Each value outside every
+/// record past a bound is written as an unstated value, each expression past
+/// its bound is written in its partial form, and each record still past a
+/// bound is dropped with each record that needs it, as §3.3 drops a record.
+/// A copy that holds no record, of a document that held one, is the empty
+/// document, with `export:output.empty`.
+fn within_the_bounds(
     ir: &CadIr,
-    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    measured: &crate::bounds::Measured,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+    let holds_records = |ir: &CadIr| {
+        ir.entity_count() > 0
+            || ir.native.0.values().any(|namespace| {
+                namespace
+                    .arenas()
+                    .values()
+                    .any(|records| !records.is_empty())
+            })
+    };
     let mut ir = ir.clone();
+    let held = holds_records(&ir);
+    let mut losses = Vec::new();
+    for unstated in crate::bounds::unstate_outside(&mut ir, &measured.outside)? {
+        losses.extend(value_unwritable(
+            CadirEncoder::FORMAT.as_str(),
+            &format!("writes {}", unstated.what),
+            [unstated.field],
+        ));
+    }
+    let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
+    losses.extend(restated);
+    losses.extend(drop_records_past_the_bounds(&mut ir, &records)?);
+    if held && !holds_records(&ir) {
+        losses.push(output_empty(
+            "the written CADIR document holds no record: each record lies past a bound of \
+             §2.5 or needs one that does",
+        ));
+        ir = CadIr::empty();
+    }
+    Ok((ir, losses))
+}
+
+/// States `Source` with no tokens each expression past its bound in the
+/// records of `records` that pass that bound, the partial form §3.3 gives
+/// an expression, so that each such record and each record that needs it
+/// stays. Each restated record charges one `export:value.unwritable` that
+/// names it. Returns those losses and the records of `ir` still past a
+/// bound.
+fn restate_expressions_past_the_bound(
+    ir: &mut CadIr,
+    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+) -> Result<
+    (
+        Vec<LossNote>,
+        std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    ),
+    CodecError,
+> {
+    ir.finalize();
+    let seeds: Vec<crate::give_up::Seed> = records
+        .iter()
+        .filter(|(_, bound)| **bound == crate::bounds::Bound::Expression)
+        .filter_map(|(place, _)| ir.record_at(place))
+        .collect();
+    let restated = crate::give_up::restate_past_the_bound(ir, &seeds);
+    if restated.is_empty() {
+        return Ok((Vec::new(), records.clone()));
+    }
+    let losses = restated
+        .into_iter()
+        .filter_map(|seed| {
+            let reason = format!(
+                "writes each expression of record {} of arena {} deeper than the {} levels of \
+                 an expression as Source with no tokens",
+                seed.id,
+                seed.arena,
+                crate::bounds::MAX_EXPRESSION_DEPTH
+            );
+            value_unwritable(CadirEncoder::FORMAT.as_str(), &reason, [seed.id])
+        })
+        .collect();
+    let (_, measured) = crate::hash::measured_canonical_json(&*ir)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    Ok((losses, measured.records))
+}
+
+/// Drops from `ir` each record of `records`, which it holds past a bound of
+/// §2.5, and each record that needs one, as §3.3 drops a record (§3.4). Each
+/// such record charges one `export:value.unwritable` that names it, the
+/// bound, and the records dropped and marked with it.
+fn drop_records_past_the_bounds(
+    ir: &mut CadIr,
+    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+) -> Result<Vec<LossNote>, CodecError> {
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
     ir.finalize();
     let bounds: std::collections::BTreeMap<crate::give_up::Seed, crate::bounds::Bound> = records
         .iter()
         .filter_map(|(place, bound)| ir.record_at(place).map(|seed| (seed, *bound)))
         .collect();
-    let removed = crate::give_up::drop_records(&mut ir, bounds.keys().cloned().collect())?;
-    let losses = removed
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let removed = crate::give_up::drop_records(&ctx, ir, bounds.keys().cloned().collect())?;
+    Ok(removed
         .into_iter()
         .filter_map(|(seed, released)| {
             let reason = format!(
@@ -755,8 +846,7 @@ fn drop_records_past_the_bounds(
                 std::iter::once(seed.id).chain(released.dropped),
             )
         })
-        .collect();
-    Ok((ir, losses))
+        .collect())
 }
 
 #[cfg(test)]

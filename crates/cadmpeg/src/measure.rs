@@ -84,7 +84,7 @@ fn input_summary(document: &LoadedDocument) -> InputSummary<'_> {
     InputSummary {
         format: document.decode_report().map(DecodeReport::format),
         origin: match document.origin {
-            LoadOrigin::Neutral => "neutral",
+            LoadOrigin::Neutral | LoadOrigin::Read { .. } => "neutral",
             LoadOrigin::Restored { .. } => "restored",
             LoadOrigin::Decoded { .. } => "decoded",
         },
