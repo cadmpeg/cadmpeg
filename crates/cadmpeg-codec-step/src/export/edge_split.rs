@@ -5,8 +5,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{
-    curve_endpoints_coincident, model_curve_parameter_near_point_in_index_with_tolerance,
-    model_curve_point_by_id,
+    curve_endpoints_coincident, finite_or_refusal,
+    model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
 };
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
@@ -91,9 +91,13 @@ pub(super) fn midpoint(
     if middle == first || middle == last {
         return Err(refused());
     }
-    let point = model_curve_point_by_id(EvaluationAdmission::Standard, index, curve_id, middle)
-        .ok()
-        .ok_or_else(refused)?;
+    let point = finite_or_refusal(model_curve_point_by_id(
+        EvaluationAdmission::Standard,
+        index,
+        curve_id,
+        middle,
+    ))?
+    .ok_or_else(refused)?;
     Ok(Some(point.get()))
 }
 

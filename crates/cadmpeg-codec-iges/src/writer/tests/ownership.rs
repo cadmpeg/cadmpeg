@@ -522,7 +522,7 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
             .clone();
         duplicate.id = "test:model:edge#duplicate".try_into().unwrap();
         ir.geometry.edges.push(duplicate);
-        let ignored = super::super::ignored_carrier_geometry(&ir);
+        let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
         assert!(ignored.edges.contains("test:model:edge#duplicate"));
 
         let generated = super::super::synthesize(
@@ -601,7 +601,7 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     duplicate.carrier =
         cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(range)).unwrap();
     ir.geometry.edges.push(duplicate);
-    let ignored = super::super::ignored_carrier_geometry(&ir);
+    let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
     assert!(ignored.curves.contains("test:model:curve#duplicate"));
 
     let generated = super::super::synthesize(

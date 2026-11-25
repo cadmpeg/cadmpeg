@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-preserving sampled carriers for finite procedural domains.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 use crate::eval::{
     admission::EvaluationAdmission, decode::pcurve_uv, exact_blend_cap_point,
-    exact_blend_rail_point, exact_intersection_point, model_curve_point_by_id,
+    exact_blend_rail_point, exact_intersection_point, finite_or_refusal, model_curve_point_by_id,
     model_surface_point_by_id, nurbs_curve_parameter_domain, procedural_surface_breaks,
-    spine_rolling_ball_domain,
+    spine_rolling_ball_domain, EvaluationFailure,
 };
 use crate::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
@@ -21,7 +22,7 @@ use crate::index::{ModelIndex, StandardIndex};
 use crate::math::{Point2, Point3};
 use crate::CadIr;
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
 
 /// Largest patch count along one parameter axis.
 const MAX_PATCHES: usize = 1024;
@@ -61,13 +62,15 @@ struct FitEvaluation {
     // Separate from `work`, because an exact curve can fall back to its chart while a
     // surface that runs out of work drops its face from the shell.
     exact_curve_work: WorkBudget,
+    refusal: Cell<Option<ResourceLimit>>,
 }
 
 /// Lazily sampled carriers and the export-wide sampling budget.
 ///
 /// Helix curves and helix surfaces are not sampled here: the writer fits
 /// them through `crate::eval::helix_nurbs`. An evaluation without a value or
-/// an exhausted work slice or evaluation depth leaves the carrier unwritten.
+/// an exhausted work slice leaves the carrier unwritten. A resource refusal
+/// is retained for the caller.
 pub struct Approximator<'a> {
     ir: &'a CadIr,
     index: Option<ModelIndex<'a>>,
@@ -91,6 +94,7 @@ impl<'a> Approximator<'a> {
             evaluation: FitEvaluation {
                 work: WorkBudget::new(MAX_EVALUATION_WORK),
                 exact_curve_work: WorkBudget::new(MAX_EXACT_CURVE_WORK),
+                refusal: Cell::new(None),
             },
             samples: MAX_SAMPLES,
             poles: MAX_POLES,
@@ -124,6 +128,11 @@ impl<'a> Approximator<'a> {
     /// limit in model length units, which differs from [`Self::residual_limit`].
     pub fn free_form_curve_fits(&self) -> (usize, f64) {
         (self.free_form_curves, FREE_FORM_BLEND_RESIDUAL)
+    }
+
+    /// The first resource refusal encountered while fitting.
+    pub fn resource_limit(&self) -> Option<ResourceLimit> {
+        self.evaluation.refusal.get()
     }
 
     /// A sampled B-spline carrier for a procedural surface. A surface whose
@@ -188,12 +197,13 @@ impl<'a> Approximator<'a> {
         };
         let evaluation = &self.evaluation;
         let mut evaluate = |u: f64, v: f64| {
-            EvaluationAdmission::Standard
-                .within_work_slice(&evaluation.work, |admission| {
+            keep_refusal(
+                &evaluation.refusal,
+                EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
                     model_surface_point_by_id(admission, index, owner, u, v)
-                })
-                .ok()
-                .map(crate::features::geometry::FinitePoint3::get)
+                }),
+            )
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         if !trims_meet_vertices(
             ir,
@@ -206,7 +216,11 @@ impl<'a> Approximator<'a> {
         ) {
             return None;
         }
-        let breaks = procedural_surface_breaks(index, owner, ranges).ok()?;
+        let breaks = keep_refusal(
+            &evaluation.refusal,
+            procedural_surface_breaks(index, owner, ranges)
+                .map_err(EvaluationFailure::<()>::ResourceLimit),
+        )?;
         let Grid {
             rows,
             knots: [u_knots, v_knots],
@@ -305,24 +319,28 @@ impl<'a> Approximator<'a> {
             .map(crate::topology::IncreasingParameterInterval::endpoints)?;
         let evaluation = &self.evaluation;
         let mut evaluate = |u: f64, _: f64| {
-            EvaluationAdmission::Standard
-                .within_work_slice(&evaluation.exact_curve_work, |admission| match carrier {
-                    ExactCarrier::Intersection(supports) => {
-                        exact_intersection_point(admission, supports, chart, u)
-                    }
-                    ExactCarrier::BlendRail {
-                        supports,
-                        side,
-                        radius,
-                    } => exact_blend_rail_point(admission, supports, side, radius, chart, u),
-                    ExactCarrier::BlendCap {
-                        supports,
-                        radius,
-                        other,
-                    } => exact_blend_cap_point(admission, supports, radius, other, chart, u),
-                })
-                .ok()
-                .map(crate::features::geometry::FinitePoint3::get)
+            keep_refusal(
+                &evaluation.refusal,
+                EvaluationAdmission::Standard.within_work_slice(
+                    &evaluation.exact_curve_work,
+                    |admission| match carrier {
+                        ExactCarrier::Intersection(supports) => {
+                            exact_intersection_point(admission, supports, chart, u)
+                        }
+                        ExactCarrier::BlendRail {
+                            supports,
+                            side,
+                            radius,
+                        } => exact_blend_rail_point(admission, supports, side, radius, chart, u),
+                        ExactCarrier::BlendCap {
+                            supports,
+                            radius,
+                            other,
+                        } => exact_blend_cap_point(admission, supports, radius, other, chart, u),
+                    },
+                ),
+            )
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         let Grid {
             rows,
@@ -388,18 +406,19 @@ impl<'a> Approximator<'a> {
         }
         let evaluation = &self.evaluation;
         if let Some(exact) = spline_through_plane(index, procedural.definition(), range, evaluation)
-            .or_else(|| isocurve_of_spline_surface(index, procedural.definition()))
+            .or_else(|| isocurve_of_spline_surface(index, procedural.definition(), evaluation))
             .or_else(|| isocurve_of_linear_sweep(index, procedural.definition()))
         {
             return Some(SolvedCurveGeometry::Nurbs(exact));
         }
         let mut evaluate = |u: f64, _: f64| {
-            EvaluationAdmission::Standard
-                .within_work_slice(&evaluation.work, |admission| {
+            keep_refusal(
+                &evaluation.refusal,
+                EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
                     model_curve_point_by_id(admission, index, owner, u)
-                })
-                .ok()
-                .map(crate::features::geometry::FinitePoint3::get)
+                }),
+            )
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         // A uniform fit cannot converge across a corner that falls between its samples, so
         // supply known corner parameters as axis breaks.
@@ -467,12 +486,13 @@ fn spline_through_plane(
         return None;
     }
     let on_plane = |u: f64, v: f64| {
-        EvaluationAdmission::Standard
-            .within_work_slice(&evaluation.work, |admission| {
+        keep_refusal(
+            &evaluation.refusal,
+            EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
                 model_surface_point_by_id(admission, index, surface, u, v)
-            })
-            .ok()
-            .map(crate::features::geometry::FinitePoint3::get)
+            }),
+        )
+        .map(crate::features::geometry::FinitePoint3::get)
     };
     let origin = on_plane(0.0, 0.0)?;
     let along_u = on_plane(1.0, 0.0)?;
@@ -531,6 +551,7 @@ fn curve_corner_parameters(definition: &ProceduralCurveDefinition, range: [f64; 
 fn isocurve_of_spline_surface(
     index: &ModelIndex<'_>,
     definition: &ProceduralCurveDefinition,
+    evaluation: &FitEvaluation,
 ) -> Option<NurbsCurve> {
     let ProceduralCurveDefinition::SurfaceCurve {
         family:
@@ -587,7 +608,12 @@ fn isocurve_of_spline_surface(
         };
     match crate::eval::nurbs_surface_isocurve(EvaluationAdmission::Standard, surface, axis, at) {
         Ok(curve) => crossing.orient(curve?, line_domain),
-        Err(_) => None,
+        Err(limit) => {
+            if evaluation.refusal.get().is_none() {
+                evaluation.refusal.set(Some(limit));
+            }
+            None
+        }
     }
 }
 
@@ -694,6 +720,21 @@ fn isocurve_of_linear_sweep(
     .and_then(|moved| crossing.orient(moved, domain))
 }
 
+fn keep_refusal<T, R>(
+    refusal: &Cell<Option<ResourceLimit>>,
+    result: Result<T, EvaluationFailure<R>>,
+) -> Option<T> {
+    match finite_or_refusal(result) {
+        Ok(value) => value,
+        Err(limit) => {
+            if refusal.get().is_none() {
+                refusal.set(Some(limit));
+            }
+            None
+        }
+    }
+}
+
 /// Whether every trim endpoint of the faces on `surface` lies in the sampled
 /// domain and maps onto one of its edge vertices. A pcurve the evaluator
 /// cannot place at an endpoint, of any kind, fails the check.
@@ -768,11 +809,13 @@ fn trims_meet_vertices(
                         return false;
                     };
                     for t in range.endpoints() {
-                        let uv = EvaluationAdmission::Standard
-                            .within_work_slice(&evaluation.work, |admission| {
-                                pcurve_uv(admission, &pcurve.geometry, t)
-                            })
-                            .ok();
+                        let uv = keep_refusal(
+                            &evaluation.refusal,
+                            EvaluationAdmission::Standard
+                                .within_work_slice(&evaluation.work, |admission| {
+                                    pcurve_uv(admission, &pcurve.geometry, t)
+                                }),
+                        );
                         let Some(uv) = uv else {
                             return false;
                         };
@@ -1078,26 +1121,31 @@ fn spine_blend_face_domain(
                 };
                 for step in 0..=EDGE_DOMAIN_SAMPLES {
                     let fraction = real(step) / real(EDGE_DOMAIN_SAMPLES);
-                    let point = EvaluationAdmission::Standard
-                        .within_work_slice(&evaluation.work, |admission| {
-                            model_curve_point_by_id(
-                                admission,
-                                index,
-                                curve,
-                                parameter(range, fraction),
-                            )
-                        })
-                        .ok()?;
+                    let point = keep_refusal(
+                        &evaluation.refusal,
+                        EvaluationAdmission::Standard.within_work_slice(
+                            &evaluation.work,
+                            |admission| {
+                                model_curve_point_by_id(
+                                    admission,
+                                    index,
+                                    curve,
+                                    parameter(range, fraction),
+                                )
+                            },
+                        ),
+                    )?;
                     points.push(point.get());
                 }
             }
         }
     }
-    EvaluationAdmission::Standard
-        .within_work_slice(&evaluation.work, |admission| {
+    keep_refusal(
+        &evaluation.refusal,
+        EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
             spine_rolling_ball_domain(admission, index, payload, &points, whole_spine)
-        })
-        .ok()?
+        }),
+    )?
 }
 
 /// The parameter domain of a rail curve: its stated range, its solved

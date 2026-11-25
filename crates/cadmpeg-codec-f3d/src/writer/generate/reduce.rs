@@ -27,6 +27,7 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
@@ -269,7 +270,7 @@ impl<'a> Reduction<'a> {
         }
         self.drop_unwritten_arenas();
         self.strip_carrier_metadata();
-        self.complete_vertex_free_edges();
+        self.complete_vertex_free_edges()?;
         self.drop_pole_loops();
         self.write_point_edges_curveless();
         self.state_open_edge_ranges()?;
@@ -858,10 +859,10 @@ impl<'a> Reduction<'a> {
     /// A vertex-free edge (§5.6) is written in the exact form F3D stores, one
     /// vertex at its closed curve's start. An edge whose curve does not close
     /// there is omitted with a loss, with the loop it alone bounds.
-    fn complete_vertex_free_edges(&mut self) {
+    fn complete_vertex_free_edges(&mut self) -> Result<(), CodecError> {
         let geometry = &self.ir.geometry;
         if geometry.edges.iter().all(|edge| edge.ends.is_some()) {
-            return;
+            return Ok(());
         }
         let tolerance = self.ir.tolerances.linear.get();
         let curves = geometry
@@ -875,7 +876,7 @@ impl<'a> Reduction<'a> {
             if edge.ends.is_some() {
                 continue;
             }
-            let start = closed_curve_start(edge, &curves, tolerance).and_then(|position| {
+            let start = closed_curve_start(edge, &curves, tolerance)?.and_then(|position| {
                 let point = PointId::mint(format!("{}/start-point", edge.id))
                     .map_err(|error| error.to_string())?;
                 let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
@@ -908,6 +909,7 @@ impl<'a> Reduction<'a> {
                 )));
             }
         }
+        Ok(())
     }
 
     /// A procedural carrier whose construction has no native encoding is
@@ -1544,39 +1546,48 @@ impl<'a> Reduction<'a> {
 }
 
 /// The start of `edge`'s curve, where the curve closes over the edge's range
-/// (or its closed traversal) within `tolerance`, or why it has none.
+/// (or its closed traversal) within `tolerance`, or why it has none. A
+/// resource refusal of the evaluation is the outer error.
 fn closed_curve_start(
     edge: &cadmpeg_ir::topology::Edge,
     curves: &HashMap<&str, &cadmpeg_ir::geometry::Curve>,
     tolerance: f64,
-) -> Result<FinitePoint3, String> {
+) -> Result<Result<FinitePoint3, String>, CodecError> {
     let Some(curve) = edge.curve() else {
-        return Err("it has no curve".into());
+        return Ok(Err("it has no curve".into()));
     };
     let Some(solved) = curves
         .get(curve.as_str())
         .and_then(|curve| curve.geometry.solved())
     else {
-        return Err(format!("its curve {curve} has no solved form"));
+        return Ok(Err(format!("its curve {curve} has no solved form")));
     };
     let [start, end] = match edge.param_range() {
         Some(range) => range.get(),
         None => match solved.closed_traversal_range() {
             Some(range) => range.endpoints(),
-            None => return Err(format!("its curve {curve} has no closed traversal")),
+            None => return Ok(Err(format!("its curve {curve} has no closed traversal"))),
         },
     };
     let point =
-        |parameter| curve_point_solved(EvaluationAdmission::Standard, solved, parameter).ok();
-    let (Some(first), Some(last)) = (point(start), point(end)) else {
-        return Err(format!("its curve {curve} does not evaluate at its ends"));
+        |parameter| match curve_point_solved(EvaluationAdmission::Standard, solved, parameter) {
+            Ok(point) => Ok(Some(point)),
+            Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::ResourceLimit(limit)),
+            Err(_) => Ok(None),
+        };
+    let (Some(first), Some(last)) = (point(start)?, point(end)?) else {
+        return Ok(Err(format!(
+            "its curve {curve} does not evaluate at its ends"
+        )));
     };
     let (a, b) = (first.get(), last.get());
     let gap = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt();
     if gap > tolerance {
-        return Err(format!("its curve {curve} does not close over the edge"));
+        return Ok(Err(format!(
+            "its curve {curve} does not close over the edge"
+        )));
     }
-    Ok(first)
+    Ok(Ok(first))
 }
 
 /// Remove a vertex-free edge, its coedges, the pcurves only they use, and the

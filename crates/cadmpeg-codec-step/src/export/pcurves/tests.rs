@@ -450,12 +450,14 @@ fn a_use_interval_is_directed_by_the_vertex_its_surface_image_reaches() {
             cadmpeg_core::decode::ResourceLimits::desktop(),
         )
         .unwrap();
-        let directed = builder.directed_use_range(
-            &pcurve,
-            Some(DirectedParameterRange::new(stored).unwrap()),
-            &surface,
-            &edge,
-        );
+        let directed = builder
+            .directed_use_range(
+                &pcurve,
+                Some(DirectedParameterRange::new(stored).unwrap()),
+                &surface,
+                &edge,
+            )
+            .unwrap();
         assert_eq!(
             directed,
             Some(expected),
@@ -535,12 +537,14 @@ fn a_closed_edge_directs_only_an_increasing_use_interval() {
     )
     .unwrap();
     for (stored, expected) in [([0.0, 1.0], Some([0.0, 1.0])), ([1.0, 0.0], None)] {
-        let directed = builder.directed_use_range(
-            &pcurve,
-            Some(DirectedParameterRange::new(stored).unwrap()),
-            &surface,
-            &edge,
-        );
+        let directed = builder
+            .directed_use_range(
+                &pcurve,
+                Some(DirectedParameterRange::new(stored).unwrap()),
+                &surface,
+                &edge,
+            )
+            .unwrap();
         assert_eq!(directed, expected);
     }
 }
@@ -592,7 +596,10 @@ fn reflected_conic_emission_uses_a_rational_spline() {
     )
     .unwrap();
     for coedge in ir.geometry.coedges.iter().filter(|c| c.edge == edge_id) {
-        let (start, end) = builder.coedge_pcurve_ends(coedge.id.as_str()).unwrap();
+        let (start, end) = builder
+            .coedge_pcurve_ends(coedge.id.as_str())
+            .unwrap()
+            .unwrap();
         for point in [start, end] {
             assert!((point[0] - 4.0).abs() < EPS_KNOT);
             assert!((point[1] + 2.0).abs() < EPS_KNOT);

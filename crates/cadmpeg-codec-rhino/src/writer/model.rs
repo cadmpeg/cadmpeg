@@ -601,8 +601,10 @@ impl<'a> WritableModel<'a> {
                     let geometry = WritableEdgeCurve::Nurbs(nurbs);
                     let expected_start =
                         geometry.point(domain[0]).map_err(|failure| match failure {
-                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(_)
-                            | cadmpeg_ir::eval::EvaluationFailure::NoValue
+                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                CodecError::ResourceLimit(limit)
+                            }
+                            cadmpeg_ir::eval::EvaluationFailure::NoValue
                             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
                             | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
                                 CodecError::malformed(format_args!(
@@ -613,8 +615,10 @@ impl<'a> WritableModel<'a> {
                         })?;
                     let expected_end =
                         geometry.point(domain[1]).map_err(|failure| match failure {
-                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(_)
-                            | cadmpeg_ir::eval::EvaluationFailure::NoValue
+                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                CodecError::ResourceLimit(limit)
+                            }
+                            cadmpeg_ir::eval::EvaluationFailure::NoValue
                             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
                             | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
                                 CodecError::malformed(format_args!(

@@ -342,7 +342,10 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
     assert!(
-        (generated_minimum_resolution(&TopologyIndex::new(&ir)) - expected).abs()
+        (generated_minimum_resolution(&TopologyIndex::new(&ir))
+            .expect("compute the generated minimum resolution")
+            - expected)
+            .abs()
             <= f64::EPSILON * 64.0
     );
 }

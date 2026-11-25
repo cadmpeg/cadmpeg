@@ -1615,9 +1615,11 @@ fn closed_edge_traversal(
             parameter,
         ) {
             Ok(end) => end.get(),
+            Err(EvaluationFailure::ResourceLimit(limit)) => {
+                return Err(CodecError::ResourceLimit(limit));
+            }
             Err(
-                EvaluationFailure::ResourceLimit(_)
-                | EvaluationFailure::NoValue
+                EvaluationFailure::NoValue
                 | EvaluationFailure::NonFinite(_)
                 | EvaluationFailure::WorkExhausted,
             ) => return Err(no_traversal()),

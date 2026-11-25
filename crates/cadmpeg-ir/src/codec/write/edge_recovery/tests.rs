@@ -124,7 +124,7 @@ fn recovers_an_existing_coedge_curve_without_changing_the_source() {
         curve: curve.clone(),
         parameter_range: ParameterInterval::new([0.0, 10.0]).unwrap(),
     });
-    let recovered = recover_edge_curves(&ir);
+    let recovered = recover_edge_curves(&ir).unwrap();
     assert_eq!(recovered.document.geometry.edges[0].curve(), Some(&curve));
     assert!(recovered.recovered_edges.contains(&ir.geometry.edges[0].id));
     assert!(ir.geometry.edges[0].curve().is_none());
@@ -152,7 +152,7 @@ fn recovers_a_reversed_coedge_curve_in_the_edge_direction() {
         curve,
         parameter_range: ParameterInterval::new([-10.0, 0.0]).unwrap(),
     });
-    let recovered = recover_edge_curves(&ir);
+    let recovered = recover_edge_curves(&ir).unwrap();
     let edge = &recovered.document.geometry.edges[0];
     let curve = recovered
         .document
@@ -184,7 +184,7 @@ fn lifts_a_planar_pcurve_in_both_parameter_directions() {
         if !explicit_range {
             ir.geometry.coedges[coedge].pcurves[0].parameter_range = None;
         }
-        let recovered = recover_edge_curves(&ir);
+        let recovered = recover_edge_curves(&ir).unwrap();
         if !explicit_range {
             assert!(ir.geometry.coedges[coedge].pcurves[0]
                 .parameter_range
@@ -222,7 +222,7 @@ fn conflicting_coedge_pcurves_do_not_define_a_shared_curve() {
     let coedges = coedges_for_first_edge(&ir);
     attach_pcurve(&mut ir, coedges[0], false, 0.0);
     attach_pcurve(&mut ir, coedges[1], false, 2.0);
-    let recovered = recover_edge_curves(&ir);
+    let recovered = recover_edge_curves(&ir).unwrap();
     assert!(recovered.document.geometry.edges[0].curve().is_none());
 }
 
@@ -233,7 +233,7 @@ fn matching_coedges_record_that_their_agreement_was_sampled() {
     let coedges = coedges_for_first_edge(&ir);
     attach_pcurve(&mut ir, coedges[0], false, 0.0);
     attach_pcurve(&mut ir, coedges[1], true, 0.0);
-    let recovered = recover_edge_curves(&ir);
+    let recovered = recover_edge_curves(&ir).unwrap();
     assert!(recovered.document.geometry.edges[0].curve().is_some());
     assert_eq!(
         recovered.sampled_agreements,
@@ -259,7 +259,7 @@ fn recovers_a_deeply_placed_pcurve_on_the_normal_test_stack() {
     }
     pcurve.geometry = geometry;
     ir.geometry.edges[0].carrier = EdgeCarrier::Free;
-    let recovered = recover_edge_curves(&ir);
+    let recovered = recover_edge_curves(&ir).unwrap();
     assert_eq!(
         recovered.sampled_fits,
         vec![ir.geometry.edges[0].id.clone()]
@@ -332,7 +332,7 @@ fn a_nonplanar_pcurve_is_fitted_with_reported_sampled_residual() {
         Point2::new(std::f64::consts::FRAC_PI_2, 1.0),
         Point3::new(0.0, 1.0, 1.0),
     );
-    let recovered = recover_edge_curves(&ir);
+    let recovered = recover_edge_curves(&ir).unwrap();
     let curve = recovered.document.geometry.edges[0].curve().unwrap();
     let index = ModelIndex::new_model_only(&recovered.document);
     assert!(matches!(
@@ -387,7 +387,7 @@ fn cylinder_isoparametric_lines_recover_exact_curves() {
         ),
     ] {
         let ir = cylinder_pcurve(direction, end);
-        let recovered = recover_edge_curves(&ir);
+        let recovered = recover_edge_curves(&ir).unwrap();
         assert!(recovered.sampled_fits.is_empty());
         let edge = &recovered.document.geometry.edges[0];
         let curve = recovered
@@ -476,7 +476,7 @@ fn planar_circles_recover_in_both_edge_directions() {
             ),
         });
         ir.geometry.edges[0].carrier = EdgeCarrier::Free;
-        let recovered = recover_edge_curves(&ir);
+        let recovered = recover_edge_curves(&ir).unwrap();
         assert!(recovered.sampled_fits.is_empty());
         let edge = &recovered.document.geometry.edges[0];
         let curve = recovered

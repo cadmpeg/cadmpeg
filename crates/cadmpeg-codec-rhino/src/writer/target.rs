@@ -70,7 +70,7 @@ pub(crate) fn plan(
     };
     let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir);
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
     let written = super::write(
         &recovered.document,
         version,

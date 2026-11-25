@@ -2,9 +2,10 @@
 //! Recover edge carriers from retained coedge geometry for semantic writers.
 
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
 
 use super::approximation::Approximator;
 use crate::document::CadIr;
@@ -35,6 +36,7 @@ const AGREEMENT_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
 struct RecoveryEvaluation {
     work: WorkBudget,
+    refusal: Cell<Option<ResourceLimit>>,
 }
 
 impl RecoveryEvaluation {
@@ -44,9 +46,16 @@ impl RecoveryEvaluation {
             EvaluationAdmission<'slice, 'slice>,
         ) -> Result<T, EvaluationFailure<R>>,
     ) -> Option<T> {
-        finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(&self.work, run))
-            .ok()
-            .flatten()
+        if self.refusal.get().is_some() {
+            return None;
+        }
+        match finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(&self.work, run)) {
+            Ok(value) => value,
+            Err(limit) => {
+                self.refusal.set(Some(limit));
+                None
+            }
+        }
     }
 }
 
@@ -90,7 +99,7 @@ enum Recovery {
 /// working document with carriers derived from its coedge geometry.
 ///
 /// The source document and its retained bytes are not changed.
-pub fn recover_edge_curves(ir: &CadIr) -> EdgeRecovery<'_> {
+pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit> {
     let residual_limit = Approximator::new(ir).residual_limit();
     if !ir
         .geometry
@@ -98,17 +107,18 @@ pub fn recover_edge_curves(ir: &CadIr) -> EdgeRecovery<'_> {
         .iter()
         .any(|edge| edge.curve().is_none() && has_distinct_ends(edge))
     {
-        return EdgeRecovery {
+        return Ok(EdgeRecovery {
             document: Cow::Borrowed(ir),
             recovered_edges: HashSet::new(),
             sampled_agreements: Vec::new(),
             sampled_fits: Vec::new(),
             residual_limit,
-        };
+        });
     }
     let index = ModelIndex::build(ir);
     let work = RecoveryEvaluation {
         work: WorkBudget::new(MAX_RECOVERY_WORK),
+        refusal: Cell::new(None),
     };
     let mut uses: HashMap<&str, Vec<&Coedge>> = HashMap::new();
     for coedge in &ir.geometry.coedges {
@@ -159,14 +169,17 @@ pub fn recover_edge_curves(ir: &CadIr) -> EdgeRecovery<'_> {
             ));
         }
     }
+    if let Some(limit) = work.refusal.get() {
+        return Err(limit);
+    }
     if recovered.is_empty() {
-        return EdgeRecovery {
+        return Ok(EdgeRecovery {
             document: Cow::Borrowed(ir),
             recovered_edges: HashSet::new(),
             sampled_agreements: Vec::new(),
             sampled_fits: Vec::new(),
             residual_limit,
-        };
+        });
     }
     let mut document = ir.clone();
     let mut generated = HashSet::new();
@@ -264,13 +277,23 @@ pub fn recover_edge_curves(ir: &CadIr) -> EdgeRecovery<'_> {
             }
         }
     }
-    let fits = {
+    let (fits, refusal) = {
         let mut approximator = Approximator::new(&document);
-        fitted_candidates
+        let fits = fitted_candidates
             .iter()
-            .map(|(_, _, curve, _)| approximator.curve(curve.as_str()))
-            .collect::<Vec<_>>()
+            .map(|(_, _, curve, _)| {
+                if approximator.resource_limit().is_some() {
+                    None
+                } else {
+                    approximator.curve(curve.as_str())
+                }
+            })
+            .collect::<Vec<_>>();
+        (fits, approximator.resource_limit())
     };
+    if let Some(limit) = refusal {
+        return Err(limit);
+    }
     let mut sampled_fits = Vec::new();
     let mut failed_curves = HashSet::new();
     let mut failed_edges = HashSet::new();
@@ -334,13 +357,13 @@ pub fn recover_edge_curves(ir: &CadIr) -> EdgeRecovery<'_> {
                 .and_then(|range| DirectedParameterRange::new(range).ok());
         }
     }
-    EdgeRecovery {
+    Ok(EdgeRecovery {
         document: Cow::Owned(document),
         recovered_edges,
         sampled_agreements,
         sampled_fits,
         residual_limit,
-    }
+    })
 }
 
 fn unique_id(

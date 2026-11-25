@@ -288,7 +288,9 @@ pub(crate) fn write_semantic_with_records(
     let ir = &normalized;
     losses.extend(reduce::invalid_records(ir, &validation));
     if !retain_native_brep {
-        losses.extend(reduce::edge_ranges_omitted(ir, annotations));
+        losses.extend(
+            reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?,
+        );
         losses.extend(reduce::producer_attributes_omitted(ir));
     }
     losses.extend(reduce::empty_output(ir));

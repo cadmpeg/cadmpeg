@@ -8,7 +8,7 @@ use std::f64::consts::TAU;
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::nurbs_surface_point;
-use cadmpeg_ir::eval::{nurbs_surface_isoline, IsolineDirection};
+use cadmpeg_ir::eval::{finite_or_refusal, nurbs_surface_isoline, IsolineDirection};
 use cadmpeg_ir::geometry::analytic::CircleCurve;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
@@ -260,7 +260,13 @@ fn nurbs_bound(
     let u_seam = n.u_periodic() || same_curve(&sides[1], &sides[3]);
     let v_seam = n.v_periodic() || same_curve(&sides[0], &sides[2]);
     if u_seam && v_seam {
-        let Some(point) = nurbs_surface_point(EvaluationAdmission::Standard, n, u0, v0).ok() else {
+        let Some(point) = finite_or_refusal(nurbs_surface_point(
+            EvaluationAdmission::Standard,
+            n,
+            u0,
+            v0,
+        ))?
+        else {
             return Ok(None);
         };
         Ok(Some(ClosedBound::Seams(Box::new(Seams {
