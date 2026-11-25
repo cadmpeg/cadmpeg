@@ -3,13 +3,17 @@
 use super::*;
 use crate::test_support::streams_test::design_metastream_with_records;
 
-#[test]
-fn thread_scalar_owner_decodes_without_a_dimension_parameter() {
+/// Owners decoded from one Thread scope (record 12) and one standalone scalar
+/// owner frame (record 44) that stores `local_ordinal`.
+fn decode_thread_owner(
+    local_ordinal: u32,
+) -> Vec<crate::records::parameters::DesignParameterOwner> {
     let mut bulk = Vec::new();
     crate::test_support::indexed_header(&mut bulk, *b"256", 12);
     let owner_at = u64::try_from(bulk.len()).unwrap();
     let mut owner = parameter_owner_frame();
     owner[4..7].copy_from_slice(b"257");
+    owner[35..39].copy_from_slice(&local_ordinal.to_le_bytes());
     bulk.extend_from_slice(&owner);
     let paired_at = u64::try_from(bulk.len()).unwrap();
     crate::test_support::indexed_header(&mut bulk, *b"256", 44);
@@ -48,15 +52,26 @@ fn thread_scalar_owner_decodes_without_a_dimension_parameter() {
         zip.write_all(&bytes).unwrap();
     }
     let archive = zip.finish().unwrap().into_inner();
-    let decoded = with_scan(&archive, |scan| {
+    with_scan(&archive, |scan| {
         super::super::decode_parameter_owners(scan, &[], &[])
     })
-    .unwrap();
-    let [owner] = decoded.owners.as_slice() else {
+    .unwrap()
+    .owners
+}
+
+#[test]
+fn thread_scalar_owner_decodes_without_a_dimension_parameter() {
+    let owners = decode_thread_owner(1);
+    let [owner] = owners.as_slice() else {
         panic!("one standalone owner")
     };
     assert_eq!(owner.record_index(), 44);
     assert_eq!(owner.scope_record_index(), 12);
-    assert_eq!(owner.local_ordinal(), 2);
+    assert_eq!(owner.local_ordinal(), 1);
     assert_eq!(owner.evaluated_value().get(), 6.0);
+}
+
+#[test]
+fn thread_scalar_owner_past_the_length_ordinal_is_not_admitted() {
+    assert!(decode_thread_owner(2).is_empty());
 }

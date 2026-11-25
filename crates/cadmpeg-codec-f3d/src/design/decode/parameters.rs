@@ -1541,6 +1541,10 @@ fn has_standalone_scalar_scope(scan: &ContainerScan) -> Result<bool, CodecError>
     Ok(false)
 }
 
+/// Largest local ordinal of a Thread scope's standalone scalar owner: the
+/// scope stores its offset and its length.
+const MAX_THREAD_OWNER_ORDINAL: u32 = 1;
+
 /// Scalar owners of uniquely registered Pipe and Thread scopes in one Design stream,
 /// each with its compact-trailer flag.
 ///
@@ -1571,12 +1575,15 @@ fn standalone_scalar_owners(
         }
     }
     let unique = |id: u64| registrations.get(&id) == Some(&1);
-    let mut pipe_frames = HashMap::<u64, usize>::new();
+    // Primary-frame count of each standalone scalar scope, and whether it is a Thread.
+    let mut scope_frames = HashMap::<u64, (usize, bool)>::new();
     for frame in frames
         .iter()
         .filter(|frame| is_standalone_scalar_scope(frame.design_type) && unique(frame.entity_id))
     {
-        *pipe_frames.entry(frame.entity_id).or_default() += 1;
+        let slot = scope_frames.entry(frame.entity_id).or_default();
+        slot.0 += 1;
+        slot.1 = !crate::records::feature::path_features::pipe::is_pipe(frame.design_type);
     }
     let mut out = Vec::new();
     for frame in frames
@@ -1589,8 +1596,11 @@ fn standalone_scalar_owners(
         else {
             continue;
         };
+        let Some(&(1, thread)) = scope_frames.get(&u64::from(parsed.scope_record_index)) else {
+            continue;
+        };
         if !matches!(parsed.frame_length, 103 | 104)
-            || pipe_frames.get(&u64::from(parsed.scope_record_index)) != Some(&1)
+            || (thread && parsed.local_ordinal > MAX_THREAD_OWNER_ORDINAL)
             || records
                 .frames(parsed.record_index)
                 .filter(|(start, end)| *start == frame.start && *end == frame.member_end)
