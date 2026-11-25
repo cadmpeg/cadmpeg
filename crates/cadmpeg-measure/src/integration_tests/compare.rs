@@ -217,7 +217,7 @@ fn placed_cubes(placements: &[Transform]) -> CadIr {
             Some(*transform),
         ));
     }
-    cube.model.product_definitions.extend([part, root]);
+    cube.model.product_definitions = vec![part, root];
     cube
 }
 

@@ -227,14 +227,9 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
 }
 
 pub(crate) fn strict_options() -> DecodeOptions {
-    use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
-    DecodeOptions {
-        depth: cadmpeg_core::decode::DecodeDepth::Full,
-        policy: DecodePolicy {
-            mode: DecodeMode::Strict,
-            ..DecodePolicy::desktop()
-        },
-    }
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    options
 }
 
 /// Translate every positional carrier in the model by `t`. Directions and

@@ -378,7 +378,7 @@ fn circular_cone_cube(half_angle: f64) -> CadIr {
 /// Plans a document whose first surface is a circular cone of `half_angle`.
 fn circular_cone_plan(
     half_angle: f64,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     crate::StepCodec::default().plan(
         EncodeInput::new(&circular_cone_cube(half_angle), None),
         TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
