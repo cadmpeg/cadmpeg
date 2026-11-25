@@ -208,7 +208,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     error(
                         findings,
                         id,
-                        crate::rule!("pmi.directed-location-dimension-targets-two-origin", 
+                        crate::rule!("pmi.directed-location-dimension-target-count",
                             "directed location dimension has {} targets; it has two, the origin and the target",
                             annotation.targets.len()
                         ),

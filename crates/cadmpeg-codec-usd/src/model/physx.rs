@@ -24,7 +24,9 @@ const SOLVER: &str = "physx";
 pub(super) struct PendingSettings {
     path: String,
     schema: String,
-    target: SolverTarget,
+    /// `None` where the settings' holder is a joint with no design joint
+    /// feature.
+    target: Option<SolverTarget>,
     values: Vec<(String, Read)>,
 }
 
@@ -50,12 +52,13 @@ pub(super) fn joint_freedom(kind: crate::schema::physics::JointType) -> Freedom 
 
 impl super::Builder<'_, '_, '_, '_> {
     /// Reads the carried `PhysX` schemas of `prim` for holders `holders` as
-    /// settings of `target`.
+    /// settings of `target`. With no target, the values are reported as not
+    /// transferred.
     pub(super) fn physx(
         &mut self,
         prim: &Prim<'_>,
         holders: &[Holder],
-        target: &SolverTarget,
+        target: Option<&SolverTarget>,
         freedom: Option<Freedom>,
     ) {
         for schema in prim.api_schemas() {
@@ -72,7 +75,7 @@ impl super::Builder<'_, '_, '_, '_> {
             self.pending_physx.push(PendingSettings {
                 path: prim.path.clone(),
                 schema: schema.to_owned(),
-                target: target.clone(),
+                target: target.cloned(),
                 values,
             });
         }
@@ -101,7 +104,7 @@ impl super::Builder<'_, '_, '_, '_> {
         self.physx(
             prim,
             &[Holder::Scene],
-            &SolverTarget::Scene { scene: id },
+            Some(&SolverTarget::Scene { scene: id }),
             None,
         );
         Ok(())
@@ -118,7 +121,8 @@ impl super::Builder<'_, '_, '_, '_> {
             .factor(self.scale, self.kilograms_per_unit, radians, 1.0)
     }
 
-    /// The record that a relationship target names.
+    /// The record that a relationship target names: for a joint, its design
+    /// joint feature.
     fn physx_target(&self, path: &str) -> Option<SolverTarget> {
         let prim = self.stage.find(path)?;
         let model = &self.ir.model;
@@ -127,12 +131,12 @@ impl super::Builder<'_, '_, '_, '_> {
             .and_then(crate::schema::physics::JointType::of)
             .is_some()
         {
-            let joint = crate::ids::joint(path);
-            return model
-                .assembly_joints
-                .iter()
-                .any(|record| record.id == joint)
-                .then_some(SolverTarget::Joint { joint });
+            return self
+                .joint_features
+                .get(&crate::ids::joint(path))
+                .map(|feature| SolverTarget::Joint {
+                    joint: feature.clone(),
+                });
         }
         let occurrence = crate::ids::occurrence(path);
         model
@@ -145,6 +149,21 @@ impl super::Builder<'_, '_, '_, '_> {
     /// Adds the settings read during the traversal.
     pub(super) fn finish_physx(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         for pending in std::mem::take(&mut self.pending_physx) {
+            let Some(target) = pending.target else {
+                // A schema applied with no authored property is lost as the
+                // schema itself.
+                let names = if pending.values.is_empty() {
+                    vec![pending.schema]
+                } else {
+                    pending.values.into_iter().map(|(name, _)| name).collect()
+                };
+                for name in names {
+                    self.tallies
+                        .solver_properties
+                        .push(format!("{}.{name}", pending.path));
+                }
+                continue;
+            };
             let mut values = BTreeMap::new();
             for (name, read) in pending.values {
                 let value = match read {
@@ -196,7 +215,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 id: crate::ids::solver_settings(&pending.path, &pending.schema),
                 solver: SOLVER.to_owned(),
                 schema: pending.schema,
-                target: pending.target.into(),
+                target: target.into(),
                 values,
                 native_ref: Some(pending.path),
             });
