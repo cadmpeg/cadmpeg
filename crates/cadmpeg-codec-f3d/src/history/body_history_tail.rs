@@ -213,7 +213,7 @@ fn attribute_only(
     };
     let mut topology = transition.topology.clone();
     topology.bodies.updated.clear();
-    if topology != Default::default() {
+    if topology != crate::history_records::AsmHistoricalTopologyDelta::default() {
         return false;
     }
     let Some(cached) = history.cached_record_archive() else {
