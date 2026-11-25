@@ -255,10 +255,37 @@ impl DecodeResult {
         format: FormatId,
         strictness: &Strictness,
     ) -> Result<Self, DecodeFailure> {
+        Self::from_decoded_inner(ctx, decoded, format, strictness, true)
+    }
+
+    /// Finalizes backend output with classification, depth, normalization, and
+    /// the caller's strict-loss policy without computing canonical JSON
+    /// content or omitted-arena digests.
+    ///
+    /// Intended for internal read-back validation that inspects only `ir()`
+    /// and discards `source_fidelity().content_digest`.
+    pub fn from_decoded_without_digests(
+        ctx: &DecodeContext<'_>,
+        decoded: Decoded,
+        format: FormatId,
+        strictness: &Strictness,
+    ) -> Result<Self, DecodeFailure> {
+        Self::from_decoded_inner(ctx, decoded, format, strictness, false)
+    }
+
+    fn from_decoded_inner(
+        ctx: &DecodeContext<'_>,
+        decoded: Decoded,
+        format: FormatId,
+        strictness: &Strictness,
+        record_digests: bool,
+    ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.give_up_repeated_ids();
-        result.record_content_digest(ctx.policy())?;
-        result.record_omitted_arenas_baseline(ctx.policy());
+        if record_digests {
+            result.record_content_digest(ctx.policy())?;
+            result.record_omitted_arenas_baseline(ctx.policy());
+        }
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",

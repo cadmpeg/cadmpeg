@@ -5,13 +5,16 @@ use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::record_finding;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::{record_finding, record_related_finding};
 
 pub(in crate::validate) mod decode_set;
 pub(in crate::validate) mod definitions;
 use crate::document::CadIr;
 use crate::products::{JointOperands, OperandContainer, PairedJointKind};
 use crate::report::check::{Check, Finding};
+use crate::report::Severity;
 
 pub(super) fn check_products(
     ctx: &DecodeContext<'_>,
@@ -186,6 +189,7 @@ pub(super) fn check_products(
         }
     }
     check_root_definition(ir, findings);
+    check_body_owners(ir, findings);
     if let Some(definition) = placement_cycle(ctx, ir)? {
         record_finding(
             findings,
@@ -337,6 +341,68 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+/// Part 10: every body of `CadIr.geometry` is listed by exactly one
+/// definition's `bodies`, or by `instance_bodies` entries and by no
+/// definition's `bodies` (§8.1). A body that a definition lists is also
+/// listed where an `instance_bodies` entry names it. The rule holds where the
+/// root rule holds, since a body the file holds outside every other
+/// definition is the root definition's.
+fn check_body_owners(ir: &CadIr, findings: &mut Vec<Finding>) {
+    if ir.fragment
+        || !ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model)
+        || ir
+            .populated_arena(cadmpeg_core::decode::ArenaClass::Model)
+            .is_none()
+    {
+        return;
+    }
+    let mut listing: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut instanced: BTreeSet<&str> = BTreeSet::new();
+    for definition in &ir.model.product_definitions {
+        for body in &definition.bodies {
+            listing
+                .entry(body.as_str())
+                .or_default()
+                .insert(definition.id.as_str());
+        }
+        for entry in &definition.instance_bodies {
+            instanced.extend(entry.bodies.iter().map(crate::ids::BodyId::as_str));
+        }
+    }
+    for body in &ir.geometry.bodies {
+        let id = body.id.as_str();
+        let owners: Vec<&str> = listing
+            .get(id)
+            .map(|owners| owners.iter().copied().collect())
+            .unwrap_or_default();
+        if owners.len() > 1 {
+            record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                id,
+                &owners,
+                crate::rule!(
+                    "products.body-listed-several-definitions",
+                    "body is listed by {} definitions' `bodies`; one lists it",
+                    owners.len()
+                ),
+            );
+        } else if owners.is_empty() && !instanced.contains(id) {
+            record_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                Some(id),
+                crate::rule!(
+                    "products.body-listed-no-definition",
+                    "body is listed by no definition's `bodies` and by no `instance_bodies` entry"
+                ),
+            );
+        }
+    }
+}
+
 /// A definition that places itself through its occurrences, if any.
 ///
 /// Definitions whose occurrences place only definitions already cleared are
@@ -399,6 +465,7 @@ fn placement_cycle<'ir>(
 #[cfg(test)]
 mod tests {
     mod admission;
+    mod body_owners;
     mod history_owners;
     mod root;
     use super::check_products;

@@ -93,6 +93,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                 payload: ([0; 16], vec![]),
                 domain_extent_points: uv,
                 domain: [0., 1.],
+                reversed: false,
             };
             let ends = [Point3::new(x, 0., 0.), Point3::new(x, 1., 0.)];
             assert_eq!(
@@ -180,6 +181,7 @@ fn trim_refusal_on(
         payload: ([0; 16], vec![]),
         domain_extent_points: vec![Point2::new(0.5, 0.), Point2::new(0.5, 1.)],
         domain,
+        reversed: false,
     };
     let ends = [
         Point3::new(0.5, domain[0], 0.),

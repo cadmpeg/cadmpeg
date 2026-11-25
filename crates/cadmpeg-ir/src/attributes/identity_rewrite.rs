@@ -29,10 +29,10 @@ macro_rules! rewrite_native_target {
 }
 
 impl RewriteIdentities for AttributeTarget {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_native_value(
         ctx: &DecodeContext<'_>,
         value: &mut serde_json::Value,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk native attribute target")?;
 
@@ -99,10 +99,10 @@ impl RewriteIdentities for AttributeTarget {
             }
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("typed rewrite variant")?;
 
