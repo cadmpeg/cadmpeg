@@ -38,6 +38,30 @@ fn owners(model: &crate::reader::Model) -> BTreeMap<String, Vec<String>> {
     owners
 }
 
+/// Every body a Part Studio definition lists is read from that studio's file,
+/// so its scope begins with the definition's key and `@` (CADIR §2.2).
+fn assert_studio_bodies_scoped(model: &crate::reader::Model) {
+    let mut seen = 0;
+    for definition in &model.ir.model.product_definitions {
+        let cadmpeg_ir::products::Storage::File {
+            source: Some(_), ..
+        } = &definition.storage
+        else {
+            continue;
+        };
+        let (_, key) = definition.id.as_str().split_once('#').unwrap();
+        for body in &definition.bodies {
+            let scope = body.as_str().split(':').nth(1).unwrap();
+            assert!(
+                scope.starts_with(&format!("{key}@")),
+                "{body:?} under {key}"
+            );
+            seen += 1;
+        }
+    }
+    assert!(seen > 0, "no studio definition lists a body");
+}
+
 #[test]
 fn a_bound_body_is_listed_by_its_part_definition_only() {
     let model = decode(&bundle(definition()));
@@ -65,6 +89,7 @@ fn an_unbound_studio_body_stays_on_its_studio_definition() {
     }
     kinds.sort_unstable();
     assert_eq!(kinds, [false, true], "{owners:?}");
+    assert_studio_bodies_scoped(&model);
 }
 
 #[test]
@@ -91,4 +116,5 @@ fn an_unbound_part_leaves_the_body_on_the_studio_definition() {
         assert_eq!(listed.len(), 1, "{body}: {listed:?}");
         assert!(!listed[0].contains("part:"), "{listed:?}");
     }
+    assert_studio_bodies_scoped(&model);
 }

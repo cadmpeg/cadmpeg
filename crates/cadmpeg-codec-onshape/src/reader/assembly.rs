@@ -104,15 +104,9 @@ pub(super) fn read(
             cadmpeg_ir::ids::IdentityKey::encode_key_text(eid)
         ))
         .map_err(|e| Error::Decode(e.to_string()))?;
-        let rescope = |source: &str| {
-            Ok(
-                cadmpeg_ir::ids::Identity::new(source.to_owned()).map_or_else(
-                    |_| source.to_owned(),
-                    |id| id.with_key_tail(&tail).into_string(),
-                ),
-            )
-        };
-        let mut ir = rescope_home(ctx, &part.ir, &tail)?;
+        let home = Rehome::new(&part.ir, tail);
+        let rescope = |source: &str| Ok(home.map(source));
+        let mut ir = rescope_home(ctx, &part.ir, &home)?;
         if model.ir.source.is_none() {
             model.ir.source.clone_from(&ir.source);
         }
@@ -155,7 +149,7 @@ pub(super) fn read(
                 Ok(Ok::<(), Error>(()))
             })??;
         let ledger: cadmpeg_ir::report::decode::TransferLedger =
-            rescope_home(ctx, &part.body.transfer_ledger, &tail)?;
+            rescope_home(ctx, &part.body.transfer_ledger, &home)?;
         model.body.transfer_ledger.entries.extend(ledger.entries);
         model.body.losses.extend(part.body.losses);
         model.body.notes.extend(part.body.notes);
@@ -303,28 +297,72 @@ fn release_bound_bodies(definitions: &mut [ProductDefinition], studios: usize) {
     }
 }
 
+/// The ids of one Part Studio in the bundle's document. The studio's `File`
+/// definition is a record of the bundle and takes the element id as a key
+/// tail; every other record is read from the studio's file, so its scope
+/// begins with that definition's key and `@` (CADIR §2.2, §3.1). A studio
+/// with no source file is embedded, and all its ids take the key tail.
+struct Rehome {
+    definition: Option<String>,
+    tail: cadmpeg_ir::ids::IdentityKeyTail,
+    key: Option<String>,
+}
+
+impl Rehome {
+    fn new(home: &cadmpeg_ir::document::CadIr, tail: cadmpeg_ir::ids::IdentityKeyTail) -> Self {
+        let mut roots = home
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| definition.is_root());
+        let definition = match (roots.next(), roots.next()) {
+            (Some(root), None) => Some(root.id.as_str().to_owned()),
+            _ => None,
+        };
+        let key = definition
+            .as_deref()
+            .filter(|_| home.source.is_some())
+            .and_then(|id| cadmpeg_ir::ids::Identity::new(id.to_owned()).ok())
+            .map(|id| id.with_key_tail(&tail).key().as_str().to_owned())
+            .filter(|key| {
+                !key.is_empty()
+                    && !key.contains(|c: char| matches!(c, ':' | '@' | '#') || c.is_whitespace())
+            });
+        Self {
+            definition,
+            tail,
+            key,
+        }
+    }
+
+    fn map(&self, text: &str) -> String {
+        let Ok(id) = cadmpeg_ir::ids::Identity::new(text.to_owned()) else {
+            return text.to_owned();
+        };
+        match &self.key {
+            Some(key) if self.definition.as_deref() != Some(text) => {
+                // Admission guarantees `format:scope:kind#key`.
+                let (format, rest) = text.split_once(':').unwrap_or((text, ""));
+                format!("{format}:{key}@{rest}")
+            }
+            _ => id.with_key_tail(&self.tail).into_string(),
+        }
+    }
+}
+
 fn rescope_home<T: serde::Serialize + serde::de::DeserializeOwned>(
     ctx: &DecodeContext<'_>,
     home: &T,
-    tail: &cadmpeg_ir::ids::IdentityKeyTail,
+    rehome: &Rehome,
 ) -> Result<T, Error> {
-    fn visit(
-        ctx: &DecodeContext<'_>,
-        value: &mut Value,
-        tail: &cadmpeg_ir::ids::IdentityKeyTail,
-    ) -> Result<(), Error> {
+    fn visit(ctx: &DecodeContext<'_>, value: &mut Value, rehome: &Rehome) -> Result<(), Error> {
         let _depth = ctx.enter_nested("Onshape nested home identities")?;
-        let rescope = |text: &str| {
-            cadmpeg_ir::ids::Identity::new(text.to_owned()).map_or_else(
-                |_| text.to_owned(),
-                |id| id.with_key_tail(tail).into_string(),
-            )
-        };
+        let rescope = |text: &str| rehome.map(text);
         match value {
             Value::String(text) => *text = rescope(text),
             Value::Array(values) => {
                 for value in values {
-                    visit(ctx, value, tail)?;
+                    visit(ctx, value, rehome)?;
                 }
             }
             Value::Object(values) => {
@@ -333,7 +371,7 @@ fn rescope_home<T: serde::Serialize + serde::de::DeserializeOwned>(
                         key.as_str(),
                         "name" | "label" | "source_name" | "description" | "expression"
                     ) {
-                        visit(ctx, &mut value, tail)?;
+                        visit(ctx, &mut value, rehome)?;
                     }
                     values.insert(rescope(&key), value);
                 }
@@ -343,7 +381,7 @@ fn rescope_home<T: serde::Serialize + serde::de::DeserializeOwned>(
         Ok(())
     }
     let mut value = cadmpeg_ir::schema::structural::project(ctx, home, "Onshape home projection")?;
-    visit(ctx, &mut value, tail)?;
+    visit(ctx, &mut value, rehome)?;
     serde_json::from_value(value).map_err(|e| Error::Decode(e.to_string()))
 }
 
