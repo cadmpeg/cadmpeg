@@ -330,9 +330,7 @@ impl Ord for WitnessKey<'_> {
     }
 }
 
-/// The reading form of [`Picked`]. Each pick nested in its domain has
-/// passed the pick ceiling; the conversion admits this one level above the
-/// deepest of them.
+/// The reading form of [`Picked`].
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]

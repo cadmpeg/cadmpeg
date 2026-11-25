@@ -59,7 +59,7 @@ pub enum CanonicalJsonError {
 /// The guard is consulted on both arms. A `Serialize` implementation that
 /// catches the adapter's refusal and completes would otherwise outrun it and
 /// produce canonical JSON for a value the adapter had already refused.
-pub(super) fn write_canonical_json<T: Serialize + ?Sized>(
+pub(crate) fn write_canonical_json<T: Serialize + ?Sized>(
     admission: CanonicalAdmission<'_, '_>,
     writer: &mut dyn std::io::Write,
     value: &T,

@@ -11,7 +11,8 @@
 //! recurses into it ([`admit_text`]), and refuses an expression past its
 //! bound where it parses one. The decode wrapper gives up each record a
 //! decoder states past a bound: it finds them with [`Measure`] while it
-//! writes the document's canonical JSON for the content digest.
+//! writes the document's canonical JSON for the content digest. The CADIR
+//! writer drops each such record, and validation reports it.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -180,6 +181,59 @@ pub(crate) struct Measured {
     pub(crate) records: BTreeMap<Place, Bound>,
     /// The first bound passed outside every record.
     pub(crate) outside: Option<Bound>,
+}
+
+impl Place {
+    /// The arena as a report names it: `home.arena`, or
+    /// `native.codec.arena`.
+    pub(crate) fn arena(&self) -> String {
+        match self {
+            Self::Home { home, arena, .. } => format!("{home}.{arena}"),
+            Self::Native { codec, arena, .. } => format!("native.{codec}.{arena}"),
+        }
+    }
+}
+
+/// A record given up for a bound it passes, with the ids of the records
+/// that go with it, sorted.
+#[derive(Debug)]
+pub(crate) struct GivenUp {
+    pub(crate) id: String,
+    pub(crate) arena: String,
+    pub(crate) bound: Bound,
+    pub(crate) dropped: Vec<String>,
+}
+
+impl GivenUp {
+    /// The record, its arena, the bound, `outcome`, and the dropped ids.
+    pub(crate) fn describe(&self, outcome: &str) -> String {
+        format!(
+            "record {} of arena {} {}, so {outcome}; dropped=[{}]",
+            self.id,
+            self.arena,
+            self.bound.describe(),
+            self.dropped.join(", ")
+        )
+    }
+}
+
+/// Writes the canonical JSON of `ir` to `writer`. Returns the write's result
+/// and what the written text holds past a bound; a failed write returns what
+/// the text held before the failure.
+pub(crate) fn write_measured(
+    ir: &crate::CadIr,
+    writer: impl Write,
+) -> (
+    Result<(), crate::hash::finite_json::CanonicalJsonError>,
+    Measured,
+) {
+    let mut measure = Measure::new(writer);
+    let written = crate::hash::finite_json::write_canonical_json(
+        crate::hash::finite_json::admission::CanonicalAdmission::unlimited(),
+        &mut measure,
+        ir,
+    );
+    (written, measure.finish())
 }
 
 const HOMES: [&str; 4] = ["geometry", "model", "design", "process"];

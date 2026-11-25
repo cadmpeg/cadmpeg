@@ -1131,6 +1131,16 @@ impl Native {
         repeated
     }
 
+    /// The id of the record at `index` of `codec`'s arena `arena`.
+    pub(crate) fn record_id(&self, codec: &str, arena: &str, index: usize) -> Option<&str> {
+        self.0
+            .get(codec)?
+            .arenas
+            .get(arena)?
+            .get(index)
+            .map(NativeRecord::id)
+    }
+
     /// Removes the record at `index` of `codec`'s arena `arena`, returning
     /// its id.
     pub(crate) fn remove_record(

@@ -695,6 +695,18 @@ macro_rules! declare_home_arenas {
                 repeated
             }
 
+            /// The id of the record at `index` of the arena whose wire key
+            /// is `arena`.
+            pub(crate) fn record_id(&self, arena: &str, index: usize) -> Option<&str> {
+                $(if arena == stringify!($field) {
+                    return self
+                        .$field
+                        .get(index)
+                        .map(crate::schema::ArenaRecord::record_identity);
+                })*
+                None
+            }
+
             /// Removes the record at `index` of the arena whose wire key is
             /// `arena`, returning its id.
             pub(crate) fn remove_record(&mut self, arena: &str, index: usize) -> Option<String> {
@@ -2801,15 +2813,40 @@ impl CadIr {
     /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
     ///
     /// The text is written through the same finite adapter the digest uses, so
-    /// a non-finite float is refused rather than written as `null`.
+    /// a non-finite float is refused rather than written as `null`. The CADIR
+    /// encoder is the writer that drops what CADIR cannot hold (§3.4).
     ///
     /// # Errors
     ///
-    /// Refuses a document holding a non-finite float.
+    /// Refuses a document holding a non-finite float, or nesting past a bound
+    /// of §2.5.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         canonical.finalize();
-        crate::hash::finite_json::to_canonical_json_string(&canonical)
+        let mut bytes = Vec::new();
+        let (written, measured) = crate::bounds::write_measured(&canonical, &mut bytes);
+        written?;
+        let past = measured
+            .records
+            .iter()
+            .map(|(place, bound)| (Some(place), *bound))
+            .chain(measured.outside.map(|bound| (None, bound)))
+            .next();
+        if let Some((place, bound)) = past {
+            let at = place.map_or_else(
+                || "outside every record".to_owned(),
+                |place| format!("in arena {}", place.arena()),
+            );
+            return Err(CanonicalJsonError::Serialize(
+                <serde_json::Error as serde::ser::Error>::custom(format_args!(
+                    "the document {} {at}",
+                    bound.describe()
+                )),
+            ));
+        }
+        String::from_utf8(bytes).map_err(|error| {
+            CanonicalJsonError::Serialize(<serde_json::Error as serde::ser::Error>::custom(error))
+        })
     }
 
     /// Parse JSON and reject any unsupported `ir_version`, or a document
@@ -2854,6 +2891,57 @@ impl CadIr {
         repeated.extend(self.process.drop_repeated_ids("process"));
         repeated.extend(self.native.drop_repeated_ids());
         repeated
+    }
+
+    /// Gives up each record of `records`, placed in this document's identity
+    /// order, last first in each arena so that the places of the others
+    /// hold. A give-up that drops other records moves places, so it ends the
+    /// batch, and the caller walks the document again for the records still
+    /// past a bound. The document is finalized first.
+    pub(crate) fn give_up_past_the_bounds(
+        &mut self,
+        records: BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    ) -> Vec<crate::bounds::GivenUp> {
+        let mut given_up = Vec::new();
+        if records.is_empty() {
+            return given_up;
+        }
+        self.finalize();
+        for (place, bound) in records.into_iter().rev() {
+            let Some((id, dropped)) = self.remove_record(&place) else {
+                continue;
+            };
+            let moved = !dropped.is_empty();
+            given_up.push(crate::bounds::GivenUp {
+                id,
+                arena: place.arena(),
+                bound,
+                dropped,
+            });
+            if moved {
+                break;
+            }
+        }
+        given_up
+    }
+
+    /// The id of the record at `place`.
+    pub(crate) fn record_at(&self, place: &crate::bounds::Place) -> Option<&str> {
+        use crate::bounds::Place;
+        match place {
+            Place::Home { home, arena, index } => match home.as_str() {
+                "geometry" => self.geometry.record_id(arena, *index),
+                "model" => self.model.record_id(arena, *index),
+                "design" => self.design.record_id(arena, *index),
+                "process" => self.process.record_id(arena, *index),
+                _ => None,
+            },
+            Place::Native {
+                codec,
+                arena,
+                index,
+            } => self.native.record_id(codec, arena, *index),
+        }
     }
 
     /// Removes the record at `place`, returning its id and the ids of the

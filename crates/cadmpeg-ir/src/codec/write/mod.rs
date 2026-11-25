@@ -455,17 +455,62 @@ impl EncoderBackend for CadirEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut bytes = crate::hash::finite_json::to_canonical_json_string(input.ir)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?
-            .into_bytes();
-        bytes.push(b'\n');
-        // CADIR is the neutral document itself: there is no container to
-        // replay or patch, so this encoder has one path and states it.
-        Ok(ExportBody::synthesized(
-            bytes,
-            input.ir,
-            ArenaCoverage::Declared(coverage::cadir_dispositions()),
-        ))
+        cadir_within_bounds(input.ir)
+    }
+}
+
+/// The canonical JSON of `ir` within the bounds of §2.5, with its losses. A record past a bound is content CADIR cannot
+/// hold (§3.4): the writer drops it, with the constructions it owns, and
+/// `repro` past a bound is written unstated. Each charges
+/// `export:value.unwritable` naming it. A record that references a dropped
+/// record keeps the reference (interim, as in the decode wrapper).
+fn cadir_within_bounds(ir: &CadIr) -> Result<ExportBody, CodecError> {
+    let mut document = std::borrow::Cow::Borrowed(ir);
+    let mut losses = Vec::new();
+    loop {
+        let mut bytes = Vec::new();
+        let (written, measured) = crate::bounds::write_measured(&document, &mut bytes);
+        written.map_err(|error| CodecError::Malformed(error.to_string()))?;
+        if !measured.records.is_empty() {
+            let given_up = document.to_mut().give_up_past_the_bounds(measured.records);
+            if given_up.is_empty() {
+                return Err(CodecError::Malformed(
+                    "the CADIR writer found a record past a depth bound it could not drop".into(),
+                ));
+            }
+            losses.extend(given_up.iter().map(|record| {
+                loss::ExportLossCode::ValueUnwritable
+                    .note(record.describe("the CADIR writer drops it"))
+            }));
+            continue;
+        }
+        match measured.outside {
+            None => {
+                bytes.push(b'\n');
+                // CADIR is the neutral document itself: there is no container
+                // to replay or patch, so this encoder has one path and states it.
+                let mut body = ExportBody::synthesized(
+                    bytes,
+                    &document,
+                    ArenaCoverage::Declared(coverage::cadir_dispositions()),
+                );
+                body.losses = losses;
+                return Ok(body);
+            }
+            Some(bound) if document.repro.is_some() => {
+                document.to_mut().repro = None;
+                losses.push(loss::ExportLossCode::ValueUnwritable.note(format!(
+                    "the document's repro {}, so the CADIR writer writes it unstated",
+                    bound.describe()
+                )));
+            }
+            Some(bound) => {
+                return Err(CodecError::Malformed(format!(
+                    "the document {} outside every record",
+                    bound.describe()
+                )))
+            }
+        }
     }
 }
 

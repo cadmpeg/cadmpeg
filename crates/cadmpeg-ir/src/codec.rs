@@ -411,7 +411,22 @@ impl DecodeResult {
             Ok::<_, CodecError>(crate::hash::measured_content_digest(&ctx, ir))
         };
         let (mut digest, mut measured) = walk(&self.ir)?;
-        while self.give_up_records_past_the_bounds(std::mem::take(&mut measured.records)) {
+        loop {
+            let given_up = self
+                .ir
+                .give_up_past_the_bounds(std::mem::take(&mut measured.records));
+            if given_up.is_empty() {
+                break;
+            }
+            for record in given_up {
+                self.report.losses.push(
+                    DecodeLoss::new(
+                        crate::unknown::part::record_unreadable_kind(),
+                        record.describe("the decode wrapper gave it up"),
+                    )
+                    .with_severity(crate::report::Severity::Error),
+                );
+            }
             (digest, measured) = walk(&self.ir)?;
         }
         if let Some(bound) = measured.outside {
@@ -439,58 +454,6 @@ impl DecodeResult {
             }
         }
         Ok(())
-    }
-
-    /// Gives up each record of `records`, last first in each arena so the
-    /// places of the others hold, and returns whether it gave up any. The
-    /// document writes each arena in identity order, so the arenas are put in
-    /// that order first.
-    fn give_up_records_past_the_bounds(
-        &mut self,
-        records: std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
-    ) -> bool {
-        if records.is_empty() {
-            return false;
-        }
-        self.ir.finalize();
-        let mut gave_up = false;
-        for (place, bound) in records.into_iter().rev() {
-            let Some((id, dropped)) = self.ir.remove_record(&place) else {
-                continue;
-            };
-            gave_up = true;
-            // Dropped constructions move the places of their arena, so the
-            // next walk finds the records still past a bound.
-            let moved = !dropped.is_empty();
-            let arena = match &place {
-                crate::bounds::Place::Home { home, arena, .. } => format!("{home}.{arena}"),
-                crate::bounds::Place::Native { codec, arena, .. } => {
-                    format!("native.{codec}.{arena}")
-                }
-            };
-            self.report.losses.push(
-                DecodeLoss::new(
-                    crate::unknown::part::record_unreadable_kind(),
-                    format!(
-                        "record {id} of arena {arena} {}, so the decode wrapper gave it up{}",
-                        bound.describe(),
-                        if dropped.is_empty() {
-                            String::new()
-                        } else {
-                            format!(
-                                " with the constructions it owned; dropped=[{}]",
-                                dropped.join(", ")
-                            )
-                        }
-                    ),
-                )
-                .with_severity(crate::report::Severity::Error),
-            );
-            if moved {
-                break;
-            }
-        }
-        gave_up
     }
 
     /// Borrow the finalized IR.

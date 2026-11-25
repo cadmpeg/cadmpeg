@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The one depth the IR admits over an inline geometry basis.
 
+use crate::bounds::{read_json, text_depth, MAX_DOCUMENT_DEPTH};
 use crate::geometry::analytic::{LineCurve, PlaneSurface};
 use crate::geometry::pcurve::{
     LinePcurve, OffsetPcurve, PcurveGeometry, PlacedPcurve, TrimmedPcurve,
@@ -99,26 +100,30 @@ fn a_pcurve_nesting_chain_one_past_the_bound_is_refused() {
     );
 }
 
+/// The CADIR text reader admits a chain whose text is at the document's
+/// depth bound and refuses one placement more, far inside the IR's own
+/// nesting bound.
 #[test]
-fn the_json_parser_refuses_a_chain_well_under_the_bound() {
-    // The text route into the IR is `CadIr::from_json`, and serde_json's own
-    // parser gives up at 128 nested structures. A chain deep enough to matter
-    // therefore cannot arrive through a document at all; it arrives from a
-    // decoder that builds the carrier in process.
-    let deep = placed_plane(MAX_GEOMETRY_NESTING).expect("admitted nesting");
-    let json = serde_json::to_string(&deep).expect("serialized");
-    let error = serde_json::from_str::<SolvedSurfaceGeometry>(&json)
-        .expect_err("serde_json refuses this nesting depth");
-    assert!(
-        error.to_string().contains("recursion limit exceeded"),
-        "unexpected parser error: {error}"
-    );
-
-    let shallow_chain = placed_plane(60).expect("admitted nesting");
-    let shallow = serde_json::to_string(&shallow_chain).expect("serialized");
+fn the_cadir_reader_reads_a_chain_at_the_document_bound_and_refuses_one_more() {
+    let text =
+        |placements| serde_json::to_string(&placed_plane(placements).expect("admitted nesting"));
+    let deepest = (0..MAX_GEOMETRY_NESTING)
+        .take_while(|placements| {
+            text_depth(&text(*placements).expect("serialized")) <= MAX_DOCUMENT_DEPTH
+        })
+        .last()
+        .expect("a chain within the bound");
+    assert!(deepest < MAX_GEOMETRY_NESTING);
     assert_eq!(
-        serde_json::from_str::<SolvedSurfaceGeometry>(&shallow).expect("admitted nesting"),
-        shallow_chain
+        read_json::<SolvedSurfaceGeometry>(&text(deepest).expect("serialized"))
+            .expect("a chain at the document bound reads"),
+        placed_plane(deepest).expect("admitted nesting")
+    );
+    let error = read_json::<SolvedSurfaceGeometry>(&text(deepest + 1).expect("serialized"))
+        .expect_err("one placement past the document bound");
+    assert!(
+        error.to_string().contains("levels of a CADIR document"),
+        "unexpected reader error: {error}"
     );
 }
 
