@@ -146,6 +146,7 @@ pub(crate) fn write_semantic_with_records(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn write_semantic_with_records_cached(
     ir: &CadIr,
     annotations: &Annotations,
