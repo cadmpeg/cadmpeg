@@ -249,9 +249,9 @@
       },
       {
         "id": "synthetic:cube:coedge#bottom:1",
-        "owner_loop": "synthetic:cÿÿÿÿloop#bottom",
+        "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#3",
-        "radial_next": "synthetic:cube:coedge#left:0",
+        "radial_next": "synÿÿÿÿic:cube:coedge#left:0",
         "sense": "reversed",
         "pcurves": []
       },
@@ -1053,7 +1053,22 @@
   },
   "model": {
     "assets": [],
-    "product_definitions": [],
+    "product_definitions": [
+      {
+        "id": "test:model:product-definition#document",
+        "bom_properties": {},
+        "storage": {
+          "kind": "file",
+          "document": {}
+        },
+        "bodies": [
+          "synthetic:cube:body#0"
+        ],
+        "occurrences": [],
+        "instance_bodies": [],
+        "representations": []
+      }
+    ],
     "occurrences": [],
     "drawings": [],
     "semantic_annotations": [],

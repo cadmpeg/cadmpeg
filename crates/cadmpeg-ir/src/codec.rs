@@ -19,13 +19,13 @@ use crate::document::CadIr;
 use crate::report::{
     check::Finding,
     decode::{Coverage, DecodeReport, DecodeTransfer, TransferLedger},
-    loss::{LossNote as DecodeLoss, StrictConsequence},
+    loss::LossNote as DecodeLoss,
     strictness::Strictness,
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
+    ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy,
     InspectOptions, LimitScope, ResourceLimits, View, WholeInput,
 };
 use cadmpeg_core::dialect::FormatIdentity;
@@ -33,7 +33,7 @@ use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// The stable registry format namespace of one codec, as a typed value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -97,16 +97,15 @@ impl fmt::Display for Confidence {
 }
 
 /// Options controlling source decoding.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DecodeOptions {
     /// How much of the source to transfer.
-    #[serde(default)]
     pub depth: DecodeDepth,
-    /// Resource limits and failure-handling mode governing the decode.
-    #[serde(default)]
+    /// Resource limits governing the decode.
     pub policy: DecodePolicy,
+    /// The entries of the completed decode report on which the caller
+    /// refuses the decode (§3.3). The default refuses none.
+    pub strictness: Strictness,
 }
 
 /// A decoded document plus its loss report.
@@ -124,38 +123,18 @@ pub struct DecodeResult {
     source_fidelity: SourceFidelity,
 }
 
-/// A strict-policy refusal bound to the loss in its completed decode report.
+/// A decode refused by the caller's [`Strictness`], bound to the loss in its
+/// completed decode report (§3.3).
 ///
-/// The shared decode finalizer and [`Self::refused_by`] construct this value.
-/// The refusing loss is therefore always an element of [`Self::report`].
+/// Only the shared decode finalizer constructs this value. The refusing loss
+/// is therefore always an element of [`Self::report`].
 #[derive(Debug)]
 pub struct StrictDecodeRejection {
     report: Box<DecodeReport>,
     loss_index: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct RejectingLossIndex(usize);
-
 impl StrictDecodeRejection {
-    fn new(report: DecodeReport, loss_index: RejectingLossIndex) -> Self {
-        Self {
-            report: Box::new(report),
-            loss_index: loss_index.0,
-        }
-    }
-
-    /// The refusal of `strictness` for the completed decode `report`, naming
-    /// the first loss it refuses (§3.4, Refusals). `None` when it refuses
-    /// none. A report of a decode at `Container` depth exempts
-    /// [`Strictness::pinned`].
-    #[must_use]
-    pub fn refused_by(report: &DecodeReport, strictness: &Strictness) -> Option<Self> {
-        strictness
-            .first_refused(&report.losses, report.container_only())
-            .map(|index| Self::new(report.clone(), RejectingLossIndex(index)))
-    }
-
     /// Returns the loss that caused the strict-policy refusal.
     #[must_use]
     pub fn loss(&self) -> &DecodeLoss {
@@ -188,8 +167,8 @@ pub enum DecodeFailure {
     /// The codec or decode context failed before a result was produced.
     #[error(transparent)]
     Codec(#[from] CodecError),
-    /// Strict mode rejected the first loss whose floor requires refusal.
-    #[error("strict mode rejects {rejection}")]
+    /// The caller's strictness refused the first loss it names.
+    #[error("the caller's strictness refuses the decode at {rejection}")]
     StrictRejected {
         /// The completed report and its refusing loss.
         rejection: StrictDecodeRejection,
@@ -266,13 +245,15 @@ fn held_beyond_depth(depth: DecodeDepth, class: ArenaClass) -> DecodeLoss {
 }
 
 impl DecodeResult {
-    /// Finalizes backend output with classification, depth, and the context's
-    /// strict-loss policy.
+    /// Finalizes backend output with classification and depth, then applies
+    /// the caller's `strictness` to the completed report. A decode at
+    /// `Container` depth exempts [`Strictness::pinned`].
     /// The caller must close the context with `finish_session`, including on error.
     pub fn from_decoded(
         ctx: &DecodeContext<'_>,
         decoded: Decoded,
         format: FormatId,
+        strictness: &Strictness,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.give_up_repeated_ids();
@@ -286,21 +267,14 @@ impl DecodeResult {
             ))
             .into());
         }
-        let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
+        if let Some(loss_index) =
+            strictness.first_refused(&result.report().losses, ctx.container_only())
         {
-            result
-                .report()
-                .losses
-                .iter()
-                .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-                .map(RejectingLossIndex)
-        } else {
-            None
-        };
-        if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
-
-            let rejection = StrictDecodeRejection::new(report, loss_index);
+            let rejection = StrictDecodeRejection {
+                report: Box::new(report),
+                loss_index,
+            };
             return Err(DecodeFailure::StrictRejected { rejection });
         }
         Ok(result)
@@ -446,7 +420,6 @@ impl DecodeResult {
                     .max(crate::bounds::DIGEST_WALK_DEPTH),
                 ..policy.limits
             },
-            ..*policy
         };
         let walk = |ir: &CadIr| {
             let arena = DecodeArena::new();
@@ -709,15 +682,12 @@ pub trait Codec: sealed::Sealed {
 
     /// Decodes the source under its input and resource limits.
     ///
-    /// [`DecodeMode::Strict`] refuses the decode with
-    /// [`DecodeFailure::StrictRejected`] for the first reported loss whose
-    /// [`StrictConsequence`] is [`StrictConsequence::Reject`]. The gate
-    /// evaluates geometry and full requests only: a container-only request
-    /// keeps its losses and is never refused. This gate owns the refusal predicate and
-    /// the refusal class for every codec. A backend reports its losses with
-    /// their strict floors and adds no strict gate of its own; a local gate
-    /// widens the predicate and reclassifies the refusal without the caller
-    /// seeing it.
+    /// `options.strictness` refuses the completed decode with
+    /// [`DecodeFailure::StrictRejected`] at the first loss it refuses. A
+    /// decode at `Container` depth exempts [`Strictness::pinned`]. This gate
+    /// owns the refusal predicate and the refusal class for every codec. A
+    /// backend reports its losses with their strict floors and adds no strict
+    /// gate of its own.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,
@@ -725,12 +695,14 @@ pub trait Codec: sealed::Sealed {
     ) -> Result<DecodeResult, DecodeFailure>;
 
     /// Decodes an acquired root in the caller's detection session, under the
-    /// session's policy and requested depth.
+    /// session's policy and requested depth, and applies `strictness` as
+    /// [`Self::decode`] does.
     /// The caller finishes the session after this method returns.
     fn decode_with_context(
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
+        strictness: &Strictness,
     ) -> Result<DecodeResult, DecodeFailure>;
 }
 
@@ -774,7 +746,6 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     ) -> Result<ContainerSummary, CodecError> {
         let arena = DecodeArena::new();
         let policy = DecodePolicy {
-            mode: DecodeMode::Salvage,
             limits: options.limits,
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, DecodeDepth::Full)?;
@@ -798,7 +769,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy, options.depth)?;
-        let result = self.decode_with_context(&ctx, root);
+        let result = self.decode_with_context(&ctx, root, &options.strictness);
         ctx.finish_session()?;
         result
     }
@@ -807,9 +778,10 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
+        strictness: &Strictness,
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
-        DecodeResult::from_decoded(ctx, decoded, C::FORMAT)
+        DecodeResult::from_decoded(ctx, decoded, C::FORMAT, strictness)
     }
 }
 
