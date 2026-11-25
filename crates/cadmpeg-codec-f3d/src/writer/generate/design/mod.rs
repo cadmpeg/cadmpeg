@@ -15,14 +15,15 @@
 //! scope's configuration, arrangements and occurrence states, for every
 //! current state's `Stale` or `Failed` status and poses, and for every stored
 //! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
-//! failure. A failure that names the records of a rolled-back item drops
-//! that item alone; one that names the item of a feature written with its
-//! state drops the items written with their states. Its other fallbacks, in
-//! [`Part`] order, write the sketches without
-//! their dimensions, the geometry item in the Base Feature, the design without its
-//! construction planes and the sketches on them, the design without its
-//! `Sketch` items, then no design ([`dropped_records`]): they never drop a
-//! body.
+//! failure. A failure that names its records ([`Culprit`]) drops those
+//! records and each record that needs them: a rolled-back item, a sketch, a
+//! construction plane with the sketches on it, or a sketch dimension alone;
+//! for the item of a feature written with its state, the items written with
+//! their states; for the records of a [`Part`] that name no one record, that
+//! part. The other fallbacks, in [`Part`] order, write the sketches without
+//! their dimensions, the geometry item in the Base Feature, the design
+//! without its construction planes and the sketches on them, the design
+//! without its `Sketch` items, then no design ([`dropped_records`]).
 
 mod base_feature;
 mod expression;
@@ -58,6 +59,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::SketchConstraintId;
 
 use super::presentation::GeneratedDesignRegistry;
 use super::reduce::named_loss;
@@ -221,6 +223,15 @@ pub(super) enum Culprit {
     /// The records of the geometry item of `feature`, rolled back after the
     /// timeline marker or written with its state.
     Item { feature: FeatureId, rolled: bool },
+    /// The records of the `Sketch` item of the feature.
+    Sketch(FeatureId),
+    /// The records of a `WorkPlane` item, with the features of the sketches
+    /// on it.
+    Plane(Vec<FeatureId>),
+    /// The records of the sketch dimension of the constraint.
+    Dimension(SketchConstraintId),
+    /// The records of a part, where the failure names no one record of it.
+    Part(Part),
 }
 
 /// A failure to write the records of the design scope, and the records it
@@ -229,6 +240,16 @@ pub(super) enum Culprit {
 pub(super) struct RecordFailure {
     pub(super) error: CodecError,
     pub(super) culprit: Option<Culprit>,
+}
+
+impl RecordFailure {
+    /// The failure, naming `culprit` where it names no records yet.
+    pub(super) fn or_named(self, culprit: impl FnOnce() -> Culprit) -> Self {
+        Self {
+            culprit: self.culprit.or_else(|| Some(culprit())),
+            ..self
+        }
+    }
 }
 
 impl From<CodecError> for RecordFailure {
@@ -251,6 +272,11 @@ pub(super) struct Fallback {
     /// The rolled-back items whose records the writer cannot write, each
     /// with the failure.
     rolled: BTreeMap<FeatureId, String>,
+    /// The sketches the writer drops alone, each with why.
+    sketches: BTreeMap<FeatureId, String>,
+    /// The sketch dimensions whose records the writer cannot write, each
+    /// with the failure.
+    dimensions: BTreeMap<SketchConstraintId, String>,
 }
 
 /// What failed where the geometry items written with their states are
@@ -315,13 +341,27 @@ impl Fallback {
             Culprit::Item {
                 feature,
                 rolled: true,
-            } => {
-                if self.rolled.contains_key(feature) {
-                    return false;
+            } => newly(&mut self.rolled, feature, reason.to_owned()),
+            Culprit::Sketch(feature) => newly(
+                &mut self.sketches,
+                feature,
+                format!("is dropped because the writer cannot write its records ({reason})"),
+            ),
+            Culprit::Plane(features) => {
+                let mut dropped = false;
+                for feature in features {
+                    dropped |= newly(
+                        &mut self.sketches,
+                        feature,
+                        format!("is dropped because the writer cannot write the records of its construction plane ({reason})"),
+                    );
                 }
-                self.rolled.insert(feature.clone(), reason.to_owned());
-                true
+                dropped
             }
+            Culprit::Dimension(constraint) => {
+                newly(&mut self.dimensions, constraint, reason.to_owned())
+            }
+            Culprit::Part(part) => self.drop_part(target, missing_states, *part, reason),
             Culprit::Item {
                 feature,
                 rolled: false,
@@ -447,14 +487,27 @@ pub(super) fn plan<'a>(
     };
     let mut parameters = parameters::plan(target, &scope.definition);
     let features = scope_features(target, scope);
-    let mut sketches = sketch_plan(target, &features, fallback.reason(Part::Planes));
+    let mut sketches = sketch_plan(
+        target,
+        &features,
+        fallback.reason(Part::Planes),
+        &fallback.sketches,
+    );
     let mut ordinal = 1;
     if let Some(reason) = fallback.reason(Part::Sketches) {
         sketches.drop_items(reason);
     } else {
-        if let Some(reason) = fallback.reason(Part::Dimensions) {
-            sketches.drop_dimensions(reason);
-        }
+        let every = fallback
+            .reason(Part::Dimensions)
+            .map(|reason| format!("the writer failed with the sketch's dimensions ({reason})"));
+        sketches.drop_dimensions(|constraint| {
+            every.clone().or_else(|| {
+                fallback
+                    .dimensions
+                    .get(constraint)
+                    .map(|reason| records_reason(reason))
+            })
+        });
         ordinal = sketches.claim_parameters(
             &mut parameters,
             sketch::dimensions::Tolerances {
@@ -694,6 +747,18 @@ fn rolled_back_items<'a>(
         }
     }
     (items, reasons)
+}
+
+/// Insert `value` at `key` where `map` holds no value there. Returns
+/// whether it did.
+fn newly<K: Ord + Clone>(map: &mut BTreeMap<K, String>, key: &K, value: String) -> bool {
+    match map.entry(key.clone()) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(value);
+            true
+        }
+        std::collections::btree_map::Entry::Occupied(_) => false,
+    }
 }
 
 /// Why the writer writes no item whose records failed with `reason`.
@@ -983,18 +1048,20 @@ impl NeutralDesign<'_> {
 }
 
 /// The plan of the sketches among `features`, without the sketches off the
-/// origin planes where `planes` names the failure that dropped them. The
+/// origin planes where `planes` names the failure that dropped them and
+/// without the sketches `dropped` names. The
 /// `Sketch` items precede the `Base Feature`, which a design with no body
 /// does not write.
 fn sketch_plan<'a>(
     target: &'a CadIr,
     features: &[&'a FeatureId],
     planes: Option<&str>,
+    dropped: &BTreeMap<FeatureId, String>,
 ) -> SketchPlan<'a> {
     if target.geometry.bodies.is_empty() {
         SketchPlan::default()
     } else {
-        sketch::plan(target, features, planes)
+        sketch::plan(target, features, planes, dropped)
     }
 }
 

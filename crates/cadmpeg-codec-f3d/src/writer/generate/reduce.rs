@@ -346,7 +346,16 @@ impl<'a> Reduction<'a> {
                     || self.drop_neutral_design(&reason)
             }
             Stage::History => {
-                let cause = culprit.map(|Culprit::Item { feature, .. }| feature);
+                let cause = match culprit {
+                    Some(Culprit::Item { feature, .. }) => Some(feature),
+                    Some(
+                        Culprit::Sketch(_)
+                        | Culprit::Plane(_)
+                        | Culprit::Dimension(_)
+                        | Culprit::Part(_),
+                    )
+                    | None => None,
+                };
                 self.drop_history_items(&reason, cause)
                     || self.drop_design_part(&reason)
                     || self.drop_neutral_design(&reason)

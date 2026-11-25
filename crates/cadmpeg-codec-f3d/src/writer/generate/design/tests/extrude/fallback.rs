@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A failure of the records of a geometry item (cadir-v11.md §3.4): the
+//! A failure of the records of a timeline item (cadir-v11.md §3.4): the
 //! writer drops the item whose records it cannot write and each record that
 //! needs it, and keeps the design scope, its construction planes and its
-//! sketches.
+//! other sketches.
 
 use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::container::{Container, Rollback};
@@ -11,7 +11,7 @@ use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 
-use super::super::sketch::{frame, point2, unread, Source};
+use super::super::sketch::{feature_id, frame, point2, unread, Source};
 use super::super::{fail_records, tails, write_bytes_as};
 use super::history::{with_a_rolled_back_extrude, with_fillet};
 use super::{blind, kinds, loss, sketch_and_extrude, EVALUATION_MISSING, EXTRUDE};
@@ -134,4 +134,23 @@ fn a_design_with_no_body_and_no_item_keeps_its_sketch() {
         )),
         "{missing}"
     );
+}
+
+#[test]
+fn a_sketch_whose_records_fail_is_dropped_with_the_item_that_needs_it() {
+    let ir = sketch_and_extrude(blind(), true);
+    let profile = feature_id("profile");
+    fail_records([profile.as_str()]);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::GeometryTrue);
+    assert_eq!(kinds(&decoded), ["sketch", "base"], "{:#?}", report.losses);
+    assert_eq!(decoded.model.sketches.len(), 1);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(
+        missing.contains(&format!(
+            "{profile} (its sketch is dropped because {})",
+            records_fail(profile.as_str())
+        )),
+        "{missing}"
+    );
+    assert!(!missing.contains(feature_id("later").as_str()), "{missing}");
 }

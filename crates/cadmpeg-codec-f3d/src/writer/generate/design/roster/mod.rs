@@ -28,7 +28,7 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::frames::DesignRecords;
-use super::{Culprit, RecordFailure};
+use super::{Culprit, Part, RecordFailure};
 use crate::records::parameters::DesignParameterDiscriminator;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
@@ -887,8 +887,10 @@ pub(super) fn archive(
     views::write(ctx, &mut records)?;
     component::write(ctx, &mut records)?;
     bodies::write(ctx, &mut records)?;
-    planes::write(ctx, &mut records)?;
-    sketches::write(ctx, ctx.sketches, &mut records)?;
+    planes::write(ctx, &mut records)
+        .map_err(|failure| failure.or_named(|| Culprit::Part(Part::Planes)))?;
+    sketches::write(ctx, ctx.sketches, &mut records)
+        .map_err(|failure| failure.or_named(|| Culprit::Part(Part::Sketches)))?;
     for item in ctx.roster.geometry() {
         item.write(ctx, &mut records)?;
     }
