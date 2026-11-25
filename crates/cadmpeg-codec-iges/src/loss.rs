@@ -165,9 +165,15 @@ loss_codes! {
     /// An open shell was written as unjoined trimmed surfaces for a version
     /// that defines no open shell.
     WriterOpenShellUnjoined => "writer.open-shell-unjoined",
+    /// A solid was written as unjoined trimmed surfaces for a version that
+    /// defines no manifold solid B-rep.
+    WriterSolidUnjoined => "writer.solid-unjoined",
     /// An open edge with no stated range was written over one of several
     /// ranges its vertices bound, or between its vertices' feet on its curve.
     WriterEdgeRangeAssumed => "writer.edge-range-assumed",
+    /// A face was written with its model-space boundary, without the parameter
+    /// curves that have no exact image on its written support.
+    WriterPcurveOmitted => "writer.pcurve-omitted",
     /// A vertex tolerance was raised to its distance from an edge's curve.
     VertexToleranceWidened => "geometry.vertex-tolerance-widened",
     /// The decoded document holds an error-severity validation finding.
@@ -237,7 +243,9 @@ impl IgesLossCode {
             | Self::WriterBodyOpacityNotRepresented
             | Self::WriterBodyVisibilityNotRepresented
             | Self::WriterEdgeRangeAssumed
+            | Self::WriterPcurveOmitted
             | Self::WriterOpenShellUnjoined
+            | Self::WriterSolidUnjoined
             | Self::ProjectionInvalid => Severity::Warning,
             Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
         }
@@ -249,7 +257,8 @@ impl IgesLossCode {
             Self::WriterSupportEdgeNotRepresented
             | Self::WriterFaceOmitted
             | Self::WriterBodyOmitted
-            | Self::WriterOpenShellUnjoined => LossTaxonomy::TopologyNotTransferred,
+            | Self::WriterOpenShellUnjoined
+            | Self::WriterSolidUnjoined => LossTaxonomy::TopologyNotTransferred,
             Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::VertexToleranceWidened
             | Self::OccurrenceExpansionOutputTruncated
@@ -282,7 +291,8 @@ impl IgesLossCode {
             | Self::GeometryNotProjected
             | Self::WriterSupportGeometryNotRepresented
             | Self::WriterFreeGeometryOmitted
-            | Self::WriterDuplicateCarrierOmitted => LossTaxonomy::GeometryNotTransferred,
+            | Self::WriterDuplicateCarrierOmitted
+            | Self::WriterPcurveOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted
@@ -433,7 +443,9 @@ mod tests {
                 "writer.face-omitted",
                 "writer.body-omitted",
                 "writer.open-shell-unjoined",
+                "writer.solid-unjoined",
                 "writer.edge-range-assumed",
+                "writer.pcurve-omitted",
                 "geometry.vertex-tolerance-widened",
                 "projection.invalid",
             ]
@@ -454,6 +466,16 @@ mod tests {
                     .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
                 "code {text} is not lowercase kebab"
             );
+        }
+    }
+
+    #[test]
+    fn the_unjoined_solid_and_the_omitted_pcurve_pin_no_strict_floor() {
+        for code in [
+            IgesLossCode::WriterSolidUnjoined,
+            IgesLossCode::WriterPcurveOmitted,
+        ] {
+            assert_eq!(code.note("").code.strict_floor(), None, "{}", code.code());
         }
     }
 
