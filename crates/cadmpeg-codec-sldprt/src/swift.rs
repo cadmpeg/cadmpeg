@@ -761,11 +761,7 @@ fn parse_unique_root(
     payload: &[u8],
 ) -> Result<Option<Entity>, CodecError> {
     let mut parsed = None;
-    for offset in payload
-        .windows(ENTITY_TOKEN.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == ENTITY_TOKEN).then_some(offset))
-    {
+    for offset in memchr::memmem::find_iter(payload, ENTITY_TOKEN) {
         let Some(mut cursor) = View::over_retained(payload).child(offset, payload.len()) else {
             continue;
         };

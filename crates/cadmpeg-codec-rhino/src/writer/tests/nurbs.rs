@@ -885,6 +885,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         payload: ([0; 16], vec![]),
         domain_extent_points: uv,
         domain,
+        reversed: false,
     };
     let finding = validate_nurbs_trim(
         &surface,
@@ -964,6 +965,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
         payload: ([0; 16], vec![]),
         domain_extent_points: uv,
         domain,
+        reversed: false,
     };
     let finding = validate_nurbs_trim(
         &surface,
