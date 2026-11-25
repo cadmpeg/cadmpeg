@@ -511,6 +511,11 @@ pub(crate) enum SldprtLossCode {
     /// An edit of a feature's definition or selection that the native record
     /// cannot encode is not written; the output keeps the stored record.
     WriterFeatureEditUnwritten,
+    /// An edit of a design record other than a parameter or a feature, in a
+    /// part read from CADIR JSON, that the feature history restored from its
+    /// retained source part cannot state is not written; the output keeps the
+    /// stored state.
+    WriterDesignEditUnwritten,
     /// A variant edit of a feature is written in the record shape of the
     /// edited variant, which adds or drops a parameter or drops a source
     /// property of the feature.
@@ -825,6 +830,7 @@ impl SldprtLossCode {
         Self::WriterConfigurationSnapshotEditUnwritten,
         Self::WriterParameterEditUnwritten,
         Self::WriterFeatureEditUnwritten,
+        Self::WriterDesignEditUnwritten,
         Self::WriterFeatureRecordReshaped,
         Self::WriterCompoundFileEditUnwritten,
         Self::WriterReadBackDiffers,
@@ -1069,6 +1075,7 @@ impl SldprtLossCode {
             }
             Self::WriterParameterEditUnwritten => "writer.parameter-edit-unwritten",
             Self::WriterFeatureEditUnwritten => "writer.feature-edit-unwritten",
+            Self::WriterDesignEditUnwritten => "writer.design-edit-unwritten",
             Self::WriterFeatureRecordReshaped => "writer.feature-record-reshaped",
             Self::WriterCompoundFileEditUnwritten => "writer.compound-file-edit-unwritten",
             Self::WriterReadBackDiffers => "writer.read-back-differs",
@@ -1173,6 +1180,7 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
             Self::WriterParameterEditUnwritten => Severity::Warning,
             Self::WriterFeatureEditUnwritten => Severity::Warning,
+            Self::WriterDesignEditUnwritten => Severity::Warning,
             Self::WriterFeatureRecordReshaped => Severity::Warning,
             Self::WriterCompoundFileEditUnwritten => Severity::Error,
             Self::WriterReadBackDiffers => Severity::Warning,
@@ -1411,6 +1419,7 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterParameterEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterFeatureEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterDesignEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterFeatureRecordReshaped => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterCompoundFileEditUnwritten => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterReadBackDiffers => LossTaxonomy::FeatureHistoryRetained,
@@ -1980,6 +1989,7 @@ mod tests {
                 "writer.configuration-snapshot-edit-unwritten",
                 "writer.parameter-edit-unwritten",
                 "writer.feature-edit-unwritten",
+                "writer.design-edit-unwritten",
                 "writer.feature-record-reshaped",
                 "writer.compound-file-edit-unwritten",
                 "writer.read-back-differs",
