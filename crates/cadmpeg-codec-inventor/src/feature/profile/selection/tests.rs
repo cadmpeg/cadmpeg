@@ -382,6 +382,10 @@ mod selected_path {
             assert_eq!(path.names, [5, 6]);
             assert_eq!(path.endpoints, [Point3::new(0.0, 0.0, 0.0), end]);
             assert!(path.curves.is_empty());
+            // A native path has no spans, so only a circular new body is typed
+            // along it.
+            assert!(path.spans.is_empty());
+            assert!(!path.tangent);
         }
     }
 
@@ -506,4 +510,105 @@ mod selected_path {
         ];
         assert!(open_path(offset_wire(), &closed).is_none());
     }
+}
+
+fn line_edge(start: [f64; 3], end: [f64; 3]) -> (ProfileEdge, SweepCurve) {
+    let (start, end) = (
+        Point3::new(start[0], start[1], start[2]),
+        Point3::new(end[0], end[1], end[2]),
+    );
+    (
+        ProfileEdge {
+            name: None,
+            start,
+            end,
+            middle: None,
+            spline: None,
+        },
+        SweepCurve::Line { start, end },
+    )
+}
+
+/// A quarter circle of radius 10 about the origin of the XY plane, from the
+/// point (10, 0, 0) to the point (0, 10, 0).
+fn quarter_arc() -> (ProfileEdge, SweepCurve) {
+    let half = 10.0 * std::f64::consts::FRAC_1_SQRT_2;
+    (
+        ProfileEdge {
+            name: None,
+            start: Point3::new(10.0, 0.0, 0.0),
+            end: Point3::new(0.0, 10.0, 0.0),
+            middle: Some(Point3::new(half, half, 0.0)),
+            spline: None,
+        },
+        SweepCurve::Arc {
+            center: Point3::new(0.0, 0.0, 0.0),
+            radius: 10.0,
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        },
+    )
+}
+
+#[test]
+fn a_line_tangent_to_the_end_of_an_arc_continues_the_path() {
+    // The tangent of the quarter circle at (0, 10, 0) is the -x direction, so
+    // a line from there toward -x continues it, in either edge direction.
+    let (arc, arc_curve) = quarter_arc();
+    for (from, to) in [
+        ([0.0, 10.0, 0.0], [-5.0, 10.0, 0.0]),
+        ([-5.0, 10.0, 0.0], [0.0, 10.0, 0.0]),
+    ] {
+        let (line, line_curve) = line_edge(from, to);
+        assert!(tangent_continuous(
+            &[arc.clone(), line],
+            &[arc_curve, line_curve]
+        ));
+    }
+}
+
+#[test]
+fn a_corner_a_cusp_and_an_arc_without_a_middle_do_not_continue_the_path() {
+    let (arc, arc_curve) = quarter_arc();
+    // A line from (0, 10, 0) along +y leaves the arc at a right angle.
+    let (corner, corner_curve) = line_edge([0.0, 10.0, 0.0], [0.0, 15.0, 0.0]);
+    assert!(!tangent_continuous(
+        &[arc.clone(), corner],
+        &[arc_curve, corner_curve]
+    ));
+    // A line from (0, 10, 0) along +x doubles back over the arc tangent.
+    let (cusp, cusp_curve) = line_edge([0.0, 10.0, 0.0], [5.0, 10.0, 0.0]);
+    assert!(!tangent_continuous(
+        &[arc.clone(), cusp],
+        &[arc_curve, cusp_curve]
+    ));
+    let (line, line_curve) = line_edge([0.0, 10.0, 0.0], [-5.0, 10.0, 0.0]);
+    let mut open = arc;
+    open.middle = None;
+    assert!(!tangent_continuous(&[open, line], &[arc_curve, line_curve]));
+    // Edges that share no point are not a chain.
+    let (apart, apart_curve) = line_edge([1.0, 1.0, 1.0], [2.0, 2.0, 2.0]);
+    let (first, first_curve) = line_edge([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    assert!(!tangent_continuous(
+        &[first, apart],
+        &[first_curve, apart_curve]
+    ));
+}
+
+#[test]
+fn collinear_lines_continue_the_path_and_a_closed_chain_closes() {
+    let (first, first_curve) = line_edge([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    let (second, second_curve) = line_edge([1.0, 0.0, 0.0], [3.0, 0.0, 0.0]);
+    assert!(tangent_continuous(
+        &[first.clone(), second],
+        &[first_curve, second_curve]
+    ));
+    let sides = [
+        ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        ([1.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
+        ([1.0, 1.0, 0.0], [0.0, 0.0, 0.0]),
+    ]
+    .map(|(from, to)| line_edge(from, to).0);
+    assert!(closed_chain(&sides));
+    assert!(!closed_chain(&sides[..2]));
+    assert!(!closed_chain(&[]));
 }

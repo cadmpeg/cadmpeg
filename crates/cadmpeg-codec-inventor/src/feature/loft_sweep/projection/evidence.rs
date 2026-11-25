@@ -2,17 +2,19 @@
 //! Exact generator joins and complete result-face construction checks.
 
 use crate::feature::history_views::{ResultStates, StateModel};
-use crate::feature::profile::selection::PathCurve;
+use crate::feature::profile::selection::{PathCurve, PathSpan, SweepCurve};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::document::Topology;
+use cadmpeg_ir::features::sweeps::SolidSweepOperation;
+use cadmpeg_ir::geometry::analytic::{ConeSurface, PlaneSurface, TorusSurface};
 use cadmpeg_ir::geometry::lofts::LoftMemberForm;
 use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{BodyKind, Face};
 use cadmpeg_ir::CadIr;
 use std::collections::{HashMap, HashSet};
@@ -25,6 +27,9 @@ const EPS_SWEEP_PATH_MM: f64 = 1.0e-5;
 /// Largest sine of the angle between a cylinder axis and its path line.
 const EPS_SWEEP_AXIS: f64 = 1.0e-6;
 
+/// Largest deviation of a unit-axis cone ratio from one.
+const EPS_SWEEP_RATIO: f64 = 1.0e-6;
+
 struct NamedFace<'a> {
     face: &'a Face,
     family: &'a str,
@@ -32,11 +37,36 @@ struct NamedFace<'a> {
 }
 
 fn owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<NamedFace<'_>>> {
+    owned_faces_of(ir, generator, true)
+}
+
+/// The faces that carry a naming attribute of the generator, all in one solid
+/// body. With `whole_body`, they are every face of that body.
+fn owned_faces_of(ir: &CadIr, generator: u32, whole_body: bool) -> Option<Vec<NamedFace<'_>>> {
     let mut names = HashMap::new();
     for attribute in &ir.model.attributes {
         let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
+        if attribute.name == LEGACY_SWEEP_CLASS {
+            // A malformed record that does not name this generator first
+            // leaves its face unowned, so one bad record elsewhere does not
+            // stop the check. A record that names the generator first but
+            // lacks the owned form refuses the sweep.
+            match legacy_name_tail(&attribute.values, generator) {
+                LegacyOwner::Generator(tail) => {
+                    if names
+                        .insert(face.as_str(), ("INV_NMX_SWEEPGENERATED_TAG", tail))
+                        .is_some()
+                    {
+                        return None;
+                    }
+                }
+                LegacyOwner::Other => {}
+                LegacyOwner::Refused => return None,
+            }
+            continue;
+        }
         let [_, _, _, _, _, Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(44)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(source)), Some(AttributeValue::Integer(-1)), rest @ ..] =
             attribute.values.as_slice()
         else {
@@ -115,13 +145,14 @@ fn owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<NamedFace<'_>>> {
         })
         .map(|shell| &shell.id)
         .collect::<HashSet<_>>();
-    if ir
-        .geometry
-        .faces
-        .iter()
-        .filter(|face| shells.contains(&face.shell))
-        .count()
-        != selected.len()
+    if whole_body
+        && ir
+            .geometry
+            .faces
+            .iter()
+            .filter(|face| shells.contains(&face.shell))
+            .count()
+            != selected.len()
     {
         return None;
     }
@@ -200,6 +231,470 @@ pub(in crate::feature::loft_sweep) fn sweep(
         return None;
     }
     Some(())
+}
+
+/// A rigid motion of space: `point -> rotation * point + shift`.
+#[derive(Clone, Copy)]
+struct Pose {
+    rotation: [[f64; 3]; 3],
+    shift: Vector3,
+}
+
+impl Pose {
+    const IDENTITY: Self = Self {
+        rotation: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        shift: Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+    };
+
+    fn direction(&self, vector: Vector3) -> Vector3 {
+        let [x, y, z] = self.rotation;
+        Vector3::new(
+            x[0] * vector.x + x[1] * vector.y + x[2] * vector.z,
+            y[0] * vector.x + y[1] * vector.y + y[2] * vector.z,
+            z[0] * vector.x + z[1] * vector.y + z[2] * vector.z,
+        )
+    }
+
+    fn point(&self, point: Point3) -> Point3 {
+        let moved = self.direction(Vector3::new(point.x, point.y, point.z));
+        Point3::new(
+            moved.x + self.shift.x,
+            moved.y + self.shift.y,
+            moved.z + self.shift.z,
+        )
+    }
+
+    /// This motion followed by the translation `by`.
+    fn translated(self, by: Vector3) -> Self {
+        Self {
+            rotation: self.rotation,
+            shift: Vector3::new(
+                self.shift.x + by.x,
+                self.shift.y + by.y,
+                self.shift.z + by.z,
+            ),
+        }
+    }
+
+    /// This motion followed by the turn of `angle` about the line through
+    /// `center` along the unit vector `axis`.
+    fn turned(self, center: Point3, axis: Vector3, angle: f64) -> Self {
+        let (sin, cos) = angle.sin_cos();
+        let (x, y, z) = (axis.x, axis.y, axis.z);
+        let turn = [
+            [
+                cos + x * x * (1.0 - cos),
+                x * y * (1.0 - cos) - z * sin,
+                x * z * (1.0 - cos) + y * sin,
+            ],
+            [
+                y * x * (1.0 - cos) + z * sin,
+                cos + y * y * (1.0 - cos),
+                y * z * (1.0 - cos) - x * sin,
+            ],
+            [
+                z * x * (1.0 - cos) - y * sin,
+                z * y * (1.0 - cos) + x * sin,
+                cos + z * z * (1.0 - cos),
+            ],
+        ];
+        let by = Pose {
+            rotation: turn,
+            shift: Vector3::new(0.0, 0.0, 0.0),
+        };
+        let pivot = by.direction(Vector3::new(center.x, center.y, center.z));
+        let mut rotation = [[0.0; 3]; 3];
+        for (row, out) in rotation.iter_mut().enumerate() {
+            for (column, slot) in out.iter_mut().enumerate() {
+                *slot = (0..3)
+                    .map(|k| turn[row][k] * self.rotation[k][column])
+                    .sum();
+            }
+        }
+        let carried = by.direction(self.shift);
+        Self {
+            rotation,
+            shift: Vector3::new(
+                carried.x + center.x - pivot.x,
+                carried.y + center.y - pivot.y,
+                carried.z + center.z - pivot.z,
+            ),
+        }
+    }
+
+    fn curve(&self, curve: SweepCurve) -> SweepCurve {
+        match curve {
+            SweepCurve::Line { start, end } => SweepCurve::Line {
+                start: self.point(start),
+                end: self.point(end),
+            },
+            SweepCurve::Arc {
+                center,
+                radius,
+                normal,
+            } => SweepCurve::Arc {
+                center: self.point(center),
+                radius,
+                normal: self.direction(normal),
+            },
+        }
+    }
+}
+
+/// The signed angle from `from` to `to` about the unit vector `axis`.
+fn signed_angle(axis: Vector3, from: Vector3, to: Vector3) -> f64 {
+    axis.dot(from.cross(to)).atan2(from.dot(to))
+}
+
+/// The path spans run from one end of the path, each from its start end, and
+/// the motion that carries the section from the start of each span and from
+/// the end of the path.
+fn section_motion(path: &[PathSpan], from_last: bool) -> Option<(Vec<(PathSpan, Pose)>, Pose)> {
+    let ordered: Vec<PathSpan> = if from_last {
+        path.iter()
+            .rev()
+            .map(|span| PathSpan {
+                from: span.to,
+                to: span.from,
+                ..*span
+            })
+            .collect()
+    } else {
+        path.to_vec()
+    };
+    let mut pose = Pose::IDENTITY;
+    let mut motions = Vec::new();
+    for span in ordered {
+        motions.push((span, pose));
+        pose = match span.curve {
+            SweepCurve::Line { .. } => pose.translated(span.to.vector_from(span.from)),
+            SweepCurve::Arc { center, normal, .. } => {
+                let axis = normal.unit()?;
+                let half = signed_angle(
+                    axis,
+                    span.from.vector_from(center),
+                    span.middle?.vector_from(center),
+                );
+                pose.turned(center, axis, 2.0 * half)
+            }
+        };
+    }
+    Some((motions, pose))
+}
+
+/// Check every generator-owned face of a solid sweep of a closed line and
+/// arc section along a tangent-continuous line and arc path.
+///
+/// The path starts at an end that lies in the plane of the section, and the
+/// result holds for that start. The section turns with the path, so its
+/// position at the start of each span is its position at the path start moved
+/// by the spans before. Each side
+/// face (role 20) names its section curve and path span, and its surface is
+/// the one that the moved section curve generates along the span. A new body
+/// owns one side face for every pair and both caps, and the caps hold the
+/// section at the two path ends; a cut or join can own any subset of faces,
+/// each of which matches and each cap of which holds the section at a path
+/// end. A cut or join splits and merges faces, so it can own several faces
+/// for one pair or cap role, and its bodies keep their other faces. A cap holds the section when its plane is the plane of the moved
+/// section.
+///
+/// `section` lists every edge of the section wire; an edge cut by other
+/// curves repeats the name of its curve.
+pub(in crate::feature::loft_sweep) fn sweep_partition(
+    ir: &CadIr,
+    generator: u32,
+    op: SolidSweepOperation,
+    section: &[(i64, SweepCurve)],
+    plane: (Point3, Vector3),
+    path: &[PathSpan],
+) -> Option<()> {
+    if !matches!(
+        op,
+        SolidSweepOperation::NewBody | SolidSweepOperation::Cut | SolidSweepOperation::Join
+    ) {
+        return None;
+    }
+    let normal = plane.1.unit()?;
+    let in_plane =
+        |point: Point3| point.vector_from(plane.0).dot(normal).abs() <= EPS_SWEEP_PATH_MM;
+    // Both ends lie in the plane when the path leaves it and comes back; the
+    // faces then say which end is the start.
+    [
+        (in_plane(path.first()?.from), false),
+        (in_plane(path.last()?.to), true),
+    ]
+    .into_iter()
+    .filter(|(held, _)| *held)
+    .find_map(|(_, from_last)| {
+        let (motions, end) = section_motion(path, from_last)?;
+        partition_from(
+            ir,
+            generator,
+            op,
+            section,
+            normal,
+            path.len(),
+            &motions,
+            end,
+        )
+    })
+}
+
+/// The faces of the sweep against the section moved along `motions`, which
+/// end with the motion `end`.
+fn partition_from(
+    ir: &CadIr,
+    generator: u32,
+    op: SolidSweepOperation,
+    section: &[(i64, SweepCurve)],
+    section_normal: Vector3,
+    spans: usize,
+    motions: &[(PathSpan, Pose)],
+    end: Pose,
+) -> Option<()> {
+    let new_body = op == SolidSweepOperation::NewBody;
+    // The section lists every edge; an edge cut by other curves repeats its
+    // name.
+    let names = section
+        .iter()
+        .map(|(name, _)| name)
+        .collect::<HashSet<_>>()
+        .len();
+    // A cut or join leaves faces of the bodies it works on in the result.
+    let faces = owned_faces_of(ir, generator, new_body)?;
+    let mut caps: Vec<(i64, &PlaneSurface)> = Vec::new();
+    let mut pairs = HashSet::new();
+    let mut repeated = false;
+    for named in &faces {
+        if named.family != "INV_NMX_SWEEPGENERATED_TAG" {
+            return None;
+        }
+        let [name, span, role, tail @ ..] = named.values.as_slice() else {
+            return None;
+        };
+        if tail != [0; 7] {
+            return None;
+        }
+        let surface = ir
+            .geometry
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == named.face.surface)?;
+        let SurfaceGeometry::Solved(geometry) = &surface.geometry else {
+            return None;
+        };
+        match (name, span, role) {
+            (0, 0, 4 | 12) => {
+                let SolvedSurfaceGeometry::Plane(plane) = geometry else {
+                    return None;
+                };
+                repeated |= caps.iter().any(|(seen, _)| seen == role);
+                caps.push((*role, plane));
+            }
+            (name, span, 20) => {
+                let curve = section.iter().find(|(key, _)| key == name)?.1;
+                let (joined, pose) = motions.iter().find(|(joined, _)| joined.name == *span)?;
+                if !surface_of_pair(pose.curve(curve), joined.curve, geometry) {
+                    return None;
+                }
+                repeated |= !pairs.insert((*name, *span));
+            }
+            _ => return None,
+        }
+    }
+    if pairs.is_empty() {
+        return None;
+    }
+    // A cap holds the section when its plane is the plane of the moved
+    // section: parallel to the moved section normal and through every edge.
+    let holds = |pose: &Pose, plane: &PlaneSurface| {
+        let moved = section
+            .iter()
+            .map(|(name, curve)| (*name, pose.curve(*curve)))
+            .collect::<Vec<_>>();
+        is_parallel(
+            *plane.frame().axis().as_raw(),
+            pose.direction(section_normal),
+        ) && section_on_plane(&moved, plane)
+    };
+    let at_start = |plane: &PlaneSurface| holds(&Pose::IDENTITY, plane);
+    let at_end = |plane: &PlaneSurface| holds(&end, plane);
+    if !caps
+        .iter()
+        .all(|(_, plane)| at_start(plane) || at_end(plane))
+    {
+        return None;
+    }
+    // A cut or join splits and merges faces, so it can own several faces
+    // for one pair or cap role. A new body owns each exactly once.
+    if new_body
+        && (repeated
+            || caps.len() != 2
+            || pairs.len() != names * spans
+            || !(at_start(caps[0].1) && at_end(caps[1].1)
+                || at_end(caps[0].1) && at_start(caps[1].1)))
+    {
+        return None;
+    }
+    Some(())
+}
+
+fn distance_to_line(point: Point3, origin: Point3, direction: Vector3) -> f64 {
+    point.vector_from(origin).cross(direction).norm() / direction.norm()
+}
+
+fn is_parallel(left: Vector3, right: Vector3) -> bool {
+    left.cross(right).norm() <= EPS_SWEEP_AXIS * left.norm() * right.norm()
+}
+
+fn is_perpendicular(left: Vector3, right: Vector3) -> bool {
+    left.dot(right).abs() <= EPS_SWEEP_AXIS * left.norm() * right.norm()
+}
+
+fn on_plane(plane: &PlaneSurface, point: Point3) -> bool {
+    let normal = *plane.frame().axis().as_raw();
+    point.vector_from(plane.origin().get()).dot(normal).abs() <= EPS_SWEEP_PATH_MM
+}
+
+/// Whether the plane holds every edge of the section: both ends of a line,
+/// and an arc whose center the plane holds and whose own plane is the plane
+/// (so its end points lie in it as well).
+fn section_on_plane(section: &[(i64, SweepCurve)], plane: &PlaneSurface) -> bool {
+    section.iter().all(|(_, curve)| match *curve {
+        SweepCurve::Line { start, end } => on_plane(plane, start) && on_plane(plane, end),
+        SweepCurve::Arc { center, normal, .. } => {
+            on_plane(plane, center) && is_parallel(*plane.frame().axis().as_raw(), normal)
+        }
+    })
+}
+
+/// Whether `surface` is the surface that the section curve generates along
+/// the path curve.
+fn surface_of_pair(section: SweepCurve, path: SweepCurve, surface: &SolvedSurfaceGeometry) -> bool {
+    match (section, path, surface) {
+        (
+            SweepCurve::Line { start, end },
+            SweepCurve::Line {
+                start: from,
+                end: to,
+            },
+            SolvedSurfaceGeometry::Plane(plane),
+        ) => {
+            let along = end.vector_from(start);
+            let onward = to.vector_from(from);
+            let normal = *plane.frame().axis().as_raw();
+            !is_parallel(along, onward)
+                && is_perpendicular(normal, along)
+                && is_perpendicular(normal, onward)
+                && on_plane(plane, start)
+                && on_plane(plane, end)
+        }
+        (SweepCurve::Line { start, end }, SweepCurve::Arc { center, normal, .. }, surface) => {
+            let along = end.vector_from(start);
+            match surface {
+                SolvedSurfaceGeometry::Plane(plane) => {
+                    is_parallel(*plane.frame().axis().as_raw(), normal)
+                        && is_perpendicular(normal, along)
+                        && on_plane(plane, start)
+                        && on_plane(plane, end)
+                }
+                SolvedSurfaceGeometry::Cylinder(cylinder) => {
+                    let radius = distance_to_line(start, center, normal);
+                    is_parallel(*cylinder.frame().axis().as_raw(), normal)
+                        && is_parallel(along, normal)
+                        && distance_to_line(cylinder.origin().get(), center, normal)
+                            <= EPS_SWEEP_PATH_MM
+                        && (cylinder.radius().get() - radius).abs() <= EPS_SWEEP_RADIUS_MM
+                }
+                SolvedSurfaceGeometry::Cone(cone) => {
+                    // A line that skews the axis turns into a hyperboloid.
+                    coplanar_with_axis(start, end, center, normal)
+                        && on_cone_about(cone, center, normal, [start, end])
+                }
+                _ => false,
+            }
+        }
+        (
+            SweepCurve::Arc {
+                center,
+                radius,
+                normal: plane_normal,
+            },
+            SweepCurve::Line { start, end },
+            SolvedSurfaceGeometry::Cylinder(cylinder),
+        ) => {
+            let onward = end.vector_from(start);
+            is_parallel(*cylinder.frame().axis().as_raw(), onward)
+                && is_parallel(plane_normal, onward)
+                && distance_to_line(center, cylinder.origin().get(), onward) <= EPS_SWEEP_PATH_MM
+                && (cylinder.radius().get() - radius).abs() <= EPS_SWEEP_RADIUS_MM
+        }
+        (
+            SweepCurve::Arc {
+                center,
+                radius,
+                normal: plane_normal,
+            },
+            SweepCurve::Arc {
+                center: pivot,
+                normal: axis,
+                ..
+            },
+            SolvedSurfaceGeometry::Torus(torus),
+        ) => torus_about(torus, center, radius, plane_normal, pivot, axis),
+        _ => false,
+    }
+}
+
+/// Whether the line through `start` and `end` and the axis through `pivot`
+/// along `axis` lie in one plane.
+fn coplanar_with_axis(start: Point3, end: Point3, pivot: Point3, axis: Vector3) -> bool {
+    let along = end.vector_from(start);
+    axis.dot(start.vector_from(pivot).cross(along)).abs()
+        <= EPS_SWEEP_PATH_MM * axis.norm() * along.norm()
+}
+
+/// Whether the circular cone is coaxial with the axis through `pivot` and
+/// holds both ends of a section line.
+fn on_cone_about(cone: &ConeSurface, pivot: Point3, axis: Vector3, ends: [Point3; 2]) -> bool {
+    let cone_axis = *cone.frame().axis().as_raw();
+    if !is_parallel(cone_axis, axis)
+        || distance_to_line(cone.origin().get(), pivot, axis) > EPS_SWEEP_PATH_MM
+        || (cone.ratio().get() - 1.0).abs() > EPS_SWEEP_RATIO
+    {
+        return false;
+    }
+    let slope = cone.half_angle().get().tan();
+    ends.iter().all(|end| {
+        let height = end.vector_from(cone.origin().get()).dot(cone_axis);
+        let radial = distance_to_line(*end, pivot, axis);
+        (radial - (cone.radius().get() + height * slope)).abs() <= EPS_SWEEP_PATH_MM
+    })
+}
+
+/// Whether the torus is the one that a section circle, whose plane holds the
+/// axis, generates about the axis through `pivot`.
+fn torus_about(
+    torus: &TorusSurface,
+    center: Point3,
+    radius: f64,
+    plane_normal: Vector3,
+    pivot: Point3,
+    axis: Vector3,
+) -> bool {
+    let unit = axis.scale(1.0 / axis.norm());
+    let height = center.vector_from(pivot).dot(unit);
+    let foot = pivot.translated(unit, height);
+    is_parallel(*torus.frame().axis().as_raw(), axis)
+        && is_perpendicular(plane_normal, axis)
+        && same_point_within(torus.center().get(), foot, EPS_SWEEP_PATH_MM)
+        && (torus.minor_radius().get().abs() - radius).abs() <= EPS_SWEEP_RADIUS_MM
+        && (torus.major_radius().get() - distance_to_line(center, pivot, axis)).abs()
+            <= EPS_SWEEP_RADIUS_MM
 }
 
 /// Whether the cylinder axis is the line of a line-joined span.
@@ -566,10 +1061,56 @@ pub(in crate::feature::loft_sweep) fn loft_proof(
     }
 }
 
+const LEGACY_SWEEP_CLASS: &str =
+    "NMx_Sweep_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
 const LEGACY_CAP_CLASS: &str =
     "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
 const LEGACY_SIDE_CLASS: &str =
     "NMx_Loft_Surface_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
+
+/// The owner of a legacy naming attribute.
+enum LegacyOwner {
+    /// The first source name is the generator with name value -1; the tail
+    /// belongs to it.
+    Generator(Vec<i64>),
+    /// Another feature's name comes first, or the record has no readable
+    /// first source name.
+    Other,
+    /// The first source name is the generator, but the record lacks the
+    /// owned form.
+    Refused,
+}
+
+/// The owner of a legacy naming attribute.
+fn legacy_name_tail(values: &[Option<AttributeValue>], generator: u32) -> LegacyOwner {
+    let [_, _, _, _, _, Some(AttributeValue::Integer(_)), Some(AttributeValue::Integer(count)), rest @ ..] =
+        values
+    else {
+        return LegacyOwner::Other;
+    };
+    let Some(Some(AttributeValue::Integer(first))) = rest.first() else {
+        return LegacyOwner::Other;
+    };
+    if *count < 1 || *first != i64::from(generator) {
+        return LegacyOwner::Other;
+    }
+    let owned = || {
+        let pairs = usize::try_from(*count).ok()?.checked_mul(2)?;
+        let integers = rest
+            .iter()
+            .map(|value| match value {
+                Some(AttributeValue::Integer(value)) => Some(*value),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if pairs > integers.len() {
+            return None;
+        }
+        let (names, tail) = integers.split_at(pairs);
+        (names[1] == -1).then(|| tail.to_vec())
+    };
+    owned().map_or(LegacyOwner::Refused, LegacyOwner::Generator)
+}
 
 /// A face that carries a generator-owned naming attribute of the legacy class chains.
 struct LegacyFace<'a> {
@@ -781,4 +1322,4 @@ fn unconstrained_loft(
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::feature::loft_sweep) mod tests;
