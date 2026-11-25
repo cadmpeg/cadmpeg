@@ -57,12 +57,16 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         .iter()
         .map(|body| body.parameter)
         .collect::<Vec<_>>();
+    // A design with no result body writes no snapshot companion and names
+    // no B-rep stream (f3d.md §3.1, "Records of a design whose timeline
+    // holds no body").
+    let streams = !indices.is_empty();
     owner(
         ctx,
         out,
         DESIGN_OWNER,
         &design,
-        DESIGN_COMPANION,
+        streams.then_some(DESIGN_COMPANION),
         BODY_MAP,
         Some(ALTERNATE_OWNERS),
     )?;
@@ -71,7 +75,7 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         out,
         PARAMETER_OWNER,
         &parameter,
-        PARAMETER_COMPANION,
+        streams.then_some(PARAMETER_COMPANION),
         SNAPSHOT_MAP,
         None,
     )?;
@@ -81,20 +85,22 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         .iter()
         .filter_map(|item| item.place.rolled)
         .collect::<Vec<_>>();
-    out.record(&ctx.class_of(BODIES_ROOT)?, BODIES_ROOT)
-        .zeros(4)
-        .lp_ascii("BodiesRoot")?
-        .zeros(2)
-        .lp_ascii("BodiesRoot")?
-        .u32(count(design.len() + parameter.len() + rolled.len())?);
-    for record in design
-        .iter()
-        .chain(&parameter)
-        .chain(rolled.iter().map(|body| &body.reference))
-    {
-        out.reference(*record);
+    if streams || !rolled.is_empty() {
+        out.record(&ctx.class_of(BODIES_ROOT)?, BODIES_ROOT)
+            .zeros(4)
+            .lp_ascii("BodiesRoot")?
+            .zeros(2)
+            .lp_ascii("BodiesRoot")?
+            .u32(count(design.len() + parameter.len() + rolled.len())?);
+        for record in design
+            .iter()
+            .chain(&parameter)
+            .chain(rolled.iter().map(|body| &body.reference))
+        {
+            out.reference(*record);
+        }
+        out.byte(0);
     }
-    out.byte(0);
 
     let entities = ctx
         .bodies
@@ -106,26 +112,32 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         })
         .ok_or_else(|| CodecError::NotImplemented("Base Feature entity count".into()))?;
     let first_design = entities + 1;
-    companion(
-        ctx,
-        out,
-        PARAMETER_COMPANION,
-        PARAMETER_OWNER,
-        0,
-        entities,
-        first_design,
-    )?;
-    companion(
-        ctx,
-        out,
-        DESIGN_COMPANION,
-        DESIGN_OWNER,
-        first_design,
-        entities,
-        first_design + entities,
-    )?;
+    if streams {
+        companion(
+            ctx,
+            out,
+            PARAMETER_COMPANION,
+            PARAMETER_OWNER,
+            0,
+            entities,
+            first_design,
+        )?;
+        companion(
+            ctx,
+            out,
+            DESIGN_COMPANION,
+            DESIGN_OWNER,
+            first_design,
+            entities,
+            first_design + entities,
+        )?;
+    }
 
-    let [history, snapshot] = stream_basenames(ctx);
+    let [history, snapshot] = if streams {
+        stream_basenames(ctx)
+    } else {
+        [String::new(), String::new()]
+    };
     out.record(&ctx.class_of(SNAPSHOT_MAP)?, SNAPSHOT_MAP)
         .zeros(10)
         .reference(SNAPSHOT_MAP_COMPANION);
@@ -223,13 +235,14 @@ fn node(
     Ok(())
 }
 
-/// A `Body` owner of the `records` body-reference records.
+/// A `Body` owner of the `records` body-reference records, with its snapshot
+/// companion where the design writes B-rep streams.
 fn owner(
     ctx: &Context<'_>,
     out: &mut DesignRecords,
     index: u32,
     records: &[u32],
-    companion: u32,
+    companion: Option<u32>,
     map: u32,
     alternates: Option<u32>,
 ) -> Result<(), CodecError> {
@@ -242,7 +255,12 @@ fn owner(
     for record in records {
         out.reference(*record);
     }
-    out.byte(1).reference(companion).reference(map).byte(1);
+    out.byte(1);
+    match companion {
+        Some(companion) => out.reference(companion),
+        None => out.byte(0),
+    };
+    out.reference(map).byte(1);
     match alternates {
         Some(list) => out.reference(list),
         None => out.byte(0),

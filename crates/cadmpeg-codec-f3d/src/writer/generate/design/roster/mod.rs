@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The record roster of a Base Feature design with result bodies (f3d.md
+//! The record roster of a design that writes a timeline (f3d.md
 //! §3.1, "Records of a Base Feature design"): every record at the index its
 //! role fixes, written from its layout template or its stated form, and the
 //! archive members around them.
@@ -313,6 +313,9 @@ pub(super) struct Roster<'a> {
     pub(super) rolled: Vec<ItemRecords<'a>>,
     /// The value of the persistent-identity counter after every item.
     pub(super) next_identity: u64,
+    /// Whether the timeline holds a `Base Feature` item: the design has a
+    /// result body and no geometry item in its place.
+    pub(super) base_feature: bool,
     rows: Vec<(u32, TypeRow)>,
 }
 
@@ -403,7 +406,9 @@ impl<'a> Roster<'a> {
     /// item, of the `WorkPlane` item before its first sketch, of the
     /// geometry `item` and of the `rolled` items after the timeline marker,
     /// in timeline order, at the indices from 225. The item replaces the
-    /// `Base Feature` item.
+    /// `Base Feature` item. A design with no body writes neither the
+    /// `Base Feature` item nor the records of a result body (f3d.md §3.1,
+    /// "Records of a design whose timeline holds no body").
     pub(super) fn new(
         bodies: usize,
         parameters: usize,
@@ -414,17 +419,37 @@ impl<'a> Roster<'a> {
         let sketches = &sketch_plan.items;
         let overflow = || CodecError::NotImplemented("Base Feature record index overflow".into());
         let mut entries = rows::ONE_BODY.to_vec();
-        if item.is_some() {
+        let base_feature = item.is_none() && bodies > 0;
+        if !base_feature {
             entries.retain(|(index, _)| !BASE_FEATURE_ITEM.contains(index));
         }
-        let mut indices = vec![BodyIndices {
+        let first = BodyIndices {
             design: 187,
             parameter: 215,
             design_scene: [188, 189, 190],
             parameter_scene: [220, 221, 222],
             tracking: 223,
             node: 224,
-        }];
+        };
+        let mut indices = Vec::new();
+        if bodies == 0 {
+            let body_records = [
+                first.design,
+                first.parameter,
+                first.tracking,
+                first.node,
+                DESIGN_COMPANION,
+                PARAMETER_COMPANION,
+            ]
+            .into_iter()
+            .chain(first.design_scene)
+            .chain(first.parameter_scene)
+            .chain(rolled.is_empty().then_some(BODIES_ROOT))
+            .collect::<Vec<_>>();
+            entries.retain(|(index, _)| !body_records.contains(index));
+        } else {
+            indices.push(first);
+        }
         let mut next = EXTENSION;
         for _ in 1..bodies {
             let start = next;
@@ -517,10 +542,10 @@ impl<'a> Roster<'a> {
             )));
         }
         // The `Base Feature` takes one identity.
-        let next_identity = if item_records.is_some() {
-            identity
-        } else {
+        let next_identity = if base_feature {
             identity.checked_add(1).ok_or_else(identity_overflow)?
+        } else {
+            identity
         };
         Ok(Self {
             bodies: indices,
@@ -530,6 +555,7 @@ impl<'a> Roster<'a> {
             item: item_records,
             rolled: rolled_records,
             next_identity,
+            base_feature,
             rows: entries,
         })
     }
@@ -542,6 +568,11 @@ impl<'a> Roster<'a> {
 
     pub(super) fn rows(&self) -> &[(u32, TypeRow)] {
         &self.rows
+    }
+
+    /// Whether the roster writes record `index`.
+    fn writes(&self, index: u32) -> bool {
+        self.rows.iter().any(|&(at, _)| at == index)
     }
 
     /// The next-entity-ID counter: one above every record index.
@@ -776,15 +807,22 @@ pub(super) fn count(length: usize) -> Result<u32, CodecError> {
 pub(super) type Members = Vec<(String, Vec<u8>)>;
 
 /// The Design records of `ctx` with `records`, the records the timeline
-/// writer wrote, as the design folder's members: the segments, the history
-/// stream `smbh` and the snapshot stream `smb`; and the losses of the values the
+/// writer wrote, as the design folder's members: the segments, and the
+/// history stream `smbh` and the snapshot stream `smb` of `streams` of a
+/// design with a result body; and the losses of the values the
 /// specification leaves open.
 pub(super) fn archive(
     ctx: &Context<'_>,
     mut records: DesignRecords,
-    smbh: &[u8],
-    smb: &[u8],
+    streams: Option<(&[u8], &[u8])>,
 ) -> Result<(Members, Vec<LossNote>), CodecError> {
+    if streams.is_some() == ctx.roster.bodies.is_empty() {
+        return Err(CodecError::malformed(format_args!(
+            "a design with {} result bodies and {} B-rep streams",
+            ctx.roster.bodies.len(),
+            if streams.is_some() { "its" } else { "no" }
+        )));
+    }
     fixed::write(ctx, &mut records)?;
     units::write(ctx, &mut records)?;
     views::write(ctx, &mut records)?;
@@ -800,7 +838,10 @@ pub(super) fn archive(
         kind: segment::SegmentKind::Design,
         table: &ctx.table,
         records: &records,
-        named: NAMED.to_vec(),
+        named: NAMED
+            .into_iter()
+            .filter(|&index| ctx.roster.writes(index))
+            .collect(),
         next_entity: ctx.roster.next_entity(),
     };
     let act = act::Act::new(ctx)?;
@@ -809,12 +850,14 @@ pub(super) fn archive(
     for segment in [design, act.segment(), browser.segment()] {
         members.extend(segment.members()?);
     }
-    let [history, snapshot] = bodies::stream_basenames(ctx);
-    members.push((
-        format!("Breps.BlobParts/{history}"),
-        super::history::with_header(smbh, HISTORY_FLAGS, HISTORY_SCALE)?,
-    ));
-    members.push((format!("Breps.BlobParts/{snapshot}"), smb.to_vec()));
+    if let Some((smbh, smb)) = streams {
+        let [history, snapshot] = bodies::stream_basenames(ctx);
+        members.push((
+            format!("Breps.BlobParts/{history}"),
+            super::history::with_header(smbh, HISTORY_FLAGS, HISTORY_SCALE)?,
+        ));
+        members.push((format!("Breps.BlobParts/{snapshot}"), smb.to_vec()));
+    }
     for basename in fixed::configuration_basenames(ctx) {
         members.push((
             format!("DesignConfigurationTable.BlobParts/{basename}"),
@@ -843,16 +886,18 @@ pub(super) const FIXED_CLOCK: &str = "writes fixed-clock (2026-01-01 UTC) author
 /// open.
 fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     let mut notes = Vec::new();
-    match &ctx.roster.item {
-        None => notes.extend(super::base_feature::item_tail_loss(SCOPE)),
-        Some(item) => notes.extend(item.losses(ctx)),
+    if ctx.roster.base_feature {
+        notes.extend(super::base_feature::item_tail_loss(SCOPE));
+    }
+    if let Some(item) = &ctx.roster.item {
+        notes.extend(item.losses(ctx));
     }
     for item in &ctx.roster.rolled {
         notes.extend(item.losses(ctx));
     }
     notes.extend(record_residual_unavailable(
         "F3D",
-        "writes these items after the timeline marker with no history state: null history-state identities, state bytes 00 00 00, the no-result flag s0 = 1 and the rolled-back flag s1 = 1; and the rolled-back body of each as a body-reference record that the bodies root lists last, whose Scene records store the box of the parameter-side Scene records, and a hidden browser node; f3d-open-items.md DR-1032 leaves open the form of a rolled-back feature that was never computed",
+        "writes these items after the timeline marker with no history state in the tail that f3d.md §3.1 gives such a feature (\"In every form, the state bytes\"), and the rolled-back body of each as a body-reference record that the bodies root lists last, whose Scene records store the box of the parameter-side Scene records, and a hidden browser node; f3d-open-items.md DR-1032 leaves open the result-body records of a rolled-back feature that makes a body and holds no state",
         ctx.roster.rolled.iter().map(|item| {
             let body = item.place.rolled.map_or_else(String::new, |body| {
                 format!(
@@ -880,7 +925,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         .map(|records| format!("record {} (Sketch scope: its item tail)", records.scope));
     notes.extend(record_residual_unavailable(
         "F3D",
-        "writes the item tail of these items after the timeline marker as the tail of a built item with the rolled-back flag s1 = 1: no-result flag s0 = 0, state bytes 00 00 00 and null history-state identities; f3d-open-items.md DR-1032 leaves open the tail of a rolled-back feature that was never computed",
+        "writes the item tail of these items after the timeline marker as the tail of a built item with the rolled-back flag s1 = 1: no-result flag s0 = 0, state bytes 00 00 00 and null history-state identities; f3d-open-items.md DR-1032 leaves open which other states set s0",
         planes.chain(sketches),
     ));
     if let ContextValue::Chosen { value, outside } = &ctx.timeline_value {

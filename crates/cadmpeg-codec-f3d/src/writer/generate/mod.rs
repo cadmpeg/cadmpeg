@@ -149,6 +149,12 @@ fn attempt<W: Write + Seek>(
     let stamped = neutral
         .as_ref()
         .is_some_and(design::NeutralDesign::has_bodies);
+    let timeline = neutral
+        .as_ref()
+        .is_some_and(design::NeutralDesign::writes_timeline);
+    // The history-true design whose state at the timeline marker holds no
+    // body writes no B-rep stream.
+    let body_less = timeline && !stamped;
     if let Some(neutral) = neutral.as_mut() {
         neutral
             .stamp(&mut native)
@@ -167,7 +173,12 @@ fn attempt<W: Write + Seek>(
     if has_native {
         validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
     }
-    let smbh = match encode_brep(target, &native, &attributes) {
+    let brep = if body_less {
+        Ok(Vec::new())
+    } else {
+        encode_brep(target, &native, &attributes)
+    };
+    let smbh = match brep {
         Ok(smbh) => smbh,
         // The design scope's names fail the B-rep stream when it writes
         // without them.
@@ -211,10 +222,17 @@ fn attempt<W: Write + Seek>(
         "writes these bodies as visible: the source did not record their visibility",
         std::mem::take(&mut design_registry.guessed_visible),
     );
-    if let Some(mut design) = if stamped { neutral.take() } else { None } {
-        let snapshot = snapshot_stream(target, &native).map_err(Failure::neutral_design)?;
+    if let Some(mut design) = if timeline { neutral.take() } else { None } {
+        let snapshot = if body_less {
+            None
+        } else {
+            Some(snapshot_stream(target, &native).map_err(Failure::neutral_design)?)
+        };
         let members = design
-            .archive(target, &smbh, &snapshot)
+            .archive(
+                target,
+                snapshot.as_deref().map(|snapshot| (&*smbh, snapshot)),
+            )
             .map_err(Failure::neutral_design)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
@@ -233,6 +251,14 @@ fn attempt<W: Write + Seek>(
         }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
+        if body_less {
+            omit_geometry(&mut coverage);
+            losses.push(crate::loss::F3dLossCode::WriterGeometryOmitted.note(format!(
+                "the history-true design holds no body at its timeline marker, so the archive stores no B-rep stream and these geometry records were not written: {}",
+                reduce::geometry_records_by_arena(&target.geometry).join("; ")
+            )));
+            return Ok((coverage, losses));
+        }
         losses.extend(unstated_visibility);
         losses.extend(cadmpeg_ir::codec::write::value_unwritable(
             "F3D",
@@ -503,6 +529,29 @@ fn write_archive<W: Write + Seek>(
 /// (`neutral`), its scopes, containers, features and parameters are
 /// `Reported`: the design module charges a loss for each record it does not
 /// write. Sketches and the remaining design arenas are not represented.
+/// Mark every geometry arena of `coverage` reported: the design writes no
+/// B-rep stream.
+fn omit_geometry(coverage: &mut ArenaDispositions) {
+    for arena in [
+        &mut coverage.bodies,
+        &mut coverage.regions,
+        &mut coverage.shells,
+        &mut coverage.faces,
+        &mut coverage.loops,
+        &mut coverage.coedges,
+        &mut coverage.edges,
+        &mut coverage.vertices,
+        &mut coverage.points,
+        &mut coverage.surfaces,
+        &mut coverage.curves,
+        &mut coverage.pcurves,
+        &mut coverage.procedural_surfaces,
+        &mut coverage.procedural_curves,
+    ] {
+        *arena = ArenaDisposition::Reported;
+    }
+}
+
 fn coverage(
     write_design: bool,
     parameters: ArenaDisposition,

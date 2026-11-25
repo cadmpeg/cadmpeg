@@ -6,7 +6,8 @@
 //! of features before the first feature it cannot write with its state,
 //! then the timeline marker, then the later features rolled back without
 //! their states; where the run holds no feature the writer writes with its
-//! state, it writes the geometry-true form.
+//! state, the marker stands before the first stateful feature and the
+//! design holds no body.
 //!
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. It charges a loss for every design
@@ -213,7 +214,7 @@ impl Fallback {
                 .flatten()
                 .is_some_and(|design| match part {
                     Part::Dimensions => design.writes_dimensions(),
-                    Part::Item => design.item.item().is_some(),
+                    Part::Item => design.item.item().is_some() || !design.rolled.is_empty(),
                     Part::Planes => !design.sketches.planes.is_empty(),
                     Part::Sketches => design.writes_sketches(),
                 });
@@ -241,6 +242,11 @@ pub(super) struct NeutralDesign<'a> {
     /// the last item.
     marker: usize,
     base_feature: BaseFeaturePlan<'a>,
+    /// Whether the design is the history-true form whose state at the
+    /// timeline marker holds no body: it writes no `Base Feature` and no
+    /// B-rep stream (f3d.md §3.1, "Records of a design whose timeline holds
+    /// no body").
+    body_less: bool,
     losses: Vec<LossNote>,
 }
 
@@ -274,14 +280,20 @@ pub(super) fn plan<'a>(
             },
         );
     }
-    let mut refused = None;
     let mut rolled = features.len();
+    let mut body_less = None;
     let item = if target.geometry.bodies.is_empty() {
         Decision::None
     } else {
         let marker = match missing_states {
             MissingStateForm::GeometryTrue => None,
             MissingStateForm::HistoryTrue => run_end(target, scope, &features),
+        };
+        let first_stateful = match missing_states {
+            MissingStateForm::GeometryTrue => None,
+            MissingStateForm::HistoryTrue => features
+                .iter()
+                .position(|feature| !target.is_stateless(feature, None).unwrap_or(false)),
         };
         let mut decide = |run: Run<'a, '_>| {
             item::plan(
@@ -298,21 +310,27 @@ pub(super) fn plan<'a>(
             features: &features,
             ends: false,
         };
-        match marker {
-            Some(end) => {
-                let run = decide(Run {
-                    features: &features[..end],
-                    ends: true,
-                });
-                if run.item().is_some() {
-                    rolled = end;
-                    run
-                } else {
-                    refused = Some(history_refusal(&run, features[end]));
-                    decide(whole)
-                }
-            }
+        let run = match marker {
+            Some(end) => decide(Run {
+                features: &features[..end],
+                ends: true,
+            }),
             None => decide(whole),
+        };
+        match (run, first_stateful) {
+            (run @ Decision::Item(_), _) => {
+                rolled = marker.unwrap_or(features.len());
+                run
+            }
+            (run, Some(first)) => {
+                rolled = marker.map_or(first, |end| end.min(first));
+                body_less = Some(match run {
+                    Decision::BaseFeature { feature, reason } => Some((feature, reason)),
+                    Decision::None | Decision::Item(_) => None,
+                });
+                Decision::None
+            }
+            (run, None) => run,
         }
     };
     let (rolled_items, rolled_reasons) = rolled_back_items(
@@ -322,8 +340,13 @@ pub(super) fn plan<'a>(
         rolled,
         &sketches,
         &mut parameters,
-        item.item()
-            .map_or(Some(ordinal), |item| item.next_ordinal(ordinal)),
+        match fallback.reason(Part::Item) {
+            Some(_) => Err(ITEM_DROPPED),
+            None => item
+                .item()
+                .map_or(Some(ordinal), |item| item.next_ordinal(ordinal))
+                .ok_or(ORDINALS_EXCEEDED),
+        },
     );
     let rolled_back = features[rolled..].iter().copied().collect::<BTreeSet<_>>();
     let marker = sketches
@@ -343,6 +366,10 @@ pub(super) fn plan<'a>(
     });
     let writes_rolled =
         |feature: &FeatureId| rolled_items.iter().any(|item| item.feature() == feature);
+    let unstated = |feature: &FeatureId| match &body_less {
+        Some(Some((decided, reason))) if *decided == feature => Some(reason.as_str()),
+        _ => None,
+    };
     let written = parameters.written().collect::<BTreeSet<_>>();
     let mut owned = BTreeMap::<&FeatureId, Vec<String>>::new();
     for parameter in &target.design.parameters {
@@ -370,6 +397,9 @@ pub(super) fn plan<'a>(
                     None => "it follows the timeline marker".to_owned(),
                 });
             }
+            if let Some(reason) = unstated(feature) {
+                notes.push(format!("the writer writes it without its state: {reason}"));
+            }
             if let Some(reason) = sketches.unwritten.get(*feature) {
                 notes.push(format!("its sketch {reason}"));
             }
@@ -388,17 +418,12 @@ pub(super) fn plan<'a>(
                 format!("{feature} ({})", notes.join("; "))
             }
         });
-    let mut reason = if item.item().is_some() {
+    let reason = if item.item().is_some() || body_less.is_some() {
         "stores no timeline item for these features of the design"
     } else {
         "stores the current bodies as one Base Feature and no timeline item for these features of the design"
-    }
-    .to_owned();
-    if let Some(refused) = &refused {
-        reason.push_str("; it writes the geometry-true form, because the history-true run ");
-        reason.push_str(refused);
-    }
-    let mut losses = evaluation_missing("F3D", &reason, unwritten)
+    };
+    let mut losses = evaluation_missing("F3D", reason, unwritten)
         .into_iter()
         .collect::<Vec<_>>();
     losses.extend(evaluation_missing(
@@ -407,11 +432,20 @@ pub(super) fn plan<'a>(
         features[rolled..]
             .iter()
             .filter(|feature| sketches.writes(feature) || writes_rolled(feature))
-            .map(ToString::to_string),
+            .map(|feature| match unstated(feature) {
+                Some(reason) => {
+                    format!("{feature} (the writer writes it without its state: {reason})")
+                }
+                None => feature.to_string(),
+            }),
     ));
     losses.extend(unwritten_records(target, scope, written_marker));
     losses.extend(states(target));
-    let base_feature = base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
+    let mut base_feature =
+        base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
+    if body_less.is_some() {
+        base_feature = base_feature.without_bodies();
+    }
     Ok(Some(NeutralDesign {
         parameters,
         sketches,
@@ -419,6 +453,7 @@ pub(super) fn plan<'a>(
         rolled: rolled_items,
         marker,
         base_feature,
+        body_less: body_less.is_some(),
         losses,
     }))
 }
@@ -426,8 +461,8 @@ pub(super) fn plan<'a>(
 /// The stateful features from position `rolled` of `features`, the scope's
 /// features in timeline order, that the writer writes after the timeline
 /// marker with their definitions, with the reason for each it does not
-/// write. Their parameters take the source ordinals from `ordinal`; `None`
-/// where the item's parameters take the last.
+/// write. Their parameters take the source ordinals from `ordinal`, or
+/// `ordinal` names why no item is written.
 fn rolled_back_items<'a>(
     target: &'a CadIr,
     scope: &'a DesignScope,
@@ -435,7 +470,7 @@ fn rolled_back_items<'a>(
     rolled: usize,
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
-    ordinal: Option<u32>,
+    ordinal: Result<u32, &'static str>,
 ) -> (Vec<Item<'a>>, BTreeMap<&'a FeatureId, &'static str>) {
     let mut items = Vec::new();
     let mut reasons = BTreeMap::new();
@@ -444,16 +479,15 @@ fn rolled_back_items<'a>(
         if target.is_stateless(feature, None).unwrap_or(false) {
             continue;
         }
-        let planned = ordinal
-            .ok_or("its parameters exceed the source ordinals")
-            .and_then(|next| {
-                item::rolled_back(
-                    target, scope, features, position, sketches, parameters, next,
-                )
-            });
+        let planned = ordinal.and_then(|next| {
+            item::rolled_back(
+                target, scope, features, position, sketches, parameters, next,
+            )
+        });
         match planned {
             Ok(planned) => {
-                ordinal = ordinal.and_then(|next| planned.next_ordinal(next));
+                ordinal =
+                    ordinal.and_then(|next| planned.next_ordinal(next).ok_or(ORDINALS_EXCEEDED));
                 items.push(planned);
             }
             Err(reason) => {
@@ -463,6 +497,13 @@ fn rolled_back_items<'a>(
     }
     (items, reasons)
 }
+
+/// Why a rolled-back item is not written where its parameters exceed the
+/// source ordinals.
+const ORDINALS_EXCEEDED: &str = "its parameters exceed the source ordinals";
+/// Why a rolled-back item is not written after an attempt failed with the
+/// records of a geometry item.
+const ITEM_DROPPED: &str = "the writer cannot write the records of its item";
 
 /// The timeline marker the history-true form writes.
 #[derive(Clone, Copy)]
@@ -496,26 +537,18 @@ fn run_end(target: &CadIr, root: &DesignScope, features: &[&FeatureId]) -> Optio
     second.into_iter().chain(rollback).min()
 }
 
-/// Why the history-true run before `rolled`, the first rolled-back feature,
-/// is not written: the run's `decision` writes none of its features with
-/// its state.
-fn history_refusal(decision: &Decision<'_>, rolled: &FeatureId) -> String {
-    match decision {
-        Decision::BaseFeature { feature, reason } => {
-            format!("before {rolled} writes {feature} without its state: {reason}")
-        }
-        Decision::None | Decision::Item(_) => format!(
-            "before {rolled} holds no feature the writer writes with its state, and the writer \
-             writes no timeline whose state at the marker holds no body"
-        ),
-    }
-}
-
 impl NeutralDesign<'_> {
     /// Whether the design stores a body: its B-rep stream then carries the
     /// Base Feature's names and history.
     pub(super) fn has_bodies(&self) -> bool {
         self.base_feature.has_item()
+    }
+
+    /// Whether the design writes the roster of a timeline: a design with a
+    /// result body, or the history-true form whose state at the timeline
+    /// marker holds no body.
+    pub(super) fn writes_timeline(&self) -> bool {
+        self.has_bodies() || self.body_less
     }
 
     /// Name the result bodies and their faces in `native`, whose records the
@@ -544,18 +577,26 @@ impl NeutralDesign<'_> {
         Ok((parameter_bytes, records))
     }
 
-    /// The members of the design folder of a design with result bodies:
-    /// the Design, ACT and Browser segments, the history stream `smbh`, the
-    /// snapshot stream `smb` and the members their records name (f3d.md §3.1, "Records of a Base
-    /// Feature design").
+    /// The members of the design folder of a design that writes a timeline:
+    /// the Design, ACT and Browser segments, the history stream `smbh` and the
+    /// snapshot stream `smb` of `streams`, and the members their records name
+    /// (f3d.md §3.1, "Records of a Base Feature design"). A design with no
+    /// body has no `streams` (f3d.md §3.1, "Records of a design whose
+    /// timeline holds no body").
     pub(super) fn archive(
         &mut self,
         target: &CadIr,
-        smbh: &[u8],
-        smb: &[u8],
+        streams: Option<(&[u8], &[u8])>,
     ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
         let scope = root_scope(target)
             .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
+        let seed = match streams {
+            Some((smbh, _)) => smbh.to_vec(),
+            None => scope_features(target, scope)
+                .into_iter()
+                .flat_map(|feature| feature.as_str().bytes())
+                .collect(),
+        };
         let bodies = self.base_feature.roster_bodies(target);
         let item = self.item.item();
         let roster = roster::Roster::new(
@@ -576,7 +617,7 @@ impl NeutralDesign<'_> {
             marker: self.marker,
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
-            values: roster::values::Values::new(target, &scope.definition, smbh),
+            values: roster::values::Values::new(target, &scope.definition, &seed),
             bodies,
             sketches: &self.sketches.items,
             planes: &self.sketches.planes,
@@ -584,7 +625,7 @@ impl NeutralDesign<'_> {
         };
         let mut records = DesignRecords::default();
         BaseFeaturePlan::roster_records(&ctx, &self.parameters, &mut records)?;
-        let (members, losses) = roster::archive(&ctx, records, smbh, smb)?;
+        let (members, losses) = roster::archive(&ctx, records, streams)?;
         self.losses.extend(losses);
         Ok(members)
     }

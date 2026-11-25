@@ -2133,7 +2133,7 @@ macro_rules! for_each_geometry_arena {
 }
 
 /// Each non-empty geometry arena: its name, row count and record ids.
-fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topology) -> Vec<String> {
+pub(super) fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topology) -> Vec<String> {
     let mut arenas = Vec::new();
     macro_rules! list {
         ($($field:ident),*) => {$(

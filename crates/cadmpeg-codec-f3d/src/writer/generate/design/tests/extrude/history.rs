@@ -133,19 +133,41 @@ fn a_timeline_whose_every_feature_has_its_state_writes_one_form() {
 }
 
 #[test]
-fn a_run_whose_feature_has_no_state_writes_the_geometry_true_form() {
+fn a_run_whose_feature_has_no_state_stands_after_the_marker_with_no_body() {
     let mut ir = sketch_and_extrude(blind(), false);
     let fillet = with_fillet(&mut ir);
     let (_, _, geometry_bytes) = write_bytes_as(&ir, MissingStateForm::GeometryTrue);
     let (report, decoded, history_bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
-    assert!(geometry_bytes == history_bytes, "the two forms differ");
-    assert!(kinds(&decoded).contains(&"base"));
+    assert!(geometry_bytes != history_bytes, "the two forms agree");
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(rollback, Some(Rollback::Before(members[1].clone())));
+    assert!(decoded.geometry.bodies.is_empty());
+    assert!(
+        !history_bytes.windows(4).any(|name| name == b".smb"),
+        "a B-rep stream member"
+    );
     let missing = loss(&report, EVALUATION_MISSING).join("\n");
     assert!(
         missing.contains(&format!(
-            "the history-true run before {fillet} writes {EXTRUDE} without its state: the current state is not its result"
+            "{EXTRUDE} (the writer writes it without its state: the current state is not its result)"
         )),
         "{missing}"
+    );
+    assert!(missing.contains(fillet.as_str()), "{missing}");
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterGeometryOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(
+        omitted.contains("holds no body at its timeline marker"),
+        "{omitted}"
     );
 }
 

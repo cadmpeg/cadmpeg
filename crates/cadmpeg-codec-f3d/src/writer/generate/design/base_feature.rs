@@ -238,6 +238,12 @@ struct Classes {
 }
 
 impl BaseFeaturePlan<'_> {
+    /// The plan of a design that writes no `Base Feature`.
+    pub(super) fn without_bodies(mut self) -> Self {
+        self.bodies.clear();
+        self
+    }
+
     /// Whether the design has a `Base Feature` item: the B-rep stream writes
     /// a body.
     pub(super) fn has_item(&self) -> bool {
@@ -390,7 +396,7 @@ impl BaseFeaturePlan<'_> {
                 Ok::<_, CodecError>(GeometryItem { records, profile })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if ctx.roster.item.is_some() {
+        if !ctx.roster.base_feature {
             indices.item = None;
         }
         let classes = Classes::of(ctx)?;
@@ -561,14 +567,14 @@ impl Classes {
         Ok(Self {
             timeline: class(types::TIMELINE)?,
             context: class(types::TIMELINE_CONTEXT)?,
-            item: if ctx.roster.item.is_some() {
-                None
-            } else {
+            item: if ctx.roster.base_feature {
                 Some(ItemClasses {
                     scope: class(types::BASE_FEATURE)?,
                     result_owner: class(types::RESULT_OWNER)?,
                     tracking: class(types::BODY_TRACKING)?,
                 })
+            } else {
+                None
             },
             tracked_results: class(types::TRACKED_RESULTS)?,
             item_companion: class(types::ITEM_TAIL_COMPANION)?,
