@@ -17,7 +17,7 @@ use crate::report::{
         CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
         SynthesisFidelity, WritePath as ReportWritePath,
     },
-    loss::LossNote,
+    loss::{LossNamespace, LossNote},
     strictness::Strictness,
     Severity,
 };
@@ -165,8 +165,6 @@ impl<E: EncoderBackend> Encoder for E {
         let target = E::TARGET
             .resolve(input.ir, request, E::FORMAT)
             .map_err(EncodeError::from_backend)?;
-        let identity = target.export_target().cloned();
-        let synthesized_identity = target.synthesized_target().cloned();
         let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
         let restored = self
             .restore(input, &target, &mut restore_notes, &mut restore_losses)
@@ -176,16 +174,29 @@ impl<E: EncoderBackend> Encoder for E {
             None => input,
         };
         let body = self
-            .plan_resolved(input, target)
+            .plan_resolved(input, target.clone())
             .map_err(EncodeError::from_backend)?;
         let ExportBody {
             bytes,
             census,
             write_path,
             coverage,
-            mut losses,
+            losses: body_losses,
             mut notes,
+            written_row,
         } = body;
+        let namespace = const {
+            match LossNamespace::new(E::FORMAT.as_str()) {
+                Ok(namespace) => namespace,
+                Err(_) => panic!("an encoder format is a loss namespace"),
+            }
+        };
+        let (identity, mut losses) = target.report_target(
+            namespace,
+            matches!(write_path, WritePath::Synthesized { .. }),
+            written_row,
+        );
+        losses.extend(body_losses);
         notes.extend(restore_notes);
         losses.extend(restore_losses);
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
@@ -218,10 +229,6 @@ impl<E: EncoderBackend> Encoder for E {
                 E::REQUEST
             ));
         }
-        let identity = match write_path {
-            WritePath::Synthesized { .. } => synthesized_identity,
-            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
-        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
@@ -503,6 +510,9 @@ pub struct ExportBody {
     pub losses: Vec<LossNote>,
     /// Free-form notes.
     pub notes: Vec<String>,
+    /// The catalog row the payload is, where the writer wrote another row
+    /// than the resolution names; `None` for the resolved row.
+    pub written_row: Option<target::WrittenRow>,
 }
 
 impl ExportBody {
@@ -521,6 +531,7 @@ impl ExportBody {
             coverage,
             losses: Vec::new(),
             notes: Vec::new(),
+            written_row: None,
         }
     }
 }
