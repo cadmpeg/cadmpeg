@@ -316,9 +316,9 @@ pub(crate) fn renamed(ir: &CadIr, renames: &[(String, String, String)]) -> CadIr
 }
 
 /// `ir` with `edit` applied to its JSON form and to the JSON form of each
-/// arena the CADIR wire omits, which a document read from JSON does not hold.
-/// `id` maps a feature id as `edit` changes it, so each feature-parent
-/// relation is kept.
+/// arena the CADIR wire omits, which a document read from JSON does not hold,
+/// with each arena in id order again after `edit` renames its ids. `id` maps a
+/// feature id as `edit` changes it, so each feature-parent relation is kept.
 pub(crate) fn edited_json(
     ir: &CadIr,
     edit: &mut dyn FnMut(&mut Value),
@@ -346,7 +346,7 @@ fn apply_edited_json(
     id: &dyn Fn(&str) -> String,
 ) -> CadIr {
     edit(&mut value);
-    let mut edited: CadIr = serde_json::from_value(value).expect("the edited document reads");
+    let mut edited = CadIr::from_projection(value).expect("the edited document reads");
     macro_rules! arenas {
         ($($arena:ident),*) => {$(
             if !ir.model.$arena.is_empty() {
@@ -372,6 +372,7 @@ fn apply_edited_json(
         assembly_joints,
         history_bodies
     );
+    edited.finalize();
     for feature in &ir.model.features {
         if let Some(parent) = ir.model.feature_regeneration_parent(&feature.id) {
             let child = cadmpeg_ir::features::FeatureId::mint(id(feature.id.as_str()))

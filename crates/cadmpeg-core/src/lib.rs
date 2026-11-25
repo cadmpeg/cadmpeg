@@ -13,6 +13,7 @@ pub mod finite_json;
 pub mod io;
 pub mod iter_wire;
 pub mod printable;
+pub mod read_session;
 pub mod scan;
 pub mod serde_erase;
 pub mod tag_only;
