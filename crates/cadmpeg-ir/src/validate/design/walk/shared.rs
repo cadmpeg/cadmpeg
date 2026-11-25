@@ -13,6 +13,7 @@ use crate::design::ops::shared::{
 
 use super::super::dimensions::Bound;
 use super::{Collect, Walk};
+use crate::design::units::ValueKind;
 
 impl Walk for ChainLayout {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
@@ -149,7 +150,14 @@ impl<Q: Bound> Walk for Law<Q> {
         match self {
             Self::Curve(f0) => f0.walk(into),
             Self::Expression(f0) => {
-                into.push_expression(super::ExpressionPlace::Law, f0);
+                let quantity = match Q::kind() {
+                    ValueKind::Quantity(quantity) => Some(quantity),
+                    ValueKind::Integer
+                    | ValueKind::Boolean
+                    | ValueKind::Text
+                    | ValueKind::Native(_) => None,
+                };
+                into.push_expression(super::ExpressionPlace::Law(quantity), f0);
                 f0.walk(into)
             }
             Self::Constant(f0) => f0.walk(into),
