@@ -70,7 +70,7 @@ fn synthesized_body(
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
-    let synthesis = super::synthesize(&recovered.document, version)?;
+    let synthesis = super::degrade::synthesize_dropping(&recovered.document, version)?;
     losses.extend(synthesis.losses.clone());
     if !recovered.sampled_agreements.is_empty() {
         losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(

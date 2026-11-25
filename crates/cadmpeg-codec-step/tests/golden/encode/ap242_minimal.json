@@ -34,27 +34,14 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "target.source-dialect-displaced",
-              "kind": "source_dialect_displaced",
-              "namespace": "step",
+              "code": "output.empty",
+              "kind": "no_exportable_solids",
+              "namespace": "export",
               "strict_floor": "warning"
             }
           },
-          "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
+          "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
-              "code": "export.no-geometry-written",
-              "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
-            }
-          },
-          "message": "no geometry was written to a STEP representation",
-          "severity": "error"
         },
         {
           "code": {
@@ -67,6 +54,19 @@
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
+          },
+          "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
+          "severity": "warning"
         }
       ],
       "notes": [],
@@ -113,27 +113,14 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "target.source-dialect-displaced",
-              "kind": "source_dialect_displaced",
-              "namespace": "step",
+              "code": "output.empty",
+              "kind": "no_exportable_solids",
+              "namespace": "export",
               "strict_floor": "warning"
             }
           },
-          "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
+          "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
-              "code": "export.no-geometry-written",
-              "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
-            }
-          },
-          "message": "no geometry was written to a STEP representation",
-          "severity": "error"
         },
         {
           "code": {
@@ -146,6 +133,19 @@
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
+          },
+          "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
+          "severity": "warning"
         }
       ],
       "notes": [],
@@ -192,14 +192,14 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "export.no-geometry-written",
-              "kind": "geometry_not_transferred",
-              "namespace": "step",
+              "code": "output.empty",
+              "kind": "no_exportable_solids",
+              "namespace": "export",
               "strict_floor": "warning"
             }
           },
-          "message": "no geometry was written to a STEP representation",
-          "severity": "error"
+          "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
+          "severity": "warning"
         },
         {
           "code": {
