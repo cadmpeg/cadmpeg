@@ -714,6 +714,35 @@ fn process_expressions_type_check() {
     );
 }
 
+#[test]
+fn a_process_record_shares_no_id_with_a_design_or_process_record() {
+    let mut ir = with_width();
+    let mut shared = process_parameter("depth", Some(LENGTH), "1[mm]", &[]);
+    shared.id = ir.design.parameters[0]
+        .id
+        .as_str()
+        .to_owned()
+        .try_into()
+        .unwrap();
+    ir.process.parameters.push(shared);
+    assert_finding(
+        &ir,
+        "process.parameters record id is also the id of a design.parameters record",
+    );
+
+    let mut ir = with_width();
+    ir.process
+        .parameters
+        .push(process_parameter("depth", Some(LENGTH), "1[mm]", &[]));
+    let mut twin = process_parameter("depth", Some(LENGTH), "2[mm]", &[]);
+    twin.name = NonBlankString::new("twin").unwrap();
+    ir.process.parameters.push(twin);
+    assert_finding(
+        &ir,
+        "process.parameters record id is also the id of a process.parameters record",
+    );
+}
+
 fn equation_curve(x: &str) -> FeatureOperation {
     let law = |text: &str| {
         Law::Expression(Expression::Neutral(Neutral(

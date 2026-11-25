@@ -747,10 +747,21 @@ impl<'a> Builder<'a> {
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
         let has_model_items = !emitted_items.is_empty();
-        if cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
-            .next()
-            .is_none()
-        {
+        let states_structure =
+            cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
+                .next()
+                .is_some();
+        if states_structure {
+            self.emit_product_graph(context);
+            if !standalone_items.is_empty() {
+                self.emit_shape_representation(
+                    "standalone geometry",
+                    standalone_items,
+                    Vec::new(),
+                    context,
+                );
+            }
+        } else {
             let origin = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -765,20 +776,20 @@ impl<'a> Builder<'a> {
                 "SHAPE_DEFINITION_REPRESENTATION",
                 &format!("{product_def_shape},{representation}"),
             );
-        } else {
-            self.emit_product_graph(context);
-            if !standalone_items.is_empty() {
-                self.emit_shape_representation(
-                    "standalone geometry",
-                    standalone_items,
-                    Vec::new(),
-                    context,
-                );
-            }
         }
+
+        // Every instance emitted from here on writes a record of the
+        // document. Before it, a document that states no structure has only
+        // the writer's context and default product structure in the file.
+        let scaffolding = self.emitter.instance_count();
 
         self.emit_visibility();
         self.emit_tessellations(context);
+        self.emit_presentation(context);
+        self.emit_appearance_visibility();
+        self.emit_pmi(context);
+        self.emit_layers();
+        self.emit_layer_visibility();
         if !has_model_items && self.tessellation_step_refs.is_empty() {
             if !self.ir.geometry.bodies.is_empty() {
                 self.loss(
@@ -786,16 +797,19 @@ impl<'a> Builder<'a> {
                     "no body geometry could be placed in a STEP representation".to_string(),
                 );
             }
-            self.loss(
-                StepLossCode::NoGeometryWritten,
-                "no geometry was written to a STEP representation".to_string(),
-            );
+            if states_structure || self.emitter.instance_count() > scaffolding {
+                self.loss(
+                    StepLossCode::NoGeometryWritten,
+                    "no geometry was written to a STEP representation".to_string(),
+                );
+            } else {
+                self.losses.push(cadmpeg_ir::codec::write::output_empty(
+                    "the written STEP file holds no record of the document: it states no \
+                     geometry, tessellation, product structure, presentation, PMI, or layer \
+                     this writer encodes",
+                ));
+            }
         }
-        self.emit_presentation(context);
-        self.emit_appearance_visibility();
-        self.emit_pmi(context);
-        self.emit_layers();
-        self.emit_layer_visibility();
         self.note_unrepresented();
     }
 

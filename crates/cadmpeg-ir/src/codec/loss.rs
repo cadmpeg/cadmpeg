@@ -3,7 +3,8 @@
 //!
 //! These codes belong to no codec: the wrapper charges them by comparing the
 //! content classes the requested depth names with the classes the document
-//! holds, for the records its normalizer gave up, for an id a decoder
+//! holds, for a class a decoder states the source holds beyond the delivered
+//! depth, for the records its normalizer gave up, for an id a decoder
 //! emitted twice with different content, and for a document it took no
 //! content digest of, so every codec reports them under one namespace.
 
@@ -19,9 +20,10 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("decode");
 /// A stable, machine-readable identifier for one wrapper-charged decode loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DecodeLossCode {
-    /// The document lacks a content class the requested depth names.
+    /// The document lacks a content class the requested depth names, or
+    /// one the source holds beyond the delivered depth.
     DepthNotDelivered {
-        /// The requested class the document does not hold.
+        /// The class the document does not hold.
         class: ArenaClass,
     },
     /// A decoder emitted one id more than once in an arena, and the copies

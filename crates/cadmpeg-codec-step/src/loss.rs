@@ -334,7 +334,9 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
-    /// No geometry was placed in the output representations.
+    /// No geometry was placed in the output representations, while other
+    /// records of the document were written. A file that holds no record of
+    /// the document charges `export:output.empty` instead.
     NoGeometryWritten,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,

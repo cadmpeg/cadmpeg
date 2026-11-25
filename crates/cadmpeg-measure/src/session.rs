@@ -27,6 +27,7 @@ use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Missing, Outcome};
 use crate::geom::Aabb;
+use crate::loss::MeasureLossCode;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
@@ -549,6 +550,12 @@ impl<'ir> Measurer<'ir> {
             ));
         }
         caveats.sort();
+        let losses = if self.input.ir.scope().model {
+            Vec::new()
+        } else {
+            vec![MeasureLossCode::OutputEmpty
+                .note("the document's scope holds no model class, so the pass measured no body")]
+        };
         Ok(MeasureReport {
             occurrence: space.map(|space| space.report),
             tolerances: ReportTolerances {
@@ -561,6 +568,7 @@ impl<'ir> Measurer<'ir> {
             edges: edge_out,
             surfaces: surface_out,
             document,
+            losses,
         })
     }
 

@@ -357,42 +357,86 @@ fn physics_joints_are_design_joint_features() {
     assert_eq!(report.error_count(), 0, "{:#?}", report.findings);
 }
 
-/// A decode at geometry depth states no design, so the `PhysX` settings of the
-/// joints have no target and are reported.
-#[test]
-fn a_geometry_decode_reports_the_physx_settings_of_joints() {
+/// Decodes `text` at `depth`.
+fn decode_at(
+    text: &str,
+    depth: cadmpeg_core::decode::DecodeDepth,
+) -> cadmpeg_ir::codec::DecodeResult {
     use cadmpeg_ir::codec::Codec;
     let options = cadmpeg_ir::codec::DecodeOptions {
-        depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+        depth,
         ..Default::default()
     };
-    let result = crate::UsdCodec
-        .decode(
-            &mut std::io::Cursor::new(physx_fixture().into_bytes()),
-            &options,
-        )
-        .expect("decode");
-    let ir = result.ir();
-    assert!(ir.design.features.is_empty());
-    assert_eq!(ir.model.assembly_joints.len(), 2);
-    assert!(solver_value(ir, "PhysxJointAPI", "physxJoint:armature").is_none());
-    let loss = result
+    crate::UsdCodec
+        .decode(&mut std::io::Cursor::new(text.as_bytes()), &options)
+        .expect("decode")
+}
+
+/// The `decode/depth.not-delivered` losses of `result`.
+fn depth_losses(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<&str> {
+    result
         .report()
         .losses
         .iter()
-        .find(|loss| {
-            loss.message
-                .contains("PhysX properties were not transferred")
-        })
-        .unwrap_or_else(|| panic!("{:#?}", result.report().losses));
-    for property in [
-        "/Arm/Shoulder.physxJoint:armature",
-        "/Arm/Grip.physxMimicJoint:transX:referenceJoint",
-    ] {
+        .filter(|loss| loss.code.to_string() == "decode/depth.not-delivered")
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// A decode at geometry depth leaves out the joints, which are design
+/// features, and the `PhysX` settings that target them, and charges
+/// `decode/depth.not-delivered` for `design` in their place.
+#[test]
+fn a_geometry_decode_of_joints_charges_the_undelivered_design() {
+    use cadmpeg_core::decode::DecodeDepth;
+    let result = decode_at(&physx_fixture(), DecodeDepth::Geometry);
+    let ir = result.ir();
+    assert!(!ir.scope().design);
+    assert!(ir.design.features.is_empty());
+    assert_eq!(ir.model.assembly_joints.len(), 2);
+    assert!(solver_value(ir, "PhysxJointAPI", "physxJoint:armature").is_none());
+    assert!(ir.model.solver_settings.iter().all(|settings| !matches!(
+        settings.target.entity,
+        cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }
+    )));
+    let losses = depth_losses(&result);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].contains("design records"), "{}", losses[0]);
+    for loss in &result.report().losses {
+        for property in [
+            "/Arm/Shoulder.physxJoint:armature",
+            "/Arm/Grip.physxMimicJoint:transX:referenceJoint",
+        ] {
+            assert!(!loss.message.contains(property), "{}", loss.message);
+        }
+    }
+}
+
+/// A decode that delivers the design states the joints and charges no
+/// depth loss.
+#[test]
+fn a_design_decode_of_joints_charges_no_depth_loss() {
+    let result = decode_at(&physx_fixture(), cadmpeg_core::decode::DecodeDepth::Design);
+    assert!(!result.ir().design.features.is_empty());
+    assert!(
+        depth_losses(&result).is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+/// A stage without joints holds no design, so neither depth charges one.
+#[test]
+fn a_stage_without_joints_charges_no_depth_loss() {
+    use cadmpeg_core::decode::DecodeDepth;
+    let layer = "#usda 1.0\ndef Xform \"Base\" (\n    prepend apiSchemas = [\"PhysicsRigidBodyAPI\"]\n)\n{\n}\n";
+    for depth in [DecodeDepth::Geometry, DecodeDepth::Design] {
+        let result = decode_at(layer, depth);
+        assert!(result.ir().model.assembly_joints.is_empty());
         assert!(
-            loss.message.contains(property),
-            "{property}: {}",
-            loss.message
+            depth_losses(&result).is_empty(),
+            "{depth}: {:#?}",
+            result.report().losses
         );
     }
 }

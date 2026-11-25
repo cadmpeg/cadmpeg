@@ -12,6 +12,7 @@ use serde_json::json;
 use super::fixtures::{feature, id, name_tables};
 use super::root_fixtures as root;
 use super::{read_desktop, refuses, round_trip, to_value};
+use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::configuration::{OccurrenceOverride, Overrides};
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
@@ -420,12 +421,12 @@ fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'sta
         .unwrap()
 }
 
-/// Statement nesting has no ceiling of its own; the JSON depth limit bounds
-/// it. One level past the deepest nesting the reader admits is refused by
-/// that limit, and the deepest reads, prints the same bytes, clones,
-/// compares, and drops on a default thread.
+/// The document's depth bound (§2.5) bounds statement nesting. One level
+/// past the deepest nesting the reader admits is refused by that bound, and
+/// the deepest reads, prints the same bytes, clones, compares, and drops on
+/// a default thread.
 #[test]
-fn statements_nest_to_the_json_depth_limit_on_a_default_thread() {
+fn statements_nest_to_the_document_depth_bound_on_a_default_thread() {
     fn nested(depth: usize) -> String {
         let condition = || Neutral(Node::Boolean(true));
         let leaf = Statement::If {
@@ -440,16 +441,16 @@ fn statements_nest_to_the_json_depth_limit_on_a_default_thread() {
         });
         serde_json::to_string(&statement).unwrap()
     }
-    let past = (1..128)
+    let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&depth| read_desktop::<Statement>(&nested(depth)).is_err())
-        .expect("the reader refuses some depth below the JSON limit");
+        .expect("the reader refuses a depth past the document bound");
     assert!(past > 1, "a single statement is refused");
     let refusal = on_a_default_thread({
         let text = nested(past);
         move || read_desktop::<Statement>(&text).err()
     });
     assert!(
-        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
+        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("levels of a CADIR document")),
         "depth {past}: {refusal:?}"
     );
     let deepest = nested(past - 1);

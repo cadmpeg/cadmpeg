@@ -594,7 +594,8 @@ impl super::Builder<'_, '_, '_, '_> {
                     .joint_properties
                     .push(format!("{path}: {property}"));
             }
-            let feature = if self.ctx.depth() >= DecodeDepth::Design {
+            let design = self.ctx.depth() >= DecodeDepth::Design;
+            let feature = if design {
                 let feature = self.joint_feature(&path, &data, &joint);
                 if feature.is_none() {
                     self.tallies
@@ -603,6 +604,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 }
                 feature
             } else {
+                self.joints_beyond_depth = true;
                 None
             };
             let joint_id = joint.id.clone();
@@ -615,7 +617,7 @@ impl super::Builder<'_, '_, '_, '_> {
             if target.is_some() {
                 self.admit("usd_joint_feature")?;
             }
-            if let Some(prim) = self.stage.find(&path) {
+            if let Some(prim) = self.stage.find(&path).filter(|_| design) {
                 self.physx(
                     prim,
                     &[Holder::Joint],
