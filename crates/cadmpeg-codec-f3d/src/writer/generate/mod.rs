@@ -7,7 +7,7 @@ use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::subset_lowering::{lower_subset_curves, SubsetLowering};
-use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
+use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions, MissingStateForm};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -43,18 +43,27 @@ use smbh::encode_smbh;
 pub(super) struct Generated {
     pub(super) coverage: ArenaDispositions,
     pub(super) losses: Vec<LossNote>,
+    /// Whether the file holds the current geometry in the geometry-true
+    /// form where the request names the history-true form.
+    pub(super) geometry_true: bool,
 }
 
 /// Write a source-less F3D archive of everything in `target` the generator
-/// can encode, and report the rest as losses (see [`reduce`]).
-pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Generated, CodecError> {
+/// can encode, in the form `missing_states` names for the features whose
+/// states it cannot write (cadir-v11.md §3.4), and report the rest as losses
+/// (see [`reduce`]).
+pub(super) fn write_new(
+    target: &CadIr,
+    missing_states: MissingStateForm,
+    writer: &mut dyn Write,
+) -> Result<Generated, CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let SubsetLowering {
         ir: lowered,
         unlowered,
     } = lower_subset_curves(target, |_| true);
-    let mut reduction = Reduction::new(lowered.as_ref());
+    let mut reduction = Reduction::new(lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
     let (mut staged, mut coverage, design_losses) = loop {
@@ -63,6 +72,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             reduction.ir(),
             reduction.writes_design(),
             reduction.writes_neutral_design(),
+            missing_states,
             reduction.fallback(),
             &mut staged,
         ) {
@@ -75,9 +85,24 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
     }
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
+    let geometry_true = missing_states == MissingStateForm::HistoryTrue
+        && reduction.drops_neutral_design()
+        && !reduction.ir().geometry.bodies.is_empty()
+        && design::plan(
+            reduction.ir(),
+            MissingStateForm::HistoryTrue,
+            &design::Fallback::default(),
+        )
+        .ok()
+        .flatten()
+        .is_some_and(|design| design.rolls_back());
     let mut losses = reduction.finish();
     losses.extend(design_losses);
-    Ok(Generated { coverage, losses })
+    Ok(Generated {
+        coverage,
+        losses,
+        geometry_true,
+    })
 }
 
 /// Whether `stage` writes `target` (one body of the document, without its
@@ -92,6 +117,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             target,
             false,
             false,
+            MissingStateForm::GeometryTrue,
             &design::Fallback::default(),
             &mut std::io::Cursor::new(Vec::new()),
         )
@@ -111,14 +137,16 @@ fn encode_brep(
 }
 
 /// Write `target` once. `write_design` states whether its native Design
-/// records are written, and `write_neutral` whether its design scope is;
-/// `fallback` names the parts of the design scope's form dropped after a
+/// records are written, and `write_neutral` whether its design scope is, in
+/// the form `missing_states` names; `fallback` names the parts of the design
+/// scope's form dropped after a
 /// failure. A failure names the stage that failed. Returns the arena coverage
 /// and the losses of the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
     write_neutral: bool,
+    missing_states: MissingStateForm,
     fallback: &design::Fallback,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
@@ -127,7 +155,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target, fallback).map_err(Failure::neutral_design)?
+        design::plan(target, missing_states, fallback).map_err(Failure::neutral_design)?
     } else {
         None
     };
@@ -144,6 +172,12 @@ fn attempt<W: Write + Seek>(
     let stamped = neutral
         .as_ref()
         .is_some_and(design::NeutralDesign::has_bodies);
+    let timeline = neutral
+        .as_ref()
+        .is_some_and(design::NeutralDesign::writes_timeline);
+    // The history-true design whose state at the timeline marker holds no
+    // body writes no B-rep stream.
+    let body_less = timeline && !stamped;
     if let Some(neutral) = neutral.as_mut() {
         neutral
             .stamp(&mut native)
@@ -162,7 +196,12 @@ fn attempt<W: Write + Seek>(
     if has_native {
         validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
     }
-    let smbh = match encode_brep(target, &native, &attributes) {
+    let brep = if body_less {
+        Ok(Vec::new())
+    } else {
+        encode_brep(target, &native, &attributes)
+    };
+    let smbh = match brep {
         Ok(smbh) => smbh,
         // The design scope's names fail the B-rep stream when it writes
         // without them.
@@ -206,10 +245,17 @@ fn attempt<W: Write + Seek>(
         "writes these bodies as visible: the source did not record their visibility",
         std::mem::take(&mut design_registry.guessed_visible),
     );
-    if let Some(mut design) = if stamped { neutral.take() } else { None } {
-        let snapshot = snapshot_stream(target, &native).map_err(Failure::neutral_design)?;
+    if let Some(mut design) = if timeline { neutral.take() } else { None } {
+        let snapshot = if body_less {
+            None
+        } else {
+            Some(snapshot_stream(target, &native).map_err(Failure::neutral_design)?)
+        };
         let members = design
-            .archive(target, &smbh, &snapshot)
+            .archive(
+                target,
+                snapshot.as_deref().map(|snapshot| (&*smbh, snapshot)),
+            )
             .map_err(Failure::neutral_design)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
@@ -228,6 +274,14 @@ fn attempt<W: Write + Seek>(
         }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
+        if body_less {
+            omit_geometry(&mut coverage);
+            losses.push(crate::loss::F3dLossCode::WriterGeometryOmitted.note(format!(
+                "the history-true design holds no body at its timeline marker, so the archive stores no B-rep stream and these geometry records were not written: {}",
+                reduce::geometry_records_by_arena(&target.geometry).join("; ")
+            )));
+            return Ok((coverage, losses));
+        }
         losses.extend(unstated_visibility);
         losses.extend(cadmpeg_ir::codec::write::value_unwritable(
             "F3D",
@@ -571,6 +625,29 @@ fn write_archive<W: Write + Seek>(
         CodecError::malformed(format_args!("cannot finish F3D archive: {error}"))
     })?;
     Ok(())
+}
+
+/// Mark every geometry arena of `coverage` reported: the design writes no
+/// B-rep stream.
+fn omit_geometry(coverage: &mut ArenaDispositions) {
+    for arena in [
+        &mut coverage.bodies,
+        &mut coverage.regions,
+        &mut coverage.shells,
+        &mut coverage.faces,
+        &mut coverage.loops,
+        &mut coverage.coedges,
+        &mut coverage.edges,
+        &mut coverage.vertices,
+        &mut coverage.points,
+        &mut coverage.surfaces,
+        &mut coverage.curves,
+        &mut coverage.pcurves,
+        &mut coverage.procedural_surfaces,
+        &mut coverage.procedural_curves,
+    ] {
+        *arena = ArenaDisposition::Reported;
+    }
 }
 
 /// What [`write_new`] does with each model arena.

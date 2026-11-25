@@ -1113,6 +1113,17 @@ impl Native {
         })
     }
 
+    /// The first arena, as `<codec>.<arena>`, whose records do not state
+    /// their ids in strictly increasing order.
+    pub(crate) fn unordered_arena(&self) -> Option<String> {
+        self.0.iter().find_map(|(format, namespace)| {
+            namespace.arenas.iter().find_map(|(arena, records)| {
+                (!records.windows(2).all(|pair| pair[0].id() < pair[1].id()))
+                    .then(|| format!("{format}.{arena}"))
+            })
+        })
+    }
+
     /// States one record of each id in each sorted namespace arena whose
     /// copies hold one value and none of an id whose copies differ,
     /// returning each such id.

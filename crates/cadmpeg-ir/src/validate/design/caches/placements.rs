@@ -57,7 +57,7 @@ pub(super) fn check_placements(index: &DesignRecords<'_>, findings: &mut Vec<Fin
         .iter()
         .map(|occurrence| (occurrence.id.as_str(), occurrence.transform))
         .collect();
-    for (holder, definition) in index.feature_definitions() {
+    for (holder, _, definition) in index.feature_definitions() {
         match &definition.operation {
             FeatureOperation::TransformBodies(transform) => {
                 check_transformation(holder, &transform.transformation, within, findings);
