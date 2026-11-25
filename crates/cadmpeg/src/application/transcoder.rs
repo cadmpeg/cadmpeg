@@ -594,6 +594,17 @@ impl PlannedConversion {
         &self.prepared
     }
 
+    /// The path each output of the plan is written to; none for standard
+    /// output.
+    pub(crate) fn output_paths(&self) -> Vec<PathBuf> {
+        match &self.prepared.destination {
+            ResolvedDestination::File(path) => {
+                artifact_store::output_paths(path, self.plan.outputs())
+            }
+            ResolvedDestination::Stdout => Vec::new(),
+        }
+    }
+
     /// Writes the destination artifact and optional CADIR sidecar.
     pub(crate) fn write(self) -> AnyResult<ExportEmission> {
         emit_export_plan(

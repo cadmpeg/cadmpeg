@@ -501,6 +501,14 @@ pub(crate) fn convert(
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
         let planned = prepared.plan()?;
+        if let DestinationPolicy::File(destination) = &policy.destination {
+            artifact_store::check_plan_outputs(
+                path,
+                destination,
+                conversion.report.as_ref(),
+                &planned.output_paths(),
+            )?;
+        }
 
         let (decode_report, validation) = {
             let prepared = planned.prepared();

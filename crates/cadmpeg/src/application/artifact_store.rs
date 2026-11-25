@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::ExportPlan;
+use cadmpeg_ir::codec::write::{ExportPlan, PlannedOutput};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::loss::LossNote;
@@ -263,6 +263,50 @@ fn absolute_output_path(output: &Path) -> Result<PathBuf> {
     }
 }
 
+/// The path of each output of `outputs`: an output the caller named is
+/// written beside `destination` under that name, and the output the
+/// destination names to `destination`.
+pub(crate) fn output_paths(destination: &Path, outputs: &[PlannedOutput]) -> Vec<PathBuf> {
+    outputs
+        .iter()
+        .map(|output| output_path(destination, output))
+        .collect()
+}
+
+fn output_path(destination: &Path, output: &PlannedOutput) -> PathBuf {
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    output
+        .name
+        .as_ref()
+        .map_or_else(|| destination.to_owned(), |name| parent.join(name.as_str()))
+}
+
+/// Refuse the outputs of a plan before any of them is written: an output at
+/// the input path, an existing output without `--force`, two outputs at one
+/// path, or an output at the path of the command report.
+pub(crate) fn check_plan_outputs(
+    input: &Path,
+    destination: &FileDestination,
+    report: Option<&FileDestination>,
+    paths: &[PathBuf],
+) -> Result<()> {
+    for (index, path) in paths.iter().enumerate() {
+        if path != &destination.path {
+            check_output_path(input, path, destination.overwrite)?;
+        }
+        for earlier in &paths[..index] {
+            check_distinct_output_paths(earlier, "CAD output", path, "CAD output")?;
+        }
+        if let Some(report) = report {
+            check_distinct_output_paths(path, "CAD output", &report.path, "command report")?;
+        }
+    }
+    Ok(())
+}
+
 /// Stage bytes then atomically replace `output`.
 fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     let parent = output
@@ -281,10 +325,10 @@ fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Stage an export plan and hash the emitted bytes. A plan with several
-/// outputs writes the root output, its first, to `output`, and stages each
-/// other beside it under the name the plan gives it; the digest is the root
-/// output's. The files are not written as one transaction.
+/// Stage an export plan and hash the emitted bytes. Each output is written
+/// to its path ([`output_paths`]); the digest is that of the output at
+/// `output`, and the other paths are returned. The files are not written as
+/// one transaction.
 pub(super) fn write_plan_atomic(
     output: &Path,
     plan: ExportPlan,
@@ -293,24 +337,20 @@ pub(super) fn write_plan_atomic(
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    if plan.outputs().len() > 1 {
+    if output_paths(output, plan.outputs()) != [output] {
         let mut written = Vec::new();
-        let mut root = None;
+        let mut digest = None;
         let report = plan.write_each(|planned, bytes| {
-            if root.is_none() {
-                write_bytes_atomic(output, bytes).map_err(io::Error::other)?;
-                root = Some(Sha256Digest::from_bytes(Sha256::digest(bytes).into()));
-                return Ok(());
-            }
-            let path = planned
-                .name
-                .as_ref()
-                .map_or_else(|| output.to_owned(), |name| parent.join(name.as_str()));
+            let path = output_path(output, planned);
             write_bytes_atomic(&path, bytes).map_err(io::Error::other)?;
-            written.push(path);
+            if path == output {
+                digest = Some(Sha256Digest::from_bytes(Sha256::digest(bytes).into()));
+            } else {
+                written.push(path);
+            }
             Ok(())
         })?;
-        let digest = root.unwrap_or_else(|| Sha256Digest::from_bytes(Sha256::digest(b"").into()));
+        let digest = digest.unwrap_or_else(|| Sha256Digest::from_bytes(Sha256::digest(b"").into()));
         return Ok((report, digest, written));
     }
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
@@ -426,8 +466,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        check_output_path, load_matching_sidecar, read_bounded_text, FileDestination,
-        OptionalFileDestination, OutputDestinations, SidecarLoad,
+        check_output_path, check_plan_outputs, load_matching_sidecar, read_bounded_text,
+        FileDestination, OptionalFileDestination, OutputDestinations, SidecarLoad,
     };
     #[cfg(feature = "nx")]
     use cadmpeg_core::decode::InspectOptions;
@@ -458,6 +498,76 @@ mod tests {
             cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, prefix_len);
         ctx.finish_session()?;
         result
+    }
+
+    /// A plan of `input.cadir.json` that writes `assembly.sldprt`, the
+    /// destination, and the further outputs `others` beside it.
+    fn plan_paths(dir: &Path, others: &[&str]) -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
+        let input = dir.join("input.cadir.json");
+        std::fs::write(&input, b"{}").unwrap();
+        let mut paths = vec![dir.join("assembly.sldprt")];
+        paths.extend(others.iter().map(|name| dir.join(name)));
+        (input, paths)
+    }
+
+    fn destination(dir: &Path, overwrite: bool) -> FileDestination {
+        FileDestination {
+            path: dir.join("assembly.sldprt"),
+            overwrite,
+        }
+    }
+
+    #[test]
+    fn an_existing_further_output_is_refused_without_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["part.sldprt"]);
+        std::fs::write(&paths[1], b"kept").unwrap();
+        let error =
+            check_plan_outputs(&input, &destination(dir.path(), false), None, &paths).unwrap_err();
+        assert!(error.to_string().contains("pass --force"), "{error}");
+        check_plan_outputs(&input, &destination(dir.path(), true), None, &paths).unwrap();
+    }
+
+    #[test]
+    fn a_further_output_at_the_input_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["input.cadir.json"]);
+        let error =
+            check_plan_outputs(&input, &destination(dir.path(), true), None, &paths).unwrap_err();
+        assert!(
+            error.to_string().contains("refusing to overwrite input"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn two_outputs_at_one_path_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["part.sldprt", "part.sldprt"]);
+        let error =
+            check_plan_outputs(&input, &destination(dir.path(), false), None, &paths).unwrap_err();
+        assert!(
+            error.to_string().contains("resolve to the same path"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_further_output_at_the_report_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["part.sldprt"]);
+        let report = FileDestination {
+            path: dir.path().join("part.sldprt"),
+            overwrite: false,
+        };
+        let error = check_plan_outputs(
+            &input,
+            &destination(dir.path(), false),
+            Some(&report),
+            &paths,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("command report"), "{error}");
     }
 
     #[test]

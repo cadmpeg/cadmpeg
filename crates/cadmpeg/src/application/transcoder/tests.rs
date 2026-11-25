@@ -324,6 +324,7 @@ impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
 
     fn plan_resolved(
         &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _input: EncodeInput<'_>,
         _target: (),
     ) -> Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_core::CodecError> {
