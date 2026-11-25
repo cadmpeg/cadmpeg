@@ -230,7 +230,7 @@ fn relation_parameter_class(
 
 /// The parameter class of a sketch dimension whose relation class is `name`
 /// (§2).
-fn relation_kind(name: &str) -> Option<ArchiveParameterClass> {
+pub(super) fn relation_kind(name: &str) -> Option<ArchiveParameterClass> {
     Some(match name {
         "sgPntPntDist"
         | "sgLLDist"

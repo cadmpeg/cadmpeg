@@ -27,7 +27,8 @@ pub(super) fn check_caches(records: &ProcessRecords<'_>, findings: &mut Vec<Find
                 warning(
                     findings,
                     toolpath.id.as_str(),
-                    format_args!(
+                    crate::rule!(
+                        "process.toolpath-frame-not-operation-resolved-frame",
                         "the toolpath's frame is not its operation's resolved frame {:?}",
                         resolved.affine_rows()
                     ),
@@ -70,7 +71,8 @@ fn check_cycle_depth(toolpath: &Toolpath, cycle: &Cycle, linear: f64, findings: 
         warning(
             findings,
             toolpath.id.as_str(),
-            format_args!(
+            crate::rule!(
+                "process.cycle-depth-not-stock-level-minus",
                 "a cycle's depth {} is not its stock level {} minus the z of its point, {expected}",
                 depth.get(),
                 stock.get()

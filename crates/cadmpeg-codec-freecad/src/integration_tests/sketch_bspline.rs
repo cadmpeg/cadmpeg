@@ -195,7 +195,11 @@ fn recipe_sketch_bspline_knots_and_points() {
                 "{label}"
             );
             assert_eq!(side.draft, None, "{label}: zero Pad.TaperAngle");
-            assert_eq!(pad.evaluation.outputs().len(), 1, "{label}");
+            assert_eq!(
+                crate::test_support::result_of(decoded.ir(), pad).1.len(),
+                1,
+                "{label}"
+            );
             let SketchGeometryDefinition::Nurbs { curve } = entities[0].geometry.definition()
             else {
                 panic!("{label}: expected neutral B-spline");
@@ -273,14 +277,15 @@ fn check_recipe_sketch_bspline_body_measures(version: &str) {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let model = &decoded.ir().model;
-        let report = measured(&label, decoded.ir()).unwrap();
         let pad = model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Pad"))
             .unwrap();
         assert_recipe_pad_topology(decoded.ir(), pad, periodic, height, &label);
-        let [result] = pad.evaluation.outputs().as_slice() else {
+        let (state, bodies) = crate::test_support::result_of(decoded.ir(), pad);
+        let report = measured(&label, &state).unwrap();
+        let [result] = bodies.as_slice() else {
             panic!("{label}: expected one pad body")
         };
         let pad_body = report
@@ -462,7 +467,9 @@ fn assert_recipe_pad_topology(
         "{label}: source face surfaces"
     );
 
-    let [body_id] = pad.evaluation.outputs().as_slice() else {
+    let (state, bodies) = crate::test_support::result_of(ir, pad);
+    let ir = &state;
+    let [body_id] = bodies.as_slice() else {
         panic!("{label}: one Pad output body")
     };
     let body = ir

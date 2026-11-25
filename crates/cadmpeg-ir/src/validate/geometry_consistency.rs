@@ -205,7 +205,7 @@ pub(super) fn check_procedural_support_consistency(
                     Check::GeometricConsistency,
                     Severity::Warning,
                     Some(procedural.id.as_str()),
-                    format_args!(
+                    crate::rule!("geometry_consistency.charted-tolerant-intersection-does-not-evaluate", 
                         "charted tolerant intersection does not evaluate at both endpoints"
                     ),
                 );
@@ -226,7 +226,7 @@ pub(super) fn check_procedural_support_consistency(
                     Check::GeometricConsistency,
                     Severity::Warning,
                     Some(procedural.id.as_str()),
-                    format_args!(
+                    crate::rule!("geometry_consistency.charted-tolerant-intersection-misses-endpoint-witnesses", 
                         "charted tolerant intersection misses its endpoint witnesses by \
                          {mismatch:.6}"
                     ),
@@ -324,7 +324,8 @@ pub(super) fn check_procedural_support_consistency(
                     Check::GeometricConsistency,
                     Severity::Warning,
                     Some(procedural.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "geometry_consistency.surface-offset-solved-curve-misses-base",
                         "surface-offset solved curve misses its base offset distance by \
                          {offset_mismatch:.6}"
                     ),
@@ -505,7 +506,7 @@ fn check_support_sides(
                 Check::GeometricConsistency,
                 Severity::Warning,
                 Some(entity),
-                format_args!(
+                crate::rule!("geometry_consistency.procedural-support-side-misses-endpoint-distance", 
                 "procedural support side {side_index} misses its endpoint distance contract by \
                  {mismatch:.6}"
             ),
@@ -870,7 +871,10 @@ pub(super) fn check_edge_endpoint_consistency(
                     Check::GeometricConsistency,
                     Severity::Error,
                     Some(edge.id.as_str()),
-                    format_args!("edge with no vertex lies on an open carrier curve"),
+                    crate::rule!(
+                        "geometry_consistency.edge-no-vertex-lies-open-carrier",
+                        "edge with no vertex lies on an open carrier curve"
+                    ),
                 );
             }
             continue;
@@ -929,7 +933,7 @@ pub(super) fn check_edge_endpoint_consistency(
                     Check::GeometricConsistency,
                     Severity::Error,
                     Some(edge.id.as_str()),
-                    format_args!(
+                    crate::rule!("geometry_consistency.edge-runs-against-curve-start-vertex", 
                         "edge runs against its curve: its start vertex is at the curve's end and its end vertex at its start, within {reversed_mismatch:.6}"
                     ),
                 );
@@ -942,7 +946,8 @@ pub(super) fn check_edge_endpoint_consistency(
                 Check::GeometricConsistency,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "geometry_consistency.edge-curve-endpoints-miss-edge-vertex",
                     "edge curve endpoints miss the edge's vertex positions by {mismatch:.6}"
                 ),
             );
@@ -1013,7 +1018,8 @@ pub(super) fn check_edge_endpoint_consistency(
                 Check::GeometricConsistency,
                 Severity::Error,
                 Some(coedge.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "geometry_consistency.coedge-use-curve-endpoints-miss-traversal",
                     "coedge use-curve endpoints miss the traversal vertices by {mismatch:.6}"
                 ),
             );
@@ -1294,7 +1300,8 @@ pub(super) fn check_pcurve_surface_consistency(
                 Check::GeometricConsistency,
                 Severity::Error,
                 Some(coedge.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "geometry_consistency.pcurve-mapped-through-face-surface-misses",
                     "pcurve mapped through the face surface misses the edge's vertex positions \
                      by {mismatch:.6}"
                 ),

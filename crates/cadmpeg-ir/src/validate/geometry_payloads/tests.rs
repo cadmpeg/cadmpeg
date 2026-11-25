@@ -149,6 +149,7 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
         )
         .unwrap(),
     ));
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }

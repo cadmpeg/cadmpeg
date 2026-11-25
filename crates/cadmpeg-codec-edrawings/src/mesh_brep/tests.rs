@@ -34,7 +34,9 @@ fn convert(
 }
 
 fn assert_valid(ir: &CadIr) {
-    let report = validate_neutral(ir, Vec::new()).unwrap();
+    let mut rooted = ir.clone();
+    cadmpeg_ir::examples::add_document_root(&mut rooted);
+    let report = validate_neutral(&rooted, Vec::new()).unwrap();
     let errors: Vec<_> = report
         .findings
         .iter()

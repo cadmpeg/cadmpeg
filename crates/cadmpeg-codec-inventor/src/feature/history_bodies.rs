@@ -9,13 +9,10 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use cadmpeg_asm::brep::{decode_with_header, DecodePurpose};
-use cadmpeg_asm::history::{
-    historical_record_archive, materialize_record_table, walk_entity_versions,
-};
+use cadmpeg_asm::history::walk_entity_versions;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::features::{Feature, FeatureId};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -27,8 +24,9 @@ use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
 
 use super::history_states::{
-    Binding, Chain, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
+    Binding, Closed, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
+use super::history_views::{decode_scratch, Scratch};
 use crate::kernel::ActiveCarrier;
 
 /// Cap of nests per part. A nest materializes and decodes a whole history state.
@@ -167,7 +165,7 @@ fn wants(records: &[FeatureHistoryState], outcome: &mut Outcome) -> Vec<Want> {
 pub(crate) fn build(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
-    chain: Chain<'_>,
+    closed: &Closed<'_>,
     records: &[FeatureHistoryState],
     model_features: &[Feature],
 ) -> Result<Built, CodecError> {
@@ -180,14 +178,14 @@ pub(crate) fn build(
     if wants.is_empty() {
         return Ok(built);
     }
-    let Chain {
+    let Closed {
         views,
-        frames,
         archived_ids,
         active_count,
-    } = chain;
+        ..
+    } = closed;
     let state_count = views.len();
-    let Some(archive) = historical_record_archive(&views, frames) else {
+    let Some(archive) = closed.archive() else {
         built.outcome.undecoded += wants.len();
         return Ok(built);
     };
@@ -201,7 +199,7 @@ pub(crate) fn build(
     let mut failure = None;
     let mut bounded = HashSet::<usize>::new();
     let mut visited = 0_usize;
-    walk_entity_versions(&views, active_count, &archived_ids, |slot, versions| {
+    walk_entity_versions(views, *active_count, archived_ids, |slot, versions| {
         let visit = visited;
         visited += 1;
         let Some(ordinal) = state_count
@@ -224,45 +222,17 @@ pub(crate) fn build(
             bounded.extend(indices.iter().copied());
             return;
         }
-        let Some(table) = materialize_record_table(versions, |revision| archive.get(&revision))
-        else {
-            return;
-        };
-        let stream = format!("inventor:history:{ordinal}");
-        let brep = match decode_with_header(
-            ctx,
-            &table,
-            bytes,
-            Some(&header.metadata),
-            &stream,
-            cadmpeg_asm::asm_format!("inventor"),
-            DecodePurpose::Model,
-        ) {
-            Ok(brep) => brep,
-            Err(error @ CodecError::ResourceLimit(_)) => {
+        let Scratch {
+            body_keys: keys,
+            model: scratch,
+        } = match decode_scratch(ctx, bytes, header, archive, versions, ordinal) {
+            Ok(Some(scratch)) => scratch,
+            Ok(None) => return,
+            Err(error) => {
                 failure = Some(error);
                 return;
             }
-            Err(_) => return,
         };
-        drop(table);
-        let keys = brep
-            .body_native_keys
-            .iter()
-            .filter_map(|record| Some((record.body.as_str().to_owned(), record.asm_body_key?)))
-            .collect::<Vec<_>>();
-        let mut scratch = CadIr::empty();
-        if let Err(error) = cadmpeg_asm::brep::transfer::transfer_into_ir(
-            ctx,
-            &mut scratch,
-            cadmpeg_ir::codec_id!("inventor"),
-            brep,
-        ) {
-            if matches!(error, CodecError::ResourceLimit(_)) {
-                failure = Some(error);
-            }
-            return;
-        }
         for &index in indices {
             let key = u64::try_from(wants[index].key).ok();
             let body = keys
