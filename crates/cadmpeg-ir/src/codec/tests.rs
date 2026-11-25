@@ -1342,6 +1342,45 @@ fn add_procedural_curve(
     });
 }
 
+/// Adds surface `test:model:surface#<key>` and the taper construction
+/// `test:model:construction#<key>` it owns, on the first surface and curve
+/// of `ir`. The construction's reference pcurve is `pcurve`.
+fn add_procedural_surface(
+    ir: &mut CadIr,
+    key: &str,
+    pcurve: Option<crate::geometry::pcurve::PcurveGeometry>,
+) {
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::procedural_surfaces::{ProceduralSurfaceDefinition, TaperSurfaceKind};
+    use crate::geometry::surface_payloads::TaperSurfaceConstruction;
+    use crate::geometry::{ProceduralSurface, Surface, SurfaceGeometry};
+    use crate::ids::{ProceduralSurfaceId, SurfaceId};
+    let construction = ProceduralSurfaceId::mint(format!("test:model:construction#{key}")).unwrap();
+    let taper = TaperSurfaceConstruction::try_new(
+        ir.geometry.surfaces[0].id.clone(),
+        ir.geometry.curves[0].id.clone(),
+        pcurve,
+        0.0,
+        TaperSurfaceKind::Standard {},
+        CacheContract::legacy(),
+    )
+    .unwrap();
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Taper(taper),
+        None,
+    ));
+    ir.geometry.surfaces.push(Surface {
+        id: SurfaceId::mint(format!("test:model:surface#{key}")).unwrap(),
+        geometry: SurfaceGeometry::Procedural {
+            construction,
+            cache: None,
+        },
+        source_object: None,
+        native_ref: None,
+    });
+}
+
 /// The decode result of `ir` after the wrapper's digest walk in a decode
 /// under the service policy, the stock policy with the lowest recursion
 /// ceiling, with its `record.unreadable` losses.
@@ -1363,8 +1402,8 @@ fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
 }
 
 /// Every construction has exactly one owning carrier and every carrier's
-/// construction is in the document, the document reads back from its JSON,
-/// and its digest is the one the wrapper recorded.
+/// construction is in the document, every reference resolves, the document
+/// reads back from its JSON, and its digest is the one the wrapper recorded.
 fn assert_resolves(result: &DecodeResult) {
     let ir = result.ir();
     let constructions = ir
@@ -1372,6 +1411,12 @@ fn assert_resolves(result: &DecodeResult) {
         .procedural_curves
         .iter()
         .map(|procedural| procedural.id.as_str())
+        .chain(
+            ir.geometry
+                .procedural_surfaces
+                .iter()
+                .map(|procedural| procedural.id.as_str()),
+        )
         .collect::<std::collections::BTreeSet<_>>();
     let mut owned = ir
         .geometry
@@ -1379,9 +1424,23 @@ fn assert_resolves(result: &DecodeResult) {
         .iter()
         .filter_map(|curve| curve.geometry.procedural_construction())
         .map(crate::ids::ProceduralCurveId::as_str)
+        .chain(
+            ir.geometry
+                .surfaces
+                .iter()
+                .filter_map(|surface| surface.geometry.procedural_construction())
+                .map(crate::ids::ProceduralSurfaceId::as_str),
+        )
         .collect::<Vec<_>>();
     owned.sort_unstable();
     assert_eq!(owned, constructions.into_iter().collect::<Vec<_>>());
+    let unresolved = crate::validate::validate_neutral(ir, Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == crate::report::check::Check::ReferentialIntegrity)
+        .collect::<Vec<_>>();
+    assert!(unresolved.is_empty(), "{unresolved:?}");
     let text = serde_json::to_string(ir).unwrap();
     assert!(CadIr::from_json(&text).is_ok());
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1480,6 +1539,70 @@ fn a_construction_past_the_document_bound_is_given_up_with_its_carrier() {
     );
     assert!(!curve_ids(&result).contains(&"test:model:curve#deep"));
     assert!(curve_ids(&result).contains(&"test:model:curve#kept"));
+    assert_resolves(&result);
+}
+
+/// A surface construction past the bound is given up with the surface that
+/// owns it, so no surface names a construction the document does not hold.
+#[test]
+fn a_surface_construction_past_the_document_bound_is_given_up_with_its_surface() {
+    let mut ir = unit_cube().unwrap();
+    add_procedural_surface(&mut ir, "deep", Some(deep_pcurve()));
+    add_procedural_surface(&mut ir, "kept", None);
+    let (result, unreadable) = given_up(ir);
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one record: {unreadable:?}");
+    };
+    assert!(
+        loss.message
+            .contains("of arena geometry.procedural_surfaces"),
+        "{}",
+        loss.message
+    );
+    assert_eq!(
+        given_up_record(&loss.message),
+        (
+            "test:model:construction#deep".to_owned(),
+            ["test:model:construction#deep", "test:model:surface#deep"]
+                .map(str::to_owned)
+                .into()
+        )
+    );
+    let surfaces = result
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(!surfaces.contains(&"test:model:surface#deep"));
+    assert!(surfaces.contains(&"test:model:surface#kept"));
+    assert_resolves(&result);
+}
+
+/// An edge whose carrier is given up names it no longer: the give-up names
+/// the edge among the records it drops and marks, and every reference of the
+/// document resolves.
+#[test]
+fn an_edge_on_a_carrier_past_the_document_bound_names_no_given_up_curve() {
+    let mut ir = unit_cube().unwrap();
+    add_procedural_curve(&mut ir, "deep", None, Some(deep_line()));
+    let deep = crate::ids::CurveId::mint("test:model:curve#deep").unwrap();
+    ir.geometry.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(Some(deep.clone()), None).unwrap();
+    let edge = ir.geometry.edges[0].id.clone();
+    let (result, unreadable) = given_up(ir);
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one record: {unreadable:?}");
+    };
+    assert!(loss.message.contains(edge.as_str()), "{}", loss.message);
+    assert!(!curve_ids(&result).contains(&deep.as_str()));
+    assert!(result
+        .ir()
+        .geometry
+        .edges
+        .iter()
+        .all(|edge| edge.carrier.curve() != Some(&deep)));
     assert_resolves(&result);
 }
 
