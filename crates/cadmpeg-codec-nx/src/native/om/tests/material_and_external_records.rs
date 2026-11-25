@@ -694,14 +694,35 @@ fn decode_selects_dominant_rmfastload_body() {
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     // The fixture's FACE records state no loop on a PLANE, so each face is
-    // partial and reported as such, and nothing else is reported.
-    assert!(
-        validation.findings.iter().all(|finding| finding.check
-            == cadmpeg_ir::report::check::Check::TopologyPartial
-            && finding.severity == cadmpeg_ir::report::Severity::Warning),
-        "findings: {:?}",
-        validation.findings
-    );
+    // partial and reported once as such, and nothing else is reported.
+    let faces: Vec<&str> = result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .map(|face| {
+            assert!(face.loops.is_partial(), "{} is not partial", face.id);
+            face.id.as_str()
+        })
+        .collect();
+    assert!(!faces.is_empty());
+    let mut reported: Vec<&str> = validation
+        .findings
+        .iter()
+        .map(|finding| {
+            assert_eq!(
+                finding.check,
+                cadmpeg_ir::report::check::Check::TopologyPartial
+            );
+            assert_eq!(finding.severity, cadmpeg_ir::report::Severity::Warning);
+            assert_eq!(finding.message, "face does not state its boundary in full");
+            finding.entity.as_deref().expect("a finding names its face")
+        })
+        .collect();
+    reported.sort_unstable();
+    let mut expected = faces;
+    expected.sort_unstable();
+    assert_eq!(reported, expected);
 }
 
 #[test]

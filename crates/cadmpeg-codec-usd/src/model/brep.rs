@@ -60,6 +60,9 @@ pub(crate) struct Imported {
     pub(crate) kind: Option<BodyKind>,
     /// The IR face of each `brep:face:id`.
     pub(crate) face_ids: BTreeMap<i64, FaceId>,
+    /// Each face stated partial, with the reason its boundary is not stated
+    /// in full.
+    pub(crate) unstated: Vec<String>,
 }
 
 /// Why a B-rep has no neutral form.
@@ -837,21 +840,52 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     let written_loops: BTreeSet<LoopId> = out.loops.iter().map(|loop_| loop_.id.clone()).collect();
     for (face, record) in brep.faces.iter().enumerate() {
         let face_id = id::face(key, face);
-        let loops: Vec<LoopId> = record
+        let surface = &surface_ids[&(catalog_key(record.surface.0), record.surface.1)];
+        let mut dropped = record
             .loops
             .iter()
-            .map(|loop_| id::loop_(key, *loop_))
-            .filter(|loop_| written_loops.contains(loop_))
-            .collect();
-        let loops = match loops.split_first() {
-            Some((outer, inner)) => FaceLoops::classified(outer.clone(), inner.to_vec()),
-            None => FaceLoops::unspecified(Vec::new()),
+            .filter(|loop_| !written_loops.contains(&id::loop_(key, **loop_)))
+            .peekable();
+        // The source lists its outer loop first. A loop with no edge and no
+        // vertex states no boundary, so a face that drops one is partial.
+        let loops = if dropped.peek().is_some() {
+            let dropped: Vec<String> = dropped.map(ToString::to_string).collect();
+            out.unstated.push(format!(
+                "{face_id}: source loops {} state no edge or vertex the model keeps",
+                dropped.join(", ")
+            ));
+            let mut written = record.loops.iter().map(|loop_| id::loop_(key, *loop_));
+            let outer = written.next().filter(|loop_| written_loops.contains(loop_));
+            FaceLoops::PartialClassified {
+                outer,
+                inner: written
+                    .filter(|loop_| written_loops.contains(loop_))
+                    .collect(),
+            }
+        } else if let Some((outer, inner)) = record.loops.split_first() {
+            FaceLoops::classified(
+                id::loop_(key, *outer),
+                inner.iter().map(|loop_| id::loop_(key, *loop_)).collect(),
+            )
+        } else {
+            let geometry = out
+                .surfaces
+                .iter()
+                .find(|candidate| &candidate.id == surface)
+                .map(|candidate| &candidate.geometry);
+            let (loops, unbounded) = FaceLoops::unspecified_on(Vec::new(), geometry);
+            if let Some(kind) = unbounded {
+                out.unstated.push(format!(
+                    "{face_id}: no loop on a {kind}, which no face covers whole"
+                ));
+            }
+            loops
         };
         let shell = face_shell[face].unwrap_or_default();
         out.faces.push(Face {
             id: face_id.clone(),
             shell: id::shell(key, shell),
-            surface: surface_ids[&(catalog_key(record.surface.0), record.surface.1)].clone(),
+            surface: surface.clone(),
             sense: if record.same_sense {
                 Sense::Forward
             } else {
@@ -882,6 +916,9 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests;
 
 /// The B-reps of the `BrepArray` prim `prim`.
 pub(super) fn decoded(
@@ -1189,6 +1226,7 @@ impl super::Builder<'_, '_, '_, '_> {
             regions,
             kind,
             face_ids: _,
+            unstated,
         } = imported;
         let geometry = &mut self.ir.geometry;
         geometry.points.extend(points);
@@ -1205,6 +1243,11 @@ impl super::Builder<'_, '_, '_, '_> {
         if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
             return Ok(Err(error.to_string()));
         }
+        self.tallies.unstated_boundaries.extend(
+            unstated
+                .into_iter()
+                .map(|face| format!("{}: {face}", prim.path)),
+        );
         let tolerance = records.tolerance * self.scale;
         if tolerance > self.ir.tolerances.linear.get() {
             if let Some(tolerance) = cadmpeg_ir::scalar::PositiveLength::new(tolerance) {

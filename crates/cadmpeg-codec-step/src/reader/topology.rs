@@ -730,6 +730,7 @@ pub(super) fn decode(
                     exchange,
                     carrier_index,
                     index: &index,
+                    surfaces: &document.geometry.surfaces,
                     tolerance: document.tolerances.linear.get(),
                     ctx,
                 },
@@ -1612,6 +1613,7 @@ fn build_geometric_set(
         exchange,
         carrier_index,
         index,
+        surfaces,
         tolerance,
         ctx,
     } = sources;
@@ -1696,14 +1698,31 @@ fn build_geometric_set(
                             .dash(faces.len()),
                     ))
                 };
+                let face_loops = match face_loops {
+                    Some(face_loops) => face_loops,
+                    None => {
+                        // A set member that is a bare surface is a face with
+                        // no loop; on an unbounded surface it is partial.
+                        let geometry = surfaces
+                            .iter()
+                            .find(|record| record.id == surface)
+                            .map(|record| &record.geometry);
+                        let (face_loops, unbounded) =
+                            cadmpeg_ir::topology::FaceLoops::unspecified_on(Vec::new(), geometry);
+                        if let Some(kind) = unbounded {
+                            losses.push(StepLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                                "GEOMETRIC_SET #{set_id} holds #{surface_step}, a {kind} with no boundary, which no face covers whole: face {face_id} is stated partial"
+                            )));
+                        }
+                        face_loops
+                    }
+                };
                 let face = Face {
                     id: face_id,
                     shell: face_shell,
                     surface,
                     sense: Sense::Forward,
-                    loops: face_loops.unwrap_or_else(|| {
-                        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new())
-                    }),
+                    loops: face_loops,
                     name: None,
                     color: None,
                     tolerance: None,
@@ -1779,6 +1798,8 @@ struct GeometricSetSources<'a, 'b> {
     exchange: &'a Exchange,
     carrier_index: &'a CarrierIndex,
     index: &'a ModelIndex<'b>,
+    /// The surfaces of the document the set's faces lie on.
+    surfaces: &'a [Surface],
     tolerance: f64,
     ctx: &'a DecodeContext<'a>,
 }

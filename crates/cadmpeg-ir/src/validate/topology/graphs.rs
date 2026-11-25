@@ -799,7 +799,7 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
     }
 }
 
-/// A face with no loops is the only face of its shell, and its surface is no
+/// A face `Unspecified` with no loops is the only face of its shell, and its surface is no
 /// plane, cylinder, or cone, and no placed surface whose basis, through every
 /// placement, is one (part 10, Topology and model records; §5.6). The rule
 /// does not fire on a marked shell, or on a shell or region that holds a
@@ -902,7 +902,7 @@ pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec
                 .faces
                 .iter()
                 .filter(|face| face.loops.is_partial())
-                .map(|face| (face.id.as_str(), "face does not state every loop")),
+                .map(|face| (face.id.as_str(), "face does not state its boundary in full")),
         );
     for (id, message) in partial {
         record_finding(

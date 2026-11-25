@@ -363,7 +363,7 @@ pub fn output_empty(message: impl Into<String>) -> LossNote {
 #[must_use]
 pub fn face_partial(format: &str, face: &crate::ids::FaceId) -> LossNote {
     ExportLossCode::FacePartial.note(format!(
-        "{format} writes no partial face: {face} does not state every loop"
+        "{format} writes no partial face: {face} does not state its boundary in full"
     ))
 }
 

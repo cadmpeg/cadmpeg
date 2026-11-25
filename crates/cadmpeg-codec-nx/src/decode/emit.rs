@@ -1280,29 +1280,30 @@ pub(super) fn emit_topology(
             )?;
         }
 
-        let mut partial = boundary_failed
+        let partial = boundary_failed
             || partial_faces.contains(&pending.id)
             || partial_face_xmts.contains(&pending.xmt);
-        if loops.is_empty() && !partial {
-            let kind = ir
-                .geometry
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == pending.surface)
-                .and_then(|surface| surface.geometry.solved())
-                .and_then(SolvedSurfaceGeometry::plane_cylinder_or_cone);
-            if let Some(kind) = kind {
+        let loops = if partial {
+            cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+        } else {
+            let surface = if loops.is_empty() {
+                ir.geometry
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == pending.surface)
+                    .map(|surface| &surface.geometry)
+            } else {
+                None
+            };
+            let (loops, unbounded) =
+                cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, surface);
+            if let Some(kind) = unbounded {
                 topology_losses.push(crate::loss::NxLossCode::TopologyFaceBoundaryUnstated.note(
                     format!("parasolid#{stream_index} FACE {} states no loop on a {kind}, which no face covers whole: face {} is stated partial",
                     pending.xmt, pending.id),
                 ));
-                partial = true;
             }
-        }
-        let loops = if partial {
-            cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
-        } else {
-            cadmpeg_ir::topology::FaceLoops::unspecified(loops)
+            loops
         };
         ir.geometry.faces.push(Face {
             id: pending.id,

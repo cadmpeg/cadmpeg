@@ -1424,6 +1424,49 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
 }
 
 #[test]
+fn states_a_wireless_planar_face_partial() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 2
+Fa 0 0.001 1 0 1001000 *
+Sh 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("wireless planar face");
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    assert!(matches!(
+        &faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops } if loops.is_empty()
+    ));
+    let code = crate::loss::FreecadLossCode::TopologyFaceBoundaryUnstated
+        .note("")
+        .code;
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains(faces[0].id.as_str()));
+    assert!(losses[0].message.contains("plane"));
+}
+
+#[test]
 fn accepts_equivalent_repeated_exact_curve_records() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>

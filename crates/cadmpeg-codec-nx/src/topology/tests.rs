@@ -1594,6 +1594,8 @@ fn a_face_keeps_its_ring_loop_when_its_vertex_loop_is_unresolved() {
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(loops.len() == 1 && loops[0].ends_with("#5"), "{loops:?}");
+    // The face keeps the loop it read and states that one is not stated.
+    assert!(model.faces[0].loops.is_partial());
     assert!(model
         .bodies
         .iter()

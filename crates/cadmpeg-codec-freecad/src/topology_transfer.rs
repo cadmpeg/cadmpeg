@@ -1278,12 +1278,27 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             }
             loops.push(loop_id);
         }
+        let support_geometry = if loops.is_empty() {
+            self.positions
+                .surface(ir, &surface_id)
+                .map(|surface| &surface.geometry)
+        } else {
+            None
+        };
+        let (face_loops, unstated_on) =
+            cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, support_geometry);
+        if let Some(kind) = unstated_on {
+            self.losses.push(FreecadLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                "payload {} face shape {} states no boundary wire on a {kind}, which no face covers whole: face {face_id} is stated partial",
+                self.payload.id, face_use.shape,
+            )));
+        }
         ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: shell.clone(),
             surface: surface_id,
             sense: sense(face_reversed ^ normal_reversed),
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            loops: face_loops,
             name: None,
             color: None,
             tolerance: PositiveLength::from_assigned_real(tolerance),
