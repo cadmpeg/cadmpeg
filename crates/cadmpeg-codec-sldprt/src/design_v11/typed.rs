@@ -377,7 +377,8 @@ fn sense_assumed(revolves: &[(FeatureId, Option<String>)]) -> Option<LossNote> {
         return None;
     }
     Some(SldprtLossCode::DesignRevolveSenseAssumed.note(format!(
-        "{} revolves turn less than a full turn about the axis direction their record          stores, the other way where the record's reverse byte is 1 (EV-25): {}",
+        "{} revolves turn less than a full turn about the axis direction their record \
+         stores, the other way where the record's reverse byte is 1 (EV-25): {}",
         revolves.len(),
         listed(
             revolves
