@@ -31,7 +31,7 @@ use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
 use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::schema::ArenaRecord;
+use cadmpeg_ir::schema::{ArenaRecord, EntitySchema};
 
 use crate::container::ContainerScan;
 use crate::history::stored_states::{self, Blob};
@@ -412,6 +412,15 @@ impl<'r> Reader<'r, '_> {
             reads.push(read);
         }
         let empty = Topology::default();
+        let outside = outside_references(self.ctx, current.records())?;
+        let unstepped = ids(current.records(), None)
+            .into_iter()
+            .filter(|id| {
+                !histories
+                    .iter()
+                    .any(|history| id.starts_with(&history.space))
+            })
+            .collect::<BTreeSet<_>>();
         let mut previous = reads
             .iter()
             .map(|read| (Some(read.head), &read.head_records))
@@ -525,6 +534,21 @@ impl<'r> Reader<'r, '_> {
                     break;
                 }
                 previous[index] = (target, next);
+            }
+            if unread.is_none() {
+                let stepped = previous
+                    .iter()
+                    .map(|(_, records)| ids(records, None))
+                    .collect::<Vec<_>>();
+                let held = |id: &str| {
+                    unstepped.contains(id) || stepped.iter().any(|records| records.contains(id))
+                };
+                if let Some((record, target)) = dangling(self.ctx, &delta.records, &held, &outside)?
+                {
+                    unread = Some(format!(
+                        "record {record} of the state references {target}, which neither the state nor the document holds"
+                    ));
+                }
             }
             if let Some(reason) = unread {
                 self.losses.push(stop(reason));
@@ -644,6 +668,57 @@ fn ids<'t>(topology: &'t Topology, space: Option<&str>) -> BTreeSet<&'t str> {
     }
     topology_arenas!(collect);
     found
+}
+
+/// The ids outside every arena of `topology` that its records reference.
+fn outside_references(
+    ctx: &DecodeContext<'_>,
+    topology: &Topology,
+) -> Result<HashSet<String>, CodecError> {
+    let inside = ids(topology, None);
+    let mut outside = HashSet::new();
+    macro_rules! visit {
+        ($($field:ident $arm:ident),*) => {$(
+            for record in &topology.$field {
+                record.visit_references(ctx, &mut |target| {
+                    if !inside.contains(target) && !outside.contains(target) {
+                        outside.insert(target.to_owned());
+                    }
+                    Ok(())
+                })?;
+            }
+        )*};
+    }
+    topology_arenas!(visit);
+    Ok(outside)
+}
+
+/// The first record of `records` with a reference to an id that `held` does
+/// not hold and that is not in `outside`, and that id.
+fn dangling(
+    ctx: &DecodeContext<'_>,
+    records: &Topology,
+    held: &dyn Fn(&str) -> bool,
+    outside: &HashSet<String>,
+) -> Result<Option<(String, String)>, CodecError> {
+    let mut found = None;
+    macro_rules! visit {
+        ($($field:ident $arm:ident),*) => {$(
+            for record in &records.$field {
+                if found.is_some() {
+                    break;
+                }
+                record.visit_references(ctx, &mut |target| {
+                    if found.is_none() && !held(target) && !outside.contains(target) {
+                        found = Some((record.record_identity().to_owned(), target.to_owned()));
+                    }
+                    Ok(())
+                })?;
+            }
+        )*};
+    }
+    topology_arenas!(visit);
+    Ok(found)
 }
 
 /// The number of records of `topology`.

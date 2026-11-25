@@ -2,7 +2,7 @@
 //! The change between two stored states of one blob, and the evaluations
 //! and losses of the timeline items of a scope.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
@@ -12,16 +12,16 @@ use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef};
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
-use cadmpeg_ir::ids::{PointId, ProductDefinitionId};
+use cadmpeg_ir::ids::{PointId, ProductDefinitionId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::topology::{Point, Vertex};
 
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::test_support::zip_test::f3d_with_smbh;
 
-use super::{project, step, Scope, Tail, Tails};
+use super::{dangling, project, step, Scope, Tail, Tails};
 
 fn point(name: &str, x: f64) -> Point {
     Point::new(
@@ -200,5 +200,44 @@ fn a_scope_with_configurations_and_no_active_one_states_no_evaluation() {
         losses[0].message.contains(scope.definition.as_str()),
         "{}",
         losses[0].message
+    );
+}
+
+#[test]
+fn a_reference_to_a_record_neither_the_state_nor_the_document_holds_dangles() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("a context");
+    let vertex = Vertex {
+        id: VertexId::mint("f3d:brep:entity#2").expect("identity grammar"),
+        point: point("1", 0.0).id,
+        tolerance: None,
+        native_ref: None,
+    };
+    let records = Topology {
+        vertices: vec![vertex],
+        ..Topology::default()
+    };
+    let outside = HashSet::from(["f3d:brep:entity#1".to_owned()]);
+    assert_eq!(
+        dangling(&ctx, &records, &|_| false, &HashSet::new()).expect("the references"),
+        Some((
+            "f3d:brep:entity#2".to_owned(),
+            "f3d:brep:entity#1".to_owned()
+        ))
+    );
+    assert_eq!(
+        dangling(&ctx, &records, &|_| false, &outside).expect("the references"),
+        None
+    );
+    assert_eq!(
+        dangling(
+            &ctx,
+            &records,
+            &|id| id == "f3d:brep:entity#1",
+            &HashSet::new()
+        )
+        .expect("the references"),
+        None
     );
 }
