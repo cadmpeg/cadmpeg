@@ -19,6 +19,7 @@ pub(crate) fn validate_native(
     };
     let profile_data = super::profile_data::FeatureProfileData::new(&ir.model);
     let mut findings = profile_data.missing_extrudes(&ir.model).map(|feature| Finding {
+ rule: cadmpeg_ir::rule_name!("sldprt/validate.solidworks-extrusion-feature-reference-profile-lacks"),
         related: Vec::new(),
         check: Check::NativeLinks,
         severity: Severity::Warning,
@@ -42,6 +43,7 @@ pub(crate) fn validate_native(
             findings.push(Finding {
                 related: Vec::new(),
                 check: Check::NativeLinks,
+                rule: cadmpeg_ir::rule_name!("sldprt/validate.feature-history-graph"),
                 severity: Severity::Error,
                 message: error.to_string(),
                 entity: Some(history.id.clone()),
@@ -116,6 +118,7 @@ pub(crate) fn validate_native(
                             .into_iter()
                             .collect(),
                         check: Check::NativeLinks,
+                        rule: cadmpeg_ir::rule_name!("sldprt/validate.history-content"),
                         severity: Severity::Error,
                         message,
                         entity: Some(history.id.clone()),
@@ -129,6 +132,9 @@ pub(crate) fn validate_native(
                 .filter(|id| seen_configurations.insert(*id))
             {
                 findings.push(Finding {
+                    rule: cadmpeg_ir::rule_name!(
+                        "sldprt/validate.solidworks-history-root-omits-configuration"
+                    ),
                     related: (missing != history.id.as_str())
                         .then(|| missing.to_owned())
                         .into_iter()
@@ -147,6 +153,9 @@ pub(crate) fn validate_native(
                 .filter(|id| seen_features.insert(*id))
             {
                 findings.push(Finding {
+                    rule: cadmpeg_ir::rule_name!(
+                        "sldprt/validate.solidworks-history-root-omits-feature"
+                    ),
                     related: (missing != history.id.as_str())
                         .then(|| missing.to_owned())
                         .into_iter()
@@ -176,6 +185,9 @@ pub(crate) fn validate_native(
     {
         if feature.input_class.as_deref() != expected_class {
             findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!(
+                    "sldprt/validate.solidworks-history-feature-class-does-not"
+                ),
                 related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -193,6 +205,9 @@ pub(crate) fn validate_native(
         {
             if entity.feature_ref != expected_entity.feature_ref {
                 findings.push(Finding {
+                    rule: cadmpeg_ir::rule_name!(
+                        "sldprt/validate.solidworks-sketch-input-marker-inconsistent-feature"
+                    ),
                     related: Vec::new(),
                     check: Check::NativeLinks,
                     severity: Severity::Error,
@@ -203,6 +218,9 @@ pub(crate) fn validate_native(
             }
             if entity.links != expected_entity.links {
                 findings.push(Finding {
+                    rule: cadmpeg_ir::rule_name!(
+                        "sldprt/validate.solidworks-sketch-input-marker-inconsistent-local"
+                    ),
                     related: Vec::new(),
                     check: Check::NativeLinks,
                     severity: Severity::Error,
@@ -218,6 +236,7 @@ pub(crate) fn validate_native(
 
 fn invalid_namespace(error: &cadmpeg_ir::NativeConvertError) -> Vec<Finding> {
     vec![Finding {
+        rule: cadmpeg_ir::rule_name!("sldprt/validate.invalid-solidworks-native-namespace"),
         related: Vec::new(),
         check: Check::NativeLinks,
         severity: Severity::Error,

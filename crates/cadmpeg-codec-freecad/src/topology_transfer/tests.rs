@@ -1520,7 +1520,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
 #[test]
 fn preserves_an_unbounded_edge_as_a_free_exact_curve() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="PartDesign::Line" name="Axis" id="1"/></Objects>
+<Objects Count="1"><Object type="Part::Feature" name="Axis" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Axis"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Axis.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision

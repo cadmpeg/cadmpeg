@@ -19,7 +19,10 @@ pub(super) fn check_scope(ir: &CadIr, findings: &mut Vec<Finding>) {
             Check::Design,
             Severity::Error,
             None,
-            format_args!("the document breaks the scope invariants: {violation}"),
+            crate::rule!(
+                "design.document-breaks-scope-invariants",
+                "the document breaks the scope invariants: {violation}"
+            ),
         );
     }
 }
@@ -65,7 +68,10 @@ fn check_identities(ir: &CadIr, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!("{arena} record id is not unique among the design records"),
+                crate::rule!(
+                    "design.record-id-not-unique-among-design",
+                    "{arena} record id is not unique among the design records"
+                ),
             );
         }
     });
@@ -85,7 +91,10 @@ fn check_native_refs(index: &DesignRecords<'_>, ids: &ModelIndex<'_>, findings: 
             super::error(
                 findings,
                 owner,
-                format_args!("native_ref `{target}` does not resolve"),
+                crate::rule!(
+                    "design.native-ref-does-not-resolve",
+                    "native_ref `{target}` does not resolve"
+                ),
             );
         }
     };

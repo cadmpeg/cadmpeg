@@ -64,6 +64,7 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
 mod closed_edge_range;
+mod design_content;
 mod encode;
 mod extrusion_directrix;
 mod ownership;
@@ -80,6 +81,7 @@ fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTax
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
+            | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
     )
 }
 
@@ -89,6 +91,7 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxon
         cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
+            | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
     )
 }
 

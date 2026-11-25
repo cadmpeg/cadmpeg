@@ -95,6 +95,9 @@ loss_codes! {
     CardFramingRecovered => "card.framing-recovered",
     /// Directory display, font, or color data was not projected.
     DisplayDataNotProjected => "presentation.display-data-not-projected",
+    /// A blanked carrier that no topology uses states no color, so no
+    /// appearance binding states its blank status.
+    FreeGeometryBlankStatusNotStated => "presentation.free-geometry-blank-status-not-stated",
     /// A drawing has conflicting valid properties of the same form.
     DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
     /// A body owner has conflicting valid Type 406 Form 15 names.
@@ -137,7 +140,8 @@ loss_codes! {
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
     /// An unowned dependent edge was withheld.
     WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
-    /// Free-geometry points or vertices have no topology output.
+    /// Free-geometry points or vertices have no topology output, or an
+    /// analytic surface on no face has no bounded output.
     WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
     /// Free edges or curves that duplicate a written carrier were not written.
     WriterDuplicateCarrierOmitted => "writer.duplicate-carrier-omitted",
@@ -190,6 +194,7 @@ impl IgesLossCode {
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
+            | Self::FreeGeometryBlankStatusNotStated
             | Self::DrawingPropertyAmbiguous
             | Self::BodyNameAmbiguous
             | Self::LineWeightScaleUnavailable
@@ -242,6 +247,7 @@ impl IgesLossCode {
             }
             Self::DrawingPropertyAmbiguous
             | Self::BodyNameAmbiguous
+            | Self::FreeGeometryBlankStatusNotStated
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
@@ -347,6 +353,7 @@ mod tests {
                 "parameter.data-quarantined",
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",
+                "presentation.free-geometry-blank-status-not-stated",
                 "presentation.drawing-property-ambiguous",
                 "presentation.body-name-ambiguous",
                 "presentation.line-weight-scale-unavailable",

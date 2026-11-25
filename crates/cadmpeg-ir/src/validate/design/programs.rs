@@ -29,7 +29,8 @@ pub(super) fn check_programs(index: &DesignRecords<'_>, findings: &mut Vec<Findi
                 super::error(
                     findings,
                     parameter.id.as_str(),
-                    format_args!(
+                    crate::rule!(
+                        "design.parameter-assigned-no-program-design",
                         "parameter is assigned by {}, which is no program of the design",
                         program.as_str()
                     ),
@@ -58,7 +59,8 @@ pub(super) fn check_programs(index: &DesignRecords<'_>, findings: &mut Vec<Findi
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.program-assigns-definition-not-assigned-program",
                         "program assigns {}, whose definition is not `assigned` by this program",
                         target_text(target)
                     ),
@@ -70,7 +72,10 @@ pub(super) fn check_programs(index: &DesignRecords<'_>, findings: &mut Vec<Findi
                 super::error(
                     findings,
                     id,
-                    format_args!("program assigns {parameter} on no path"),
+                    crate::rule!(
+                        "design.program-assigns-no-path",
+                        "program assigns {parameter} on no path"
+                    ),
                 );
             }
         }
@@ -90,20 +95,29 @@ fn check_owner(index: &DesignRecords<'_>, program: &ParameterProgram, findings: 
         super::error(
             findings,
             id,
-            format_args!("program's owner {owner} is no feature of the design"),
+            crate::rule!(
+                "design.program-owner-no-feature-design",
+                "program's owner {owner} is no feature of the design"
+            ),
         );
     } else if index.scope_of(MemberKey::Feature(owner)) != Some(scope) {
         super::error(
             findings,
             id,
-            format_args!("program's owner {owner} is no feature of its scope {scope}"),
+            crate::rule!(
+                "design.program-owner-no-feature-scope",
+                "program's owner {owner} is no feature of its scope {scope}"
+            ),
         );
     }
     if let Some(stage) = &program.stage {
         super::error(
             findings,
             id,
-            format_args!("program has an owner and states the stage {stage:?}"),
+            crate::rule!(
+                "design.program-owner-states-stage",
+                "program has an owner and states the stage {stage:?}"
+            ),
         );
     }
 }
@@ -121,7 +135,7 @@ fn check_external_references(id: &str, statements: &[Statement], findings: &mut 
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!("design.program-assigns-document-does-not-hold", 
                             "program assigns {}, which the document does not hold; its body is `source`",
                             target_text(target)
                         ),
@@ -144,7 +158,7 @@ fn check_external_references(id: &str, statements: &[Statement], findings: &mut 
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("design.program-reads-document-does-not-hold", 
                         "program reads {} in {place}, which the document does not hold; it reads a minted parameter",
                         target_text(reference)
                     ),

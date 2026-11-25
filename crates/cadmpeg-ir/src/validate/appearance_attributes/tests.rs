@@ -457,3 +457,25 @@ fn two_bindings_of_one_target_with_different_appearances_are_a_warning() {
         .collect();
     assert_eq!(warned, [Some("test:model:appearance-binding#2")]);
 }
+
+#[test]
+fn two_unresolved_bindings_with_different_appearances_name_no_one_target() {
+    let mut ir = assembly();
+    let mut other = appearance();
+    other.id = AppearanceId::mint("test:model:appearance#2").unwrap();
+    ir.model.appearances.push(other.clone());
+    let mut first = binding(AppearanceTarget::Unresolved);
+    first.source_entity_id = Some("#10".into());
+    let mut second = binding(AppearanceTarget::Unresolved);
+    second.id = "test:model:appearance-binding#2".try_into().unwrap();
+    second.source_entity_id = Some("#20".into());
+    second.appearance = other.id;
+    ir.model.appearance_bindings.extend([first, second]);
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    assert!(
+        findings
+            .iter()
+            .all(|finding| !finding.message.contains("same target, path, and state")),
+        "{findings:?}"
+    );
+}

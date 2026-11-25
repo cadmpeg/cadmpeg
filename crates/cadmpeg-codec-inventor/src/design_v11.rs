@@ -118,6 +118,7 @@ pub(crate) fn validate_states(
     let mut fail = |message: String, entity: Option<String>| {
         findings.push(cadmpeg_ir::report::check::Finding {
             check: cadmpeg_ir::report::check::Check::NativeLinks,
+            rule: cadmpeg_ir::rule_name!("inventor/design_v11.state-admission"),
             severity: cadmpeg_ir::report::Severity::Error,
             message,
             entity,
@@ -217,6 +218,9 @@ pub(crate) fn validate_operations(
         .err()
         .unwrap_or_else(|| "exact scalar values differ".to_owned());
     Ok(vec![cadmpeg_ir::report::check::Finding {
+        rule: cadmpeg_ir::rule_name!(
+            "inventor/design_v11.inventor-v11-design-differs-admitted-source"
+        ),
         check: cadmpeg_ir::report::check::Check::NativeLinks,
         severity: cadmpeg_ir::report::Severity::Error,
         message: format!("Inventor v11 design differs from its admitted source operands: {detail}"),
