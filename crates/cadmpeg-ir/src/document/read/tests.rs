@@ -179,3 +179,103 @@ fn another_version_other_units_and_no_object_refuse_the_read() {
         Err(ReadFailure::Malformed(_))
     ));
 }
+
+/// The text of `ir` with the last character of the id of point 0, in that
+/// point's record, made an invalid UTF-8 byte.
+fn point_id_corrupted(ir: &CadIr) -> Vec<u8> {
+    let text = serde_json::to_string(ir).unwrap();
+    let point = serde_json::to_string(&ir.geometry.points[0]).unwrap();
+    assert_eq!(text.matches(&point).count(), 1);
+    let id = ir.geometry.points[0].id.as_str();
+    let stated = format!("\"id\":\"{id}\"");
+    let corrupt = format!("\"id\":\"{}\u{1}\"", &id[..id.len() - 1]);
+    let point_corrupt = point.replacen(&stated, &corrupt, 1);
+    assert_ne!(point, point_corrupt);
+    text.replacen(&point, &point_corrupt, 1)
+        .into_bytes()
+        .into_iter()
+        .map(|byte| if byte == 1 { 0xFF } else { byte })
+        .collect()
+}
+
+#[test]
+fn an_id_with_an_invalid_utf8_sequence_is_given_up_and_the_rest_is_read() {
+    let ir = unit_cube().unwrap();
+    let read = read(&point_id_corrupted(&ir));
+    assert_eq!(read.document.geometry.points[..], ir.geometry.points[1..]);
+    assert_eq!(codes(&read.report), ["decode/record.unreadable"]);
+    assert!(read.report[0].message.contains("geometry.points[0]"));
+    assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 1);
+}
+
+#[test]
+fn an_omitted_collection_beside_an_unknown_member_is_given_up() {
+    let (ir, mut value) = wire();
+    let root = value.as_object_mut().unwrap();
+    let geometry = root.remove("geometry").unwrap();
+    root.insert("geom".into(), geometry);
+    let read = read(value.to_string().as_bytes());
+    assert!(read.document.geometry.points.is_empty());
+    assert_eq!(read.document.model, ir.model);
+    let mut codes = codes(&read.report);
+    codes.sort();
+    assert_eq!(codes, ["decode/record.unreadable", "read/member.ignored"]);
+    assert!(read
+        .report
+        .iter()
+        .all(|entry| !entry.message.contains("is read as empty")));
+}
+
+#[test]
+fn a_member_in_another_case_beside_its_exact_name_is_one_member_stated_twice() {
+    let (ir, mut value) = wire();
+    let root = value.as_object_mut().unwrap();
+    let fragment = root["fragment"].clone();
+    root.insert("Fragment".into(), fragment);
+    let read_one = read(value.to_string().as_bytes());
+    assert_eq!(read_one.document, ir);
+    assert_eq!(
+        codes(&read_one.report),
+        ["read/spelling.normalized", "read/spelling.normalized"]
+    );
+
+    let root = value.as_object_mut().unwrap();
+    let other = !root["fragment"].as_bool().unwrap();
+    root.insert("Fragment".into(), json!(other));
+    let read_two = read(value.to_string().as_bytes());
+    let mut codes_two = codes(&read_two.report);
+    codes_two.sort();
+    assert_eq!(
+        codes_two,
+        ["read/record.repeated", "read/spelling.normalized"]
+    );
+
+    let (ir, mut value) = wire();
+    let point = points(&mut value)[0].as_object_mut().unwrap();
+    point.insert("Position".into(), json!({"x": 9.0, "y": 9.0, "z": 9.0}));
+    let read_record = read(value.to_string().as_bytes());
+    assert_eq!(
+        read_record.document.geometry.points[..],
+        ir.geometry.points[1..]
+    );
+    assert!(codes(&read_record.report)
+        .iter()
+        .all(|code| code == "read/record.repeated"));
+}
+
+#[test]
+fn a_key_restated_with_different_values_in_a_kept_record_is_given_up_as_parts() {
+    let mut ir = unit_cube().unwrap();
+    ir.geometry.points[0].native_ref = None;
+    let text = serde_json::to_string(&ir).unwrap();
+    let point = serde_json::to_string(&ir.geometry.points[0]).unwrap();
+    assert_eq!(text.matches(&point).count(), 1);
+    let restated = format!(
+        "{},\"native_ref\":\"a\",\"native_ref\":\"b\"}}",
+        &point[..point.len() - 1]
+    );
+    let read = read(text.replacen(&point, &restated, 1).as_bytes());
+    assert_eq!(read.document.geometry, ir.geometry);
+    assert_eq!(codes(&read.report), ["read/record.repeated"]);
+    assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 2);
+}

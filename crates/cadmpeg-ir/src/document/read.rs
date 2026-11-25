@@ -163,11 +163,28 @@ struct Reader<'r, 'a> {
 /// The members of one object, by the name the reader reads each under.
 struct Members {
     named: BTreeMap<&'static str, Span>,
+    /// Whether the object closes before the text stops being JSON.
+    closed: bool,
+    /// Whether the object holds a member the reader does not know.
+    ignored: bool,
+    /// The names given up because the object states them twice with
+    /// different values.
+    repeated: Vec<String>,
 }
 
 impl Members {
     fn take(&mut self, name: &str) -> Option<Span> {
         self.named.remove(name)
+    }
+
+    /// The members of an object the reader gave up or never opened.
+    fn unread() -> Self {
+        Self {
+            named: BTreeMap::new(),
+            closed: false,
+            ignored: false,
+            repeated: Vec::new(),
+        }
     }
 }
 
@@ -324,6 +341,7 @@ impl Reader<'_, '_> {
         };
         let mut notes = Vec::new();
         let mut repeated = false;
+        let mut copies = Vec::new();
         for found in found {
             notes.push(match found {
                 Found::Replaced(at) => ReadLossCode::ValueNormalized.note(format!(
@@ -332,8 +350,10 @@ impl Reader<'_, '_> {
                 Found::Restated(key) => ReadLossCode::SpellingNormalized.note(format!(
                     "{path}: key `{key}` is stated more than once with one value"
                 )),
-                Found::Conflicting { key, positions } => {
+                Found::Conflicting { key, copies: extents } => {
                     repeated = true;
+                    let positions: Vec<usize> = extents.iter().map(|(start, _)| *start).collect();
+                    copies.extend(extents.into_iter().map(|extent| (key.clone(), extent)));
                     ReadLossCode::RecordRepeated.note(format!(
                         "{path}: key `{key}` is stated at offsets {positions:?} with different values; no copy is kept"
                     ))
@@ -347,6 +367,21 @@ impl Reader<'_, '_> {
                 Ok(read) => {
                     self.report.append(&mut notes);
                     self.repaired(path, repairs);
+                    for (key, (start, end)) in &copies {
+                        let copy = Span {
+                            start: *start,
+                            end: *end,
+                            closed: true,
+                            depth: 0,
+                        };
+                        // discarded-value: `record.repeated` charges the key.
+                        let _ = self.give_up_part(
+                            copy,
+                            &format!("{path}.{key}"),
+                            classes,
+                            "a restated key",
+                        );
+                    }
                     return Some(read);
                 }
                 Err(error) => error,
@@ -365,6 +400,27 @@ impl Reader<'_, '_> {
                                 ReadLossCode::SpellingNormalized
                                     .note(format!("{path}: member `{from}` is read as `{to}`")),
                             );
+                            true
+                        }
+                        Some(repair::MemberRepair::Restated {
+                            from,
+                            to,
+                            one_value: true,
+                        }) => {
+                            notes.push(ReadLossCode::SpellingNormalized.note(format!(
+                                "{path}: member `{from}` restates `{to}` with one value"
+                            )));
+                            true
+                        }
+                        Some(repair::MemberRepair::Restated {
+                            from,
+                            to,
+                            one_value: false,
+                        }) => {
+                            repeated = true;
+                            notes.push(ReadLossCode::RecordRepeated.note(format!(
+                                "{path}: members `{from}` and `{to}` state one member with different values; no copy is kept"
+                            )));
                             true
                         }
                         Some(repair::MemberRepair::Ignored(name)) => {
@@ -390,7 +446,7 @@ impl Reader<'_, '_> {
                     }
                 }
                 Some(repair::Refusal::MissingField(name))
-                    if !ignored && self.collection::<T>(&mut value, &name) =>
+                    if !ignored && !repeated && self.collection::<T>(&mut value, &name) =>
                 {
                     notes.push(ReadLossCode::SpellingNormalized.note(format!(
                         "{path}: the omitted collection `{name}` is read as empty"
@@ -475,7 +531,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                 }));
             }
         }
-        let mut root = self.members("the root", members, ROOT_MEMBERS);
+        let mut root = self.members("the root", members, ROOT_MEMBERS, root_closed);
         let version = root
             .take("ir_version")
             .and_then(|span| self.plain::<Value>(span));
@@ -515,7 +571,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             let mut home = self.home(&mut root, "process", Process::READ_FIELDS);
             Process::read_from(&mut home)
         };
-        let native = self.native(root.take("native"));
+        let native = self.native(&mut root);
         if let Some(limit) = self.refusal {
             return Err(ReadFailure::ResourceLimit(limit));
         }
@@ -587,7 +643,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             if let Some(value) = self.value(span, name, 1, &[]) {
                 return value;
             }
-        } else {
+        } else if !root.repeated.iter().any(|repeated| repeated == name) {
             self.report.push(LossNote::new(
                 record_unreadable_kind(),
                 format!("the root: the required member `{name}` is missing; its default is stated"),
@@ -611,48 +667,94 @@ impl<'r, 'a> Reader<'r, 'a> {
 
     /// Resolves the members of an object to the names of its type: a key that
     /// differs from exactly one name only in letter case is read as that
-    /// name; a key stated more than once is read once where every copy holds
-    /// one value and given up otherwise; any other key is not stated.
-    fn members(&mut self, path: &str, members: Vec<Member>, known: &[&'static str]) -> Members {
-        let distinct = self.distinct(path, members);
-        let mut named = BTreeMap::new();
-        let stated: Vec<String> = distinct.iter().map(|(key, _)| key.clone()).collect();
-        for (key, span) in distinct {
-            if let Some(name) = known.iter().find(|name| **name == key) {
-                named.insert(*name, span);
-                continue;
-            }
-            let mut folded = known.iter().filter(|name| {
-                name.eq_ignore_ascii_case(&key) && !stated.iter().any(|stated| stated == **name)
-            });
-            match (folded.next(), folded.next()) {
-                (Some(name), None) if !named.contains_key(name) => {
+    /// name; a name stated more than once, in any letter case, is read once
+    /// where every copy holds one value and given up otherwise; any other key
+    /// is not stated. `closed` states whether the object closes.
+    fn members(
+        &mut self,
+        path: &str,
+        members: Vec<Member>,
+        known: &[&'static str],
+        closed: bool,
+    ) -> Members {
+        let mut ignored = false;
+        let mut read = Vec::with_capacity(members.len());
+        for mut member in members {
+            if !member.key_invalid && !known.contains(&member.key.as_str()) {
+                let mut folded = known
+                    .iter()
+                    .filter(|name| name.eq_ignore_ascii_case(&member.key));
+                if let (Some(name), None) = (folded.next(), folded.next()) {
                     self.note(
                         ReadLossCode::SpellingNormalized,
-                        format!("{path}: member `{key}` is read as `{name}`"),
+                        format!("{path}: member `{}` is read as `{name}`", member.key),
                     );
-                    named.insert(*name, span);
+                    (*name).clone_into(&mut member.key);
+                } else {
+                    ignored = true;
+                    self.note(
+                        ReadLossCode::MemberIgnored,
+                        format!(
+                            "{path}: member `{}` is no member of {path} and is not stated{}",
+                            member.key,
+                            if path == "model" {
+                                super::legacy::omitted_arena_hint(&member.key)
+                            } else {
+                                String::new()
+                            }
+                        ),
+                    );
+                    continue;
                 }
-                _ => self.note(
-                    ReadLossCode::MemberIgnored,
-                    format!(
-                        "{path}: member `{key}` is no member of {path} and is not stated{}",
-                        if path == "model" {
-                            super::legacy::omitted_arena_hint(&key)
-                        } else {
-                            String::new()
-                        }
-                    ),
-                ),
             }
+            read.push(member);
         }
-        Members { named }
+        let (distinct, repeated) = self.distinct(path, read);
+        let named = distinct
+            .into_iter()
+            .filter_map(|(key, span)| {
+                known
+                    .iter()
+                    .find(|name| **name == key)
+                    .map(|name| (*name, span))
+            })
+            .collect();
+        Members {
+            named,
+            closed,
+            ignored,
+            repeated,
+        }
+    }
+
+    /// Charges the omitted member `name` of `holder`: read as empty where the
+    /// object closes and holds no member the reader does not know, and given
+    /// up otherwise (§3.3). A name given up as repeated, or one past the
+    /// point where the text stops being JSON, charges nothing more.
+    fn omitted(&mut self, holder: &Members, path: &str, name: &str) {
+        if holder.repeated.iter().any(|repeated| repeated == name) || !holder.closed {
+            return;
+        }
+        if holder.ignored {
+            self.report.push(LossNote::new(
+                record_unreadable_kind(),
+                format!(
+                    "{path}: the omitted collection `{name}` has no one reading: {path} holds a \
+                     member the reader does not know"
+                ),
+            ));
+        } else {
+            self.note(
+                ReadLossCode::SpellingNormalized,
+                format!("{path}: the omitted collection `{name}` is read as empty"),
+            );
+        }
     }
 
     /// The members of an object, each key once: a restated key is read once
     /// where every copy holds one value, and given up otherwise. A key that
     /// holds an invalid UTF-8 sequence is given up.
-    fn distinct(&mut self, path: &str, members: Vec<Member>) -> Vec<(String, Span)> {
+    fn distinct(&mut self, path: &str, members: Vec<Member>) -> (Vec<(String, Span)>, Vec<String>) {
         let mut copies: BTreeMap<String, Vec<(usize, Span)>> = BTreeMap::new();
         let mut order = Vec::new();
         for member in members {
@@ -675,6 +777,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             entry.push((member.at, member.value));
         }
         let mut distinct = Vec::with_capacity(order.len());
+        let mut repeated = Vec::new();
         for key in order {
             let copies = copies.remove(&key).unwrap_or_default();
             let Some(&(_, first)) = copies.first() else {
@@ -699,6 +802,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                             "{path}: key `{key}` is stated at offsets {positions:?} with different values; no copy is kept"
                         ),
                     );
+                    repeated.push(key);
                     continue;
                 }
                 self.note(
@@ -710,7 +814,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             }
             distinct.push((key, first));
         }
-        distinct
+        (distinct, repeated)
     }
 
     /// Whether two parts hold one value.
@@ -741,37 +845,40 @@ impl<'r, 'a> Reader<'r, 'a> {
         };
         let members = match root.take(name) {
             None => {
-                self.note(
-                    ReadLossCode::SpellingNormalized,
-                    format!("the root: the omitted collection `{name}` is read as empty"),
-                );
-                BTreeMap::new()
+                self.omitted(root, "the root", name);
+                Members::unread()
             }
             Some(span) => match self.object(span, name, &[class]) {
-                Some(members) => self.members(name, members, known).named,
-                None => BTreeMap::new(),
+                Some((members, closed)) => self.members(name, members, known, closed),
+                None => Members::unread(),
             },
         };
         Home {
             reader: self,
             path: name,
             class,
-            members: Members { named: members },
+            members,
             spans: BTreeMap::new(),
         }
     }
 
-    /// Frames the members of the object `span` holds, or gives up a part
-    /// that holds no object.
-    fn object(&mut self, span: Span, path: &str, classes: &[ArenaClass]) -> Option<Vec<Member>> {
+    /// Frames the members of the object `span` holds, with whether it
+    /// closes, or gives up a part that holds no object.
+    fn object(
+        &mut self,
+        span: Span,
+        path: &str,
+        classes: &[ArenaClass],
+    ) -> Option<(Vec<Member>, bool)> {
         let mut scanner = Scanner::new(self.bytes, span.start);
         if !scanner.next_is(b'{') {
             self.give_up(span, path, classes, "it holds no object");
             return None;
         }
         let (members, stop) = scanner.members();
+        let closed = stop.is_none();
         self.stopped(stop);
-        Some(members)
+        Some((members, closed))
     }
 
     /// Reads the records of one arena, sorted by id, with each id once, and
@@ -779,18 +886,11 @@ impl<'r, 'a> Reader<'r, 'a> {
     fn arena<T: DeserializeOwned>(
         &mut self,
         path: &str,
-        span: Option<Span>,
+        span: Span,
         enclosing: usize,
         class: ArenaClass,
         id: fn(&T) -> &str,
     ) -> Vec<(T, Span)> {
-        let Some(span) = span else {
-            self.note(
-                ReadLossCode::SpellingNormalized,
-                format!("{path}: the omitted collection is read as empty"),
-            );
-            return Vec::new();
-        };
         let mut scanner = Scanner::new(self.bytes, span.start);
         if !scanner.next_is(b'[') {
             self.give_up(span, path, &[class], "it holds no array");
@@ -884,19 +984,16 @@ impl<'r, 'a> Reader<'r, 'a> {
         kept
     }
 
-    fn native(&mut self, span: Option<Span>) -> Native {
+    fn native(&mut self, root: &mut Members) -> Native {
         let mut native = Native::default();
-        let Some(span) = span else {
-            self.note(
-                ReadLossCode::SpellingNormalized,
-                "the root: the omitted collection `native` is read as empty".to_owned(),
-            );
+        let Some(span) = root.take("native") else {
+            self.omitted(root, "the root", "native");
             return native;
         };
-        let Some(members) = self.object(span, "native", &[ArenaClass::Model]) else {
+        let Some((members, _)) = self.object(span, "native", &[ArenaClass::Model]) else {
             return native;
         };
-        for (key, span) in self.distinct("native", members) {
+        for (key, span) in self.distinct("native", members).0 {
             let path = format!("native.{key}");
             let Some(codec) = CodecId::new(key.clone()) else {
                 self.give_up(
@@ -907,10 +1004,10 @@ impl<'r, 'a> Reader<'r, 'a> {
                 );
                 continue;
             };
-            let Some(arenas) = self.object(span, &path, &[ArenaClass::Model]) else {
+            let Some((arenas, _)) = self.object(span, &path, &[ArenaClass::Model]) else {
                 continue;
             };
-            for (name, span) in self.distinct(&path, arenas) {
+            for (name, span) in self.distinct(&path, arenas).0 {
                 let arena_path = format!("{path}.{name}");
                 let Some(name) = NonBlankString::new(name) else {
                     self.give_up(
@@ -922,13 +1019,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                     continue;
                 };
                 let records = self
-                    .arena(
-                        &arena_path,
-                        Some(span),
-                        3,
-                        ArenaClass::Model,
-                        NativeRecord::id,
-                    )
+                    .arena(&arena_path, span, 3, ArenaClass::Model, NativeRecord::id)
                     .into_iter()
                     .map(|(record, _)| record)
                     .collect();
@@ -981,7 +1072,10 @@ impl Home<'_, '_, '_> {
         name: &str,
         id: fn(&T) -> &str,
     ) -> Vec<(T, Span)> {
-        let span = self.members.take(name);
+        let Some(span) = self.members.take(name) else {
+            self.reader.omitted(&self.members, self.path, name);
+            return Vec::new();
+        };
         let path = format!("{}.{name}", self.path);
         self.reader.arena(&path, span, 2, self.class, id)
     }
@@ -995,10 +1089,7 @@ impl Home<'_, '_, '_> {
                 .value(span, &path, 2, &[self.class])
                 .unwrap_or_default(),
             None => {
-                self.reader.note(
-                    ReadLossCode::SpellingNormalized,
-                    format!("{path}: the omitted collection is read as empty"),
-                );
+                self.reader.omitted(&self.members, self.path, name);
                 T::default()
             }
         }
