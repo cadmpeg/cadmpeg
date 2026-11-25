@@ -3309,13 +3309,18 @@ impl CadIr {
     /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
     ///
     /// The text is written through the same finite adapter the digest uses, so
-    /// a non-finite float is refused rather than written as `null`. The CADIR
+    /// a non-finite float is refused rather than written as `null`.
+    ///
+    /// §2.8 has serialization refuse no value of a checked type. A document
+    /// that holds a non-finite float or nests past a bound of §2.5 is outside
+    /// the `CadIr` type, so these refusals fall outside that rule. The CADIR
     /// encoder is the writer that drops what CADIR cannot hold (§3.4).
     ///
     /// # Errors
     ///
-    /// Refuses a document holding a non-finite float, or nesting past a bound
-    /// of §2.5.
+    /// [`CanonicalJsonError::NonFinite`] for a document holding a non-finite
+    /// float, and [`CanonicalJsonError::PastBound`] for a document nesting
+    /// past a bound of §2.5.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         canonical.finalize();
@@ -3335,12 +3340,7 @@ impl CadIr {
             }))
             .next();
         if let Some((at, bound)) = past {
-            return Err(CanonicalJsonError::Serialize(
-                <serde_json::Error as serde::ser::Error>::custom(format_args!(
-                    "the document {} {at}",
-                    bound.describe()
-                )),
-            ));
+            return Err(CanonicalJsonError::PastBound { bound, at });
         }
         String::from_utf8(bytes).map_err(|error| {
             CanonicalJsonError::Serialize(<serde_json::Error as serde::ser::Error>::custom(error))

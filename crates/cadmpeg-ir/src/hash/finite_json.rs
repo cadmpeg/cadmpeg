@@ -37,6 +37,15 @@ pub enum CanonicalJsonError {
     /// The value does not serialize as canonical JSON.
     #[error("canonical JSON serialization: {0}")]
     Serialize(serde_json::Error),
+    /// The document nests past a depth bound of a CADIR document (§2.5).
+    #[error("the document {} {at}", .bound.describe())]
+    PastBound {
+        /// The bound the document passes.
+        bound: crate::bounds::Bound,
+        /// Where the document passes it: the record, or the field outside
+        /// every record.
+        at: String,
+    },
 }
 
 impl From<FiniteJsonError> for CanonicalJsonError {

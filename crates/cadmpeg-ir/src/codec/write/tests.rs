@@ -1200,7 +1200,13 @@ fn the_cadir_writer_restates_an_expression_past_its_bound() {
         "past",
         crate::bounds::MAX_EXPRESSION_DEPTH + 1,
     ));
-    assert!(ir.to_canonical_json().is_err());
+    assert!(matches!(
+        ir.to_canonical_json(),
+        Err(crate::hash::finite_json::CanonicalJsonError::PastBound {
+            bound: crate::bounds::Bound::Expression,
+            ..
+        })
+    ));
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("a record past a bound does not refuse the write");
