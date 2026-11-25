@@ -111,25 +111,28 @@ pub(crate) fn name_marker(payload: &[u8]) -> [u8; 5] {
 fn payload_name_candidates(
     payload: &[u8],
 ) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
-    let name_marker = name_marker(payload);
-    payload
-        .windows(name_marker.len())
-        .enumerate()
-        .filter_map(move |(offset, marker)| (marker == name_marker).then_some(offset))
-        .filter_map(move |offset| {
-            let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let start = offset + NAME_MARKER.len() + 1;
-            let end = start.checked_add(length.checked_mul(2)?)?;
-            let units = payload.get(start..end)?;
-            let object_id = end
-                .checked_add(8)
-                .and_then(|position| View::u32_le_at(payload, position))
-                .and_then(|value| ObjectId::try_from(value).ok());
-            Some((offset, object_id, units))
-        })
+    let finder = memchr::memmem::Finder::new(&name_marker(payload)).into_owned();
+    let mut cursor = 0usize;
+    std::iter::from_fn(move || {
+        let relative = finder.find(payload.get(cursor..)?)?;
+        let offset = cursor + relative;
+        cursor = offset + 1;
+        Some(offset)
+    })
+    .filter_map(move |offset| {
+        let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
+        if !(1..=128).contains(&length) {
+            return None;
+        }
+        let start = offset + NAME_MARKER.len() + 1;
+        let end = start.checked_add(length.checked_mul(2)?)?;
+        let units = payload.get(start..end)?;
+        let object_id = end
+            .checked_add(8)
+            .and_then(|position| View::u32_le_at(payload, position))
+            .and_then(|value| ObjectId::try_from(value).ok());
+        Some((offset, object_id, units))
+    })
 }
 
 fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
@@ -140,24 +143,20 @@ fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId
 }
 
 fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
-    payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
-        .filter_map(|offset| {
-            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let bytes = payload.get(offset + 6..offset + 6 + length)?;
-            if !bytes
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            {
-                return None;
-            }
-            Some((offset, std::str::from_utf8(bytes).ok()?))
-        })
+    memchr::memmem::find_iter(payload, &CLASS_MARKER).filter_map(|offset| {
+        let length = usize::from(View::u16_le_at(payload, offset + 4)?);
+        if !(1..=128).contains(&length) {
+            return None;
+        }
+        let bytes = payload.get(offset + 6..offset + 6 + length)?;
+        if !bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            return None;
+        }
+        Some((offset, std::str::from_utf8(bytes).ok()?))
+    })
 }
 
 pub(crate) fn class_declarations_match(
@@ -226,30 +225,26 @@ pub(crate) fn first_object_name_value_mismatch<'a>(
 /// class declaration directly followed by a repeated-class token and the
 /// UTF-16 name prefix `ff fe ff`.
 fn name_class_token(payload: &[u8]) -> Option<u16> {
-    payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter(|(_, window)| *window == CLASS_MARKER)
-        .find_map(|(offset, _)| {
-            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let name = payload.get(offset + 6..offset + 6 + length)?;
-            if !name.iter().all(u8::is_ascii_graphic) {
-                return None;
-            }
-            let token_offset = offset + 6 + length;
-            let token = View::u16_le_at(payload, token_offset)?;
-            if !is_class_token(token) {
-                return None;
-            }
-            if payload.get(token_offset + 2..token_offset + 5) != Some(&[0xff, 0xfe, 0xff]) {
-                return None;
-            }
-            let units = usize::from(*payload.get(token_offset + 5)?);
-            (1..=128).contains(&units).then_some(token)
-        })
+    memchr::memmem::find_iter(payload, &CLASS_MARKER).find_map(|offset| {
+        let length = usize::from(View::u16_le_at(payload, offset + 4)?);
+        if !(1..=128).contains(&length) {
+            return None;
+        }
+        let name = payload.get(offset + 6..offset + 6 + length)?;
+        if !name.iter().all(u8::is_ascii_graphic) {
+            return None;
+        }
+        let token_offset = offset + 6 + length;
+        let token = View::u16_le_at(payload, token_offset)?;
+        if !is_class_token(token) {
+            return None;
+        }
+        if payload.get(token_offset + 2..token_offset + 5) != Some(&[0xff, 0xfe, 0xff]) {
+            return None;
+        }
+        let units = usize::from(*payload.get(token_offset + 5)?);
+        (1..=128).contains(&units).then_some(token)
+    })
 }
 
 pub(crate) fn class_declarations(

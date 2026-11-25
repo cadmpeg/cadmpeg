@@ -34,10 +34,7 @@ pub(super) fn append(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let payload = section.payload();
-    for (offset, bytes) in payload.windows(TOKEN.len()).enumerate() {
-        if bytes != TOKEN {
-            continue;
-        }
+    for offset in memchr::memmem::find_iter(payload, TOKEN) {
         let Some(values) = values(payload, offset) else {
             continue;
         };
