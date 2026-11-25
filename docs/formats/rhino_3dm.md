@@ -3019,10 +3019,10 @@ curve for each child. The composite's parameter range is `[t[0], t[n]]`. Each
 segment keeps the direction of its child, and the segments state no
 continuity. Each child carrier takes its polycurve interval as its parameter
 domain: a NURBS child by an affine map of its knots, and a child of another
-form by its exact NURBS form. A child whose domain length equals its interval
-keeps its form. Child geometry is converted to millimetres; child and
+form by its exact NURBS form. A child whose domain equals its interval keeps
+its form. Child geometry is converted to millimetres; child and
 polycurve parameters, the reserved values, and the reserved bounds are not
-converted. The parent retains the source object record. A bounded child gap is
+scaled. The parent retains the source object record. A bounded child gap is
 represented by the midpoint join repair and emits its geometry warning; a
 malformed child or parameter array does not enter the typed composite curve.
 
@@ -3705,12 +3705,21 @@ surface normal. A region face-side direction identifies the side that contains
 the region and does not replace the face orientation.
 
 The trims of an outer loop run counterclockwise in the surface parameters,
-about the surface normal, on a face of either `reversed surface` value. A
+about the surface normal, on a face of either `reversed surface` value. A trim
+taken in its face's sense runs in its stored direction on a face with
+`reversed surface` 0 and in the opposite direction on a face with
+`reversed surface` 1. Two trims that share an edge run in opposite directions
+along it when each is taken in its face's sense. Where exactly one of the two
+faces has `reversed surface` 1, the two stored trims run in the same direction
+along the edge.
+
+A trim uses its C2 curve over the proxy domain, in the C2 curve's direction
+when `proxy reversed` is 0 and in the opposite direction when it is 1. A
 CADIR loop runs about the face normal. On a face with `reversed surface` 1,
-CADIR states each loop with the trims in reverse order, each coedge in the
-direction opposite to its trim, and each pcurve use over its trim domain in
-decreasing order. Two trims that share an edge run in opposite directions
-along it.
+CADIR states each loop with the trims in reverse order and each coedge in the
+direction opposite to its trim. Each pcurve use states the proxy domain in
+decreasing order when exactly one of `proxy reversed` and `reversed surface`
+is 1, and in increasing order otherwise.
 
 Negative material channels map to zero. A vertex, edge, trim, loop, or face
 array position is authoritative and replaces a disagreeing stored positional

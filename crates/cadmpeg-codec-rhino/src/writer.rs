@@ -595,21 +595,20 @@ fn brep_scope(
     }
 }
 
-/// The Breps `scope` is written as, and each face left out with the reason.
-/// The carriers take their 3DM form ([`convert::convert_scope`]); the faces
+/// The Breps `scope` is written as, with the converted scope's findings
+/// ([`convert::convert_scope`]). The carriers take their 3DM form; the faces
 /// left are written as one Brep for each edge-connected set of them. A solid
-/// that loses a face or an edge join is written as a sheet. Also returns each
-/// edge written as one edge for each use.
+/// that loses a face or an edge join is written as a sheet.
 fn brep_pieces(
     ctx: &DecodeContext<'_>,
     compounds: &convert::CompoundIndex<'_>,
     scope: &BrepScope,
-) -> (Vec<BrepScope>, Vec<(String, String)>, Vec<String>) {
+) -> (Vec<BrepScope>, convert::ScopeFindings) {
     use cadmpeg_ir::topology::BodyKind;
 
-    let converted = convert::convert_scope(ctx, compounds, &scope.ir);
-    let mut ir = converted.ir;
-    if !converted.dropped.is_empty() || !converted.unjoined.is_empty() {
+    let convert::ConvertedScope { mut ir, findings } =
+        convert::convert_scope(ctx, compounds, &scope.ir);
+    if !findings.dropped.is_empty() || !findings.unjoined.is_empty() {
         for body in &mut ir.geometry.bodies {
             if body.kind == BodyKind::Solid {
                 body.kind = BodyKind::Sheet;
@@ -631,7 +630,7 @@ fn brep_pieces(
             curves: BTreeSet::new(),
             pcurves: BTreeSet::new(),
         };
-        return (vec![piece], converted.dropped, converted.unjoined);
+        return (vec![piece], findings);
     };
     let index = TopologyIndex::new(&ir);
     let components = face_components(&ir);
@@ -647,7 +646,7 @@ fn brep_pieces(
             brep_scope(&ir, &index, identity, body, region, &shell.id, &faces)
         })
         .collect();
-    (pieces, converted.dropped, converted.unjoined)
+    (pieces, findings)
 }
 
 /// The faces of `ir`, in sets joined through shared edges, each set in
@@ -1189,14 +1188,14 @@ fn prepare_write(
     let mut written_carriers = BTreeSet::new();
     let mut parts = Vec::new();
     for scope in &breps {
-        let (pieces, dropped, unjoined) = brep_pieces(&ctx, &compounds, scope);
-        records.omitted.extend(dropped);
-        if !unjoined.is_empty() {
+        let (pieces, scope_findings) = brep_pieces(&ctx, &compounds, scope);
+        records.omitted.extend(scope_findings.dropped);
+        if !scope_findings.unjoined.is_empty() {
             losses.push(RhinoLossCode::WriterEdgeUnjoined.note(format!(
                 "{} is written with each use of these edges on its own edge, as their two uses \
                  run the same way: {}",
                 scope.identity,
-                unjoined.join(", ")
+                scope_findings.unjoined.join(", ")
             )));
         }
         if pieces.is_empty() {
@@ -1215,6 +1214,7 @@ fn prepare_write(
                     .collect::<Vec<_>>(),
             ));
         }
+        let first_written = written_pieces.len();
         for piece in pieces {
             let built = brep_record(&ctx, &piece, archive_version);
             let Some((record, findings)) = records.admit(&piece.identity, built)? else {
@@ -1227,6 +1227,23 @@ fn prepare_write(
                 cut_names.push(piece.identity.clone());
             }
             written_pieces.push(piece);
+        }
+        for (edge, gap) in &scope_findings.rejoined {
+            let written = written_pieces[first_written..].iter().any(|piece| {
+                piece
+                    .ir
+                    .geometry
+                    .coedges
+                    .iter()
+                    .any(|coedge| coedge.edge.as_str() == edge)
+            });
+            if written {
+                losses.push(RhinoLossCode::WriterEdgeGapJoined.note(format!(
+                    "the curve pieces of edge {edge} of {} are joined at the midpoint of their \
+                     ends, which are up to {gap} apart within the edge tolerance",
+                    scope.identity
+                )));
+            }
         }
     }
     for piece in &written_pieces {
@@ -1307,13 +1324,19 @@ fn prepare_write(
         let Some(curve) = free_by_id.get(id).copied() else {
             continue;
         };
-        let built = joined_curve_record(&ctx, &compounds, curve);
-        if let Some(record) = records.admit(id, built)? {
-            records.file.write_all(&record)?;
-            written_carriers.insert(id);
-            covered.extend(compounds.components([id]));
-        } else {
-            pending.extend(compounds.joined_components(id).into_iter().rev());
+        match joined_curve_record(&ctx, &compounds, curve) {
+            Ok(record) => {
+                records.file.write_all(&record)?;
+                written_carriers.insert(id);
+                covered.extend(compounds.components([id]));
+            }
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error) => {
+                losses.push(RhinoLossCode::WriterCurveSplit.note(format!(
+                    "{id} is written as a curve object for each of its pieces: {error}"
+                )));
+                pending.extend(compounds.joined_components(id).into_iter().rev());
+            }
         }
     }
     let mut deflected = Vec::new();

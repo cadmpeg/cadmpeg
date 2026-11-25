@@ -4987,7 +4987,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         }?;
         let face_id = face_ids[loop_record.face].clone();
         // A 3DM loop runs counterclockwise in its surface's parameters; on a
-        // reversed face the CADIR loop runs the other way.
+        // reversed face the CADIR loop runs the other way. A trim uses its C2
+        // curve over the proxy domain, against the curve where the proxy is
+        // reversed.
         let face_reversed = raw.faces[loop_record.face].reversed_surface;
         let mut coedges = Vec::new();
         for trim_index in &loop_record.trims {
@@ -5036,19 +5038,18 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             coedge_positions[*trim_index] = Some(staged.draft.geometry().coedges.len());
             let mut pcurves = Vec::new();
             if let Some(pcurve) = pcurve {
-                let parameter_range = if face_reversed {
-                    let [start, end] = trim.domain.0.get();
-                    Some(
-                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
-                            end, start,
-                        ])
+                let [start, end] = trim.proxy_domain.0.get();
+                let endpoints = if trim.proxy_reversed == face_reversed {
+                    [start, end]
+                } else {
+                    [end, start]
+                };
+                let parameter_range = Some(
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(endpoints)
                         .map_err(|error| {
                             crate::curves::error(trim.source_range.start, error.to_string())
                         })?,
-                    )
-                } else {
-                    None
-                };
+                );
                 pcurves.push(cadmpeg_ir::topology::PcurveUse {
                     pcurve,
                     isoparametric: None,
@@ -5727,7 +5728,7 @@ fn decode_pcurves(
             geometry: PcurveGeometry::Nurbs { nurbs },
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 Some(trim.proxy_reversed),
-                Some(trim.domain.0),
+                Some(trim.proxy_domain.0),
                 trim_refs.tolerances[0].fit(),
             ),
             native_ref: None,
