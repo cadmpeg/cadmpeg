@@ -402,6 +402,11 @@ pub(super) fn check_references(
                 ref_error(findings, s.id.as_str(), "free vertex", v.as_str());
             }
         }
+        for c in s.subds() {
+            if ids.subds(c.as_str(), crate::index::StandardIndex).is_none() {
+                ref_error(findings, s.id.as_str(), "subdivision cage", c.as_str());
+            }
+        }
     }
     for f in &ir.geometry.faces {
         if ids

@@ -20,6 +20,7 @@ use crate::report::{
     check::Finding,
     decode::{Coverage, DecodeReport, DecodeTransfer, TransferLedger},
     loss::{LossNote as DecodeLoss, StrictConsequence},
+    strictness::Strictness,
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
@@ -125,8 +126,8 @@ pub struct DecodeResult {
 
 /// A strict-policy refusal bound to the loss in its completed decode report.
 ///
-/// The shared decode finalizer constructs this value. The refusing loss is
-/// therefore always an element of [`Self::report`].
+/// The shared decode finalizer and [`Self::refused_by`] construct this value.
+/// The refusing loss is therefore always an element of [`Self::report`].
 #[derive(Debug)]
 pub struct StrictDecodeRejection {
     report: Box<DecodeReport>,
@@ -142,6 +143,17 @@ impl StrictDecodeRejection {
             report: Box::new(report),
             loss_index: loss_index.0,
         }
+    }
+
+    /// The refusal of `strictness` for the completed decode `report`, naming
+    /// the first loss it refuses (§3.4, Refusals). `None` when it refuses
+    /// none. A report of a decode at `Container` depth exempts
+    /// [`Strictness::pinned`].
+    #[must_use]
+    pub fn refused_by(report: &DecodeReport, strictness: &Strictness) -> Option<Self> {
+        strictness
+            .first_refused(&report.losses, report.container_only())
+            .map(|index| Self::new(report.clone(), RejectingLossIndex(index)))
     }
 
     /// Returns the loss that caused the strict-policy refusal.
@@ -386,9 +398,9 @@ impl DecodeResult {
     /// §2.5, which §2.8 states none of. Each such record is given up, with a
     /// `decode/record.unreadable` Error that names it, and the document is
     /// digested again without it. A procedural construction and its owning
-    /// carrier are given up together. Other records that reference a given-up record
-    /// keep the reference (interim: the shared give-up pass of §2.8 does not
-    /// exist yet). The walk admits at least
+    /// carrier are given up together. Other records that reference a
+    /// given-up record keep the reference (interim: the shared give-up pass
+    /// of §2.8 does not exist yet). The walk admits at least
     /// [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
     /// recursion ceiling, so that it digests a document within the bound and
     /// writes the first container past it before it is refused. A refused
