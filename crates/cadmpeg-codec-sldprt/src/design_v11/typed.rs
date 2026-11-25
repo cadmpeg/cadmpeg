@@ -66,8 +66,8 @@ pub(super) struct Typed {
     /// The note of the typed revolves whose sketch's closed regions the
     /// check did not compare with the stored profile.
     pub(super) revolve_profile_unchecked: Option<LossNote>,
-    /// The note of the typed revolves that turn less than a full turn on one
-    /// side in the sense their record stores.
+    /// The note of the revolves whose decoded axis carries the turn sense
+    /// their record stores and whose solid depends on it.
     pub(super) revolve_sense_assumed: Option<LossNote>,
 }
 
@@ -369,15 +369,15 @@ fn boolean_unstated(revolves: &[(FeatureId, Option<String>, &'static str)]) -> O
     )))
 }
 
-/// One note naming each typed revolve that turns less than a full turn on
-/// one side, about the axis direction its record stores and reversed where
-/// its reverse byte is `1` (open item EV-25).
+/// One note naming each revolve whose solid depends on the turn sense, whose
+/// decoded axis turns about the axis direction its record stores, reversed
+/// where its reverse byte is `1` (open item EV-25).
 fn sense_assumed(revolves: &[(FeatureId, Option<String>)]) -> Option<LossNote> {
     if revolves.is_empty() {
         return None;
     }
     Some(SldprtLossCode::DesignRevolveSenseAssumed.note(format!(
-        "{} revolves turn less than a full turn about the axis direction their record \
+        "{} partial or two-sided revolves turn about the axis direction their record \
          stores, the other way where the record's reverse byte is 1 (EV-25): {}",
         revolves.len(),
         listed(

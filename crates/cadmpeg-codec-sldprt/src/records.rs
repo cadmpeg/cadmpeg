@@ -348,8 +348,9 @@ impl Feature {
 
 /// The revolution axis, filled from the feature-input lane.
 pub(crate) const REVOLUTION_AXIS_PROPERTIES: [&str; 2] = ["AxisOrigin", "AxisDirection"];
-/// Which way a revolution turns about its stored axis direction, filled with
-/// its axis.
+/// The reverse byte the decoder read with a revolution's axis, `Stored` or
+/// `Reversed`. Its presence states that `AxisDirection` gives the turn: the
+/// decoder writes `AxisDirection` already reversed for `Reversed`.
 pub(crate) const TURN_SENSE_PROPERTY: &str = "TurnSense";
 /// What the decoder fills from the feature-input lane while a revolution's
 /// record states none of its axis: the axis and its turn sense.

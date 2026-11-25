@@ -44,6 +44,14 @@ fn a_block_of_another_form_states_no_sense() {
     assert_eq!(read(&object(2, 0, LIST_TOKEN, 3)), None);
     assert_eq!(read(&object(0, 2, LIST_TOKEN, 3)), None);
     assert_eq!(read(&object(0, 0, LIST_TOKEN, 4)), None);
+    let mut led = object(1, 0, LIST_TOKEN, 3);
+    led[41] = 1;
+    assert_eq!(read(&led), None);
+    let mut renamed = object(1, 0, DECLARED_LIST, 3);
+    let name = 40 + 9 + 6;
+    assert_eq!(&renamed[name..name + 2], b"su");
+    renamed[name + 7] = b'x';
+    assert_eq!(read(&renamed), None);
     let mut padded = object(1, 0, LIST_TOKEN, 3);
     padded[43] = 1;
     assert_eq!(read(&padded), None);

@@ -633,9 +633,10 @@ pub(crate) enum SldprtLossCode {
     /// Typed revolves whose `Sketch` pick's closed regions the decoder did
     /// not compare with the stored profile loops.
     DesignRevolveProfileUnchecked,
-    /// Typed revolves that turn less than a full turn on one side, about the
-    /// axis direction their record stores, reversed where their record's
-    /// reverse byte is `1`.
+    /// Revolves whose solid depends on the turn sense, a partial turn on one
+    /// side or a two-sided turn, whose decoded axis turns about the axis
+    /// direction their record stores, reversed where their record's reverse
+    /// byte is `1`.
     DesignRevolveSenseAssumed,
 }
 

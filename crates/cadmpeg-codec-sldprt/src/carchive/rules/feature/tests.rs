@@ -36,6 +36,9 @@ fn a_turn_block_holds_a_reverse_byte_and_a_word() {
         let bytes = revolve_mark(0, reverse, word);
         assert_eq!(with_reader(&bytes, |r| is_turn_block(r, 0)), Ok(false));
     }
+    let mut led = revolve_mark(0, 1, 0);
+    led[0] = 1;
+    assert_eq!(with_reader(&led, |r| is_turn_block(r, 0)), Ok(false));
     let mut padded = revolve_mark(0, 1, 0);
     padded[3] = 1;
     assert_eq!(with_reader(&padded, |r| is_turn_block(r, 0)), Ok(false));

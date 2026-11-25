@@ -798,34 +798,30 @@ fn a_partial_turn_whose_record_stores_its_sense_is_typed_with_a_warning() {
 }
 
 #[test]
-fn a_full_turn_or_an_unsensed_partial_turn_names_no_sense() {
-    let (ir, native) = part("", &with_centreline(), &[sensed(about_y(), "Reversed")]);
-    typed(&ir, &native, "Revolve1").unwrap();
-    let (_, _, projected) = typed_timeline(&ir, &native);
-    assert!(projected.revolve_sense_assumed.is_none());
-    for revolve in [
-        derived(sensed(
-            revolution([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], &one_sided(PI), "join"),
-            "Stored",
-        )),
-        sensed(
-            json!({"kind": "resolved", "value": {
-                "profile": {"kind": "sketch", "value": SKETCH},
-                "axis": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-                    "direction": {"x": 0.0, "y": 1.0, "z": 0.0}},
-                "extent": {"kind": "two_sided",
-                    "first": {"kind": "angle", "angle": PI},
-                    "second": {"kind": "angle", "angle": 1.0}},
-                "solid": true},
-                "op": "join"}),
-            "Stored",
-        ),
+fn only_a_sense_read_with_the_axis_that_the_solid_depends_on_is_named() {
+    let two_sided = json!({"kind": "resolved", "value": {
+        "profile": {"kind": "sketch", "value": SKETCH},
+        "axis": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "direction": {"x": 0.0, "y": 1.0, "z": 0.0}},
+        "extent": {"kind": "two_sided",
+            "first": {"kind": "angle", "angle": PI},
+            "second": {"kind": "angle", "angle": 1.0}},
+        "solid": true},
+        "op": "join"});
+    let partial = revolution([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], &one_sided(PI), "join");
+    for (revolve, named, reason) in [
+        (sensed(about_y(), "Reversed"), false, None),
+        (partial.clone(), false, Some("less than a full turn on one side")),
+        (derived(sensed(partial, "Stored")), false, Some("less than a full turn on one side")),
+        (sensed(two_sided, "Stored"), true, Some("two-sided")),
     ] {
         let (ir, native) = part("", &with_centreline(), &[revolve]);
-        let message = typed(&ir, &native, "Revolve1").unwrap_err();
-        assert!(
-            message.contains("less than a full turn on one side") || message.contains("two-sided"),
-            "{message}"
-        );
+        match (typed(&ir, &native, "Revolve1"), reason) {
+            (Ok(_), None) => {}
+            (Err(message), Some(reason)) => assert!(message.contains(reason), "{message}"),
+            (result, reason) => panic!("{reason:?}: {result:?}"),
+        }
+        let (_, _, projected) = typed_timeline(&ir, &native);
+        assert_eq!(projected.revolve_sense_assumed.is_some(), named);
     }
 }

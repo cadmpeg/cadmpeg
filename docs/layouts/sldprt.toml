@@ -10872,7 +10872,7 @@ name = "pad"
 offset = 3
 type = "bytes[2]"
 source = "spec"
-anchor = "the reverse byte at +2, two zero bytes"
+anchor = "two zero bytes at +3"
 value = [0x0, 0x0]
 
 [[record.field]]
