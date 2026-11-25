@@ -117,6 +117,13 @@ pub(crate) struct SemanticWriteCache {
     pub(crate) native: CachedNative,
 }
 
+/// Per-pass withheld features and shaping edits for one semantic write.
+#[derive(Clone, Copy)]
+pub(crate) struct SemanticWriteControls<'a> {
+    pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
+    pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
+}
+
 /// Writes a semantic document and returns the dialect and arena coverage it
 /// wrote. Each feature of `withheld` keeps its stored definition record, for
 /// the reason it is paired with. `digests` are the codec digests the decode
@@ -139,24 +146,22 @@ pub(crate) fn write_semantic_with_records(
         annotations,
         digests,
         retained_records,
-        withheld,
-        shaped,
+        SemanticWriteControls { withheld, shaped },
         &mut cache,
         writer,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn write_semantic_with_records_cached(
     ir: &CadIr,
     annotations: &Annotations,
     digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
-    withheld: &[(cadmpeg_ir::features::FeatureId, String)],
-    shaped: &[crate::history::write::brep_agreement::ShapingEdit],
+    controls: SemanticWriteControls<'_>,
     cache: &mut SemanticWriteCache,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let SemanticWriteControls { withheld, shaped } = controls;
     let source_baseline = &mut cache.source_baseline;
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =

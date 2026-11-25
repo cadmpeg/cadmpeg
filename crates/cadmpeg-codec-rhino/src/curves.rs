@@ -836,6 +836,107 @@ pub(crate) fn remap_nurbs_domain(
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
+/// Gives each piece of a polycurve the parameter interval the polycurve maps
+/// onto it, so the pieces laid end to end carry the polycurve's parameter.
+/// `children` holds each piece with its start parameter, and `end` closes the
+/// last interval. A NURBS piece takes its interval by an affine knot map, a
+/// nested polycurve by an affine map of its own parameters, and a circle
+/// whose interval is its own domain `[0, 2π]` stays as it is. Any other piece
+/// takes its exact NURBS form over the interval; a piece with no such form
+/// stays as it is.
+pub(crate) fn fit_polycurve_pieces(
+    ctx: &DecodeContext<'_>,
+    children: &mut [(FiniteReal, DecodedCurve)],
+    end: FiniteReal,
+    offset: usize,
+) -> Result<(), GeometryError> {
+    let starts = children.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+    for (index, (_, child)) in children.iter_mut().enumerate() {
+        let target = [starts[index], starts.get(index + 1).copied().unwrap_or(end)];
+        if target[0] >= target[1] {
+            return Err(error(offset, "polycurve segment domain is invalid"));
+        }
+        fit_polycurve_piece(ctx, child, target, offset)?;
+    }
+    Ok(())
+}
+
+fn fit_polycurve_piece(
+    ctx: &DecodeContext<'_>,
+    piece: &mut DecodedCurve,
+    target: [FiniteReal; 2],
+    offset: usize,
+) -> Result<(), GeometryError> {
+    let replacement = match piece {
+        DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let Some(first) = children.first().map(|(start, _)| start.get()) else {
+                return Ok(());
+            };
+            let last = end_parameter.get();
+            if [first, last] == target.map(FiniteReal::get) {
+                return Ok(());
+            }
+            let map = |parameter: f64| {
+                if parameter == first {
+                    Some(target[0])
+                } else if parameter == last {
+                    Some(target[1])
+                } else {
+                    cadmpeg_ir::math::parameter_fraction(parameter, first, last).and_then(
+                        |fraction| {
+                            cadmpeg_ir::math::interpolate(
+                                target[0].get(),
+                                target[1].get(),
+                                fraction.get(),
+                            )
+                        },
+                    )
+                }
+            };
+            for (start, _) in children.iter_mut() {
+                *start = map(start.get())
+                    .ok_or_else(|| error(offset, "polycurve parameter remap overflowed"))?;
+            }
+            *end_parameter = target[1];
+            return Ok(());
+        }
+        DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+            ..
+        } => {
+            let degree = usize::try_from(nurbs.degree())
+                .map_err(|_| error(offset, "curve degree is too large"))?;
+            let domain = [
+                nurbs.knots().get(degree).copied(),
+                nurbs.knots().get(nurbs.pole_count()).copied(),
+            ];
+            if domain == target.map(|value| Some(value.get())) {
+                return Ok(());
+            }
+            remap_nurbs_domain(nurbs.clone(), target, offset)?
+        }
+        DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
+            ..
+        } if target.map(FiniteReal::get) == [0.0, TAU] => {
+            return Ok(());
+        }
+        DecodedCurve::Leaf { .. } => match exact_nurbs(ctx, piece, offset) {
+            Ok(nurbs) => remap_nurbs_domain(nurbs, target, offset)?,
+            Err(GeometryError::Codec(error)) => return Err(GeometryError::Codec(error)),
+            Err(_) => return Ok(()),
+        },
+    };
+    if let DecodedCurve::Leaf { geometry, .. } = piece {
+        *geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(replacement));
+    }
+    Ok(())
+}
+
 /// Exact joined curve and recoverable join diagnostics.
 pub(crate) struct NurbsJoin {
     pub(crate) curve: NurbsCurve,
