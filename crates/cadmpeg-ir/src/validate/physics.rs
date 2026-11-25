@@ -112,7 +112,10 @@ fn missing(findings: &mut Vec<Finding>, owner: &str, (kind, target): (&'static s
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(owner),
-        format_args!("references missing {kind} `{target}`"),
+        crate::rule!(
+            "physics.references-missing",
+            "references missing {kind} `{target}`"
+        ),
     );
 }
 

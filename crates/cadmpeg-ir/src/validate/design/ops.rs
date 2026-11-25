@@ -24,6 +24,7 @@ mod swept;
 #[cfg(test)]
 mod tests;
 
+use crate::report::check::Ruled;
 use std::collections::BTreeSet;
 
 use serde_json::Value;
@@ -280,12 +281,12 @@ fn check_feature(index: &DesignRecords<'_>, feature: &Feature, findings: &mut Ve
         FeatureOperation::Primitive(_) if feature.placement.is_some() => error(
             findings,
             id,
-            format_args!("a Primitive feature states a Feature.placement; its placement is Primitive.placement"),
+            crate::rule!("design.primitive-feature-states-feature-placement-placement", "a Primitive feature states a Feature.placement; its placement is Primitive.placement"),
         ),
         FeatureOperation::Place(_) if feature.placement.is_some() => error(
             findings,
             id,
-            format_args!("a Place feature states a Feature.placement; its placement is Place.placement"),
+            crate::rule!("design.place-feature-states-feature-placement-placement", "a Place feature states a Feature.placement; its placement is Place.placement"),
         ),
         _ => {}
     }
@@ -294,11 +295,11 @@ fn check_feature(index: &DesignRecords<'_>, feature: &Feature, findings: &mut Ve
     assembly::check_driven_definition(index, feature, findings);
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::error(findings, entity, message);
 }
 
-fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::super::record_finding(
         findings,
         Check::Design,

@@ -18,7 +18,7 @@ mod extrude;
 mod names;
 mod operation;
 mod order;
-mod parameters;
+pub(crate) mod parameters;
 mod profile_check;
 mod revolve;
 mod sketch;
@@ -57,6 +57,7 @@ use crate::rollback::{Reading, Unread};
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
 pub(crate) use names::Persistent;
+pub(crate) use parameters::{displayed_length, DisplayedLength};
 pub(crate) use units::{length_places, length_unit};
 
 /// What a part's design is projected from.

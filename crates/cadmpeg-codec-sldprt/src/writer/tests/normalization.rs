@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 #[test]
 fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("valid cube");
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let appearance = AppearanceId::mint("sldprt:test:appearance#shared").unwrap();
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),

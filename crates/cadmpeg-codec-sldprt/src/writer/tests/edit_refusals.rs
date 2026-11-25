@@ -317,8 +317,7 @@ fn an_edited_compound_file_part_the_native_envelope_refuses_is_written_as_stored
 fn a_compound_file_part_read_as_edited_is_written_into_a_native_envelope() {
     let source = cadmpeg_test_support::compound::compound_fixture();
     let mut decoded = EditableDecodeResult::from(decode(source));
-    decoded.source_fidelity_mut().content_digest =
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    decoded.source_fidelity_mut().content_digest = None;
 
     let (report, output) = write(&decoded);
 
