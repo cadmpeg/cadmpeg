@@ -74,7 +74,7 @@ pub enum UnavailableReason {
     PlacementNonFinite,
     /// The face's region is unbounded.
     BoundaryUnboundedFace,
-    /// The face does not state every loop, so its extent is not stated.
+    /// The face does not state its boundary in full, so its extent is not stated.
     BoundaryPartialFace,
     /// The ring's coedges do not form one closed traversal by oriented vertex
     /// identity, or an anchored pole use is not at the end of its coedge.

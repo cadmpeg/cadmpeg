@@ -45,10 +45,7 @@ pub(in crate::inspect) enum Listing {
 /// ZIP central directory or CFB directory does not parse.
 pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits,
-        ..DecodePolicy::default()
-    };
+    let policy = DecodePolicy { limits };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
     match detect(bytes) {
@@ -78,10 +75,7 @@ pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
 /// the member fails structural, size, or integrity checks.
 pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u8>> {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits,
-        ..DecodePolicy::default()
-    };
+    let policy = DecodePolicy { limits };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
     match detect(bytes) {

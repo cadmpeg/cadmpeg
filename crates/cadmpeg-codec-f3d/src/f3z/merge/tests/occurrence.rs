@@ -246,6 +246,7 @@ fn a_member_definition_owns_the_top_level_of_its_file() {
 
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut member = cadmpeg_ir::examples::unit_cube().unwrap();
+    member.model.product_definitions.clear();
     let top = OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
     let external = ProductDefinitionId::mint("f3d:xref:document#part.f3d").unwrap();
     member.model.occurrences = vec![Occurrence::new(
@@ -919,6 +920,7 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
 #[test]
 fn imported_definition_bodies_keep_their_definition_frame() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.product_definitions.clear();
     let body = ir.geometry.bodies[0].id.clone();
     ir.model
         .product_definitions

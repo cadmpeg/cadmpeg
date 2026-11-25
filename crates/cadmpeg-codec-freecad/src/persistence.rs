@@ -15,7 +15,7 @@ const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 /// Persistence vocabulary follows the numeric schema value, independently of
 /// whether its source spelling matches a catalog discriminant.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Vocabulary {
     Features,
     Objects,
@@ -181,6 +181,14 @@ pub(crate) fn resolve_side_entries(
         side_entries.retain(|name| entries.contains_key(name));
     }
     Ok(())
+}
+
+/// Whether a value attribute `attribute` of a property of type `type_name`
+/// names an archive entry.
+pub(crate) fn names_side_entry(type_name: &str, attribute: &str) -> bool {
+    (matches!(attribute, "file" | "File") && !is_xlink_type(type_name))
+        || (property_family(type_name) == PropertyFamily::File
+            && matches!(attribute, "name" | "Name"))
 }
 
 /// Recover the persistence graph from an already admitted document.
@@ -658,11 +666,7 @@ fn parse_properties(
         let mut side_entries = Vec::new();
         for value in &values {
             for (name, entry_name) in &value.attributes {
-                let selected = (matches!(name.as_str(), "file" | "File")
-                    && !is_xlink_type(&type_name))
-                    || (property_family(&type_name) == PropertyFamily::File
-                        && matches!(name.as_str(), "name" | "Name"));
-                if selected && !entry_name.is_empty() {
+                if names_side_entry(&type_name, name) && !entry_name.is_empty() {
                     side_entries.push(entry_name.to_owned());
                 }
             }

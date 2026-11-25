@@ -367,7 +367,7 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21"
 # row reached with the AP242 name and no arcs.
 # Disposition: admitted. The reader's single Part 21 grammar is this row's
 # declared strategy, and the edition axis is undeclared rather than substituted,
-# so no dialect-unverified loss is charged and `DecodeMode::Strict` accepts
+# so no dialect-unverified loss is charged and a pinned decode strictness accepts
 # these files.
 id = "step:ap242"
 title = "STEP AP242, edition unspecified"

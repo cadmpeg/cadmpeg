@@ -79,7 +79,10 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
     assert!(error
         .to_string()
         .contains("SLDPRT native sketch relation editing is not implemented"));
@@ -317,7 +320,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
     .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("conflicting positions")
     ));
 }

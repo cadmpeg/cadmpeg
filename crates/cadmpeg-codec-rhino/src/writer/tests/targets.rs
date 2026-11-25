@@ -3,8 +3,7 @@
 
 use cadmpeg_test_support::wire;
 
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
 
 use crate::RhinoCodec;
@@ -102,7 +101,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     )
     .expect_err("a source with no recorded dialect is refused");
 
-    let CodecError::UnsupportedTarget(refusal) = &error else {
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "rhino");
@@ -193,7 +192,7 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
     )
     .expect_err("a source dialect outside the catalog is refused");
 
-    let CodecError::UnsupportedTarget(refusal) = &error else {
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "rhino");
