@@ -137,7 +137,7 @@ fn write(
             crate::SOURCE_IMAGE_ID
         ),
     );
-    Ok((Written::StoredImage { loss }, image.to_vec()))
+    Ok((Written::Stored { loss }, image.to_vec()))
 }
 
 /// The document synthesized without its `SolidWorks` history: the write
@@ -175,7 +175,6 @@ fn synthesize(
         &Annotations::default(),
         &CodecDigests::new(),
         &[],
-        None,
         fidelity,
         &mut bytes,
     )?;
@@ -206,14 +205,11 @@ fn write_first(
             let records = source_records(input.ir, value)?;
             SldprtCodec::write_preserved_with_annotations(input.ir, value, &records, &mut bytes)?
         }
-        Some(value) => SldprtCodec::write_semantic(
+        Some(_) => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
             digests,
             &[],
-            value
-                .retained_record(crate::SOURCE_IMAGE_ID)
-                .and_then(|record| record.data()),
             SemanticFidelity::NotConsumed,
             &mut bytes,
         )?,
@@ -222,7 +218,6 @@ fn write_first(
             &Annotations::default(),
             digests,
             &[],
-            None,
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
@@ -296,7 +291,7 @@ fn finish(
         ));
         losses.extend(unwritten.notes());
     }
-    if let Written::StoredImage { loss } = written {
+    if let Written::Stored { loss } = written {
         losses.push(loss.clone());
     }
     if let Some(message) = displacement {
@@ -304,8 +299,8 @@ fn finish(
     }
     losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
-        WritePath::VerbatimReplay if matches!(written, Written::StoredImage { .. }) => {
-            "preserved source replayed verbatim without the document's edits"
+        WritePath::VerbatimReplay if matches!(written, Written::Stored { .. }) => {
+            "preserved source part replayed verbatim without the document's edits"
         }
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",

@@ -14,12 +14,14 @@ use cadmpeg_ir::design::edit::Literal;
 use cadmpeg_ir::design::units::{Unit, UnitFactor, UnitSymbol};
 use cadmpeg_ir::features::parameters::ParameterValue as HistoryValue;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Length};
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity};
 
 use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
+use crate::test_support::tessellation::display_list_payload;
 use crate::SldprtCodec;
 
 /// A part whose history holds one extrusion with a 12 mm depth.
@@ -58,6 +60,16 @@ fn held(decoded: &DecodeResult) -> CadIr {
     held
 }
 
+/// The bytes, losses and notes `ir` writes with `fidelity`.
+fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec<String>) {
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .expect("plan");
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).expect("write");
+    (bytes, report.losses, report.notes)
+}
+
 /// The bytes `ir` writes with the decode's sidecar, or why it refuses.
 fn written(ir: &CadIr, decoded: &DecodeResult) -> Result<Vec<u8>, String> {
     let plan = SldprtCodec
@@ -70,6 +82,35 @@ fn written(ir: &CadIr, decoded: &DecodeResult) -> Result<Vec<u8>, String> {
     plan.write_to(&mut bytes)
         .map_err(|error| error.to_string())?;
     Ok(bytes)
+}
+
+/// The messages of the losses of `code` in `losses`.
+fn messages(losses: &[LossNote], code: &str) -> Vec<String> {
+    losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == code)
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+fn set_depth(ir: &mut CadIr, id: &ParameterId) {
+    ir.edit()
+        .expect("editor")
+        .set_dimension(id, millimetres(20.0))
+        .expect("edit");
+}
+
+/// `held` with the 20 mm depth stated in its history parameter.
+fn held_depth(held: &mut CadIr, id: &ParameterId) {
+    set_depth(held, id);
+    let history = held
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == *id)
+        .expect("history parameter");
+    history.expression = "20mm".into();
+    history.value = Some(HistoryValue::Length(Length::new(20.0).expect("length")));
 }
 
 fn depth(ir: &CadIr) -> ParameterId {
@@ -97,23 +138,9 @@ fn a_saved_part_writes_an_edited_dimension_as_its_decode_does() {
     let decoded = decode(part());
     let id = depth(decoded.ir());
     let mut read = saved(decoded.ir());
-    read.edit()
-        .expect("editor")
-        .set_dimension(&id, millimetres(20.0))
-        .expect("edit");
+    set_depth(&mut read, &id);
     let mut held = held(&decoded);
-    held.edit()
-        .expect("editor")
-        .set_dimension(&id, millimetres(20.0))
-        .expect("edit");
-    let history = held
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.id == id)
-        .expect("history parameter");
-    history.expression = "20mm".into();
-    history.value = Some(HistoryValue::Length(Length::new(20.0).expect("length")));
+    held_depth(&mut held, &id);
 
     let from_saved = written(&read, &decoded).expect("the edited part writes");
     assert_eq!(Ok(&from_saved), written(&held, &decoded).as_ref());
@@ -155,37 +182,122 @@ fn a_saved_part_writes_an_edited_suppression_as_its_decode_does() {
     assert_eq!(written(&read, &decoded), written(&held, &decoded));
 }
 
-/// The history of the part states no comment, so the patch path declines the
-/// edit; the write takes the next path of §3.4 and a loss names the edit.
+/// A parameter comment has no field in the feature history: the part is
+/// written with the dimension edit beside it, and the loss names the comment.
 #[test]
-fn a_design_edit_the_history_cannot_state_is_written_and_named() {
+fn a_design_edit_the_history_cannot_state_is_left_out_and_named() {
     let decoded = decode(part());
     let id = depth(decoded.ir());
     let mut read = saved(decoded.ir());
+    set_depth(&mut read, &id);
     read.design
         .parameters
         .iter_mut()
         .find(|parameter| parameter.id == id)
         .expect("design parameter")
         .comment = Some("edited".into());
+    let mut held = held(&decoded);
+    held_depth(&mut held, &id);
 
-    let mut bytes = Vec::new();
-    let report = SldprtCodec
-        .plan(
-            EncodeInput::new(&read, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .unwrap()
-        .write_to(&mut bytes)
-        .unwrap();
-    let edit = format!("design.parameters[{id}].comment");
+    let (bytes, losses, _) = report(&read, decoded.source_fidelity());
+    assert_eq!(Ok(&bytes), written(&held, &decoded).as_ref());
+    let unwritten = messages(&losses, "export/edit.dropped");
+    let path = format!("design.parameters[{id}].comment");
     assert!(
-        report.losses.iter().any(|loss| matches!(
-            loss.code.local_code(),
-            "native.records-omitted" | "edit.dropped"
-        ) && loss.message.contains(&edit)),
-        "{:#?}",
-        report.losses
+        unwritten.iter().any(|message| message.contains(&path)),
+        "{losses:?}"
     );
-    decode(bytes);
+}
+
+/// A compound-file part whose only edit the history cannot state is the
+/// part its decode states, so it replays, and the loss names the edit.
+#[test]
+fn an_edited_saved_compound_file_part_keeps_its_stored_part() {
+    let source = cadmpeg_test_support::compound::compound_fixture();
+    let decoded = decode(source.clone());
+    let mut parameter = saved(decode(part()).ir()).design.parameters.remove(0);
+    parameter.comment = Some("edited".into());
+    let id = parameter.id.clone();
+    let mut read = saved(decoded.ir());
+    read.design.parameters.push(parameter);
+
+    let (bytes, losses, _) = report(&read, decoded.source_fidelity());
+    assert_eq!(bytes, source);
+    let unwritten = messages(&losses, "export/edit.dropped");
+    let path = format!("design.parameters[{id}]");
+    assert!(
+        unwritten.iter().any(|message| message.contains(&path)),
+        "{losses:?}"
+    );
+}
+
+/// A part whose display-face header states two triangles over a table of
+/// one, which the decode refuses.
+fn undecodable() -> Vec<u8> {
+    let mut payload = display_list_payload();
+    let marker = b"uoTempFaceTessData_c";
+    let header = payload
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+        .expect("face tessellation class")
+        + marker.len();
+    payload[header..header + 4].copy_from_slice(&2_u32.to_le_bytes());
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    source
+}
+
+/// A retained source that does not decode restores no history: the edited
+/// part is written as the stored part, and `export:edit.dropped` names it.
+#[test]
+fn a_saved_part_whose_source_does_not_decode_is_written_as_stored() {
+    let decoded = decode(part());
+    let stored = undecodable();
+    let mut fidelity = decoded.source_fidelity().clone();
+    fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("the decode retains the source image");
+    fidelity
+        .insert_retained_record(
+            crate::source_image_id(),
+            RetainedSourceRecord::whole("sldprt", stored.clone()),
+        )
+        .expect("one source image");
+    let mut read = saved(decoded.ir());
+    set_depth(&mut read, &depth(decoded.ir()));
+
+    let (bytes, losses, notes) = report(&read, &fidelity);
+    assert_eq!(bytes, stored);
+    assert!(
+        messages(&losses, "export/edit.dropped")
+            .iter()
+            .any(|message| message.contains(crate::SOURCE_IMAGE_ID)),
+        "{losses:?}"
+    );
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.contains("not restored from its retained source part")),
+        "{notes:?}"
+    );
+}
+
+#[test]
+fn a_saved_part_synthesizes_as_its_decode_does() {
+    let decoded = decode(part());
+    let synthesized = |ir: &CadIr| {
+        let plan = SldprtCodec
+            .plan(
+                EncodeInput::new(ir, Some(decoded.source_fidelity())),
+                TargetRequest::Explicit("sldprt:unknown"),
+            )
+            .expect("plan");
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("write");
+        (bytes, report.losses, report.notes)
+    };
+    assert_eq!(
+        synthesized(&saved(decoded.ir())),
+        synthesized(&held(&decoded))
+    );
 }

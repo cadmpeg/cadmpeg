@@ -186,7 +186,10 @@ impl SldprtCodec {
     /// reproduce the input byte for byte when nothing it rewrites has moved, so
     /// the output cannot say which branch ran and only this value can. Where
     /// the semantic write refuses, or lands on another dialect than the
-    /// source's, [`writer::target`] takes the next path of §3.4.
+    /// source's, [`writer::target`] takes the next path of §3.4. A part read
+    /// from CADIR JSON whose history arenas the retained source did not
+    /// restore is written as the stored part, and `export:edit.dropped` names
+    /// the file.
     fn write_preserved_with_annotations(
         ir: &CadIr,
         fidelity: &SourceFidelity,
@@ -198,22 +201,48 @@ impl SldprtCodec {
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
         let (annotations, digests) = (&fidelity.annotations, &fidelity.codec_digests);
-        let skipped = match image {
-            _ if fidelity.edited(ir)? => ReplaySkipped::DigestMismatch,
-            Some(data) => {
-                writer.write_all(data)?;
-                return Ok(Written::Replayed);
+        if fidelity.edited(ir)? {
+            if let Some((image, loss)) = image
+                .filter(|_| !ir.model.omitted_arenas_held())
+                .zip(Self::unrestored_loss())
+            {
+                writer.write_all(image)?;
+                return Ok(Written::Stored { loss });
             }
-            None => ReplaySkipped::ImageMissing,
+            return Self::write_semantic(
+                ir,
+                annotations,
+                digests,
+                records,
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
+                writer,
+            );
+        }
+        let Some(data) = image else {
+            return Self::write_semantic(
+                ir,
+                annotations,
+                digests,
+                records,
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
+                writer,
+            );
         };
-        Self::write_semantic(
-            ir,
-            annotations,
-            digests,
-            records,
-            image,
-            SemanticFidelity::ReplaySkipped(skipped),
-            writer,
+        writer.write_all(data)?;
+        Ok(Written::Replayed)
+    }
+
+    /// The loss of a part read from CADIR JSON written as its stored part,
+    /// because the retained source did not restore the history arenas its
+    /// edits are written into.
+    fn unrestored_loss() -> Option<cadmpeg_ir::report::loss::LossNote> {
+        cadmpeg_ir::codec::write::edit_dropped(
+            cadmpeg_ir::schema::EntityKind::Feature,
+            "SLDPRT",
+            "keeps the stored part, without any edit of the document read from CADIR, because \
+             the retained source part does not restore the feature history the edits are \
+             written into, so no digest isolates an edited record",
+            [SOURCE_IMAGE_ID],
         )
     }
 
@@ -226,28 +255,20 @@ impl SldprtCodec {
         annotations: &Annotations,
         digests: &CodecDigests,
         records: &[SourceRecord<'_>],
-        saved: Option<&[u8]>,
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let restored;
-        let ir = match saved {
-            _ if ir.model.omitted_arenas_held() => ir,
-            Some(image) => {
-                restored = writer::saved::restore(ir, image)?;
-                &restored
-            }
-            None if records.is_empty() && ir.native.namespace("sldprt").is_none() => ir,
-            None => {
-                return Err(CodecError::NotImplemented(
-                    "the document was read from CADIR, which does not carry the feature, sketch, \
-                     parameter, and configuration arenas the SLDPRT writer applies native \
-                     history edits from, and no retained source part restores them; write it \
-                     from the decoded source file"
-                        .into(),
-                ));
-            }
-        };
+        if !ir.model.omitted_arenas_held()
+            && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
+        {
+            return Err(CodecError::NotImplemented(
+                "the document was read from CADIR, which does not carry the feature, sketch, \
+                 parameter, and configuration arenas the SLDPRT writer applies native history \
+                 edits from, and no retained source part restored them; write it from the \
+                 decoded source file"
+                    .into(),
+            ));
+        }
         // An edit the full decoder does not read back from the written part,
         // or that changes what no edit touches, is written again with its
         // feature's stored record.
@@ -400,9 +421,9 @@ enum Written {
     Replayed,
     /// The retained source image, byte for byte, written for an edited
     /// document that neither the patch nor the synthesis path writes in the
-    /// source's dialect (§3.4, Paths item 4): `loss` states that no edit is
-    /// written.
-    StoredImage {
+    /// source's dialect, or whose history its retained source does not
+    /// restore (§3.4, Paths item 4): `loss` states that no edit is written.
+    Stored {
         loss: cadmpeg_ir::report::loss::LossNote,
     },
     /// A semantic write, in the dialect the emitted `swSolidWorks` envelope
@@ -430,7 +451,7 @@ impl Written {
     /// byte, so the output cannot say and only this value can.
     fn path(&self) -> WritePath {
         match self {
-            Self::Replayed | Self::StoredImage { .. } => WritePath::VerbatimReplay,
+            Self::Replayed | Self::Stored { .. } => WritePath::VerbatimReplay,
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
@@ -442,7 +463,7 @@ impl Written {
             Self::Replayed => ArenaCoverage::Complete,
             // The stored part may represent a record of any arena; the loss
             // names the edits it does not carry.
-            Self::StoredImage { .. } => ArenaCoverage::Declared(writer::stored_part_coverage()),
+            Self::Stored { .. } => ArenaCoverage::Declared(writer::stored_part_coverage()),
             Self::Semantic { coverage, .. } => ArenaCoverage::Declared(*coverage),
         }
     }
@@ -525,6 +546,16 @@ impl EncoderBackend for SldprtCodec {
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         writer::target::plan(input, &target)
+    }
+
+    fn restore(
+        &self,
+        input: EncodeInput<'_>,
+        target: &ResolvedWrite<'_>,
+        notes: &mut Vec<String>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        writer::saved::restore(input, target, notes, losses)
     }
 }
 
