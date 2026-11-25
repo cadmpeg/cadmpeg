@@ -370,8 +370,7 @@ pub enum TopoName {
     },
 }
 
-/// The wire form of [`TopoName`]. Each nested name has passed the name
-/// ceiling; reading admits this one level above the deepest of them.
+/// The wire form of [`TopoName`].
 #[derive(cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
