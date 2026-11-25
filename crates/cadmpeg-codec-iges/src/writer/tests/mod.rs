@@ -72,6 +72,7 @@ mod design_content;
 mod encode;
 mod exact_equivalents;
 mod extrusion_directrix;
+mod native_omissions;
 mod open_shell_restatement;
 mod ownership;
 mod partial;

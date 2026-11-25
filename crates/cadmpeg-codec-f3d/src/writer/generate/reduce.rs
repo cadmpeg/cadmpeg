@@ -158,7 +158,7 @@ pub(super) struct Reduction<'a> {
 
 impl<'a> Reduction<'a> {
     pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
-        let mut native = NativeDispositions::dropped();
+        let mut native = NativeDispositions::dropped("which the F3D writer does not write");
         native.namespace("f3d", NativeDisposition::Written);
         Self {
             missing_states,

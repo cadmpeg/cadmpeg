@@ -45,7 +45,8 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
 }
 
 /// The CADIR writer drops a record nested past the document bound and
-/// removes the stub link that names it; the record at the bound stays.
+/// removes the stub link that names it; the record at the bound stays. The
+/// dropped native record is charged only as an omitted native record.
 #[test]
 fn cadir_encoder_drops_a_record_past_the_document_bound() {
     const WITHIN: &str = "test:native:within#1";
@@ -80,20 +81,22 @@ fn cadir_encoder_drops_a_record_past_the_document_bound() {
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("a record past the bound does not refuse the write");
-    let unwritable = plan
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.local_code() == "value.unwritable")
-        .collect::<Vec<_>>();
-    let [loss] = unwritable.as_slice() else {
-        panic!("one loss for the one record: {unwritable:?}");
+    let messages = |code: &str| {
+        plan.report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == code)
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>()
     };
-    assert!(
-        loss.message.contains(PAST) && loss.message.contains("native.test.deep"),
-        "{}",
-        loss.message
+    assert_eq!(
+        messages("native.records-omitted"),
+        [format!(
+            "the CADIR write omits 1 native record(s) of `test` arena `deep` which {}: {PAST}",
+            crate::bounds::Bound::Document.describe()
+        )]
     );
+    assert_eq!(messages("value.unwritable"), Vec::<&str>::new());
     let mut encoded = Vec::new();
     plan.write_to(&mut encoded).unwrap();
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
@@ -132,6 +135,7 @@ struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
@@ -192,6 +196,7 @@ struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
     const FORMAT: FormatId = FormatId::new("test");
+    const NAME: &'static str = "test";
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
@@ -413,6 +418,7 @@ struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
@@ -780,6 +786,7 @@ struct F3dCoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for F3dCoverageEncoder {
     const FORMAT: FormatId = FormatId::new("f3d");
+    const NAME: &'static str = "F3D";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
@@ -1001,6 +1008,7 @@ struct LossyEncoder(Vec<crate::report::loss::LossNote>);
 
 impl EncoderBackend for LossyEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;

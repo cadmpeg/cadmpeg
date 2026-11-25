@@ -6,16 +6,16 @@
 //! charges `export:native.records-omitted` with the ids of every record the
 //! declaration drops, so a namespace the backend never reads is reported too.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::document::CadIr;
 use crate::report::loss::LossNote;
 
-use super::loss::native_records_omitted;
+use super::loss::ExportLossCode;
 
 /// The arena that holds given-up parts' stubs, which incur no omission loss.
-const UNKNOWNS_ARENA: &str = "unknowns";
+pub(super) const UNKNOWNS_ARENA: &str = "unknowns";
 
 /// What one write path does with one native record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,19 +56,24 @@ struct NamespaceDeclaration {
 /// A record takes its own override, else its arena's declaration, else its
 /// namespace's, else the declaration of every namespace, which is
 /// [`NativeDisposition::Dropped`] unless the payload is built with
-/// [`Self::written`].
+/// [`Self::written`]. A drop declared without a reason takes the reason of
+/// that last declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeDispositions {
-    every: NativeDisposition,
+    every: Declared,
     namespaces: BTreeMap<String, NamespaceDeclaration>,
 }
 
 impl NativeDispositions {
-    /// A payload that states no native record but those declared.
+    /// A payload that states no native record but those declared; the loss
+    /// gives `reason` after the name of each arena left undeclared.
     #[must_use]
-    pub fn dropped() -> Self {
+    pub fn dropped(reason: &str) -> Self {
         Self {
-            every: NativeDisposition::Dropped,
+            every: Declared {
+                disposition: NativeDisposition::Dropped,
+                reason: Some(Arc::from(reason)),
+            },
             namespaces: BTreeMap::new(),
         }
     }
@@ -77,7 +82,7 @@ impl NativeDispositions {
     #[must_use]
     pub fn written() -> Self {
         Self {
-            every: NativeDisposition::Written,
+            every: Declared::new(NativeDisposition::Written),
             namespaces: BTreeMap::new(),
         }
     }
@@ -146,17 +151,19 @@ impl NativeDispositions {
         arena: &str,
         id: &str,
     ) -> (NativeDisposition, Option<&str>) {
-        let Some(declaration) = self.namespaces.get(namespace) else {
-            return (self.every, None);
-        };
-        declaration
-            .records
-            .get(id)
-            .or_else(|| declaration.arenas.get(arena))
-            .or(declaration.disposition.as_ref())
-            .map_or((self.every, None), |declared| {
-                (declared.disposition, declared.reason.as_deref())
+        let declared = self
+            .namespaces
+            .get(namespace)
+            .and_then(|declaration| {
+                declaration
+                    .records
+                    .get(id)
+                    .or_else(|| declaration.arenas.get(arena))
+                    .or(declaration.disposition.as_ref())
             })
+            .unwrap_or(&self.every);
+        let reason = declared.reason.as_deref().or(self.every.reason.as_deref());
+        (declared.disposition, reason)
     }
 
     /// What the payload does with record `id` of `arena` in `namespace`.
@@ -165,9 +172,11 @@ impl NativeDispositions {
         self.declared(namespace, arena, id).0
     }
 
-    /// One `export:native.records-omitted` loss per arena of `ir` and drop
-    /// reason, naming every dropped id, sorted. The `unknowns` arena is never
-    /// charged.
+    /// One `export:native.records-omitted` loss per nonempty dropped arena
+    /// of `ir`, which gives every dropped id, sorted, after the count; where
+    /// the drops of the arena have several reasons, each reason follows with
+    /// the ids it covers. `format` is the format's name as its write's
+    /// losses spell it. The `unknowns` arena is never charged.
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
         let mut losses = Vec::new();
         for (namespace, arenas) in &ir.native.0 {
@@ -177,20 +186,42 @@ impl NativeDispositions {
                 if arena == UNKNOWNS_ARENA {
                     continue;
                 }
-                let mut dropped: BTreeMap<Option<&str>, Vec<&str>> = BTreeMap::new();
+                let mut dropped: BTreeMap<Option<&str>, BTreeSet<&str>> = BTreeMap::new();
                 for record in records {
                     let (disposition, reason) = self.declared(namespace, arena, record.id());
                     if disposition == NativeDisposition::Dropped {
-                        dropped.entry(reason).or_default().push(record.id());
+                        dropped.entry(reason).or_default().insert(record.id());
                     }
                 }
-                for (reason, ids) in dropped {
-                    let reason = match reason {
-                        Some(reason) => format!("of `{namespace}` arena `{arena}` {reason}"),
-                        None => format!("of `{namespace}` arena `{arena}`"),
-                    };
-                    losses.extend(native_records_omitted(format, &reason, ids));
+                let ids = dropped.values().flatten().copied().collect::<BTreeSet<_>>();
+                if ids.is_empty() {
+                    continue;
                 }
+                let place = format!(
+                    "the {format} write omits {} native record(s) of `{namespace}` arena `{arena}`",
+                    ids.len()
+                );
+                let list =
+                    |ids: &BTreeSet<&str>| ids.iter().copied().collect::<Vec<_>>().join(", ");
+                let message = match dropped.iter().collect::<Vec<_>>().as_slice() {
+                    [(Some(reason), _)] => format!("{place} {reason}: {}", list(&ids)),
+                    [(None, _)] => format!("{place}: {}", list(&ids)),
+                    groups => {
+                        let reasons = groups
+                            .iter()
+                            .map(|(reason, ids)| {
+                                format!(
+                                    "{}: {}",
+                                    reason.unwrap_or("for no stated reason"),
+                                    list(ids)
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("; ");
+                        format!("{place}: {}; {reasons}", list(&ids))
+                    }
+                };
+                losses.push(ExportLossCode::NativeRecordsOmitted.note(message));
             }
         }
         losses

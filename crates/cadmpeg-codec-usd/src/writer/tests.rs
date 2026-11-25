@@ -360,8 +360,8 @@ fn native_records_are_charged_by_id_and_given_up_stubs_are_not() {
     assert_eq!(
         omitted,
         [
-            "the usd write omits 2 native record(s) of `sat` arena `entities`: \
-          sat:test:entity#0, sat:test:entity#1"
+            "the USD write omits 2 native record(s) of `sat` arena `entities` which the USD \
+             writer does not write: sat:test:entity#0, sat:test:entity#1"
         ],
         "{:?}",
         report.losses

@@ -1975,6 +1975,6 @@ fn source_native_record_reduction_is_reported() {
     // A given-up part's `unknowns` stub incurs no omission loss.
     assert_eq!(
         omitted,
-        ["the step write omits 1 native record(s) of `f3d` arena `asm_histories`: f3d:test:asm-history#0"]
+        ["the STEP write omits 1 native record(s) of `f3d` arena `asm_histories` which the STEP writer does not write: f3d:test:asm-history#0"]
     );
 }

@@ -215,9 +215,10 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
     assert!(
         report.losses.iter().any(
             |loss| loss.code.to_string() == "export/native.records-omitted"
-                && loss
-                    .message
-                    .ends_with("of `f3d` arena `asm_histories`: f3d:test:asm-history#0")
+                && loss.message.ends_with(
+                    "of `f3d` arena `asm_histories` which the STEP writer does not write: \
+                         f3d:test:asm-history#0"
+                )
         ),
         "{:?}",
         report.losses
@@ -244,9 +245,10 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
             .iter()
             .any(
                 |loss| loss.code.to_string() == "export/native.records-omitted"
-                    && loss
-                        .message
-                        .ends_with("of `f3d` arena `asm_histories`: f3d:test:asm-history#0")
+                    && loss.message.ends_with(
+                        "of `f3d` arena `asm_histories` which the STEP writer does not \
+                             write: f3d:test:asm-history#0"
+                    )
             ),
         "{:?}",
         planned.plan.report().losses
@@ -323,6 +325,7 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("notimplementedtest");
+    const NAME: &'static str = "test";
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;

@@ -159,7 +159,7 @@ from a conformant file.
 
 **Question.** Which native arenas does the semantic writer regenerate, and which does it omit?
 
-**Known.** The semantic writer declares the native arenas it regenerates; the export wrapper charges `export:native.records-omitted` with the record ids of every other arena, including quarantined records without writable fields. The writer regenerates `directions` records only for required analytic-surface support and charges `iges/writer.passthrough-omitted` for the rest of that arena.
+**Known.** The semantic writer declares the native arenas it regenerates; the export wrapper charges `export:native.records-omitted` with the record ids of every other arena, including quarantined records without writable fields. The writer regenerates a `directions` record, and its Type 123 entity, only when a written analytic surface (Types 190 to 198) names it as an axis or reference direction; it declares every other direction dropped, and the wrapper lists it by id. A model with no neutral faces gets no trimmed surface, B-rep shell or solid, so the writer declares its native topology entities (Types 141 to 144, 186 and 502 to 514), `manifold_solids` and `boundary_vertex_sewing` dropped, and the wrapper lists them by id.
 
 **Need.** A complete arena inventory must establish the regenerated set and the omitted set.
 

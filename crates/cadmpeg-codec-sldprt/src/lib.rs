@@ -535,7 +535,7 @@ impl Written {
     /// of the arenas it loads from neutral and native content. Neither holds a
     /// record of another format.
     fn native(&self) -> NativeDispositions {
-        let mut native = NativeDispositions::dropped();
+        let mut native = NativeDispositions::dropped("which the SLDPRT writer does not write");
         match self {
             Self::Replayed | Self::Stored { .. } => {
                 native.namespace("sldprt", NativeDisposition::Written);
@@ -615,6 +615,7 @@ impl CodecBackend for SldprtCodec {
 
 impl EncoderBackend for SldprtCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "SLDPRT";
     /// Patches the retained source, so it plans from the design records it
     /// rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;

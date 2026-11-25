@@ -97,9 +97,10 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     assert!(
         plan.report().losses.iter().any(|loss| loss.code.to_string()
             == "export/native.records-omitted"
-            && loss
-                .message
-                .ends_with("of `f3d` arena `asm_histories`: f3d:test:asm-history#0")),
+            && loss.message.ends_with(
+                "of `f3d` arena `asm_histories` which the STEP writer does not write: \
+                     f3d:test:asm-history#0"
+            )),
         "{:?}",
         plan.report().losses
     );

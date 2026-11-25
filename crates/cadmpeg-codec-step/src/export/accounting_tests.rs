@@ -51,9 +51,10 @@ fn pmi_dropped_by_schema_does_not_skip_later_losses() {
     assert!(
         report.losses.iter().any(
             |loss| loss.code.to_string() == "export/native.records-omitted"
-                && loss
-                    .message
-                    .ends_with("of `f3d` arena `asm_histories`: f3d:test:asm-history#0")
+                && loss.message.ends_with(
+                    "of `f3d` arena `asm_histories` which the STEP writer does not write: \
+                         f3d:test:asm-history#0"
+                )
         ),
         "{:?}",
         report.losses

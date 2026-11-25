@@ -90,6 +90,13 @@ const DROPPED_NATIVE_ARENAS: &[(&str, &str)] = &[
          typing has no fields to write",
     ),
 ];
+/// The reason a direction no written analytic surface references is dropped.
+const UNREFERENCED_DIRECTION: &str =
+    "that are directions no written analytic surface references, which the semantic writer \
+     does not regenerate";
+/// The reason native topology is dropped from a model with no neutral faces.
+const NATIVE_TOPOLOGY: &str = "that are native topology, which has no neutral projection, so \
+                               the semantic writer omits it";
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // Roundoff guard for geometric plane classification. This is not serialized
 // as an IGES tolerance and never supplies a normal for a non-unique plane.
@@ -527,8 +534,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     losses.extend(placement_losses);
     losses.extend(unbounded_analytic);
     losses.extend(procedural_reduction_losses(ir)?);
-    let (native_losses, native) = native_dispositions(ir);
-    losses.extend(native_losses);
+    let native = native_dispositions(ir);
     for body in ir
         .geometry
         .bodies
@@ -5531,6 +5537,37 @@ fn represented_name_properties(
     Some(product_sources)
 }
 
+/// The entities an analytic pointer surface (Types 190 to 198) names as its
+/// axis and reference direction, read from its Parameter Data: the decoder
+/// records no reference edge for these pointers.
+fn analytic_surface_directions(record: &cadmpeg_ir::native::NativeRecord) -> Vec<String> {
+    // The parameter index of each Type 123 pointer, after the entity type.
+    let pointers: &[usize] = match record.field("entity_type").and_then(|value| value.as_i64()) {
+        Some(190) => &[2, 3],
+        Some(192) => &[2, 4],
+        Some(194 | 198) => &[2, 5],
+        Some(196) => &[3, 4],
+        _ => return Vec::new(),
+    };
+    let Some(parameters) = record
+        .field("parameters")
+        .and_then(|value| value.as_array().cloned())
+    else {
+        return Vec::new();
+    };
+    pointers
+        .iter()
+        .filter_map(|index| {
+            let value = parameters.get(*index)?.get("value")?;
+            (value.get("kind")?.as_str()? == "integer")
+                .then(|| value.get("value")?.as_u64())
+                .flatten()
+                .filter(|sequence| *sequence > 0)
+                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+        })
+        .collect()
+}
+
 fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
     if record.field("entity_type").and_then(|value| value.as_i64()) != Some(110) {
         return false;
@@ -5555,13 +5592,13 @@ fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
     endpoints[0] == endpoints[3] && endpoints[1] == endpoints[4] && endpoints[2] == endpoints[5]
 }
 
-/// What the semantic writer does with each native arena (§3.4, Rule W3), and
-/// the losses of the native records it regenerates only in part. An arena
-/// this declares nothing for is dropped, and the export wrapper charges it.
-fn native_dispositions(ir: &CadIr) -> (Vec<LossNote>, NativeDispositions) {
-    let mut native = NativeDispositions::dropped();
+/// What the semantic writer does with each native arena and record (§3.4,
+/// Rule W3). An arena this declares nothing for is dropped, and the export
+/// wrapper charges every dropped record.
+fn native_dispositions(ir: &CadIr) -> NativeDispositions {
+    let mut native = NativeDispositions::dropped("which the semantic writer does not encode");
     let Some(namespace) = ir.native.namespace("iges") else {
-        return (Vec::new(), native);
+        return native;
     };
     for arena in REGENERATED_NATIVE_ARENAS {
         native.arena("iges", arena, NativeDisposition::Regenerated);
@@ -5570,7 +5607,6 @@ fn native_dispositions(ir: &CadIr) -> (Vec<LossNote>, NativeDispositions) {
         native.drop_arena("iges", arena, reason);
     }
     let represented_name_properties = represented_name_properties(ir, namespace);
-    let mut losses = Vec::new();
     let mut omitted_property_sources = BTreeSet::new();
     for arena in ["product_properties", "properties"] {
         if represented_name_properties.is_some() {
@@ -5650,7 +5686,7 @@ fn native_dispositions(ir: &CadIr) -> (Vec<LossNote>, NativeDispositions) {
         "whose entity the semantic writer does not encode",
         unencoded_entities,
     );
-    let mut native_entities = namespace.arenas().get("entities").into_iter().flatten();
+    let native_entities = namespace.arenas().get("entities").into_iter().flatten();
     let mut without_geometry = Vec::new();
     let mut without_sequence = Vec::new();
     let directory_sequence = |record: &cadmpeg_ir::native::NativeRecord| {
@@ -5708,6 +5744,9 @@ fn native_dispositions(ir: &CadIr) -> (Vec<LossNote>, NativeDispositions) {
             without_geometry.push(record.id().to_owned());
         }
     }
+    // The Type 123 entities a written analytic surface references; the
+    // writer states each again from that surface's neutral axes.
+    let mut referenced_directions = BTreeSet::new();
     for record in native_entities.clone().filter(|record| {
         matches!(
             record.field("entity_type").and_then(|value| value.as_i64()),
@@ -5719,21 +5758,64 @@ fn native_dispositions(ir: &CadIr) -> (Vec<LossNote>, NativeDispositions) {
             continue;
         };
         let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
-        if !ir.geometry.surfaces.iter().any(|surface| {
+        if ir.geometry.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
                 source.format == cadmpeg_ir::codec_id!("iges")
                     && source.object_id.as_str() == object_id
             })
         }) {
+            referenced_directions.extend(analytic_surface_directions(record));
+        } else {
             without_geometry.push(record.id().to_owned());
         }
     }
-    let has_native_topology = native_entities.any(|record| {
-        matches!(
-            record.field("entity_type").and_then(|value| value.as_i64()),
-            Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
-        )
-    });
+    // A direction no written analytic surface references is omitted in both
+    // of its native views: the `directions` record and its Type 123 entity.
+    let unreferenced_directions = namespace
+        .arenas()
+        .get("directions")
+        .into_iter()
+        .flatten()
+        .filter_map(|record| {
+            let source = record
+                .field("source_entity")
+                .and_then(|value| value.as_str().map(str::to_owned));
+            match source {
+                Some(source) if referenced_directions.contains(&source) => None,
+                source => Some((record.id().to_owned(), source)),
+            }
+        })
+        .collect::<Vec<_>>();
+    native.drop_records(
+        "iges",
+        UNREFERENCED_DIRECTION,
+        unreferenced_directions.iter().map(|(id, _)| id.as_str()),
+    );
+    native.drop_records(
+        "iges",
+        UNREFERENCED_DIRECTION,
+        unreferenced_directions
+            .iter()
+            .filter_map(|(_, source)| source.as_deref()),
+    );
+    if !has_trimmed_sheet_topology(ir) {
+        // With no neutral faces the writer emits no trimmed surface, B-rep
+        // shell or solid, so every native topology record is left out.
+        native.drop_records(
+            "iges",
+            NATIVE_TOPOLOGY,
+            native_entities
+                .filter(|record| {
+                    matches!(
+                        record.field("entity_type").and_then(|value| value.as_i64()),
+                        Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
+                    )
+                })
+                .map(cadmpeg_ir::NativeRecord::id),
+        );
+        native.drop_arena("iges", "manifold_solids", NATIVE_TOPOLOGY);
+        native.drop_arena("iges", "boundary_vertex_sewing", NATIVE_TOPOLOGY);
+    }
     native.drop_records(
         "iges",
         "whose entity has no neutral geometry for the semantic writer to encode",
@@ -5744,22 +5826,7 @@ fn native_dispositions(ir: &CadIr) -> (Vec<LossNote>, NativeDispositions) {
         "whose record states no Directory sequence that ties it to a neutral geometry record",
         without_sequence,
     );
-    if has_native_topology && !has_trimmed_sheet_topology(ir) {
-        losses.push(IgesLossCode::PassthroughRecordOmitted.note(
-            "IGES native topology records have no neutral projection; the semantic writer omits unprojected trimming".to_owned(),
-        ));
-    }
-    if namespace
-        .arenas()
-        .get("directions")
-        .is_some_and(|records| !records.is_empty())
-    {
-        losses.push(IgesLossCode::PassthroughRecordOmitted.note(
-            "IGES direction records are regenerated only for required analytic-surface \
-             support; native direction identities and unrelated records are omitted",
-        ));
-    }
-    (losses, native)
+    native
 }
 
 #[derive(Clone, Copy)]

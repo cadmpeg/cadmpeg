@@ -244,7 +244,7 @@ pub(crate) fn plan(
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
         // A USD layer holds no native record of any format.
-        native: NativeDispositions::dropped(),
+        native: NativeDispositions::dropped("which the USD writer does not write"),
         losses,
         notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
     };

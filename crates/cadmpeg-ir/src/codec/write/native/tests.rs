@@ -15,6 +15,7 @@ struct NativeEncoder(NativeDispositions);
 
 impl EncoderBackend for NativeEncoder {
     const FORMAT: FormatId = FormatId::new("test");
+    const NAME: &'static str = "test";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
@@ -78,21 +79,25 @@ fn messages(native: NativeDispositions) -> Vec<String> {
         .collect()
 }
 
+/// The default reason of [`NativeDispositions::dropped`] in these tests.
+const UNWRITTEN: &str = "which the test writer does not write";
+
 #[test]
-fn an_undeclared_namespace_is_charged_with_every_id_sorted() {
+fn an_undeclared_namespace_is_charged_with_every_id_sorted_and_the_default_reason() {
     assert_eq!(
-        messages(NativeDispositions::dropped()),
+        messages(NativeDispositions::dropped(UNWRITTEN)),
         [
-            "the test write omits 2 native record(s) of `f3d` arena `history`: \
-             f3d:test:history#0, f3d:test:history#1",
-            "the test write omits 1 native record(s) of `nx` arena `records`: nx:test:record#0",
+            "the test write omits 2 native record(s) of `f3d` arena `history` which the test \
+             writer does not write: f3d:test:history#0, f3d:test:history#1",
+            "the test write omits 1 native record(s) of `nx` arena `records` which the test \
+             writer does not write: nx:test:record#0",
         ]
     );
 }
 
 #[test]
 fn given_up_stubs_are_never_charged() {
-    let mut native = NativeDispositions::dropped();
+    let mut native = NativeDispositions::dropped(UNWRITTEN);
     native.arena("f3d", "unknowns", NativeDisposition::Dropped);
     assert!(messages(native)
         .iter()
@@ -102,11 +107,14 @@ fn given_up_stubs_are_never_charged() {
 #[test]
 fn a_written_or_regenerated_namespace_is_not_charged() {
     for disposition in [NativeDisposition::Written, NativeDisposition::Regenerated] {
-        let mut native = NativeDispositions::dropped();
+        let mut native = NativeDispositions::dropped(UNWRITTEN);
         native.namespace("f3d", disposition);
         assert_eq!(
             messages(native),
-            ["the test write omits 1 native record(s) of `nx` arena `records`: nx:test:record#0"]
+            [
+                "the test write omits 1 native record(s) of `nx` arena `records` which the test \
+              writer does not write: nx:test:record#0"
+            ]
         );
     }
     assert!(omissions(NativeDispositions::written()).is_empty());
@@ -136,7 +144,7 @@ fn a_record_drop_wins_over_its_arena_and_namespace() {
 }
 
 #[test]
-fn drops_with_different_reasons_are_charged_apart() {
+fn an_arena_with_drops_of_several_reasons_is_one_loss_that_states_each() {
     let mut native = NativeDispositions::written();
     native
         .drop_records("f3d", "that name an omitted body", ["f3d:test:history#1"])
@@ -145,12 +153,27 @@ fn drops_with_different_reasons_are_charged_apart() {
     assert_eq!(
         messages(native),
         [
-            "the test write omits 1 native record(s) of `f3d` arena `history` that name an \
-             omitted body: f3d:test:history#1",
-            "the test write omits 1 native record(s) of `f3d` arena `history` which the test \
-             format cannot hold: f3d:test:history#0",
+            "the test write omits 2 native record(s) of `f3d` arena `history`: \
+             f3d:test:history#0, f3d:test:history#1; that name an omitted body: \
+             f3d:test:history#1; which the test format cannot hold: f3d:test:history#0",
             "the test write omits 1 native record(s) of `nx` arena `records` which the test \
              format cannot hold: nx:test:record#0",
+        ]
+    );
+}
+
+#[test]
+fn a_drop_declared_without_a_reason_takes_the_default_reason() {
+    let mut native = NativeDispositions::dropped(UNWRITTEN);
+    native
+        .namespace("f3d", NativeDisposition::Written)
+        .arena("f3d", "history", NativeDisposition::Dropped)
+        .namespace("nx", NativeDisposition::Written);
+    assert_eq!(
+        messages(native),
+        [
+            "the test write omits 2 native record(s) of `f3d` arena `history` which the test \
+          writer does not write: f3d:test:history#0, f3d:test:history#1"
         ]
     );
 }

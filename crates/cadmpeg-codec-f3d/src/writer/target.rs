@@ -122,7 +122,7 @@ fn preserved_body(
     // target document, so every arena is carried. Bytes the decode kept
     // without decoding are carried too, and reported.
     let losses = carried_source_losses(input.fidelity, &write_path);
-    let mut native = NativeDispositions::dropped();
+    let mut native = NativeDispositions::dropped("which the F3D writer does not write");
     native.namespace("f3d", NativeDisposition::Written);
     let mut body = body(
         input.ir,

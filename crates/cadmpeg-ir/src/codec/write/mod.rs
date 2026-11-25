@@ -68,6 +68,10 @@ pub trait EncoderBackend {
     /// Stable output format id, taken from the codec that reads the format.
     const FORMAT: FormatId;
 
+    /// The format's name as this write's losses spell it, as in "the IGES
+    /// write omits".
+    const NAME: &'static str;
+
     /// The decode depth this backend plans from, a hint for the caller.
     /// [`Encoder::plan`] refuses no document for its scope; a shallower one
     /// is planned with a note.
@@ -191,7 +195,7 @@ impl<E: EncoderBackend> Encoder for E {
         notes.extend(restore_notes);
         losses.extend(restore_losses);
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
-        losses.extend(native.omission_losses(input.ir, E::FORMAT.as_str()));
+        losses.extend(native.omission_losses(input.ir, E::NAME));
         let same_format = input
             .ir
             .source
@@ -682,6 +686,7 @@ pub struct CadirEncoder;
 
 impl EncoderBackend for CadirEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     /// The document states its own depth, so a container-only dump is a
     /// faithful CADIR document.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
@@ -699,11 +704,12 @@ impl EncoderBackend for CadirEncoder {
         let (mut bytes, measured) =
             crate::hash::measured_canonical_json(input.ir).map_err(malformed)?;
         let mut losses = Vec::new();
+        let mut native = NativeDispositions::written();
         let written;
         let ir = if measured.records.is_empty() && measured.outside.is_empty() {
             input.ir
         } else {
-            let (ir, unwritable) = within_the_bounds(input.ir, &measured)?;
+            let (ir, unwritable) = within_the_bounds(input.ir, &measured, &mut native)?;
             losses = unwritable;
             bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
                 .map_err(malformed)?
@@ -718,7 +724,7 @@ impl EncoderBackend for CadirEncoder {
             bytes,
             ir,
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
-            NativeDispositions::written(),
+            native,
         );
         body.losses = losses;
         Ok(body)
@@ -728,12 +734,14 @@ impl EncoderBackend for CadirEncoder {
 /// A copy of `ir` within the bounds of §2.5 (§3.4). Each value outside every
 /// record past a bound is written as an unstated value, each expression past
 /// its bound is written in its partial form, and each record still past a
-/// bound is dropped with each record that needs it, as §3.3 drops a record.
-/// A copy that holds no record, of a document that held one, is the empty
-/// document, with `export:output.empty`.
+/// bound is dropped with each record that needs it, as §3.3 drops a record;
+/// `native` declares each native record so dropped. A copy that holds no
+/// record, of a document that held one, is the empty document, with
+/// `export:output.empty`.
 fn within_the_bounds(
     ir: &CadIr,
     measured: &crate::bounds::Measured,
+    native: &mut NativeDispositions,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
     let holds_records = |ir: &CadIr| {
         ir.entity_count() > 0
@@ -749,14 +757,14 @@ fn within_the_bounds(
     let mut losses = Vec::new();
     for unstated in crate::bounds::unstate_outside(&mut ir, &measured.outside)? {
         losses.extend(value_unwritable(
-            CadirEncoder::FORMAT.as_str(),
+            CadirEncoder::NAME,
             &format!("writes {}", unstated.what),
             [unstated.field],
         ));
     }
     let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
     losses.extend(restated);
-    losses.extend(drop_records_past_the_bounds(&mut ir, &records)?);
+    losses.extend(drop_records_past_the_bounds(&mut ir, &records, native)?);
     if held && !holds_records(&ir) {
         losses.push(output_empty(
             "the written CADIR document holds no record: each record lies past a bound of \
@@ -803,7 +811,7 @@ fn restate_expressions_past_the_bound(
                 seed.arena,
                 crate::bounds::MAX_EXPRESSION_DEPTH
             );
-            value_unwritable(CadirEncoder::FORMAT.as_str(), &reason, [seed.id])
+            value_unwritable(CadirEncoder::NAME, &reason, [seed.id])
         })
         .collect();
     let (_, measured) = crate::hash::measured_canonical_json(&*ir)
@@ -812,12 +820,16 @@ fn restate_expressions_past_the_bound(
 }
 
 /// Drops from `ir` each record of `records`, which it holds past a bound of
-/// §2.5, and each record that needs one, as §3.3 drops a record (§3.4). Each
-/// such record charges one `export:value.unwritable` that names it, the
-/// bound, and the records dropped and marked with it.
+/// §2.5, and each record that needs one, as §3.3 drops a record (§3.4).
+/// `native` declares each native record so dropped, which the wrapper
+/// charges as `export:native.records-omitted`. The other records of each
+/// drop charge one `export:value.unwritable` that names them, the bound, and
+/// the records marked with them. A record of a native `unknowns` arena,
+/// which the wrapper never charges, counts as one of those other records.
 fn drop_records_past_the_bounds(
     ir: &mut CadIr,
     records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    native: &mut NativeDispositions,
 ) -> Result<Vec<LossNote>, CodecError> {
     if records.is_empty() {
         return Ok(Vec::new());
@@ -827,35 +839,76 @@ fn drop_records_past_the_bounds(
         .iter()
         .filter_map(|(place, bound)| ir.record_at(place).map(|seed| (seed, *bound)))
         .collect();
+    let native_codec: std::collections::HashMap<String, String> = ir
+        .native
+        .0
+        .iter()
+        .flat_map(|(codec, namespace)| {
+            namespace
+                .arenas()
+                .iter()
+                .filter(|(arena, _)| arena.as_str() != native::UNKNOWNS_ARENA)
+                .flat_map(|(_, records)| records)
+                .map(move |record| (record.id().to_owned(), codec.as_str().to_owned()))
+        })
+        .collect();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let removed = crate::give_up::drop_records(&ctx, ir, bounds.keys().cloned().collect())?;
-    Ok(removed
-        .into_iter()
-        .filter_map(|(seed, released)| {
-            let reason = format!(
-                "drops record {} of arena {}, which {}, with each record that needs it; \
-                 marked=[{}]",
-                seed.id,
-                seed.arena,
-                bounds
-                    .get(&seed)
-                    .map_or_else(String::new, |bound| bound.describe()),
-                released
-                    .marked
-                    .iter()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+    let mut losses = Vec::new();
+    for (seed, released) in removed {
+        let bound = bounds
+            .get(&seed)
+            .map_or_else(String::new, |bound| bound.describe());
+        let marked = released
+            .marked
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (dependents, others): (Vec<String>, Vec<String>) = released
+            .dropped
+            .into_iter()
+            .partition(|id| native_codec.contains_key(id));
+        for id in &dependents {
+            native.drop_records(
+                &native_codec[id],
+                &format!("that need record {}, which {bound}", seed.id),
+                [id.as_str()],
             );
-            value_unwritable(
-                CadirEncoder::FORMAT.as_str(),
-                &reason,
-                std::iter::once(seed.id).chain(released.dropped),
-            )
-        })
-        .collect())
+        }
+        let Some(codec) = native_codec.get(&seed.id) else {
+            losses.extend(value_unwritable(
+                CadirEncoder::NAME,
+                &format!(
+                    "drops record {} of arena {}, which {bound}, with each record that needs \
+                     it; marked=[{marked}]",
+                    seed.id, seed.arena
+                ),
+                std::iter::once(seed.id).chain(others),
+            ));
+            continue;
+        };
+        native.drop_records(codec, &format!("which {bound}"), [seed.id.as_str()]);
+        // The seed is charged as an omitted native record, so this names
+        // only the other records its drop drops, or else marks.
+        let (what, ids) = if others.is_empty() {
+            ("marks", released.marked.into_iter().collect())
+        } else {
+            ("drops", others)
+        };
+        losses.extend(value_unwritable(
+            CadirEncoder::NAME,
+            &format!(
+                "{what} these records, which need a native record of arena {} that {bound}; \
+                 marked=[{marked}]",
+                seed.arena
+            ),
+            ids,
+        ));
+    }
+    Ok(losses)
 }
 
 #[cfg(test)]

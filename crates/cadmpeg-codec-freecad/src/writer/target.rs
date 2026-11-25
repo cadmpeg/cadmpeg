@@ -241,7 +241,7 @@ fn finish(
     losses.extend(outcome.losses);
     // The patched archive holds every record of the retained graph; a
     // namespace of another format has no place in it.
-    let mut native = NativeDispositions::dropped();
+    let mut native = NativeDispositions::dropped("which the FCStd writer does not write");
     native.namespace("fcstd", NativeDisposition::Written);
     outcome.omitted.declare(&mut native);
     Ok(ExportBody {

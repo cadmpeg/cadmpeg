@@ -239,7 +239,7 @@ pub(crate) fn plan(
 /// regenerates the `rhino` records [`super::omitted_native_records`] does not
 /// name, and holds no record of another format.
 fn native_dispositions(ir: &cadmpeg_ir::CadIr) -> NativeDispositions {
-    let mut native = NativeDispositions::dropped();
+    let mut native = NativeDispositions::dropped("which the Rhino writer does not write");
     native.namespace("rhino", NativeDisposition::Regenerated);
     if let Some(namespace) = ir.native.namespace("rhino") {
         native.drop_records(

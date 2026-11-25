@@ -71,7 +71,7 @@ pub(crate) fn plan(
         },
         coverage: ArenaCoverage::Declared(coverage(schema)),
         // STEP holds no native record of any format.
-        native: NativeDispositions::dropped(),
+        native: NativeDispositions::dropped("which the STEP writer does not write"),
         losses,
         notes: outcome.notes,
     })

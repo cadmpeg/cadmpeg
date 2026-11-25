@@ -66,7 +66,7 @@ fn replay_or_synthesize(
 }
 
 fn replayed_body(input: EncodeInput<'_>, bytes: Vec<u8>) -> ExportBody {
-    let mut native = NativeDispositions::dropped();
+    let mut native = NativeDispositions::dropped("which the IGES writer does not write");
     native.namespace("iges", NativeDisposition::Written);
     super::body(
         bytes,
