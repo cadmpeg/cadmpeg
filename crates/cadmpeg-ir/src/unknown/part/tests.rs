@@ -483,3 +483,38 @@ fn a_part_of_a_nested_document_is_restated_in_its_container_stream() {
     assert_eq!(retained.stream(), "Embedded/Body.bin");
     assert_eq!(retained.data(), Some(b"[damaged part]".as_slice()));
 }
+
+#[test]
+fn a_record_given_up_whole_is_refused_by_a_pinned_decode_through_record_unreadable() {
+    use crate::provenance::SourceProvenance;
+    use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
+    use crate::report::strictness::Strictness;
+
+    let why = LossNote::new(
+        LossKind::namespaced(
+            crate::loss_namespace!("step"),
+            "topology.root-rejected",
+            LossTaxonomy::SourceTopologyInvalid,
+        ),
+        "STEP topology root #12 rejected",
+    )
+    .with_severity(Severity::Warning)
+    .with_provenance(SourceProvenance::root("step", 40));
+    let [codec, unreadable] = super::record_given_up("#12", why.clone());
+    assert_eq!(codec, why);
+    assert_eq!(unreadable.code, super::record_unreadable_kind());
+    assert_eq!(unreadable.severity, Severity::Error);
+    assert_eq!(unreadable.provenance, why.provenance);
+    assert!(unreadable
+        .message
+        .split_whitespace()
+        .any(|token| token == "#12"));
+    assert!(unreadable.message.contains("step/topology.root-rejected"));
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    assert!(!pinned.refuses(&codec, false));
+    assert!(pinned.refuses(&unreadable, false));
+    assert!(!Strictness::default().refuses(&unreadable, false));
+}
