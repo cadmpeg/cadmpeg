@@ -1391,6 +1391,10 @@ pub(crate) enum F3dLossCode {
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
     WriterPatchDeclined,
+    /// The history arenas of a document read from CADIR JSON were not
+    /// restored from its retained source; the file was written from its
+    /// `design` records.
+    WriterHistoryUnrestored,
     /// An integer parameter was written as a Fusion user parameter, which
     /// holds a real.
     WriterIntegerAsReal,
@@ -2258,6 +2262,7 @@ impl F3dLossCode {
         Self::WriterRollbackAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
+        Self::WriterHistoryUnrestored,
         Self::WriterAppearanceGuidAllocated,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -3496,6 +3501,7 @@ impl F3dLossCode {
             Self::WriterRollbackAssumed => "writer.rollback-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
+            Self::WriterHistoryUnrestored => "writer.history-unrestored",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
             Self::WriterDesignRecordOmitted => "writer.design-record-omitted",
             Self::WriterAppearanceGuidAllocated => "writer.appearance-guid-allocated",
@@ -3608,6 +3614,7 @@ impl F3dLossCode {
             Self::WriterRollbackAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
+            Self::WriterHistoryUnrestored => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
             Self::WriterDesignRecordOmitted => Severity::Warning,
             Self::WriterAppearanceGuidAllocated => Severity::Warning,
@@ -4457,6 +4464,7 @@ impl F3dLossCode {
             Self::WriterRollbackAssumed => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
+            Self::WriterHistoryUnrestored => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterDesignRecordOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceGuidAllocated => LossTaxonomy::MetadataNotTransferred,
@@ -6143,6 +6151,7 @@ mod tests {
                 "writer.rollback-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
+                "writer.history-unrestored",
                 "writer.appearance-guid-allocated",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
