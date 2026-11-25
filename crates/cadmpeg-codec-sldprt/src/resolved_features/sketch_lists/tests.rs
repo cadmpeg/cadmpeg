@@ -949,13 +949,56 @@ fn a_sketch_without_a_null_object_index_keeps_the_object_index_reading() {
     assert!(curve_stays_unresolved(&payload, lines[0]));
 }
 
-/// The u32 before the first point record is the header's trailing word: a
-/// null there is not a null object index.
+/// The u32 before the first point record is that record's object index: a
+/// null there is a null object index, and a line whose values plus one name no
+/// point record is read by position.
 #[test]
-fn the_header_word_before_the_first_point_is_not_a_null_object_index() {
+fn a_null_object_index_of_the_first_point_record_selects_the_position_reading() {
     let (payload, lines) = object_index_lines([u32::MAX, 5, 6, 7], &[(1, 2)], &[]);
+    assert!(by_position(&payload));
+    assert_eq!(listed_line(&payload, lines[0]), (line_by_position(), true));
+}
+
+/// Records projected from outside the sketch are not its point records: their
+/// words are neither its null object indices nor its object indices.
+#[test]
+fn a_projected_record_among_the_points_holds_no_object_index_of_the_sketch() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 4);
+    let first = point(&mut payload, 0.0, 0.0);
+    let second = point(&mut payload, 0.01, 0.0);
+    let third = point(&mut payload, 0.0, 0.01);
+    let outside = projected(&mut payload);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let at = curve(&mut payload, 1, 2, 0, None);
+    payload[at + head::LOCUS..at + head::LOCUS + 4].copy_from_slice(&OBJECT_INDEX_LOCUS);
+    payload.truncate(at + 92);
+    curve(&mut payload, 1, 2, 1, Some(0));
+    let set = |payload: &mut Vec<u8>, objects: [u32; 4]| {
+        for (record, object) in [first, second, third, outside].into_iter().zip(objects) {
+            payload[record - 4..record].copy_from_slice(&object.to_le_bytes());
+        }
+    };
+    // The projected record's null is no null object index of the sketch.
+    set(&mut payload, [7, 8, 9, u32::MAX]);
     assert!(!by_position(&payload));
-    assert_eq!(listed_line(&payload, lines[0]), (None, false));
+    // Its word 3 is no object index of the sketch: the values plus one, 2 and
+    // 3, name only one point record.
+    set(&mut payload, [u32::MAX, 2, 5, 3]);
+    assert!(by_position(&payload));
+}
+
+/// Each sketch of a stream decides its own basis.
+#[test]
+fn two_sketches_of_a_stream_decide_their_bases_apart() {
+    let (named, _) = object_index_lines([9, 2, 3, u32::MAX], &[(1, 2)], &[]);
+    let (unnamed, _) = object_index_lines([9, 5, 6, u32::MAX], &[(1, 2)], &[]);
+    let mut payload = named;
+    payload.extend_from_slice(&unnamed);
+    let lists = SketchRecordLists::new(&payload);
+    assert_eq!(lists.lists.len(), 2);
+    assert!(!lists.lists[0].by_position);
+    assert!(lists.lists[1].by_position);
 }
 
 /// A sketch with a null object index whose lines all name point records by

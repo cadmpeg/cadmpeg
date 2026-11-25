@@ -123,6 +123,15 @@ impl SketchRecordList {
             .and_then(|at| View::u32_le_at(payload, at))
     }
 
+    /// The point records of this sketch, without the records projected from
+    /// outside it that stand among them.
+    fn stored_points<'a>(&'a self, payload: &'a [u8]) -> impl Iterator<Item = usize> + 'a {
+        self.points
+            .iter()
+            .copied()
+            .filter(|&point| !external_record(payload, point))
+    }
+
     /// Whether `index + 1` is the object index of a point record of this
     /// sketch, for both of `indices`.
     fn names_object_indices(&self, payload: &[u8], indices: [usize; 2]) -> bool {
@@ -130,24 +139,20 @@ impl SketchRecordList {
             let Some(object) = index.checked_add(1).and_then(|id| u32::try_from(id).ok()) else {
                 return false;
             };
-            self.points
-                .iter()
-                .any(|&point| Self::object_index(payload, point) == Some(object))
+            self.stored_points(payload)
+                .any(|point| Self::object_index(payload, point) == Some(object))
         })
     }
 
-    /// Whether the sketch holds a point record with a null object index and a
-    /// curve record, in its first curve list or in `later` ones, that §2 would
-    /// read by object index whose endpoint values plus one are not both
+    /// Whether the sketch holds a point record with a null object index (the
+    /// u32 before its head, `ff ff ff ff`, the first point record's included)
+    /// and a curve record, in its first curve list or in `later` ones, that §2
+    /// would read by object index whose endpoint values plus one are not both
     /// object indices of point records. The sketch is then indexed by
-    /// position as a whole, so that its records share one reading. The u32
-    /// before the first point record is the trailing word of the `sgSketch`
-    /// header and is not an object index.
+    /// position as a whole, so that its records share one reading.
     fn indexed_by_position(&self, payload: &[u8], later: &[usize]) -> bool {
-        self.points
-            .iter()
-            .skip(1)
-            .any(|&point| Self::object_index(payload, point) == Some(u32::MAX))
+        self.stored_points(payload)
+            .any(|point| Self::object_index(payload, point) == Some(u32::MAX))
             && self.curves.iter().chain(later).any(|&curve| {
                 object_index_line_indices(payload, curve)
                     .is_some_and(|indices| !self.names_object_indices(payload, indices))
