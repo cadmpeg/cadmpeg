@@ -18,7 +18,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, Serializer};
 
 use super::ids::ContainerId;
-use super::read::{self, Ceiling};
 use super::refs::EntityRef;
 use crate::features::FeatureId;
 use crate::sketches::{SketchEntityId, SpatialSketchEntityId};
@@ -279,7 +278,7 @@ pub struct InstanceIndex(pub Vec<i32>);
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    try_from = "TopoNameWire"
+    from = "TopoNameWire"
 )]
 pub enum TopoName {
     /// An entity that a feature generates.
@@ -527,12 +526,9 @@ struct MergedName {
     from: BTreeSet<TopoName>,
 }
 
-impl TryFrom<TopoNameWire> for TopoName {
-    type Error = String;
-
-    /// Admits a name nested no deeper than the name ceiling.
-    fn try_from(wire: TopoNameWire) -> Result<Self, Self::Error> {
-        let name = match wire {
+impl From<TopoNameWire> for TopoName {
+    fn from(wire: TopoNameWire) -> Self {
+        match wire {
             TopoNameWire::Generated {
                 kind,
                 feature,
@@ -578,34 +574,8 @@ impl TryFrom<TopoNameWire> for TopoName {
             },
             TopoNameWire::Merged(MergedName { feature, from }) => Self::Merged { feature, from },
             TopoNameWire::Root { container } => Self::Root { container },
-        };
-        read::within(Ceiling::Name, name.depth())?;
-        Ok(name)
+        }
     }
-}
-
-impl TopoName {
-    /// The levels of this name and the names nested in it.
-    fn depth(&self) -> u64 {
-        let below = match self {
-            Self::Generated { generator, .. } => match generator {
-                Some(Generator::Entity(name)) => name.depth(),
-                Some(Generator::SketchEntity(_) | Generator::SpatialSketchEntity(_)) | None => 0,
-            },
-            Self::Instance { of: from, .. }
-            | Self::Modified { from, .. }
-            | Self::Split { from, .. } => from.depth(),
-            Self::Blend { between, .. } => deepest(between),
-            Self::Bounded { faces, ends, .. } => deepest(faces).max(deepest(ends)),
-            Self::Meeting { faces, .. } | Self::Merged { from: faces, .. } => deepest(faces),
-            Self::Root { .. } => 0,
-        };
-        below + 1
-    }
-}
-
-fn deepest<'a>(names: impl IntoIterator<Item = &'a TopoName>) -> u64 {
-    names.into_iter().map(TopoName::depth).max().unwrap_or(0)
 }
 
 /// The kind of a named entity. `Surface` and `Curve` names identify carriers.

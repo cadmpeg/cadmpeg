@@ -34,14 +34,26 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "export.no-geometry-written",
-              "kind": "geometry_not_transferred",
-              "namespace": "step",
+              "code": "output.empty",
+              "kind": "no_exportable_solids",
+              "namespace": "export",
               "strict_floor": "warning"
             }
           },
-          "message": "no geometry was written to a STEP representation",
-          "severity": "error"
+          "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "native.passthrough-record-omitted",
+              "kind": "passthrough_record_omitted",
+              "namespace": "step"
+            }
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
         },
         {
           "code": {
@@ -101,14 +113,26 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "export.no-geometry-written",
-              "kind": "geometry_not_transferred",
-              "namespace": "step",
+              "code": "output.empty",
+              "kind": "no_exportable_solids",
+              "namespace": "export",
               "strict_floor": "warning"
             }
           },
-          "message": "no geometry was written to a STEP representation",
-          "severity": "error"
+          "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "native.passthrough-record-omitted",
+              "kind": "passthrough_record_omitted",
+              "namespace": "step"
+            }
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
         },
         {
           "code": {
@@ -168,14 +192,26 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "export.no-geometry-written",
-              "kind": "geometry_not_transferred",
-              "namespace": "step",
+              "code": "output.empty",
+              "kind": "no_exportable_solids",
+              "namespace": "export",
               "strict_floor": "warning"
             }
           },
-          "message": "no geometry was written to a STEP representation",
-          "severity": "error"
+          "message": "the written STEP file holds no record of the document: it states no geometry, tessellation, product structure, presentation, PMI, or layer this writer encodes",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "native.passthrough-record-omitted",
+              "kind": "passthrough_record_omitted",
+              "namespace": "step"
+            }
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
         }
       ],
       "notes": [],

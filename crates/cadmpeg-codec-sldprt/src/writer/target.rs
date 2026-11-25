@@ -101,14 +101,11 @@ fn write(
                 &mut bytes,
             )?
         }
-        Some(value) => SldprtCodec::write_semantic(
+        Some(_) => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
             digests,
             &[],
-            value
-                .retained_record(crate::SOURCE_IMAGE_ID)
-                .and_then(|record| record.data()),
             SemanticFidelity::NotConsumed,
             &mut bytes,
         )?,
@@ -117,7 +114,6 @@ fn write(
             &Annotations::default(),
             digests,
             &[],
-            None,
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
@@ -191,7 +187,7 @@ fn finish(
         ));
         losses.extend(unwritten.notes());
     }
-    if let Written::StoredCompoundFile { loss } = written {
+    if let Written::Stored { loss } = written {
         losses.push(loss.clone());
     }
     if let Some(message) = displacement {
@@ -199,18 +195,20 @@ fn finish(
     }
     losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
-        WritePath::VerbatimReplay if matches!(written, Written::StoredCompoundFile { .. }) => {
-            "preserved compound-file source replayed verbatim without the document's edits"
+        WritePath::VerbatimReplay if matches!(written, Written::Stored { .. }) => {
+            "preserved source part replayed verbatim without the document's edits"
         }
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",
         WritePath::Synthesized { .. } => "source container regenerated from IR",
     };
+    // The SLDPRT form holds no cage, so the census counts no cage body (§5.6).
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
     ExportBody {
         bytes,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: cageless.as_ref().unwrap_or(input.ir).census(),
         },
         write_path,
         coverage: written.coverage(),

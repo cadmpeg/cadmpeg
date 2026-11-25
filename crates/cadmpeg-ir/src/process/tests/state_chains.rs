@@ -11,7 +11,7 @@ use super::root_fixtures::state_id;
 use crate::design::evaluation::{
     Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
-use crate::design::read::{self, Ceiling};
+use crate::design::read;
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::document::CadIr;
 use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
@@ -111,7 +111,7 @@ fn admitted(text: &str, limits: &ResourceLimits) {
 }
 
 fn refused_past(text: &str, limits: &ResourceLimits) {
-    let limit = Ceiling::StateChain.of(limits);
+    let limit = limits.max_state_chain_depth;
     match read::from_str::<CadIr>(text, limits) {
         Err(CodecError::ResourceLimit(refusal)) => {
             assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
@@ -138,7 +138,7 @@ fn refused_cycle(states: Vec<ProcessState>, limits: &ResourceLimits) {
 #[test]
 fn a_process_chain_at_the_ceiling_reads_and_one_past_is_refused() {
     for limits in policies() {
-        let limit = Ceiling::StateChain.of(&limits);
+        let limit = limits.max_state_chain_depth;
         admitted(&document(Vec::new(), chain(limit)), &limits);
         refused_past(&document(Vec::new(), chain(limit + 1)), &limits);
         let mut tip_first = chain(limit + 1);
@@ -152,7 +152,7 @@ fn a_process_chain_at_the_ceiling_reads_and_one_past_is_refused() {
 #[test]
 fn a_process_chain_counts_the_evaluations_below_it() {
     for limits in policies() {
-        let limit = Ceiling::StateChain.of(&limits);
+        let limit = limits.max_state_chain_depth;
         let below = limit / 2;
         let above = |depth| chain_from(1, depth, on_evaluation(below));
         admitted(&document(evaluations(below), above(limit - below)), &limits);
@@ -172,7 +172,7 @@ fn a_process_chain_counts_the_evaluations_below_it() {
 #[test]
 fn a_base_without_stored_content_ends_the_chain() {
     for limits in policies() {
-        let limit = Ceiling::StateChain.of(&limits);
+        let limit = limits.max_state_chain_depth;
         let mut unstored_evaluation = evaluations(1);
         unstored_evaluation[0].content = None;
         admitted(
@@ -209,7 +209,7 @@ fn a_cycle_of_process_state_bases_is_refused() {
 /// serde reader does.
 #[test]
 fn from_json_walks_the_chains() {
-    let limit = Ceiling::StateChain.of(&ResourceLimits::default());
+    let limit = ResourceLimits::default().max_state_chain_depth;
     assert!(CadIr::from_json(&document(Vec::new(), chain(limit))).is_ok());
     let error = CadIr::from_json(&document(Vec::new(), chain(limit + 1))).unwrap_err();
     assert!(

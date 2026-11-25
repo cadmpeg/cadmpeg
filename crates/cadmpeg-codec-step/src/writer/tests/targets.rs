@@ -8,8 +8,9 @@ use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::write::{
+    target::TargetRequest, EncodeError, EncodeInput, Encoder, ExportPlan,
+};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::examples::unit_cube;
@@ -48,7 +49,7 @@ fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
         .expect("decode the re-declared exchange")
 }
 
-fn inherit(encoder: &StepCodec, ir: &CadIr) -> Result<ExportPlan, cadmpeg_core::CodecError> {
+fn inherit(encoder: &StepCodec, ir: &CadIr) -> Result<ExportPlan, EncodeError> {
     encoder.plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
 }
 
@@ -105,13 +106,13 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
 }
 
 fn refusal(
-    error: &CodecError,
+    error: &EncodeError,
 ) -> (
     &str,
     Option<String>,
     &'static [cadmpeg_core::target::TargetDescriptor],
 ) {
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("expected a target refusal, got {error}");
     };
     (

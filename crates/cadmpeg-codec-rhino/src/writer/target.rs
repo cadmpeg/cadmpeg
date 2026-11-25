@@ -20,45 +20,26 @@ const OFF_CATALOG_SOURCE_REASON: &str =
     "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
 
-/// The document with each partial face left out (§3.4), and the losses that
-/// name what it leaves out. A Brep whose faces close is a solid in 3DM, and
-/// this writer joins every face of a body into one Brep, so a marked region
-/// that holds no partial face, whose stated faces can close, stays refused.
-fn partial_free(
-    ir: &cadmpeg_ir::CadIr,
-) -> Result<
-    (
-        Option<cadmpeg_ir::CadIr>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    CodecError,
-> {
+/// The regions that state no complete shell list and hold no partial face.
+/// Their stated faces can close, and 3DM reads a closed Brep as a solid, so
+/// the writer writes each of their faces as its own Brep.
+fn unjoined_regions(ir: &cadmpeg_ir::CadIr) -> std::collections::BTreeSet<&str> {
     let geometry = &ir.geometry;
     let lists = geometry.child_lists();
-    let marked_without_partial_face = geometry.regions.iter().any(|region| {
-        lists.complete_shells(region).is_none()
-            && !region.stated_shells().any(|shell| {
-                lists
-                    .stated_shell_faces(shell)
-                    .iter()
-                    .any(|face| face.loops.is_partial())
-            })
-    });
-    if marked_without_partial_face {
-        return Err(CodecError::NotImplemented(
-            "Brep writing requires a body that states every region, shell, face, and loop".into(),
-        ));
-    }
-    Ok(
-        match cadmpeg_ir::codec::write::without_partial_topology(
-            ir,
-            "Rhino",
-            "its faces are written as an open Brep",
-        )? {
-            Some((complete, losses)) => (Some(complete), losses),
-            None => (None, Vec::new()),
-        },
-    )
+    geometry
+        .regions
+        .iter()
+        .filter(|region| {
+            lists.complete_shells(region).is_none()
+                && !region.stated_shells().any(|shell| {
+                    lists
+                        .stated_shell_faces(shell)
+                        .iter()
+                        .any(|face| face.loops.is_partial())
+                })
+        })
+        .map(|region| region.id.as_str())
+        .collect()
 }
 
 /// Synthesize the resolved archive version.
@@ -74,11 +55,23 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
-    let (complete, partial_losses) = partial_free(input.ir)?;
-    let ir = complete.as_ref().unwrap_or(input.ir);
+    // The writer writes no cage, so it writes no cage body (§5.6); the
+    // `subds` coverage charges the cage.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let source = cageless.as_ref().unwrap_or(input.ir);
+    let unjoined = unjoined_regions(source);
+    let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
+        source,
+        "Rhino",
+        "its faces are written as an open Brep",
+    )? {
+        Some((complete, losses)) => (Some(complete), losses),
+        None => (None, Vec::new()),
+    };
+    let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
-    let wrote_object = super::write(&recovered.document, version, &mut bytes)?;
+    let written = super::write(&recovered.document, version, &unjoined, &mut bytes)?;
     let withheld_meshes = super::withheld_body_meshes(ir);
     let written_meshes = || {
         ir.model
@@ -102,7 +95,8 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let mut losses = partial_losses;
-    if !wrote_object {
+    losses.extend(written.losses);
+    if !written.wrote_object {
         losses.push(output_empty(
             "the written 3DM archive holds no object: the document states no geometry or mesh \
              this writer encodes",
@@ -224,25 +218,30 @@ pub(crate) fn plan(
         bytes,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: source.census(),
         },
         write_path: WritePath::Synthesized {
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
-        native: native_dispositions(),
+        native: native_dispositions(input.ir),
         losses,
         notes: vec![format!("3DM archive version {}", version.value())],
     })
 }
 
-/// What the archive does with each native arena (§3.4, Rule W3): the write
-/// runs only while every `rhino` record is one it regenerates, and it holds no
-/// record of another format.
-fn native_dispositions() -> NativeDispositions {
+/// What the archive does with each native record (§3.4, Rule W3): it
+/// regenerates the `rhino` records [`super::omitted_native_records`] does not
+/// name, and holds no record of another format.
+fn native_dispositions(ir: &cadmpeg_ir::CadIr) -> NativeDispositions {
     let mut native = NativeDispositions::dropped();
-    for arena in super::REGENERATED_NATIVE_ARENAS {
-        native.arena("rhino", arena, NativeDisposition::Regenerated);
+    native.namespace("rhino", NativeDisposition::Regenerated);
+    if let Some(namespace) = ir.native.namespace("rhino") {
+        native.drop_records(
+            "rhino",
+            "that the 3DM writer does not regenerate",
+            super::omitted_native_records(namespace),
+        );
     }
     native
 }
@@ -252,8 +251,8 @@ fn native_dispositions() -> NativeDispositions {
 /// Arenas 3DM is not written with are `Omitted`: the archive is written
 /// without them, and the export wrapper charges each non-empty one. Procedural
 /// surfaces and curves are definitions beside the solved carriers the archive
-/// holds. Topology is written as Brep and point objects or refused as orphaned;
-/// unowned pcurves are refused.
+/// holds. Topology and pcurves are written as Brep and point objects;
+/// `WriterRecordOmitted` names each record the writer leaves out.
 /// `points` and `curves` are `Reported` because
 /// `WriterSupportGeometryWithheld` accounts for withheld support records, and
 /// `tessellations` because `WriterBodyMeshWithheld` accounts for the display

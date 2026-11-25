@@ -9,10 +9,9 @@ use crate::test_support::plan_at;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 use crate::IgesVersion;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::write::{EncodeError, Encoder};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
@@ -35,7 +34,7 @@ fn point_file_at_version_flag(flag: u8) -> Vec<u8> {
 fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
     IgesCodec.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
 }
 
@@ -139,7 +138,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
     );
 
     let error = inherit(decoded.ir(), None).expect_err("1.0 is not a synthesis target");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "iges");

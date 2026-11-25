@@ -46,6 +46,17 @@ use crate::test_support::test_surface_fixtures::{
 use crate::writer::same_float;
 use crate::{IgesCodec, IgesVersion};
 
+/// Asserts that `plan` charges `code` with a message that contains `text`.
+fn assert_charged(plan: &cadmpeg_ir::codec::write::ExportPlan, code: &str, text: &str) {
+    let losses = &plan.report().losses;
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code && loss.message.contains(text)),
+        "{code} with {text:?}: {losses:#?}"
+    );
+}
+
 #[test]
 fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
@@ -297,7 +308,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
 }
 
 #[test]
-fn encode_rejects_open_shells_before_iges_5_3() {
+fn encode_drops_open_shells_before_iges_5_3() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_non_manifold_open_shell_file()),
@@ -305,13 +316,12 @@ fn encode_rejects_open_shells_before_iges_5_3() {
         )
         .unwrap();
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
-        let error = plan_at(version, decoded.ir(), None)
-            .expect_err("legacy target must reject an open shell");
-        assert!(
-            error
-                .to_string()
-                .contains("does not define emitted entity Type 514 Form 2"),
-            "{version:?}: {error}"
+        let plan = plan_at(version, decoded.ir(), None)
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        assert_charged(
+            &plan,
+            "iges/writer.face-omitted",
+            "does not define emitted entity Type 514 Form 2",
         );
     }
 }
@@ -434,38 +444,45 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
 }
 
 #[test]
-fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
+fn encode_omits_unsupported_curve_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.geometry.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("unsupported curve geometry was accepted")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("does not encode this curve geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.free-geometry-omitted",
+        "does not encode this curve geometry",
     );
 }
 
 #[test]
-fn encode_refuses_an_empty_source_less_model() {
+fn encode_writes_an_empty_source_less_model_as_the_empty_file() {
     let ir = CadIr::empty();
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("empty semantic output was accepted")
-    };
-    assert!(
-        error.to_string().contains("refuses an empty model"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(&plan, "export/output.empty", "holds no entity");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let sections = bytes
+        .chunks(81)
+        .filter_map(|card| card.get(72).copied())
+        .collect::<Vec<_>>();
+    assert!(sections.contains(&b'S'));
+    assert!(sections.contains(&b'G'));
+    assert!(sections.contains(&b'T'));
+    assert!(!sections.contains(&b'D'));
+    assert!(!sections.contains(&b'P'));
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().geometry.bodies.is_empty());
 }
 
 #[test]
-fn encode_refuses_a_native_curve_without_neutral_geometry() {
+fn encode_omits_a_native_curve_without_neutral_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
@@ -478,19 +495,16 @@ fn encode_refuses_a_native_curve_without_neutral_geometry() {
     ir.geometry.regions.clear();
     ir.geometry.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native curve was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native curve entity D1 without neutral geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "export/native.records-omitted",
+        "whose entity has no neutral geometry for the semantic writer to encode: iges:",
     );
 }
 
 #[test]
-fn encode_refuses_a_native_point_without_neutral_geometry() {
+fn encode_omits_a_native_point_without_neutral_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
@@ -501,33 +515,27 @@ fn encode_refuses_a_native_point_without_neutral_geometry() {
     ir.geometry.regions.clear();
     ir.geometry.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native point was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native point entity D1 without neutral geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "export/native.records-omitted",
+        "whose entity has no neutral geometry for the semantic writer to encode: iges:",
     );
 }
 
 #[test]
-fn encode_refuses_a_native_surface_without_neutral_geometry() {
+fn encode_omits_a_native_surface_without_neutral_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.geometry.surfaces.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native surface was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native surface entity D1 without neutral geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "export/native.records-omitted",
+        "whose entity has no neutral geometry for the semantic writer to encode: iges:",
     );
 }
 
@@ -744,7 +752,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 }
 
 #[test]
-fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
+fn encode_drops_a_cylindrical_face_with_only_a_repeated_seam() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_cylinder_seam_file()),
@@ -752,13 +760,11 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
         )
         .unwrap();
 
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("a cylindrical face without axial bounds must be refused");
-    assert!(
-        error
-            .to_string()
-            .contains("boundary loop that repeats one seam edge without axial bounds"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.face-omitted",
+        "boundary loop that repeats one seam edge without axial bounds",
     );
 }
 
@@ -1183,7 +1189,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
 }
 
 #[test]
-fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
+fn encode_drops_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(parametrically_bounded_plane_file()),
@@ -1208,14 +1214,11 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             .unwrap();
     }
 
-    let Err(error) = plan_at(IgesVersion::V5_3, decoded.ir(), None) else {
-        panic!("disagreeing pcurve endpoints were accepted")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("pcurve chain endpoints disagree with its directed support edge"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.face-omitted",
+        "pcurve chain endpoints disagree with its directed support edge",
     );
 }
 
