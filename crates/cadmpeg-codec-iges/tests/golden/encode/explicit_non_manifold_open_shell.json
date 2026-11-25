@@ -36,18 +36,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "writer.passthrough-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES direction records are regenerated only for required analytic-surface support; native direction identities and unrelated records are omitted",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "writer.minimum-resolution-adjusted",
             "kind": "metadata_not_transferred",
             "namespace": "iges"
@@ -89,7 +77,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 19 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D27, iges:presentation:display-attributes#D29, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D31, iges:presentation:display-attributes#D33, iges:presentation:display-attributes#D35, iges:presentation:display-attributes#D37, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
+        "message": "the IGES write omits 19 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D27, iges:presentation:display-attributes#D29, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D31, iges:presentation:display-attributes#D33, iges:presentation:display-attributes#D35, iges:presentation:display-attributes#D37, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "warning"
       },
       {
@@ -101,7 +89,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
         "severity": "warning"
       }
     ],

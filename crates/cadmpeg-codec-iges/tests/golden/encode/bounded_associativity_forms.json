@@ -69,7 +69,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 4 native record(s) of `iges` arena `annotations`: iges:presentation:annotation#D17, iges:presentation:annotation#D19, iges:presentation:annotation#D21, iges:presentation:annotation#D3",
+        "message": "the IGES write omits 4 native record(s) of `iges` arena `annotations` which the semantic writer does not encode: iges:presentation:annotation#D17, iges:presentation:annotation#D19, iges:presentation:annotation#D21, iges:presentation:annotation#D3",
         "severity": "warning"
       },
       {
@@ -81,7 +81,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 5 native record(s) of `iges` arena `associativities`: iges:structure:associativity#D13, iges:structure:associativity#D15, iges:structure:associativity#D23, iges:structure:associativity#D25, iges:structure:associativity#D7",
+        "message": "the IGES write omits 5 native record(s) of `iges` arena `associativities` which the semantic writer does not encode: iges:structure:associativity#D13, iges:structure:associativity#D15, iges:structure:associativity#D23, iges:structure:associativity#D25, iges:structure:associativity#D7",
         "severity": "warning"
       },
       {
@@ -93,7 +93,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 13 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
+        "message": "the IGES write omits 13 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "warning"
       },
       {
@@ -105,7 +105,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 10 native record(s) of `iges` arena `entities` whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#23, iges:entity:directory#25, iges:entity:directory#3, iges:entity:directory#7",
+        "message": "the IGES write omits 10 native record(s) of `iges` arena `entities` whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#23, iges:entity:directory#25, iges:entity:directory#3, iges:entity:directory#7",
         "severity": "warning"
       },
       {
@@ -117,7 +117,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
         "severity": "warning"
       },
       {
@@ -129,7 +129,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `views`: iges:presentation:view#D1",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `views` which the semantic writer does not encode: iges:presentation:view#D1",
         "severity": "warning"
       }
     ],

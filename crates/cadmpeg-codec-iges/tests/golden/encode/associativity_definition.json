@@ -56,7 +56,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `associativities`: iges:structure:associativity#D1",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `associativities` which the semantic writer does not encode: iges:structure:associativity#D1",
         "severity": "warning"
       },
       {
@@ -68,7 +68,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1",
         "severity": "warning"
       },
       {
@@ -80,7 +80,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `entities` whose entity the semantic writer does not encode: iges:entity:directory#1",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `entities` whose entity the semantic writer does not encode: iges:entity:directory#1",
         "severity": "warning"
       },
       {
@@ -92,7 +92,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
         "severity": "warning"
       }
     ],

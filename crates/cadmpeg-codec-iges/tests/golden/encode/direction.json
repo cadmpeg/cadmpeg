@@ -26,18 +26,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "writer.passthrough-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES direction records are regenerated only for required analytic-surface support; native direction identities and unrelated records are omitted",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "output.empty",
             "kind": "no_exportable_solids",
             "namespace": "export",
@@ -68,7 +56,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `directions` that are directions no written analytic surface references, which the semantic writer does not regenerate: iges:native:direction#D1",
         "severity": "warning"
       },
       {
@@ -80,7 +68,31 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `entities` that are directions no written analytic surface references, which the semantic writer does not regenerate: iges:entity:directory#1",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
         "severity": "warning"
       }
     ],
