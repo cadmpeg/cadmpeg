@@ -377,9 +377,10 @@ type CombineSideBinding = (
 /// their producers, each side on its own. A slot that the bound history's
 /// BREP source keeps, and that no transition after the Combine's result state
 /// updates or deletes, names its model body. A slot that the source omits, or
-/// that a later transition updates, names the body that its generating
-/// feature produces. A side keeps its input-state bodies when its slots mix
-/// both readings or name neither.
+/// that a later transition updates, names the body that the feature whose
+/// transition last inserts or updates it before the Combine produces. A side
+/// keeps its input-state bodies when its slots mix both readings or name
+/// neither.
 fn bind_combine_producers(
     context: &ReverseContext<'_>,
     feature: &mut cadmpeg_ir::features::Feature,
@@ -470,15 +471,9 @@ fn combine_side_binding(
         .ok_or("no one bound history holds its input and result states")?;
     let source = super::face_resolution::historical_brep_source(&history.id)
         .ok_or_else(|| format!("its bound history {} names no BREP source", history.id))?;
-    let producer = |slot: i64| -> Option<Producer> {
-        let mut inserting = history
-            .states()
-            .iter()
-            .filter(|state| inserts_body(state, slot));
-        let state = inserting.next()?;
-        if inserting.next().is_some() {
-            return None;
-        }
+    let later = later_body_changes(history, scope)
+        .ok_or("its result state has no unique place in the history's state order")?;
+    let feature_of_state = |state: &crate::history_records::AsmDeltaState| {
         let mut scopes = inputs.scopes.iter().filter(|candidate| {
             candidate.history_state_id() == Some(state.state_id)
                 && scope_history(candidate, context.scope_histories, inputs.histories)
@@ -489,14 +484,45 @@ fn combine_side_binding(
             return None;
         }
         let (producer, ordinal) = context.feature_by_scope.get(&candidate.id)?;
-        if *ordinal >= feature.ordinal {
+        (*ordinal < feature.ordinal).then(|| producer.clone())
+    };
+    let inserter = |slot: i64| -> Option<cadmpeg_ir::features::FeatureId> {
+        let mut inserting = history
+            .states()
+            .iter()
+            .filter(|state| inserts_body(state, slot));
+        let state = inserting.next()?;
+        if inserting.next().is_some() {
             return None;
         }
-        let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
-        Some((producer.clone(), state.state_id, inserted))
+        feature_of_state(state)
     };
-    let later = later_body_changes(history, scope)
-        .ok_or("its result state has no unique place in the history's state order")?;
+    let order = history.states_oldest_first();
+    let result_position = order.as_ref().and_then(|order| {
+        let mut positions = order.iter().enumerate().filter(|(_, index)| {
+            history.states().get(**index).map(|state| state.state_id) == scope.history_state_id()
+        });
+        let (position, _) = positions.next()?;
+        positions.next().is_none().then_some(position)
+    });
+    let last_writer = |slot: i64| -> Option<Producer> {
+        let (order, end) = (order.as_ref()?, result_position?);
+        let state = order[..end]
+            .iter()
+            .rev()
+            .filter_map(|index| history.states().get(*index))
+            .find(|state| inserts_body(state, slot) || updates_body(state, slot))?;
+        let bodies = &state.transition.as_ref()?.topology.bodies;
+        let mut written: Vec<i64> = bodies
+            .inserted
+            .iter()
+            .chain(&bodies.updated)
+            .copied()
+            .collect();
+        written.sort_unstable();
+        written.dedup();
+        Some((feature_of_state(state)?, state.state_id, written))
+    };
     let unchanged = side
         .slots
         .iter()
@@ -519,8 +545,7 @@ fn combine_side_binding(
         let dependencies = side
             .slots
             .iter()
-            .filter_map(|slot| producer(*slot))
-            .map(|(producer, _, _)| producer)
+            .filter_map(|slot| inserter(*slot))
             .collect::<Vec<_>>();
         let selection = if side.single_native {
             BodySelection::Resolved {
@@ -550,11 +575,11 @@ fn combine_side_binding(
     let producers = side
         .slots
         .iter()
-        .map(|slot| producer(*slot))
+        .map(|slot| last_writer(*slot))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| {
             format!(
-                "a slot has no unique inserting state of {} with one earlier scope",
+                "a slot has no earlier state of {} whose transition inserts or updates it with one earlier scope",
                 history.id
             )
         })?;
@@ -826,6 +851,13 @@ fn inserts_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> boo
         .transition
         .as_ref()
         .is_some_and(|transition| transition.topology.bodies.inserted.contains(&slot))
+}
+
+fn updates_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
+    state
+        .transition
+        .as_ref()
+        .is_some_and(|transition| transition.topology.bodies.updated.contains(&slot))
 }
 
 /// The one ASM history that holds the result and input states of `scope`: its

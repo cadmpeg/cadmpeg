@@ -50,7 +50,9 @@ fn generated_features(selection: &serde_json::Value) -> Vec<String> {
 
 /// The id of the feature named `name`.
 fn feature_id(ir: &serde_json::Value, name: &str) -> String {
-    let mut named = features(ir).iter().filter(|feature| feature["name"] == name);
+    let mut named = features(ir)
+        .iter()
+        .filter(|feature| feature["name"] == name);
     let feature = named.next().unwrap_or_else(|| panic!("feature {name}"));
     assert!(named.next().is_none(), "one feature named {name}");
     feature["id"].as_str().expect("feature id").to_owned()
