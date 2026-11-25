@@ -100,3 +100,13 @@ fn a_body_listed_once_or_by_instance_bodies_breaks_no_rule() {
     ir.fragment = true;
     assert!(owner_findings(&ir).is_empty());
 }
+
+#[test]
+fn a_document_with_no_source_meets_the_rule_too() {
+    let (mut ir, body) = cube();
+    ir.source = None;
+    let found = owner_findings(&ir);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].entity.as_deref(), Some(body.as_str()));
+    assert!(found[0].message.contains("listed by no definition"));
+}

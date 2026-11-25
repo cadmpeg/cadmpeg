@@ -348,9 +348,11 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
 /// root rule holds, since a body the file holds outside every other
 /// definition is the root definition's.
 fn check_body_owners(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if ir.source.is_none()
-        || ir.fragment
+    if ir.fragment
         || !ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model)
+        || ir
+            .populated_arena(cadmpeg_core::decode::ArenaClass::Model)
+            .is_none()
     {
         return;
     }
