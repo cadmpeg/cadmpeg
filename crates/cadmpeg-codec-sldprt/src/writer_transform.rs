@@ -192,7 +192,7 @@ fn naming(id: &str, error: CodecError) -> CodecError {
         CodecError::NotImplemented(message) => {
             CodecError::NotImplemented(format!("{id}: {message}"))
         }
-        CodecError::Malformed(message) => CodecError::Malformed(format!("{id}: {message}")),
+        CodecError::Malformed(message) => CodecError::malformed(format_args!("{id}: {message}")),
         error => error,
     }
 }
