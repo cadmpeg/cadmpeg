@@ -401,7 +401,8 @@ pub(crate) enum StepLossCode {
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
     /// A face the source holds with no boundary on a plane, cylinder, or
-    /// cone, whose domain is unbounded, is stated partial with no loop.
+    /// cone, whose domain is unbounded, or whose stored boundary does not
+    /// resolve to a closed loop, is stated partial with no loop.
     TopologyFaceBoundaryUnstated,
     /// An edge vertex lies off its own carrier by more than the document
     /// tolerance, and the edge's parameter range was derived anyway.

@@ -1796,7 +1796,10 @@ or partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Each surface member is a face in its own
 shell of the one sheet region. A member that is a plane, a cylinder, or a cone
 states no boundary on a surface whose domain is unbounded, so its face is
-partial with no loop, and the loss `topology.face-boundary-unstated` names it. Curve-only and point-only sets remain
+partial with no loop, and the loss `topology.face-boundary-unstated` names it.
+A `CURVE_BOUNDED_SURFACE` member with a boundary that does not resolve to a
+closed loop is partial with no loop on any support, and the same loss names
+that boundary. Curve-only and point-only sets remain
 standalone geometry. The writer states a region of a body that is not a
 solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the
