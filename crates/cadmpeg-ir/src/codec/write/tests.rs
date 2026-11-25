@@ -484,8 +484,7 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
 
 fn recorded_at(depth: DecodeDepth) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.set_scope(depth.scope())
-        .expect("an empty document admits every scope");
+    ir.set_scope(depth.scope());
     ir
 }
 
@@ -1159,8 +1158,7 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
 #[test]
 fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_scope(cadmpeg_core::decode::ContentScope::full())
-        .unwrap();
+    ir.set_scope(cadmpeg_core::decode::ContentScope::full());
     let face = |at: usize| ir.geometry.faces[at].id.as_str().to_owned();
     let (named, unnamed) = (face(0), face(1));
     let deep = (0..crate::bounds::MAX_DOCUMENT_DEPTH / 2).fold(
