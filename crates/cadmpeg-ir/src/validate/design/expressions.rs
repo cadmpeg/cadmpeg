@@ -743,7 +743,7 @@ fn check_external_kinds(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) 
                 findings,
                 parameter.id.as_str(),
                 crate::rule!(
-                    "design.parameter-external-reference-another-kind",
+                    "design.external-reference-parameters-one-kind",
                     "parameter is the External reference {} of {} as {} is, with another kind",
                     name.as_str(),
                     definition.as_str(),

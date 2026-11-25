@@ -44,6 +44,7 @@ pub mod annotations;
 pub mod appearance;
 pub mod assets;
 pub mod attributes;
+pub mod bounds;
 pub mod bytes;
 pub mod codec;
 pub mod compare;

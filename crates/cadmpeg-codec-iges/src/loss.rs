@@ -158,6 +158,15 @@ loss_codes! {
     WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
     /// A free-geometry body has no single Directory Entry for visibility.
     WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
+    /// A face the writer cannot write was dropped with the records only it uses.
+    WriterFaceOmitted => "writer.face-omitted",
+    /// A body the writer cannot write was dropped with the records only it uses.
+    WriterBodyOmitted => "writer.body-omitted",
+    /// An open edge with no stated range was written over one of several
+    /// ranges its vertices bound, or between its vertices' feet on its curve.
+    WriterEdgeRangeAssumed => "writer.edge-range-assumed",
+    /// A vertex tolerance was raised to its distance from an edge's curve.
+    VertexToleranceWidened => "geometry.vertex-tolerance-widened",
     /// The decoded document holds an error-severity validation finding.
     ProjectionInvalid => "projection.invalid",
 }
@@ -224,14 +233,22 @@ impl IgesLossCode {
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
             | Self::WriterBodyVisibilityNotRepresented
+            | Self::WriterEdgeRangeAssumed
+            | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
+            Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
         }
     }
 
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterSupportEdgeNotRepresented
+            | Self::WriterFaceOmitted
+            | Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterEdgeRangeAssumed | Self::VertexToleranceWidened => {
+                LossTaxonomy::TopologyGaugeSubstituted
+            }
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
@@ -388,6 +405,10 @@ mod tests {
                 "writer.body-color-not-represented",
                 "writer.body-opacity-not-represented",
                 "writer.body-visibility-not-represented",
+                "writer.face-omitted",
+                "writer.body-omitted",
+                "writer.edge-range-assumed",
+                "geometry.vertex-tolerance-widened",
                 "projection.invalid",
             ]
         );

@@ -230,9 +230,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -243,6 +240,9 @@ jobs:
           shared-key: clippy
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Format check
         run: cargo fmt --all --check
@@ -276,19 +276,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
-      - name: Limit broad test builds
-        # A one-codec build peaks near 10 GB at four jobs. Broader builds
-        # swap at three or four jobs on the 16 GB runner, so they keep two.
-        shell: bash
-        run: |
-          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
-          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
-            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
-          fi
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -302,6 +289,19 @@ jobs:
           shared-key: stable
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      - name: Limit broad test builds
+        # A one-codec build peaks near 10 GB at four jobs. Broader builds
+        # swap at three or four jobs on the 16 GB runner, so they keep two.
+        shell: bash
+        run: |
+          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
+          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
+            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+          fi
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2.90.5
@@ -368,9 +368,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -381,6 +378,9 @@ jobs:
           shared-key: features
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
@@ -433,15 +433,15 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: fuzz
           workspaces: crates/cadmpeg-fuzz -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Fuzz targets compile
         run: python3 scripts/ci_fuzz.py
@@ -484,9 +484,6 @@ jobs:
         with:
           toolchain: "1.88"
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -496,6 +493,9 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Check
         run: python3 scripts/ci_cargo.py check
@@ -531,9 +531,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -543,6 +540,9 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2.90.5
