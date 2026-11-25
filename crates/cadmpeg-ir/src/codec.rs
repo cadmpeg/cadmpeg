@@ -20,6 +20,7 @@ use crate::report::{
     check::Finding,
     decode::{Coverage, DecodeReport, DecodeTransfer, TransferLedger},
     loss::{LossNote as DecodeLoss, StrictConsequence},
+    strictness::Strictness,
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
@@ -125,8 +126,8 @@ pub struct DecodeResult {
 
 /// A strict-policy refusal bound to the loss in its completed decode report.
 ///
-/// The shared decode finalizer constructs this value. The refusing loss is
-/// therefore always an element of [`Self::report`].
+/// The shared decode finalizer and [`Self::refused_by`] construct this value.
+/// The refusing loss is therefore always an element of [`Self::report`].
 #[derive(Debug)]
 pub struct StrictDecodeRejection {
     report: Box<DecodeReport>,
@@ -142,6 +143,17 @@ impl StrictDecodeRejection {
             report: Box::new(report),
             loss_index: loss_index.0,
         }
+    }
+
+    /// The refusal of `strictness` for the completed decode `report`, naming
+    /// the first loss it refuses (§3.4, Refusals). `None` when it refuses
+    /// none. A report of a decode at `Container` depth exempts
+    /// [`Strictness::pinned`].
+    #[must_use]
+    pub fn refused_by(report: &DecodeReport, strictness: &Strictness) -> Option<Self> {
+        strictness
+            .first_refused(&report.losses, report.container_only())
+            .map(|index| Self::new(report.clone(), RejectingLossIndex(index)))
     }
 
     /// Returns the loss that caused the strict-policy refusal.

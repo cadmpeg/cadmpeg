@@ -298,6 +298,8 @@ struct Builder<'s, 'l, 'c, 'a> {
     meshed: BTreeSet<String>,
     /// Joint prims, resolved after every occurrence exists.
     pending_joints: Vec<physics::PendingJoint>,
+    /// The design joint feature stated for each joint.
+    joint_features: BTreeMap<cadmpeg_ir::products::JointId, cadmpeg_ir::features::FeatureId>,
     pending_physx: Vec<physx::PendingSettings>,
     admitted: u64,
     transferred: bool,
@@ -333,6 +335,7 @@ pub(crate) fn build<'a>(
         bodied: BTreeSet::new(),
         meshed: BTreeSet::new(),
         pending_joints: Vec::new(),
+        joint_features: BTreeMap::new(),
         pending_physx: Vec::new(),
         admitted,
         transferred: false,

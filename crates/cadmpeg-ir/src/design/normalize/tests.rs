@@ -1163,13 +1163,103 @@ fn a_target_whose_path_selects_another_configuration_keeps_its_state() {
 }
 
 #[test]
-fn a_target_in_a_spanned_definition_keeps_its_state() {
+fn a_target_in_a_spanned_definition_reads_the_configuration_its_occurrence_applies() {
     let mut ir = placed();
     ir.model.pmi[0].targets = vec![
         in_base(steps(&[("cube", None), ("inner", None)])),
         in_base(steps(&[("cube", Some("base")), ("inner", None)])),
     ];
-    assert_eq!(normalized_states(ir), vec![Some(base_state()); 2]);
+    assert_eq!(normalized_states(ir), vec![None, Some(base_state())]);
+}
+
+#[test]
+fn a_target_into_the_evaluation_its_path_selects_states_none() {
+    let mut ir = placed();
+    cube_uses(&mut ir, "large");
+    let at = |path: Option<OccurrencePath>, configuration: Option<&str>| InstanceTarget {
+        path,
+        ..target(Some(state(configuration, after_body())))
+    };
+    ir.model.pmi[0].targets = vec![
+        at(Some(steps(&[("cube", None)])), Some("large")),
+        at(Some(steps(&[("cube", None)])), Some("base")),
+        at(Some(steps(&[("cube", None)])), None),
+        at(None, Some("large")),
+    ];
+    let large = Some(state(Some("large"), after_feature("fillet")));
+    assert_eq!(
+        normalized_states(ir),
+        [
+            None,
+            Some(base_state()),
+            Some(state(None, after_feature("fillet"))),
+            large
+        ]
+    );
+}
+
+#[test]
+fn drawing_and_annotation_references_take_the_one_spelling() {
+    use crate::drawings::{Drawing, DrawingKind};
+    use crate::references::{ReferenceEntity, ReferenceSelection, ReferenceTarget};
+    use crate::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
+    let reference = |configuration: &str| {
+        vec![ReferenceSelection::new(ReferenceTarget::Entity(
+            InstanceTarget {
+                state: Some(state(Some(configuration), after_body())),
+                ..InstanceTarget::new(ReferenceEntity::Definition(id("definition", "part")))
+            },
+        ))]
+    };
+    let role = NonBlankString::new("References").unwrap();
+    let mut ir = placed();
+    let mut drawing = Drawing::new(
+        id("drawing", "view"),
+        "View".to_owned(),
+        DrawingKind::View,
+        "View".to_owned(),
+        0,
+        None,
+    );
+    drawing
+        .relationships
+        .insert(role.clone(), reference("base"));
+    ir.model.drawings.push(drawing);
+    let mut note = SemanticAnnotation::new(
+        id("annotation", "note"),
+        "Note".to_owned(),
+        SemanticAnnotationKind::Text,
+        "Note".to_owned(),
+        0,
+        "note".to_owned(),
+    );
+    note.references.insert(role.clone(), reference("base"));
+    note.references
+        .insert(NonBlankString::new("Other").unwrap(), reference("large"));
+    ir.model.semantic_annotations.push(note);
+    normalize(&mut ir).unwrap();
+    let states = |selections: &[ReferenceSelection]| -> Vec<Option<StateRef>> {
+        selections
+            .iter()
+            .map(|selection| match &selection.target {
+                ReferenceTarget::Entity(target) => target.state.clone(),
+                other => panic!("an entity target, not {other:?}"),
+            })
+            .collect()
+    };
+    let annotation = &ir.model.semantic_annotations[0].references;
+    assert_eq!(
+        [
+            states(&ir.model.drawings[0].relationships[&role]),
+            states(&annotation[&role]),
+            states(&annotation[&NonBlankString::new("Other").unwrap()]),
+        ],
+        [
+            vec![None],
+            vec![None],
+            vec![Some(state(Some("large"), after_feature("fillet")))]
+        ]
+    );
 }
 
 #[test]
@@ -1205,10 +1295,10 @@ fn other_replaced_by(prototype: &str) -> CadIr {
 }
 
 #[test]
-fn a_target_through_an_occurrence_whose_prototype_is_replaced_keeps_its_state() {
+fn a_target_through_an_occurrence_whose_prototype_is_replaced_reads_the_prototype_in_force() {
     let mut ir = other_replaced_by("part");
     ir.model.pmi[0].targets = vec![in_base(steps(&[("other", None)]))];
-    assert_eq!(normalized_states(ir), vec![Some(base_state())]);
+    assert_eq!(normalized_states(ir), vec![None]);
 }
 
 #[test]
@@ -1393,6 +1483,10 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
     ));
     let mut foreign_active = placed();
     scope_of(&mut foreign_active, "root").active_configuration = Some(id("configuration", "base"));
+    let mut unknown_arrangement = placed();
+    scope_of(&mut unknown_arrangement, "root")
+        .active_arrangements
+        .insert(id("arrangement", "gone"));
     let mut arranged = placed();
     arranged
         .design
@@ -1437,10 +1531,9 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
             with_path(placed(), steps(&[("other", None), ("cube", None)])),
         ),
         ("foreign active", with_path(foreign_active, cube())),
-        ("arranged", with_path(arranged, cube())),
         (
-            "arranged in configuration",
-            with_path(arranged_in_configuration, cube()),
+            "unknown arrangement",
+            with_path(unknown_arrangement, cube()),
         ),
     ];
     assert_eq!(
@@ -1448,6 +1541,13 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
         outcomes
             .clone()
             .map(|(case, _)| (case, vec![Some(base_state())]))
+    );
+    assert_eq!(
+        [
+            with_path(arranged, cube()),
+            with_path(arranged_in_configuration, cube())
+        ],
+        [vec![None], vec![None]]
     );
     assert_eq!(
         normalized_states(part_dangling),
@@ -1544,7 +1644,7 @@ fn a_target_whose_path_nothing_selects_through_states_none() {
 }
 
 #[test]
-fn an_arrangement_an_ancestor_uses_keeps_the_state() {
+fn an_arrangement_an_ancestor_uses_keeps_the_state_below_it() {
     let mut ir = nested();
     let mut overrides = Overrides::default();
     overrides.occurrences.insert(
@@ -1581,7 +1681,10 @@ fn an_arrangement_an_ancestor_uses_keeps_the_state() {
             uses(ArrangementRef::Local(id("arrangement", "b"))),
             uses(named)
         ],
-        [vec![Some(base_state()); 2], vec![Some(base_state()); 2]]
+        [
+            vec![Some(base_state()), None],
+            vec![Some(base_state()), None]
+        ]
     );
 }
 
@@ -1635,7 +1738,7 @@ fn a_definition_stored_in_a_file_of_its_own_is_not_spanned() {
             .find(|definition| definition.id == inner)
             .unwrap()
             .storage = storage;
-        ir.model.pmi[0].targets = vec![in_base(steps(&[("cube", Some("base")), ("inner", None)]))];
+        ir.model.pmi[0].targets = vec![in_base(steps(&[("cube", None), ("inner", None)]))];
         states.extend(normalized_states(ir));
     }
     assert_eq!(states, vec![Some(base_state()); 2]);

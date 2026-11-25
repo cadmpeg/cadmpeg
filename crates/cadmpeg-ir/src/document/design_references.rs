@@ -4,7 +4,7 @@
 use super::{ArenaName, Model};
 use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use crate::declared_measures::DeclaredTarget;
-use crate::physics::solver::SolverValue;
+use crate::physics::solver::{SolverTarget, SolverValue};
 use crate::pmi::PmiDefinition;
 use crate::references::{InstanceTarget, ReferenceSelection};
 use crate::schema::ArenaRecord;
@@ -19,7 +19,8 @@ pub(super) fn first(model: &Model) -> Option<ArenaName> {
 
 /// Each model arena with the ids of its records that reference the design
 /// class: an instance target's or a tessellation's state, a declared
-/// measure of a state, a reference to a feature, an attribute on a
+/// measure of a state, a reference to a feature, a solver target that names
+/// a joint feature, an attribute on a
 /// configuration, a feature, a sketch, or a parameter, or an attribute's
 /// parameter value or expression.
 pub(super) fn holders(model: &Model) -> Vec<(ArenaName, Vec<&str>)> {
@@ -68,10 +69,10 @@ pub(super) fn holders(model: &Model) -> Vec<(ArenaName, Vec<&str>)> {
         (
             "solver_settings",
             reading(&model.solver_settings, |record| {
-                record.target.reads_design()
+                solver_target_reads_design(&record.target)
                     || record.values.values().any(|value| {
                         matches!(value, SolverValue::Targets { targets }
-                            if targets.iter().any(InstanceTarget::reads_design))
+                            if targets.iter().any(solver_target_reads_design))
                     })
             }),
         ),
@@ -122,6 +123,11 @@ fn reading<T: ArenaRecord>(records: &[T], reads: impl Fn(&T) -> bool) -> Vec<&st
         .filter(|record| reads(*record))
         .map(ArenaRecord::record_identity)
         .collect()
+}
+
+/// Whether a solver target states a design state or names a joint feature.
+fn solver_target_reads_design(target: &InstanceTarget<SolverTarget>) -> bool {
+    target.reads_design() || matches!(target.entity, SolverTarget::Joint { .. })
 }
 
 /// Whether an attribute targets a design record or a state, or holds a

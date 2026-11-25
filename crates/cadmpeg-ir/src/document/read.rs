@@ -136,7 +136,7 @@ impl CadIr {
         };
         let (document, fidelity) = reader.document()?;
         let report = reader.report;
-        match options.strictness.first_refused(&report) {
+        match options.strictness.first_refused(&report, false) {
             Some(entry) => Err(ReadFailure::StrictRejected { report, entry }),
             None => Ok(CadirRead {
                 document,

@@ -1,101 +1,102 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The report entries on which a caller refuses a completed operation
-//! (§3.4, Refusals).
+//! The caller's strictness: which entries of a completed report refuse the
+//! operation (CADIR v11 §3.4, Refusals).
+//!
+//! Decode, write and measurement take the same [`Strictness`]. The sealed
+//! wrappers apply it to the completed report; no backend refuses on a report
+//! entry. The default refuses nothing.
 
 use std::collections::BTreeSet;
 
 use cadmpeg_core::text::NonBlankString;
 
-use super::loss::LossNote;
+use super::loss::{LossKind, LossNote};
 use super::Severity;
 
-/// The report entries a caller refuses. The default refuses nothing.
+/// The report entries on which a caller refuses an operation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Strictness {
-    /// Refuses an entry whose code pins a strict floor its severity reaches.
+    /// Refuse an entry whose code pins a strict floor its severity reaches.
+    /// A decode at `Container` depth is exempt.
     pub pinned: bool,
-    /// Refuses an entry whose severity is at least this.
+    /// Refuse an entry at or above this severity.
     pub floor: Option<Severity>,
-    /// Refuses an entry whose code is one of these, spelled as §3.2 or the
-    /// codec's format specification spells it.
+    /// Refuse an entry with one of these codes, spelled as [`code_name`]
+    /// spells it, whatever its severity.
     pub codes: BTreeSet<NonBlankString>,
 }
 
 impl Strictness {
-    /// Whether this strictness refuses `entry`.
+    /// Whether this strictness refuses `entry`. `container` states a decode at
+    /// `Container` depth, whose losses are by request; it exempts `pinned`.
     #[must_use]
-    pub fn refuses(&self, entry: &LossNote) -> bool {
-        if self.floor.is_some_and(|floor| entry.severity >= floor) {
-            return true;
-        }
-        if self.pinned
-            && entry
-                .code
-                .strict_floor()
-                .is_some_and(|floor| entry.severity >= floor)
-        {
-            return true;
-        }
-        if self.codes.is_empty() {
-            return false;
-        }
-        let namespace = entry.code.namespace();
-        let local = entry.code.local_code();
-        [
-            format!("{namespace}/{local}"),
-            format!("{namespace}:{local}"),
-            local.to_owned(),
-        ]
-        .iter()
-        .any(|spelling| self.codes.contains(spelling.as_str()))
+    pub fn refuses(&self, entry: &LossNote, container: bool) -> bool {
+        self.floor.is_some_and(|floor| entry.severity >= floor)
+            || (!self.codes.is_empty()
+                && NonBlankString::new(code_name(&entry.code))
+                    .is_some_and(|name| self.codes.contains(&name)))
+            || (self.pinned
+                && !container
+                && entry
+                    .code
+                    .strict_floor()
+                    .is_some_and(|floor| entry.severity >= floor))
     }
 
-    /// The index of the first entry of `report` this strictness refuses.
+    /// The index of the first entry this strictness refuses.
     #[must_use]
-    pub fn first_refused(&self, report: &[LossNote]) -> Option<usize> {
-        report.iter().position(|entry| self.refuses(entry))
+    pub fn first_refused(&self, entries: &[LossNote], container: bool) -> Option<usize> {
+        entries
+            .iter()
+            .position(|entry| self.refuses(entry, container))
+    }
+
+    /// Adds a code name to [`Self::codes`].
+    #[must_use]
+    pub fn with_code(mut self, name: &str) -> Self {
+        if let Some(name) = NonBlankString::new(name) {
+            self.codes.insert(name);
+        }
+        self
+    }
+}
+
+/// Shared codes that §3.2 spells without a namespace, whichever codec
+/// charges them.
+const BARE_SHARED_CODES: [&str; 5] = [
+    "record.unreadable",
+    "sidecar.stale",
+    "geometry.vertex-tolerance-widened",
+    "target.source-dialect-displaced",
+    "target.request-displaced",
+];
+
+/// Namespaces whose codes §3.2 spells `namespace:code`.
+const COLON_NAMESPACES: [&str; 2] = ["export", "measure"];
+
+/// The name of a loss code, as §3.2 spells a shared code and as its codec's
+/// format specification spells a codec's code. [`Strictness::codes`] holds
+/// these names.
+///
+/// - an `export` or `measure` code is `export:code` or `measure:code`;
+/// - a shared code §3.2 spells bare (`record.unreadable`, `sidecar.stale`,
+///   `geometry.vertex-tolerance-widened`, `target.source-dialect-displaced`,
+///   `target.request-displaced`) is that code, whichever namespace holds it;
+/// - every other code is `namespace/code`: `decode/depth.not-delivered`,
+///   `read/spelling.normalized`, `iges/global.metadata-field-unusable`, and
+///   `shared/<taxonomy>` for a code of the shared taxonomy.
+#[must_use]
+pub fn code_name(kind: &LossKind) -> String {
+    let namespace = kind.namespace();
+    let code = kind.local_code();
+    if COLON_NAMESPACES.contains(&namespace) {
+        format!("{namespace}:{code}")
+    } else if BARE_SHARED_CODES.contains(&code) {
+        code.to_owned()
+    } else {
+        format!("{namespace}/{code}")
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Strictness;
-    use crate::report::loss::{LossNote, LossTaxonomy, NamespacedLossKind};
-    use crate::report::Severity;
-
-    fn entry(severity: Severity, floor: Option<Severity>) -> LossNote {
-        let kind = NamespacedLossKind::new(
-            crate::loss_namespace!("read"),
-            "spelling.normalized",
-            LossTaxonomy::DecodeDiagnostic,
-        )
-        .with_strict_floor(floor);
-        LossNote::new(kind, "message").with_severity(severity)
-    }
-
-    #[test]
-    fn the_default_refuses_nothing_and_each_rule_refuses_its_entries() {
-        let report = [
-            entry(Severity::Info, None),
-            entry(Severity::Warning, Some(Severity::Info)),
-        ];
-        assert_eq!(Strictness::default().first_refused(&report), None);
-        let floor = Strictness {
-            floor: Some(Severity::Warning),
-            ..Strictness::default()
-        };
-        assert_eq!(floor.first_refused(&report), Some(1));
-        let pinned = Strictness {
-            pinned: true,
-            ..Strictness::default()
-        };
-        assert_eq!(pinned.first_refused(&report), Some(1));
-        for spelling in ["read/spelling.normalized", "spelling.normalized"] {
-            let codes = Strictness {
-                codes: [cadmpeg_core::text::NonBlankString::new(spelling).expect("code")].into(),
-                ..Strictness::default()
-            };
-            assert_eq!(codes.first_refused(&report), Some(0), "{spelling}");
-        }
-    }
-}
+mod tests;
