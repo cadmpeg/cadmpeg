@@ -309,7 +309,7 @@ fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
     )
 }
 
-fn literal<T: Copy>(dimension: &Dimension<T>) -> Option<T> {
+pub(super) fn literal<T: Copy>(dimension: &Dimension<T>) -> Option<T> {
     match dimension {
         Dimension::Literal(value) => Some(*value),
         Dimension::Parameter(_) | Dimension::Negated(_) => None,
@@ -398,6 +398,9 @@ impl<'a> Probe<'_, 'a> {
                 });
             }
             FeatureOperation::Unsew(unsew) => self.unsew(&unsew.edges),
+            FeatureOperation::Split(split) => self.split_pieces(&split.mode),
+            FeatureOperation::TransformBodies(transform) => self.mates(transform),
+            FeatureOperation::Knit(knit) => self.federation(knit),
             FeatureOperation::Fillet(fillet) => self.corners(&fillet.controls),
             FeatureOperation::Chamfer(chamfer) => {
                 self.corners(&chamfer.controls);
@@ -448,6 +451,7 @@ impl<'a> Probe<'_, 'a> {
                 }
             }
             SheetMetalKind::Convert(convert) => self.convert(convert),
+            SheetMetalKind::BreakCorner { corners, .. } => self.break_corner(corners),
             SheetMetalKind::Flange(flange) => {
                 if let Some(FlangeWidth::FromEnds { first, second }) = &flange.width {
                     self.setbacks_fit(&flange.edges, literal(first), literal(second));
@@ -1001,6 +1005,7 @@ fn pieces(topology: &StateTopology<'_>, sheet: &str, cut: &BTreeSet<&str>) -> us
 }
 
 mod chains;
+mod operands;
 
 #[cfg(test)]
 mod tests;

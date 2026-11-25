@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
 
-use super::text::{quoted, real, real32};
+use super::text::{float, quoted, real};
 use crate::schema::physx::{find, holder, split, Attribute, Holder, Value};
 
 /// The solver whose settings the writer writes.
@@ -96,7 +96,7 @@ fn real_text(
     Some(if attribute.usd_type.starts_with("double") {
         real(scene)
     } else {
-        real32(crate::text::value::round_f32(scene))
+        float(scene)
     })
 }
 

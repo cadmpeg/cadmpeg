@@ -436,7 +436,7 @@ fn check_placements(ir: &CadIr, records: &DesignRecords<'_>, findings: &mut Vec<
             }
         }
     }
-    for (holder, definition) in records.feature_definitions() {
+    for (holder, _, definition) in records.feature_definitions() {
         if let FeatureOperation::Stored {
             origin: StoredOrigin::Linked(link),
             ..

@@ -229,12 +229,13 @@ pub(crate) fn patch_payload(
     let mut keep = |parameter: &cadmpeg_ir::features::parameters::DesignParameter,
                     record: &str,
                     reason: &str| {
-        kept.push(
-            crate::loss::SldprtLossCode::WriterParameterEditUnwritten.note(format!(
+        kept.push(cadmpeg_ir::codec::write::edit_dropped_note(
+            cadmpeg_ir::schema::EntityKind::Parameter,
+            format!(
                 "PMI dimension record {record} of parameter {} keeps its stored {reason}.",
                 parameter.id.as_str()
-            )),
-        );
+            ),
+        ));
     };
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(kept);

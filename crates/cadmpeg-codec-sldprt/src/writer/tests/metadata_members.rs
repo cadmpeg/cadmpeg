@@ -491,6 +491,7 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
             active_configuration: false,
             edited_parameters: &HashSet::new(),
             native: None,
+            stale: &std::collections::BTreeSet::new(),
         },
     )
     .unwrap();
@@ -864,13 +865,10 @@ fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
     let scan = crate::container::scan(&ctx, root).unwrap();
     let retained =
         crate::writer::retained_display_sections(decoded.ir(), Some(&baseline), Some(&scan))
-            .unwrap()
             .unwrap();
     assert_eq!(retained, vec![("Contents/DisplayLists".into(), display)]);
     assert!(
-        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan))
-            .unwrap()
-            .is_none()
+        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan)).is_none()
     );
 }
 
