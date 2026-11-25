@@ -38,6 +38,7 @@ fuzz_target!(|data: &[u8]| {
             data[4] % 24
         )),
         originating_system: format!("System {}", data[5]),
+        file_description: Vec::new(),
     };
 
     let mut out = Cursor::new(Vec::new());

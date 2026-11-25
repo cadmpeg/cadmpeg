@@ -99,9 +99,25 @@ pub(super) fn decode(
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
     };
+    let occurrence_indices_by_usage = ir
+        .model
+        .occurrences
+        .iter()
+        .enumerate()
+        .filter_map(|(index, occurrence)| {
+            let usage_id = occurrence
+                .native_ref
+                .as_deref()?
+                .strip_prefix('#')?
+                .parse::<u64>()
+                .ok()?;
+            Some((usage_id, index))
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut appearance_ids = BTreeMap::<(u64, u64), AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
     let mut hidden_layer_ids = BTreeSet::new();
+    let mut hidden_occurrence_indices = BTreeSet::new();
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
     for (&id, record) in exchange.records() {
         if record.partial("INVISIBILITY").is_none() {
@@ -150,6 +166,12 @@ pub(super) fn decode(
                 .get(&target)
                 .is_some_and(super::pmi::is_supported_invisibility_target)
             {
+                continue;
+            }
+            if let Some(occurrence_idx) =
+                invisible_occurrence_index(target, exchange, &occurrence_indices_by_usage)
+            {
+                hidden_occurrence_indices.insert(occurrence_idx);
                 continue;
             }
             let (body_ids, target_supported) =
@@ -555,6 +577,9 @@ pub(super) fn decode(
                 typed.insert(invisibility_id);
             }
         }
+    }
+    for occurrence_idx in hidden_occurrence_indices {
+        ir.model.occurrences[occurrence_idx].visible = Some(false);
     }
     for (target, candidates) in scalar_color_candidates {
         let mut color = candidates.first().1;
@@ -1890,6 +1915,29 @@ fn contains_null_style(
         }
         _ => Ok(false),
     }
+}
+
+fn invisible_occurrence_index(
+    target: u64,
+    exchange: &Exchange,
+    occurrence_indices_by_usage: &BTreeMap<u64, usize>,
+) -> Option<usize> {
+    let record = exchange.records().get(&target)?;
+    if record.partial("NEXT_ASSEMBLY_USAGE_OCCURRENCE").is_some() {
+        return occurrence_indices_by_usage.get(&target).copied();
+    }
+    if record
+        .partial("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")
+        .is_some()
+    {
+        let pds_id = named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)
+            .and_then(ValueExt::reference)?;
+        let pds_record = exchange.records().get(&pds_id)?;
+        let usage_id = named_parameter(pds_record, "PRODUCT_DEFINITION_SHAPE", 2)
+            .and_then(ValueExt::reference)?;
+        return occurrence_indices_by_usage.get(&usage_id).copied();
+    }
+    None
 }
 
 fn predefined(name: &str) -> Option<Color> {

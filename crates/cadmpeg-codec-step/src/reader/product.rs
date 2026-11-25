@@ -1263,6 +1263,11 @@ fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64,
     Some((representation, origin, target))
 }
 
+enum OccurrencePlacementSource {
+    ItemDefined { from_id: u64, to_id: u64 },
+    FunctionalOperator { operator_id: u64, invert: bool },
+}
+
 fn occurrence_placement(
     record: &RawRecord,
     exchange: &Exchange,
@@ -1271,12 +1276,31 @@ fn occurrence_placement(
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Result<Option<(u64, Transform)>, TransformError> {
-    let Some((usage, from_id, to_id)) =
+    let Some((usage, source)) =
         occurrence_placement_definition(record, exchange, pds, usages, definition_representations)
     else {
         return Ok(None);
     };
-    Ok(mapped_item_transform(from_id, to_id, geometry)?.map(|transform| (usage, transform)))
+    let transform = match source {
+        OccurrencePlacementSource::ItemDefined { from_id, to_id } => {
+            mapped_item_transform(from_id, to_id, geometry)?
+        }
+        OccurrencePlacementSource::FunctionalOperator {
+            operator_id,
+            invert,
+        } => {
+            let Some(operator) = geometry.transformation_operators.get(&operator_id).copied()
+            else {
+                return Ok(None);
+            };
+            if invert {
+                Some(operator.try_inverse_affine()?)
+            } else {
+                Some(operator)
+            }
+        }
+    };
+    Ok(transform.map(|transform| (usage, transform)))
 }
 
 fn occurrence_placement_definition(
@@ -1285,7 +1309,7 @@ fn occurrence_placement_definition(
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-) -> Option<(u64, u64, u64)> {
+) -> Option<(u64, OccurrencePlacementSource)> {
     let relation = exchange.records().get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
             .and_then(ValueExt::reference)?,
@@ -1304,20 +1328,43 @@ fn occurrence_placement_definition(
         .first()?
         .reference()?;
     let transform = exchange.records().get(&transform_id)?;
-    let item_one = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
-        .and_then(ValueExt::reference)?;
-    let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
-        .and_then(ValueExt::reference)?;
     let child_to_parent = child_representations.contains(&relation_representations.0)
         && parent_representations.contains(&relation_representations.1);
     let parent_to_child = parent_representations.contains(&relation_representations.0)
         && child_representations.contains(&relation_representations.1);
-    let (from_id, to_id) = match (child_to_parent, parent_to_child) {
-        (true, false) => (item_one, item_two),
-        (false, true) => (item_two, item_one),
-        _ => return None,
-    };
-    Some((usage, from_id, to_id))
+    if transform.partial("ITEM_DEFINED_TRANSFORMATION").is_some() {
+        let item_one = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
+            .and_then(ValueExt::reference)?;
+        let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
+            .and_then(ValueExt::reference)?;
+        let (from_id, to_id) = match (child_to_parent, parent_to_child) {
+            (true, false) => (item_one, item_two),
+            (false, true) => (item_two, item_one),
+            _ => return None,
+        };
+        return Some((
+            usage,
+            OccurrencePlacementSource::ItemDefined { from_id, to_id },
+        ));
+    }
+    if transform
+        .partial("CARTESIAN_TRANSFORMATION_OPERATOR_3D")
+        .is_some()
+    {
+        let invert = match (child_to_parent, parent_to_child) {
+            (true, false) => false,
+            (false, true) => true,
+            _ => return None,
+        };
+        return Some((
+            usage,
+            OccurrencePlacementSource::FunctionalOperator {
+                operator_id: transform_id,
+                invert,
+            },
+        ));
+    }
+    None
 }
 
 fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
