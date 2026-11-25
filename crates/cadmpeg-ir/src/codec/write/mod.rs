@@ -726,6 +726,20 @@ impl EncoderBackend for CadirEncoder {
             written = ir;
             &written
         };
+        let empty;
+        let ir = if holds_records(input.ir) && !holds_records(ir) {
+            losses.push(output_empty(
+                "the written CADIR document holds no record: each record of the document is \
+                 dropped or needs one that is",
+            ));
+            empty = CadIr::empty();
+            bytes = crate::hash::finite_json::to_canonical_json_string(&empty)
+                .map_err(malformed)?
+                .into_bytes();
+            &empty
+        } else {
+            ir
+        };
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it.
@@ -788,23 +802,11 @@ fn without_unwritable_records(
 /// record past a bound is written as an unstated value, each expression past
 /// its bound is written in its partial form, and each record still past a
 /// bound is dropped with each record that needs it, as §3.3 drops a record.
-/// A copy that holds no record, of a document that held one, is the empty
-/// document, with `export:output.empty`.
 fn within_the_bounds(
     ir: &CadIr,
     measured: &crate::bounds::Measured,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
-    let holds_records = |ir: &CadIr| {
-        ir.entity_count() > 0
-            || ir.native.0.values().any(|namespace| {
-                namespace
-                    .arenas()
-                    .values()
-                    .any(|records| !records.is_empty())
-            })
-    };
     let mut ir = ir.clone();
-    let held = holds_records(&ir);
     let mut losses = Vec::new();
     for unstated in crate::bounds::unstate_outside(&mut ir, &measured.outside)? {
         losses.extend(value_unwritable(
@@ -816,14 +818,18 @@ fn within_the_bounds(
     let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
     losses.extend(restated);
     losses.extend(drop_records_past_the_bounds(&mut ir, &records)?);
-    if held && !holds_records(&ir) {
-        losses.push(output_empty(
-            "the written CADIR document holds no record: each record lies past a bound of \
-             §2.5 or needs one that does",
-        ));
-        ir = CadIr::empty();
-    }
     Ok((ir, losses))
+}
+
+/// Whether `ir` holds a record of a home or native arena.
+fn holds_records(ir: &CadIr) -> bool {
+    ir.entity_count() > 0
+        || ir.native.0.values().any(|namespace| {
+            namespace
+                .arenas()
+                .values()
+                .any(|records| !records.is_empty())
+        })
 }
 
 /// States `Source` with no tokens each expression past its bound in the

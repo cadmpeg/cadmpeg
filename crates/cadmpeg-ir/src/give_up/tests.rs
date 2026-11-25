@@ -679,6 +679,51 @@ fn a_construction_goes_with_the_carrier_that_owns_it() {
     assert_closed(&ir, &owner, &outcome);
 }
 
+/// A carrier that names a given-up construction is stated `Unknown`, its
+/// partial form (§3.3), and keeps its place: the edge on it stays.
+#[test]
+fn a_carrier_on_a_lost_construction_states_its_geometry_unknown() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let spine: crate::geometry::ProceduralCurve = serde_json::from_value(json!({
+        "id": "test:geometry:procedural-curve#spine",
+        "definition": {"kind": "unknown"}
+    }))
+    .unwrap();
+    let owner = ir.geometry.curves.last_mut().unwrap();
+    let crate::geometry::CurveGeometry::Solved(solved) = owner.geometry.clone() else {
+        panic!("the unit cube's curves are solved");
+    };
+    owner.geometry = crate::geometry::CurveGeometry::Procedural {
+        construction: spine.id.clone(),
+        cache: Some(solved),
+    };
+    let owner = owner.id.clone();
+    ir.geometry.procedural_curves.push(spine.clone());
+    let curves = ir.geometry.curves.len();
+    let edges = ir.geometry.edges.len();
+    let (outcome, _) = run(
+        &mut ir,
+        seed("geometry", "procedural_curves", spine.id.as_str()),
+    );
+    assert!(outcome.marked.contains(owner.as_str()), "{outcome:?}");
+    assert!(outcome.dropped.is_empty(), "{outcome:?}");
+    assert_eq!(ir.geometry.curves.len(), curves);
+    assert_eq!(ir.geometry.edges.len(), edges);
+    let stated = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|curve| curve.id == owner)
+        .unwrap();
+    assert_eq!(
+        stated.geometry,
+        crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown {
+            record: None
+        })
+    );
+    assert_closed(&ir, spine.id.as_str(), &outcome);
+}
+
 /// Each Error finding of `ir`, by rule and record.
 fn errors(ir: &CadIr) -> BTreeSet<(String, Option<String>)> {
     crate::validate::validate_neutral(ir, Vec::new())

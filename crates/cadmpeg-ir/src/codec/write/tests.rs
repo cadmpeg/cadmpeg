@@ -1686,29 +1686,28 @@ fn the_cadir_writer_drops_an_invalid_feature_parent_relation() {
 }
 
 /// A procedural construction that no carrier or more than one carrier owns
-/// is a record CADIR cannot write (§3.4): the writer drops it with each
-/// carrier that needs it, as §3.3 drops a record, and names the construction
-/// and those carriers.
+/// is a record CADIR cannot write (§3.4): the writer drops it, states each
+/// carrier that named it `Unknown`, its partial form (§3.3), and names the
+/// construction and those carriers. The edges on the carriers stay.
 #[test]
 fn the_cadir_writer_drops_a_procedural_construction_without_one_owner() {
     use crate::geometry::procedural_curves::ProceduralCurveDefinition;
-    use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
-    use crate::ids::{CurveId, ProceduralCurveId};
+    use crate::geometry::{CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
+    use crate::ids::ProceduralCurveId;
 
     const ORPHAN: &str = "test:writer:curve-construction#orphan";
     const SHARED: &str = "test:writer:curve-construction#shared";
-    let mut ir = CadIr::empty();
-    for carrier in ["test:writer:curve#a", "test:writer:curve#b"] {
-        ir.geometry.curves.push(Curve {
-            parameter_range: None,
-            id: CurveId::mint(carrier).unwrap(),
-            geometry: CurveGeometry::Procedural {
-                construction: ProceduralCurveId::mint(SHARED).unwrap(),
-                cache: None,
-            },
-            source_object: None,
-            native_ref: None,
-        });
+    let mut ir = unit_cube().unwrap();
+    let mut carriers = Vec::new();
+    for carrier in &mut ir.geometry.curves[..2] {
+        let CurveGeometry::Solved(solved) = carrier.geometry.clone() else {
+            panic!("the unit cube's curves are solved");
+        };
+        carrier.geometry = CurveGeometry::Procedural {
+            construction: ProceduralCurveId::mint(SHARED).unwrap(),
+            cache: Some(solved),
+        };
+        carriers.push(carrier.id.clone());
     }
     for construction in [ORPHAN, SHARED] {
         ir.geometry.procedural_curves.push(ProceduralCurve::new(
@@ -1725,12 +1724,26 @@ fn the_cadir_writer_drops_a_procedural_construction_without_one_owner() {
     assert!(orphan.contains(ORPHAN), "{orphan}");
     assert!(
         shared.contains(SHARED)
-            && shared.contains("test:writer:curve#a")
-            && shared.contains("test:writer:curve#b"),
+            && carriers
+                .iter()
+                .all(|carrier| shared.contains(carrier.as_str())),
         "{shared}"
     );
     assert!(read.geometry.procedural_curves.is_empty());
-    assert!(read.geometry.curves.is_empty());
+    assert_eq!(read.geometry.curves.len(), ir.geometry.curves.len());
+    assert_eq!(read.geometry.edges.len(), ir.geometry.edges.len());
+    for carrier in &carriers {
+        let stated = read
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| &curve.id == carrier)
+            .unwrap();
+        assert_eq!(
+            stated.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
+        );
+    }
 }
 
 /// An expression whose tree has no canonical text is a record CADIR cannot
@@ -1766,4 +1779,43 @@ fn the_cadir_writer_drops_a_record_whose_expression_does_not_print() {
         .map(|parameter| parameter.id.as_str())
         .collect::<Vec<_>>();
     assert_eq!(kept, ["test:design:parameter#kept"]);
+}
+
+/// An output from which every record was dropped is the empty CADIR
+/// document, with `export:output.empty` (§3.4): here the one record is
+/// refused.
+#[test]
+fn the_cadir_writer_writes_the_empty_document_where_it_drops_every_record() {
+    use crate::design::expr::{Expression, Neutral, Node};
+    use crate::design::parameter::ParameterDefinition;
+
+    let mut ir = CadIr::empty();
+    let mut empty = negated_parameter("empty", 1);
+    empty.definition =
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Any(Vec::new()))));
+    ir.design.parameters.push(empty);
+
+    let (losses, read) = written_with_losses(&ir, "output.empty");
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(read, CadIr::empty());
+}
+
+/// A scope that excludes every record the document holds leaves an output
+/// from which every record was dropped: the empty CADIR document, with
+/// `export:output.empty` (§3.4).
+#[test]
+fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_record() {
+    let mut ir = CadIr::empty();
+    ir.design.parameters.push(negated_parameter("kept", 1));
+    let mut value = serde_json::to_value(&ir).unwrap();
+    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
+    let read = CadIr::read(
+        value.to_string().as_bytes(),
+        &crate::document::read::ReadOptions::default(),
+    )
+    .expect("the read keeps the scope as written");
+
+    let (losses, written) = written_with_losses(&read.document, "output.empty");
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(written, CadIr::empty());
 }

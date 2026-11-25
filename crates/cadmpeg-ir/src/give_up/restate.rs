@@ -3,7 +3,8 @@
 //!
 //! A record is rewritten through its JSON, typed by the CADIR schema: a pick
 //! of a lost record is `Native` (§5.8), an expression that names one is
-//! `Source` with no tokens (§5.13), a procedural carrier on one is `Unknown`,
+//! `Source` with no tokens (§5.13), a procedural definition on one is
+//! `Unknown`, a curve or surface carrier that names one is `Unknown`,
 //! a name that names one leaves its entry's native name alone (§5.7), and a
 //! collection whose order carries no meaning loses the member that names one.
 
@@ -15,6 +16,7 @@ use crate::design::expr::{ExpressionDialect, Neutral};
 use crate::design::selection::{Members, PickTarget, Picked, Unordered};
 use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 
 /// The CADIR schema, read to type each value of a record.
 pub(crate) struct Schema(Value);
@@ -65,6 +67,8 @@ pub(super) const PICKED: &str = "Picked";
 pub(super) const EXPRESSION: &str = "Expression";
 pub(super) const PROCEDURAL_CURVE: &str = "ProceduralCurveDefinition";
 pub(super) const PROCEDURAL_SURFACE: &str = "ProceduralSurfaceDefinition";
+pub(super) const CURVE_GEOMETRY: &str = "CurveGeometry";
+pub(super) const SURFACE_GEOMETRY: &str = "SurfaceGeometry";
 pub(super) const NAME_ENTRY: &str = "NameEntry";
 pub(super) const UNORDERED_MEMBERS: &str = "UnorderedMembers";
 pub(super) const ORDERED_MEMBERS: &str = "OrderedMembers";
@@ -177,6 +181,9 @@ impl<'a> Restate<'a> {
                 return self.carrier(carrier, value);
             }
             Some(NAME_ENTRY) => return self.name_entry(value),
+            Some(carrier @ (CURVE_GEOMETRY | SURFACE_GEOMETRY)) => {
+                return self.carrier_geometry(carrier, value);
+            }
             _ => {}
         }
         if let Some(branches) = ["oneOf", "anyOf", "allOf"]
@@ -442,6 +449,34 @@ impl<'a> Restate<'a> {
                 }
             });
         *value = cached.unwrap_or(bare);
+        Fate::Kept
+    }
+
+    /// A curve or surface carrier that names a lost id, its construction or
+    /// its retained record, is `Unknown` (§3.3).
+    fn carrier_geometry(&self, carrier: &str, value: &mut Value) -> Fate {
+        if !names(value, self.gone) {
+            return Fate::Clean;
+        }
+        let unknown = if carrier == CURVE_GEOMETRY {
+            cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                serde::Serialize::serialize(
+                    &CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                    adapter,
+                )
+            })
+        } else {
+            cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                serde::Serialize::serialize(
+                    &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                    adapter,
+                )
+            })
+        };
+        let Ok(unknown) = unknown else {
+            return Fate::Lost;
+        };
+        *value = unknown;
         Fate::Kept
     }
 
