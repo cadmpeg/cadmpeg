@@ -825,12 +825,12 @@ impl CodecBackend for RepeatedIdentityCodec {
 }
 
 #[test]
-fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_one_loss() {
+fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_charges_one_loss() {
     let result = RepeatedIdentityCodec { differ: true }
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
         .expect("a decoder's repeated id does not refuse the file");
     let cube = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    assert_eq!(result.ir().geometry.points, cube.geometry.points[1..]);
     let repeated = result
         .report()
         .losses
@@ -843,7 +843,7 @@ fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_
     assert_eq!(loss.severity, crate::report::Severity::Error);
     assert!(
         loss.message.contains(cube.geometry.points[0].id.as_str())
-            && loss.message.contains("2 dropped"),
+            && loss.message.contains("3 times"),
         "{}",
         loss.message
     );
@@ -871,7 +871,7 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         result.source_fidelity().content_digest,
-        crate::hash::content_digest(&ctx, result.ir()).unwrap()
+        Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
     );
     assert!(!result.source_fidelity().edited(result.ir()).unwrap());
 
@@ -892,10 +892,7 @@ fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited
     let result = RepeatedIdentityCodec { differ: false }
         .decode(&mut Cursor::new(Vec::new()), &options)
         .expect("a digest the depth limit refuses does not refuse the decode");
-    assert_eq!(
-        result.source_fidelity().content_digest,
-        crate::hash::digest::Sha256Digest::digest(&[])
-    );
+    assert_eq!(result.source_fidelity().content_digest, None);
     assert!(result.source_fidelity().edited(result.ir()).unwrap());
     let unavailable = result
         .report()

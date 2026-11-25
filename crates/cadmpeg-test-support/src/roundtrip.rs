@@ -44,7 +44,6 @@ use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
 
 /// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
@@ -166,7 +165,7 @@ pub fn semantic_roundtrip<C>(
         "{label}: the decode's content digest does not match its document, so replacing it cannot \
          force the semantic path; this helper would report whatever the encoder happened to do"
     );
-    source_fidelity.content_digest = Sha256Digest::digest(&[]);
+    source_fidelity.content_digest = None;
     // Plan borrows the document until write completes.
     let written = match Encoder::plan(
         codec,

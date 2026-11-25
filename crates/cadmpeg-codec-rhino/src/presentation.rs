@@ -4521,6 +4521,15 @@ fn retain_unbound_presentation_record(
     push_opaque_record(opaque_records, table_typecode, record);
 }
 
+/// The key of a layer's native record: its UUID where no other layer holds
+/// it, else its archive index and source offset.
+pub(crate) fn layer_record_key(layer: &settings::LayerRecord, unique_id: bool) -> String {
+    match layer.id.filter(|_| unique_id) {
+        Some(id) => format!("{id}"),
+        None => format!("index-{}-offset-{}", layer.index, layer.source.range.start),
+    }
+}
+
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
@@ -5091,17 +5100,15 @@ pub(crate) fn install(
         per_viewport_settings.extend_from_slice(&layer.per_viewport_settings);
 
         layers.push(LayerPresentationRecord {
-            id: if let Some(id) = layer
-                .id
-                .filter(|id| layer_id_counts.get(id).copied() == Some(1))
-            {
-                format!("rhino:presentation:layer#{id}")
-            } else {
-                format!(
-                    "rhino:presentation:layer#index-{}-offset-{}",
-                    layer.index, layer.source.range.start
+            id: format!(
+                "rhino:presentation:layer#{}",
+                layer_record_key(
+                    layer,
+                    layer
+                        .id
+                        .is_some_and(|id| layer_id_counts.get(&id).copied() == Some(1)),
                 )
-            },
+            ),
             source_offset: cadmpeg_core::decode::u64_from_index(layer.source.range.start),
             archive_index: layer.index,
             source_uuid: layer.id.map(|id| format!("{id}")),
