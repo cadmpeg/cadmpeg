@@ -104,6 +104,89 @@ fn generated_configuration_document() -> serde_json::Value {
     document
 }
 
+/// The report of `ir` written without a source, and the written file
+/// decoded again.
+fn write_and_decode(
+    ir: &cadmpeg_ir::CadIr,
+) -> (
+    cadmpeg_ir::report::export::ExportReport,
+    cadmpeg_ir::codec::DecodeResult,
+) {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("source-less write");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("source-less round trip");
+    (report, decoded)
+}
+
+/// `round_trip` holds the configuration documents and configurations of
+/// `written`, and its root record names row `row` of table `1`.
+fn assert_active_row_written(
+    round_trip: &cadmpeg_ir::codec::DecodeResult,
+    written: &cadmpeg_ir::CadIr,
+    row: &str,
+) {
+    let documents = f3d_native(round_trip.ir()).design_configurations;
+    let active = documents[0]
+        .active_row()
+        .expect("the written root record names a row")
+        .clone();
+    assert_eq!(
+        (active.table_id.as_str(), active.row_id.as_str()),
+        ("1", row)
+    );
+    let mut expected = f3d_native(written).design_configurations;
+    expected[0].set_active_row(active).unwrap();
+    assert_eq!(documents, expected);
+    assert_eq!(
+        round_trip.ir().model.configurations,
+        written.model.configurations
+    );
+}
+
+#[test]
+fn a_source_root_record_is_written_under_its_stated_type() {
+    let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
+    let payload = serde_json::to_vec(&generated_configuration_document()).unwrap();
+    let archive = crate::test_support::configuration_table::with_root_segment(
+        f3d_with_configuration(&synthetic_geometry_smbh(), name, &payload),
+        crate::test_support::configuration_table::root_record(
+            *b"256",
+            crate::test_support::configuration_table::ROOT_RECORD,
+            "1",
+            "large",
+        ),
+    );
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .expect("configuration root decode"),
+    );
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
+        .unwrap();
+    let (report, round_trip) = write_and_decode(&source_less);
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("DR-1063")),
+        "{:#?}",
+        report.losses
+    );
+    assert_active_row_written(&round_trip, &source_less, "large");
+}
+
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -243,25 +326,11 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     crate::test_support::assert_written_with_loss(
         &rooted,
         None,
-        "export/native.records-omitted",
-        "writes no DesignConfigurationRoot record",
+        "export/record.residual-unavailable",
+        "DR-1063",
     );
-    let mut rooted_bytes = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&rooted, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut rooted_bytes))
-        .expect("an active row is written without its root record");
-    let rooted_round_trip = F3dCodec
-        .decode(&mut Cursor::new(rooted_bytes), &DecodeOptions::default())
-        .expect("the design without its root record decodes");
-    assert_eq!(
-        f3d_native(rooted_round_trip.ir()).design_configurations,
-        native.design_configurations
-    );
-    assert_eq!(
-        rooted_round_trip.ir().model.configurations,
-        expected_projected
-    );
+    let (_, rooted_round_trip) = write_and_decode(&rooted);
+    assert_active_row_written(&rooted_round_trip, &rooted, "medium");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less configuration round trip");

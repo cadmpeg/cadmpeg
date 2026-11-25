@@ -20,6 +20,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1063. MetaStream type of the `DesignConfigurationRoot` record
+
+**Question.** Which MetaStream type row registers the `DesignConfigurationRoot` record: its type GUID, base-type GUID, type version, and add-in name?
+
+**Known.** The record is an indexed Design record in a Design `BulkStream` (`f3d.md` §1.2 "The `DesignConfigurationRoot` record in the Design `BulkStream` names the active row."). Its three-digit class tag is the dynamic class tag `256 + k` of the type row at ordinal `k` whose entity list holds the record index, and the primary record index gives its extent. The indexed header is followed by a zero u32, the LP-ASCII key `DesignConfigurationRoot`, eleven zero bytes, u32 `1`, the LP-UTF16 table id, the LP-UTF16 row id of the active row, and u32 `0`; the extent ends after that u32. The key identifies the record without its type row. The table id and row id name a row of a `DesignConfigurationTable` JSON document.
+
+**Need.** A save of a design that has a configuration table with two rows, saved once with each row active. Compare the Design `MetaStream` type rows and find the row whose entity list holds the index of the record with the key `DesignConfigurationRoot`.
+
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?

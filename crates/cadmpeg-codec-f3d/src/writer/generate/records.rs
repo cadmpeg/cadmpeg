@@ -23,6 +23,7 @@ use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
+#[derive(Default)]
 pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) bytes: Vec<u8>,
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
@@ -858,6 +859,32 @@ fn write_reference(out: &mut Vec<u8>, target: u32) {
     out.push(1);
     out.extend_from_slice(&u64::from(target).to_le_bytes());
     out.extend_from_slice(&[0, 0]);
+}
+
+/// Append the `DesignConfigurationRoot` record `record_index` of type
+/// `class_tag`, which names row `row_id` of table `table_id` (f3d.md §1.2).
+pub(super) fn encode_configuration_root(
+    bulk: &mut EncodedDesignBulkStream,
+    class_tag: &crate::records::references::DesignClassTag,
+    record_index: u32,
+    table_id: &str,
+    row_id: &str,
+) -> Result<(), CodecError> {
+    use crate::layout::configuration_root_prefix as root;
+
+    let out = &mut bulk.bytes;
+    bulk.primary_records
+        .push(primary_record(record_index, out.len())?);
+    native_lp_ascii(out, class_tag.as_str())?;
+    out.extend_from_slice(&record_index.to_le_bytes());
+    out.extend_from_slice(&root::ZERO_U32_VALUE.to_le_bytes());
+    native_lp_ascii(out, crate::design::decode::configuration_root::ROOT_KEY)?;
+    out.extend_from_slice(&[0; root::CONSTANT_ONE - root::ZERO_RUN_11]);
+    out.extend_from_slice(&root::CONSTANT_ONE_VALUE.to_le_bytes());
+    native_lp_utf16(out, table_id)?;
+    native_lp_utf16(out, row_id)?;
+    out.extend_from_slice(&0u32.to_le_bytes());
+    Ok(())
 }
 
 fn construction_recipe_name(kind: ConstructionRecipeKind) -> &'static [u8] {

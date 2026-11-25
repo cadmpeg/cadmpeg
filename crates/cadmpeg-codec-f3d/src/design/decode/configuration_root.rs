@@ -10,7 +10,8 @@ use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-const ROOT_KEY: &[u8] = b"DesignConfigurationRoot";
+/// The LP-ASCII key of the record.
+pub(crate) const ROOT_KEY: &str = "DesignConfigurationRoot";
 
 /// Active rows named by root records, and the count of root records outside
 /// the admitted form.
@@ -53,7 +54,7 @@ pub(crate) fn decode_configuration_roots(
 
 fn is_root_record(record: &[u8]) -> bool {
     View::u32_le_at(record, root::KEY_LENGTH) == Some(root::KEY_LENGTH_VALUE)
-        && record.get(root::KEY..root::ZERO_RUN_11) == Some(ROOT_KEY)
+        && record.get(root::KEY..root::ZERO_RUN_11) == Some(ROOT_KEY.as_bytes())
 }
 
 fn active_row(record: &[u8]) -> Option<DesignConfigurationActiveRow> {

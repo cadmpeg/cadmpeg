@@ -16,6 +16,7 @@ use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
 mod attributes;
+mod configuration_root;
 mod design;
 mod index;
 mod native_bytes;
@@ -324,13 +325,12 @@ fn attempt<W: Write + Seek>(
     };
     let mut configurations = Vec::new();
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
-    let mut inactive = Vec::new();
+    let mut root = None;
+    let mut root_losses = Vec::new();
     if write_design {
+        (root, root_losses) = configuration_root::plan(target, &native.design_configurations);
         let names = configuration_entry_names(&native.design_configurations);
         for (configuration, (name, fault)) in native.design_configurations.iter().zip(names) {
-            if configuration.active_row().is_some() {
-                inactive.push(configuration.id());
-            }
             let payload =
                 crate::records::configuration::encode_configuration_payload(configuration)
                     .map_err(Failure::design)?;
@@ -344,19 +344,14 @@ fn attempt<W: Write + Seek>(
             configurations.push((name, payload));
         }
     }
-    let configuration_losses = renamed
+    let mut configuration_losses = renamed
         .into_iter()
         .filter_map(|(fault, entries)| {
             cadmpeg_ir::codec::write::value_unwritable("F3D", &fault.reason(), entries)
         })
-        .chain(cadmpeg_ir::codec::write::native_records_omitted(
-            "F3D",
-            "writes no DesignConfigurationRoot record, so no row of these configuration tables \
-             is active",
-            inactive,
-        ))
+        .chain(root_losses)
         .collect::<Vec<_>>();
-    let design_bulk = encode_design_bulkstream(
+    let mut design_bulk = encode_design_bulkstream(
         target,
         &native,
         &design_registry,
@@ -364,6 +359,15 @@ fn attempt<W: Write + Seek>(
         neutral_records.as_ref(),
     )
     .map_err(design_failure)?;
+    if let Some(root) = root {
+        configuration_losses.extend(
+            root.write(
+                &mut design_registry,
+                design_bulk.get_or_insert_with(Default::default),
+            )
+            .map_err(design_failure)?,
+        );
+    }
     let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
         bulk_stream.primary_records.as_slice()
     });

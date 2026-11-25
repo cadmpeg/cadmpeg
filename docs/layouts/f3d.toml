@@ -41917,6 +41917,7 @@ section = "1.2"
 anchor = "The `DesignConfigurationRoot` record in the Design `BulkStream` names the active row."
 size = 57
 note = "Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/configuration_root.rs"
 
 [[record.gap]]
 offset = 0
