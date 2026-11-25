@@ -109,21 +109,19 @@ pub(crate) enum CachedNative {
     Loaded(Option<SldprtNative>),
 }
 
-/// What a semantic write changes from a plain write: each feature of
-/// `withheld` keeps its stored definition record, for the reason it is paired
-/// with, and the configuration of each edit in `shaped` takes the stale mark.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct WriteEdits<'a> {
-    pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
-    pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
-}
-
 /// Reusable decoded source baseline and native records across read-back retries
 /// of one semantic write.
 #[derive(Default)]
 pub(crate) struct SemanticWriteCache {
     pub(crate) source_baseline: Option<Arc<cadmpeg_ir::codec::Decoded>>,
     pub(crate) native: CachedNative,
+}
+
+/// Per-pass withheld features and shaping edits for one semantic write.
+#[derive(Clone, Copy)]
+pub(crate) struct SemanticWriteControls<'a> {
+    pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
+    pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -148,7 +146,7 @@ pub(crate) fn write_semantic_with_records(
         annotations,
         digests,
         retained_records,
-        WriteEdits { withheld, shaped },
+        SemanticWriteControls { withheld, shaped },
         &mut cache,
         writer,
     )
@@ -159,11 +157,11 @@ pub(crate) fn write_semantic_with_records_cached(
     annotations: &Annotations,
     digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
-    edits: WriteEdits<'_>,
+    controls: SemanticWriteControls<'_>,
     cache: &mut SemanticWriteCache,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
-    let WriteEdits { withheld, shaped } = edits;
+    let SemanticWriteControls { withheld, shaped } = controls;
     let source_baseline = &mut cache.source_baseline;
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =

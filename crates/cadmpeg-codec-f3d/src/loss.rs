@@ -823,7 +823,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// A scope tail sets the third state byte; the scope is read as an active feature with no evaluated result.
     FeatureUnevaluatedStateAssumed,
-    /// A scope tail stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
+    /// A scope tail before the timeline marker stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
     FeatureNoResultActiveAssumed,
     /// A scope tail stores a state byte above `1`; the byte is read as set.
     FeatureStateByteAboveOne,
@@ -957,6 +957,10 @@ pub(crate) enum F3dLossCode {
     /// A Combine operand resolved in its input state names no model body and
     /// no generating feature, so it keeps its input-state bodies.
     FeatureCombineBodyProducerUnresolved,
+    /// A generated Combine operand slot names the feature that inserts it:
+    /// the state that last updates the slot before the Combine has no unique
+    /// earlier scope.
+    FeatureCombineOperandWriterAssumed,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -2007,6 +2011,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkShared,
         Self::FeatureReverseNormalLinkOrderAssumed,
         Self::FeatureCombineBodyProducerUnresolved,
+        Self::FeatureCombineOperandWriterAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -3141,6 +3146,7 @@ impl F3dLossCode {
             Self::FeatureCombineBodyProducerUnresolved => {
                 "feature.combine-body-producer-unresolved"
             }
+            Self::FeatureCombineOperandWriterAssumed => "feature.combine-operand-writer-assumed",
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -4145,6 +4151,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
+            | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4923,6 +4930,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
+            | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -5888,6 +5896,7 @@ mod tests {
                 "feature.reverse-normal-link-shared",
                 "feature.reverse-normal-link-order-assumed",
                 "feature.combine-body-producer-unresolved",
+                "feature.combine-operand-writer-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",

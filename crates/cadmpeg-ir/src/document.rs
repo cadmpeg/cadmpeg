@@ -854,6 +854,15 @@ macro_rules! declare_topology {
         }
 
         impl Topology {
+            fn deserialize_direct<'de, D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let wire = TopologyReadWire::deserialize(deserializer)?;
+                Self::from_read_wire(wire, &mut |_, _, error| Err(error))
+                    .map_err(serde::de::Error::custom)
+            }
+
             /// The members of the `geometry` home.
             const READ_FIELDS: &'static [&'static str] = &[$(stringify!($field)),*];
 
@@ -976,7 +985,6 @@ macro_rules! declare_topology {
                     .map_err(serde::de::Error::custom)
             }
         }
-
         /// Every topology arena borrowed in canonical identity order.
         #[derive(Serialize)]
         pub(crate) struct SortedTopology<'a> {
@@ -1783,6 +1791,14 @@ macro_rules! declare_model_wire {
         }
 
         impl Model {
+            fn deserialize_direct<'de, D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let wire = ModelReadWire::deserialize(deserializer)?;
+                Ok(wire.into_model())
+            }
+
             fn serialize_direct<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -2847,7 +2863,9 @@ struct CadIrReadWire {
     #[serde(rename = "units")]
     _units: CanonicalUnitsWire,
     tolerances: Tolerances,
+    #[serde(deserialize_with = "Topology::deserialize_direct")]
     geometry: Topology,
+    #[serde(deserialize_with = "Model::deserialize_direct")]
     model: Model,
     design: Design,
     process: Process,
@@ -2978,7 +2996,8 @@ impl CadIr {
     ///
     /// Where `value` is not a document of this IR version.
     pub fn from_projection(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        let wire = CadIrReadWire::deserialize(value)?;
+        let wire =
+            cadmpeg_core::serde_erase::deserialize_with(value, CadIrReadWire::deserialize_erased)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.admit()
     }

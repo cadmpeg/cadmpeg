@@ -522,6 +522,49 @@ fn an_unprojected_item_takes_its_suppression_from_its_scope_tail_state_bytes() {
     }
 }
 
+/// A rolled-back item that holds no state is active with either no-result
+/// flag (f3d.md §3.1, "In every form, the state bytes"), and charges no
+/// assumption.
+#[test]
+fn a_rolled_back_item_with_either_no_result_flag_is_active_without_a_loss() {
+    for no_result in [false, true] {
+        let flags: super::timeline::TailFlags<'_> =
+            [((STREAM, 8), tail_flags([false; 2], no_result, true))]
+                .into_iter()
+                .collect();
+        let mut losses = Vec::new();
+        let documents = crate::test_support::with_decode_context(|ctx| {
+            super::timeline::project(
+                ctx,
+                &[],
+                &[timeline(STREAM, 0, &[7, 8])],
+                &[],
+                &super::timeline::ScopeInputs {
+                    records: &[],
+                    tail_flags: &flags,
+                },
+                &BTreeSet::new(),
+                &mut losses,
+            )
+        })
+        .unwrap();
+        let [_, rolled] = documents[""].features.as_slice() else {
+            panic!("two features")
+        };
+        assert_eq!(
+            rolled.suppressed,
+            Some(Dimension::Literal(false)),
+            "no-result {no_result}"
+        );
+        assert!(
+            losses.iter().all(|loss| {
+                loss.code != crate::loss::F3dLossCode::FeatureNoResultActiveAssumed.kind()
+            }),
+            "no-result {no_result}: {losses:#?}"
+        );
+    }
+}
+
 /// An unprojected Thread item whose scope stores the companion tail takes
 /// its suppression from the companion suppression flag.
 #[test]
