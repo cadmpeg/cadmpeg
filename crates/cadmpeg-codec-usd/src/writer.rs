@@ -211,15 +211,10 @@ pub(crate) fn plan(
              has no byte-replay path",
         ));
     };
-    let metres = match input.scene.meters_per_unit {
-        None => 1.0,
-        Some(metres) if metres.is_finite() && metres > 0.0 => metres,
-        Some(metres) => {
-            return Err(CodecError::InvalidInput(format!(
-                "metres per unit must be a finite positive number, not {metres}"
-            )))
-        }
-    };
+    let metres = input
+        .scene
+        .meters_per_unit
+        .map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
     let mut writer = Writer::new(input.ir, version, input.scene, metres);
     if packaged {
         writer.package = Some(Vec::new());
@@ -299,6 +294,9 @@ struct Unwritten {
     /// Triangle groups that name the face whose triangles they hold. No
     /// `GeomSubset` property states the face.
     group_faces: usize,
+    /// Prims left out, and header fields not written, because a value they
+    /// hold is not finite.
+    non_finite: Vec<String>,
 }
 
 /// The placement of a prim: its up-axis turn, transform, per-axis scale,
@@ -697,7 +695,8 @@ impl<'ir> Writer<'ir> {
         if !self.shared.is_empty() {
             self.prototypes();
         }
-        let prims = std::mem::take(&mut self.out).finish();
+        let (prims, non_finite) = std::mem::take(&mut self.out).finish();
+        self.unwritten.non_finite = non_finite;
         for (occurrence, path) in &self.paths {
             if let Some(key) =
                 physx::placeholder(&cadmpeg_ir::physics::solver::SolverTarget::Occurrence {
@@ -714,7 +713,10 @@ impl<'ir> Writer<'ir> {
         let mut header = Emitter::default();
         header.line(&format!("#usda {}", self.version));
         header.line("(");
-        if let Some(name) = default_prim {
+        // A default prim left out is not named.
+        if let Some(name) =
+            default_prim.filter(|name| !self.unwritten.non_finite.contains(&format!("/{name}")))
+        {
             header.line(&format!("    defaultPrim = {}", quoted(&name)));
         }
         header.line(&format!(
@@ -727,7 +729,9 @@ impl<'ir> Writer<'ir> {
         header.line(&format!("    upAxis = {}", quoted(self.up_axis)));
         header.line(")");
         header.blank();
-        header.finish() + &prims
+        let (header, header_non_finite) = header.finish();
+        self.unwritten.non_finite.extend(header_non_finite);
+        header + &prims
     }
 
     /// The `Looks` scope with one material per appearance, under the root
@@ -740,6 +744,7 @@ impl<'ir> Writer<'ir> {
             Some(root) => format!("/{root}/{LOOKS}"),
             None => format!("/{LOOKS}"),
         };
+        self.out.name_next(LOOKS);
         self.out.line(&format!("def Scope {}", quoted(LOOKS)));
         self.out.open();
         let mut names = Names::default();
@@ -1951,8 +1956,8 @@ impl<'ir> Writer<'ir> {
     /// The abstract `Prototypes` prim with the shared definitions.
     fn prototypes(&mut self) {
         self.out.blank();
-        self.out.line(&format!("class {}", quoted(PROTOTYPES)));
         self.out.name_next(PROTOTYPES);
+        self.out.line(&format!("class {}", quoted(PROTOTYPES)));
         self.out.open();
         let shared: Vec<(ProductDefinitionId, String)> = self
             .shared
@@ -1993,8 +1998,8 @@ impl<'ir> Writer<'ir> {
                 }
                 _ => {}
             }
-            self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
+            self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.open();
             self.stack.extend([PROTOTYPES.to_owned(), name.clone()]);
             for body in bodies {
@@ -2173,6 +2178,12 @@ impl<'ir> Writer<'ir> {
                 unwritten.rounded_points
             )));
         }
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "USD",
+            "leaves out the prims and fields that hold a non-finite number, which the layer \
+             does not state",
+            unwritten.non_finite.iter().cloned(),
+        ));
         losses
     }
 }

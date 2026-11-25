@@ -355,3 +355,41 @@ fn an_unread_property_of_a_group_prim_is_reported() {
         UsdLossCode::PropertyNotTransferred,
     );
 }
+
+/// A mesh point past the binary32 range has no `point3f` value. The mesh
+/// prim is left out, the layer reads back, and the loss names the prim.
+#[test]
+fn a_mesh_point_past_the_float_range_leaves_its_prim_out() {
+    let (mut ir, _, _) = decode(&mesh(TRIANGLE)).into_parts();
+    let (written, _) = encode(&ir);
+    let name = written
+        .split("def Mesh \"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("a mesh prim")
+        .to_owned();
+    let mut first = true;
+    ir.model.tessellations[0]
+        .edit_vertices(|point| {
+            if std::mem::take(&mut first) {
+                point.x = 1e300;
+            }
+            Ok(())
+        })
+        .expect("a finite point");
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("def Mesh"), "{text}");
+    assert!(!text.contains('\0'), "{text:?}");
+    let notes: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/value.unwritable")
+        .collect();
+    assert_eq!(notes.len(), 1, "{:#?}", report.losses);
+    assert!(
+        notes[0].message.contains(&format!("/{name}")),
+        "{}",
+        notes[0].message
+    );
+    assert!(decode(&text).ir().model.tessellations.is_empty());
+}

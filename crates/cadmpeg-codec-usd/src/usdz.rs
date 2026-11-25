@@ -114,34 +114,52 @@ fn u32_le(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
-fn too_large() -> CodecError {
-    CodecError::NotImplemented("a USDZ member above 4 GiB needs ZIP64".to_owned())
-}
-
 /// A package of the stored `members`, by name and content, in order, each
-/// with its data at a multiple of 64 bytes.
-pub(crate) fn package(members: &[(&str, &[u8])]) -> Result<Vec<u8>, CodecError> {
+/// with its data at a multiple of 64 bytes, and the names of the members
+/// left out.
+///
+/// The archive has no ZIP64 records, so its offsets and sizes are 32-bit, a
+/// name is at most `u16::MAX` bytes and it holds at most `u16::MAX` members.
+/// A member past those limits is left out, and the members after it are
+/// written where they fit.
+pub(crate) fn package(members: &[(&str, &[u8])]) -> (Vec<u8>, Vec<String>) {
     /// The ZIP version that stored members need.
     const VERSION_NEEDED: u16 = 10;
     /// The fixed part of a local file header.
     const LOCAL_HEADER_LEN: usize = 30;
+    /// The fixed part of a central directory header.
+    const CENTRAL_HEADER_LEN: usize = 46;
     /// The header of a padding extra field: its id and its size.
     const PADDING_HEADER_LEN: usize = 4;
     /// The extra field id of the padding.
     const PADDING_ID: u16 = 0x1986;
     let mut out = Vec::new();
     let mut entries = Vec::new();
+    let mut central_len = 0_usize;
+    let mut left_out = Vec::new();
     for (name, data) in members {
-        let name_len = u16::try_from(name.len()).map_err(|_| too_large())?;
-        let size = u32::try_from(data.len()).map_err(|_| too_large())?;
-        let crc = crc32fast::hash(data);
-        let offset = u32::try_from(out.len()).map_err(|_| too_large())?;
         let unpadded = out.len() + LOCAL_HEADER_LEN + name.len();
         let mut padding = (DATA_ALIGNMENT - unpadded % DATA_ALIGNMENT) % DATA_ALIGNMENT;
         if padding > 0 && padding < PADDING_HEADER_LEN {
             padding += DATA_ALIGNMENT;
         }
-        let padding_len = u16::try_from(padding).map_err(|_| too_large())?;
+        let end = unpadded + padding + data.len();
+        let central = central_len + CENTRAL_HEADER_LEN + name.len();
+        let fits = end
+            .checked_add(central)
+            .is_some_and(|archive| u32::try_from(archive).is_ok());
+        let (Ok(name_len), Ok(size), Ok(offset), Ok(padding_len), true, true) = (
+            u16::try_from(name.len()),
+            u32::try_from(data.len()),
+            u32::try_from(out.len()),
+            u16::try_from(padding),
+            entries.len() < usize::from(u16::MAX),
+            fits,
+        ) else {
+            left_out.push((*name).to_owned());
+            continue;
+        };
+        let crc = crc32fast::hash(data);
         out.extend_from_slice(LOCAL_HEADER_MAGIC);
         u16_le(&mut out, VERSION_NEEDED);
         u16_le(&mut out, 0);
@@ -158,15 +176,19 @@ pub(crate) fn package(members: &[(&str, &[u8])]) -> Result<Vec<u8>, CodecError> 
             u16_le(&mut out, PADDING_ID);
             u16_le(
                 &mut out,
-                u16::try_from(padding - PADDING_HEADER_LEN).map_err(|_| too_large())?,
+                u16::try_from(padding - PADDING_HEADER_LEN)
+                    .expect("the padding is below its own 16-bit length"),
             );
             out.resize(out.len() + padding - PADDING_HEADER_LEN, 0);
         }
         out.extend_from_slice(data);
+        central_len = central;
         entries.push((name, name_len, size, crc, offset));
     }
-    let count = u16::try_from(entries.len()).map_err(|_| too_large())?;
-    let central_start = u32::try_from(out.len()).map_err(|_| too_large())?;
+    // Each admitted member kept the archive end and the central directory
+    // within 32-bit offsets, and the count below `u16::MAX`.
+    let count = u16::try_from(entries.len()).expect("admitted members number below 2^16");
+    let central_start = u32::try_from(out.len()).expect("admitted members end below 2^32");
     for (name, name_len, size, crc, offset) in entries {
         out.extend_from_slice(b"PK\x01\x02");
         u16_le(&mut out, VERSION_NEEDED);
@@ -187,10 +209,7 @@ pub(crate) fn package(members: &[(&str, &[u8])]) -> Result<Vec<u8>, CodecError> 
         u32_le(&mut out, offset);
         out.extend_from_slice(name.as_bytes());
     }
-    let central_size = u32::try_from(out.len())
-        .map_err(|_| too_large())?
-        .checked_sub(central_start)
-        .ok_or_else(too_large)?;
+    let central_size = u32::try_from(central_len).expect("the central directory ends below 2^32");
     out.extend_from_slice(b"PK\x05\x06");
     u16_le(&mut out, 0);
     u16_le(&mut out, 0);
@@ -199,7 +218,7 @@ pub(crate) fn package(members: &[(&str, &[u8])]) -> Result<Vec<u8>, CodecError> 
     u32_le(&mut out, central_size);
     u32_le(&mut out, central_start);
     u16_le(&mut out, 0);
-    Ok(out)
+    (out, left_out)
 }
 
 #[cfg(test)]

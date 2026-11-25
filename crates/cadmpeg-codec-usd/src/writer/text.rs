@@ -12,25 +12,69 @@ const SMALLEST_PLAIN: f64 = 1e-5;
 /// Values written on one line of an array before a line break.
 const VALUES_PER_LINE: usize = 8;
 
+/// The text [`real`] and [`real32`] write for a non-finite number. No USDA
+/// token holds a NUL character (strings write control characters as `\x`
+/// escapes), so a line that contains it holds a value the layer does not
+/// state.
+const NON_FINITE: &str = "\0";
+
+/// One open block.
+#[derive(Debug)]
+struct Block {
+    /// The prim name, or `None` for a block that is not a named prim.
+    name: Option<String>,
+    /// Where the prim's head starts in the text.
+    start: usize,
+    /// Whether a line of the prim, outside its named child prims, holds a
+    /// non-finite number.
+    non_finite: bool,
+}
+
 /// A text buffer with a nesting depth and the names of the open prims.
+///
+/// A named prim one of whose lines holds a non-finite number is left out
+/// when it closes, with its child prims, and its path is recorded: the layer
+/// states no such number (CADIR §3.4). A line outside every named prim that
+/// holds one is not written, and its field takes the format default.
 #[derive(Debug, Default)]
 pub(super) struct Emitter {
     text: String,
     depth: usize,
-    /// The name of each open block: a prim name, or `None` for a block that
-    /// is not a named prim.
-    names: Vec<Option<String>>,
-    /// The prim name that the next opened block takes.
-    pending: Option<String>,
+    /// Each open block, innermost last.
+    blocks: Vec<Block>,
+    /// The prim name that the next opened block takes, where its head
+    /// starts, and whether a line of its head holds a non-finite number.
+    pending: Option<(String, usize, bool)>,
+    /// The paths of the prims left out, and the heads of the lines outside
+    /// every named prim left out, in order.
+    non_finite: Vec<String>,
 }
 
 impl Emitter {
-    pub(crate) fn finish(self) -> String {
-        self.text
+    /// The text, and what was left out because it holds a non-finite number:
+    /// each prim's path and the head of each other line.
+    pub(crate) fn finish(self) -> (String, Vec<String>) {
+        (self.text, self.non_finite)
     }
 
     /// Writes one indented line.
     pub(crate) fn line(&mut self, content: &str) {
+        if content.contains(NON_FINITE) {
+            if let Some((_, _, head)) = &mut self.pending {
+                *head = true;
+            } else if let Some(prim) = self
+                .blocks
+                .iter_mut()
+                .rev()
+                .find(|block| block.name.is_some())
+            {
+                prim.non_finite = true;
+            } else {
+                let head = content.split(" = ").next().unwrap_or(content);
+                self.non_finite.push(head.trim().to_owned());
+                return;
+            }
+        }
         for _ in 0..self.depth * INDENT {
             self.text.push(' ');
         }
@@ -49,27 +93,44 @@ impl Emitter {
     }
 
     pub(crate) fn open(&mut self) {
+        let (name, start, non_finite) = match self.pending.take() {
+            Some((name, start, head)) => (Some(name), start, head),
+            None => (None, self.text.len(), false),
+        };
         self.line("{");
         self.depth += 1;
-        let name = self.pending.take();
-        self.names.push(name);
+        self.blocks.push(Block {
+            name,
+            start,
+            non_finite,
+        });
     }
 
     pub(crate) fn close(&mut self) {
         self.outdent();
         self.line("}");
-        self.names.pop();
+        let path = self.path();
+        let Some(block) = self.blocks.pop() else {
+            return;
+        };
+        if block.non_finite {
+            self.text.truncate(block.start);
+            let inside = format!("{path}/");
+            self.non_finite
+                .retain(|left_out| !left_out.starts_with(&inside));
+            self.non_finite.push(path);
+        }
     }
 
-    /// Names the prim whose block opens next.
+    /// Names the prim whose block opens next; its head starts here.
     pub(crate) fn name_next(&mut self, name: &str) {
-        self.pending = Some(name.to_owned());
+        self.pending = Some((name.to_owned(), self.text.len(), false));
     }
 
     /// The path of the innermost open prim.
     pub(crate) fn path(&self) -> String {
         let mut path = String::new();
-        for name in self.names.iter().flatten() {
+        for name in self.blocks.iter().filter_map(|block| block.name.as_ref()) {
             path.push('/');
             path.push_str(name);
         }
@@ -186,13 +247,11 @@ impl Names {
     }
 }
 
-/// A binary64 value in the shortest text that reads back to it.
+/// A binary64 value in the shortest text that reads back to it. A
+/// non-finite value leaves its prim out ([`Emitter`]).
 pub(super) fn real(value: f64) -> String {
-    if value.is_nan() {
-        return "nan".to_owned();
-    }
-    if value.is_infinite() {
-        return if value < 0.0 { "-inf" } else { "inf" }.to_owned();
+    if !value.is_finite() {
+        return NON_FINITE.to_owned();
     }
     let magnitude = value.abs();
     if magnitude == 0.0 || (SMALLEST_PLAIN..LARGEST_PLAIN).contains(&magnitude) {
@@ -202,13 +261,12 @@ pub(super) fn real(value: f64) -> String {
     }
 }
 
-/// A binary32 value in the shortest text that reads back to it.
+/// A binary32 value in the shortest text that reads back to it. A
+/// non-finite value, such as a binary64 value past the binary32 range,
+/// leaves its prim out ([`Emitter`]).
 pub(super) fn real32(value: f32) -> String {
-    if value.is_nan() {
-        return "nan".to_owned();
-    }
-    if value.is_infinite() {
-        return if value < 0.0 { "-inf" } else { "inf" }.to_owned();
+    if !value.is_finite() {
+        return NON_FINITE.to_owned();
     }
     let magnitude = f64::from(value.abs());
     if magnitude == 0.0 || (SMALLEST_PLAIN..LARGEST_PLAIN).contains(&magnitude) {

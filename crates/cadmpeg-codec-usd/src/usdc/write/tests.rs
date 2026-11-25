@@ -33,7 +33,7 @@ fn every_text_fixture_reads_the_same_as_its_crate_form() {
         let text = std::str::from_utf8(&bytes).expect("text");
         let crate_bytes = with_context(text.as_bytes(), |ctx| {
             let layer = parse_layer(ctx, text.as_bytes()).expect("parse");
-            write(&layer).expect("write")
+            write(&layer).expect("write").0
         });
         let from_text = decode(text);
         let from_crate = decode_bytes(&crate_bytes);
@@ -105,7 +105,7 @@ def Xform "World" (
 "#;
     let crate_bytes = with_context(text.as_bytes(), |ctx| {
         let layer = parse_layer(ctx, text.as_bytes()).expect("parse");
-        write(&layer).expect("write")
+        write(&layer).expect("write").0
     });
     let read = crate::test_support::with_root(&crate_bytes, |ctx, root| {
         crate::usdc::read(ctx, root).expect("read")

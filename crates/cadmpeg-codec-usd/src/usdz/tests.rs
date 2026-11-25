@@ -8,7 +8,7 @@ const LAYER: &[u8] = b"#usda 1.0\n";
 #[test]
 fn a_package_stores_its_root_layer_aligned() {
     for name in ["a.usda", "root.usda", "nested/directory/layer.usda"] {
-        let bytes = package(&[(name, LAYER)]).expect("package");
+        let bytes = package(&[(name, LAYER)]).0;
         with_root(&bytes, |ctx, root| {
             assert!(detect(ctx, root.window()).expect("detect"));
             let package = open(ctx, root).expect("open");
@@ -21,7 +21,7 @@ fn a_package_stores_its_root_layer_aligned() {
 
 #[test]
 fn a_package_whose_first_member_is_no_layer_is_refused() {
-    let bytes = package(&[("texture.png", LAYER)]).expect("package");
+    let bytes = package(&[("texture.png", LAYER)]).0;
     with_root(&bytes, |ctx, root| {
         assert!(!detect(ctx, root.window()).expect("detect"));
         assert!(open(ctx, root).is_err());
@@ -53,13 +53,37 @@ fn relative_assets_name_members() {
 #[test]
 fn every_member_of_a_package_is_stored_aligned() {
     let image: &[u8] = b"\x89PNG image";
-    let bytes = package(&[("root.usda", LAYER), ("textures/a.png", image)]).expect("package");
+    let bytes = package(&[("root.usda", LAYER), ("textures/a.png", image)]).0;
     with_root(&bytes, |ctx, root| {
         let package = open(ctx, root).expect("open");
         assert_eq!(package.root.window(), LAYER);
         let member = package
             .snapshot
             .open(ctx, "textures/a.png")
+            .expect("member");
+        assert_eq!(member.window(), image);
+        assert_eq!(member.start() % DATA_ALIGNMENT, 0);
+    });
+}
+
+/// A member whose name is longer than a ZIP name field states is left out
+/// and named, and the members around it are stored.
+#[test]
+fn a_member_past_the_archive_limits_is_left_out() {
+    let image: &[u8] = b"\x89PNG image";
+    let long = format!("textures/{}.png", "a".repeat(usize::from(u16::MAX)));
+    let (bytes, left_out) = package(&[
+        ("root.usda", LAYER),
+        (&long, image),
+        ("textures/b.png", image),
+    ]);
+    assert_eq!(left_out, [long]);
+    with_root(&bytes, |ctx, root| {
+        let package = open(ctx, root).expect("open");
+        assert_eq!(package.root.window(), LAYER);
+        let member = package
+            .snapshot
+            .open(ctx, "textures/b.png")
             .expect("member");
         assert_eq!(member.window(), image);
         assert_eq!(member.start() % DATA_ALIGNMENT, 0);
