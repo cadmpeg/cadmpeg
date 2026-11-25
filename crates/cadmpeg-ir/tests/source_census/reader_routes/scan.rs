@@ -5,12 +5,12 @@ use std::collections::BTreeSet;
 
 use syn::spanned::Spanned;
 
-use super::classify::{receiver_is_keyless, receiver_is_value};
+use super::classify::{receiver_is_erased_reader, receiver_is_keyless, receiver_is_value};
 use super::resolve::{resolve_receiver_path, ResolvedPath};
 use super::{
     expr_check_binding, expr_is_direct_binding, expr_single_name, item_shadows_version_check,
-    nodes_from_stream, path_is_named, receiver_from_expr_path, token_mentions_binding,
-    HandImplSource, InputRoute, PathShape, SourceIndex, SymbolKind,
+    nodes_from_stream, path_is_named, receiver_from_erased_expr_path, receiver_from_expr_path,
+    token_mentions_binding, HandImplSource, InputRoute, PathShape, SourceIndex, SymbolKind,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -141,6 +141,33 @@ fn call_route(
     }
     if let Some(input_route) = helper_route(call, route, index, environment) {
         return Some(input_route);
+    }
+    if call.args.len() == 2 {
+        if let Some(shape) = expr_path_shape(path) {
+            let resolved = resolve_receiver_path(route, &shape, index);
+            let is_erased_wrapper = match &resolved {
+                ResolvedPath::External(segments) => path_matches(
+                    segments,
+                    &["cadmpeg_core", "serde_erase", "deserialize_with"],
+                ),
+                ResolvedPath::Local(symbol) => {
+                    symbol.kind == SymbolKind::Function
+                        && symbol.scope == ["serde_erase"]
+                        && symbol.path == "crates/cadmpeg-core/src/serde_erase.rs"
+                        && symbol.name == "deserialize_with"
+                }
+                ResolvedPath::Unknown => false,
+            };
+            if is_erased_wrapper {
+                if let syn::Expr::Path(reader_path) = &call.args[1] {
+                    if let Some(receiver) = receiver_from_erased_expr_path(reader_path) {
+                        if receiver_is_erased_reader(route, &receiver, index) {
+                            return Some(InputRoute::Wire(receiver));
+                        }
+                    }
+                }
+            }
+        }
     }
     if let Some(receiver) = receiver_from_expr_path(path) {
         return Some(if receiver_is_keyless(route, &receiver, index) {

@@ -45,3 +45,37 @@ fn equal_deviations_state_no_tolerance_and_keep_the_stored_pair() {
         );
     }
 }
+
+#[test]
+fn decimal_places_state_decimals_only_with_a_nominal() {
+    let decimals = |annotation: &PmiAnnotation| {
+        let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+            panic!("dimension definition");
+        };
+        dimension.decimals
+    };
+    let key = "sldprt:block_tolerance_decimal_places";
+    let mut root = semantic_root();
+    let entity = root.annotations.entities.get_mut(2).expect("diameter");
+    entity
+        .integers
+        .insert("BlockToleranceDecimalPlaces".into(), 3);
+    let annotations = project(&root);
+    let (annotation, _) = diameter(&annotations);
+    assert_eq!(decimals(annotation), None);
+    assert!(
+        matches!(
+            annotation.native_options.get(key),
+            Some(NativeOption::Integer(Dimension::Literal(3)))
+        ),
+        "{:?}",
+        annotation.native_options
+    );
+
+    let entity = root.annotations.entities.get_mut(2).expect("diameter");
+    entity.doubles.insert("Nominal".into(), 5.0);
+    let annotations = project(&root);
+    let (annotation, _) = diameter(&annotations);
+    assert_eq!(decimals(annotation), Some(3));
+    assert!(!annotation.native_options.contains_key(key));
+}

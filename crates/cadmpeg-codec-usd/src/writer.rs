@@ -25,13 +25,12 @@ mod physics;
 mod physx;
 mod records;
 mod shading;
-mod text;
+pub(crate) mod text;
 mod texture;
 mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -52,7 +51,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::UsdLossCode;
-use text::{asset, quoted, real, real32, tuple, tuple32, Emitter, Names};
+use text::{asset, float, floats, point32, quoted, real, tuple, tuple32, Emitter, Names};
 
 /// Name of the root prim.
 const ROOT: &str = "World";
@@ -201,7 +200,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> Result<(ExportBody, Vec<Member>), CodecError> {
+) -> (ExportBody, Vec<Member>) {
     let version = target
         .synthesized_row()
         .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied());
@@ -210,15 +209,10 @@ pub(crate) fn plan(
         "the USD catalog declares a default and is projected from TARGET_VERSIONS"
     );
     let version = version.unwrap_or("1.0");
-    let metres = match input.scene.meters_per_unit {
-        None => 1.0,
-        Some(metres) if metres.is_finite() && metres > 0.0 => metres,
-        Some(metres) => {
-            return Err(CodecError::InvalidInput(format!(
-                "metres per unit must be a finite positive number, not {metres}"
-            )))
-        }
-    };
+    let metres = input
+        .scene
+        .meters_per_unit
+        .map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
     // USD holds no cage, so a cage body is not written either (§5.6); the
     // `subds` coverage charges the cage.
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
@@ -251,7 +245,7 @@ pub(crate) fn plan(
         notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
         written_row: None,
     };
-    Ok((body, members))
+    (body, members)
 }
 
 /// The note text of a layer of `metres` metres per unit.
@@ -309,6 +303,14 @@ struct Unwritten {
     /// Triangle groups that name the face whose triangles they hold. No
     /// `GeomSubset` property states the face.
     group_faces: usize,
+    /// Prims left out because their geometry holds a point past the
+    /// binary32 range.
+    past_range_prims: Vec<String>,
+    /// Attributes left out because their value is past the binary32 range.
+    past_range_values: Vec<String>,
+    /// Link targets left out because they name a prim left out, and prims
+    /// left out because they need one.
+    cut_links: Vec<String>,
 }
 
 /// The placement of a prim: its up-axis turn, transform, per-axis scale,
@@ -709,7 +711,10 @@ impl<'ir> Writer<'ir> {
         if !self.shared.is_empty() {
             self.prototypes();
         }
-        let prims = std::mem::take(&mut self.out).finish();
+        let finished = std::mem::take(&mut self.out).finish();
+        self.unwritten.rounded_points = finished.rounded;
+        self.unwritten.past_range_values = finished.values;
+        let prims = finished.text;
         for (occurrence, path) in &self.paths {
             if let Some(key) =
                 physx::placeholder(&cadmpeg_ir::physics::solver::SolverTarget::Occurrence {
@@ -720,13 +725,22 @@ impl<'ir> Writer<'ir> {
             }
         }
         let (prims, unresolved) = physx::resolve(&prims, &self.target_paths);
+        let cut = text::cut_links(&prims, &finished.prims);
+        let prims = cut.text;
+        self.unwritten.past_range_prims = finished.prims;
+        self.unwritten.cut_links = cut.links;
+        self.unwritten.cut_links.extend(cut.needing.iter().cloned());
         self.unwritten.solver_properties += unresolved + self.physics.unwritten_settings;
         self.unwritten.joints += self.physics.unwritten_joints;
         self.unwritten.joint_properties += self.physics.unwritten_joint_properties;
         let mut header = Emitter::default();
         header.line(&format!("#usda {}", self.version));
         header.line("(");
-        if let Some(name) = default_prim {
+        // A default prim left out is not named.
+        if let Some(name) = default_prim.filter(|name| {
+            let path = format!("/{name}");
+            !self.unwritten.past_range_prims.contains(&path) && !cut.needing.contains(&path)
+        }) {
             header.line(&format!("    defaultPrim = {}", quoted(&name)));
         }
         header.line(&format!(
@@ -739,8 +753,10 @@ impl<'ir> Writer<'ir> {
         header.line(&format!("    upAxis = {}", quoted(self.up_axis)));
         header.line(")");
         header.blank();
+        let header = header.finish();
+        self.unwritten.past_range_values.extend(header.values);
         let holds_prims = !prims.trim().is_empty();
-        (header.finish() + &prims, holds_prims)
+        (header.text + &prims, holds_prims)
     }
 
     /// The `Looks` scope with one material per appearance, under the root
@@ -753,6 +769,7 @@ impl<'ir> Writer<'ir> {
             Some(root) => format!("/{root}/{LOOKS}"),
             None => format!("/{LOOKS}"),
         };
+        self.out.name_next(LOOKS);
         self.out.line(&format!("def Scope {}", quoted(LOOKS)));
         self.out.open();
         let mut names = Names::default();
@@ -1457,31 +1474,34 @@ impl<'ir> Writer<'ir> {
         };
         self.out.line(&format!(
             "color3f[] primvars:displayColor = [{}] (",
-            tuple32(&[color.r(), color.g(), color.b()].map(crate::text::value::round_f32))
+            floats(&[color.r(), color.g(), color.b()])
         ));
         self.out.line("    interpolation = \"constant\"");
         self.out.line(")");
         if color.a() < 1.0 {
             self.out.line(&format!(
                 "float[] primvars:displayOpacity = [{}] (",
-                real32(crate::text::value::round_f32(color.a()))
+                float(color.a())
             ));
             self.out.line("    interpolation = \"constant\"");
             self.out.line(")");
         }
     }
 
+    /// The text of a point of the geometry of the innermost open prim, and
+    /// its binary32 coordinates. A point that binary32 rounds is counted in
+    /// that prim, and a point past the binary32 range leaves the prim out.
     fn point_text(&mut self, point: cadmpeg_ir::math::Point3) -> (String, [f32; 3]) {
         let scene = [point.x, point.y, point.z].map(|value| value / self.millimetres_per_unit);
         let values = scene.map(crate::text::value::round_f32);
-        if values
-            .iter()
-            .zip(scene)
-            .any(|(rounded, original)| f64::from(*rounded) != original)
+        let pairs = || values.iter().zip(scene);
+        if pairs().all(|(rounded, original)| rounded.is_finite() || !original.is_finite())
+            && pairs()
+                .any(|(rounded, original)| original.is_finite() && f64::from(*rounded) != original)
         {
-            self.unwritten.rounded_points += 1;
+            self.out.rounded_point();
         }
-        (tuple32(&values), values)
+        (point32(&scene), values)
     }
 
     fn extent(&mut self, bounds: Option<([f32; 3], [f32; 3])>) {
@@ -1564,7 +1584,7 @@ impl<'ir> Writer<'ir> {
                 .iter()
                 .map(|normal| {
                     let normal = normal.get();
-                    tuple32(&[normal.x, normal.y, normal.z].map(crate::text::value::round_f32))
+                    floats(&[normal.x, normal.y, normal.z])
                 })
                 .collect();
             self.out.array("normal3f[] normals", &normals, " (");
@@ -1583,7 +1603,7 @@ impl<'ir> Writer<'ir> {
                 .iter()
                 .map(|value| {
                     let point = value.get();
-                    tuple32(&[point.u, point.v].map(crate::text::value::round_f32))
+                    floats(&[point.u, point.v])
                 })
                 .collect();
             let interpolation = match set.addressing {
@@ -1838,13 +1858,13 @@ impl<'ir> Writer<'ir> {
             ranges.push(tuple(&curve.range));
             rational |= curve.weights.iter().any(|weight| *weight != 1.0);
             weights.extend(curve.weights.iter().map(|weight| real(*weight)));
-            for point in &curve.points {
-                let (text, values) = self.point_text(*point);
-                points.push(text);
-                bounds = Some(grow(bounds, values));
-            }
         }
         self.geometry_head("NurbsCurves", name, placement, None);
+        for point in curves.iter().flat_map(|curve| &curve.points) {
+            let (text, values) = self.point_text(*point);
+            points.push(text);
+            bounds = Some(grow(bounds, values));
+        }
         self.extent(bounds);
         self.out.array("int[] curveVertexCounts", &counts, "");
         self.out.array("int[] order", &orders, "");
@@ -1964,8 +1984,8 @@ impl<'ir> Writer<'ir> {
     /// The abstract `Prototypes` prim with the shared definitions.
     fn prototypes(&mut self) {
         self.out.blank();
-        self.out.line(&format!("class {}", quoted(PROTOTYPES)));
         self.out.name_next(PROTOTYPES);
+        self.out.line(&format!("class {}", quoted(PROTOTYPES)));
         self.out.open();
         let shared: Vec<(ProductDefinitionId, String)> = self
             .shared
@@ -2006,8 +2026,8 @@ impl<'ir> Writer<'ir> {
                 }
                 _ => {}
             }
-            self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
+            self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.open();
             self.stack.extend([PROTOTYPES.to_owned(), name.clone()]);
             for body in bodies {
@@ -2186,6 +2206,24 @@ impl<'ir> Writer<'ir> {
                 unwritten.rounded_points
             )));
         }
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "USD",
+            "leaves out the prims whose geometry holds a point past the binary32 range of its \
+             `point3f` coordinates",
+            unwritten.past_range_prims.iter().cloned(),
+        ));
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "USD",
+            "leaves out the attribute values past the binary32 range of their `float` type; \
+             each attribute takes its fallback value",
+            unwritten.past_range_values.iter().cloned(),
+        ));
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "USD",
+            "leaves out the relationship targets and connections that name a prim left out, \
+             the joints that name one, and the prims whose references or inherits reach one",
+            unwritten.cut_links.iter().cloned(),
+        ));
         losses
     }
 }

@@ -28,7 +28,7 @@ pub(crate) fn plan(
         schema.is_some(),
         "the STEP catalog declares a default and is projected from StepSchema::ALL"
     );
-    let schema = schema.unwrap_or(StepSchema::Ap214);
+    let schema = schema.unwrap_or(StepSchema::DEFAULT);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(

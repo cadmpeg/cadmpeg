@@ -1254,10 +1254,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormConstruction {
         self.inputs.visit_identity_references(ctx, visitor)?;
         self.observations.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("rewrite Form construction")?;
         Ok(Self {
@@ -1297,10 +1297,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormNativeReference {
         self.resource.visit_identity_references(ctx, visitor)
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             source: self.source.rewrite_identities(ctx, map)?,
@@ -1326,10 +1326,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormNativeReferenceTar
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(match self {
             Self::Local { target } => Self::Local {
@@ -1364,10 +1364,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormInputs {
         self.resource_state_evidence
             .visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             parameters: self.parameters,
@@ -1393,10 +1393,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormResource {
     ) -> Result<(), cadmpeg_core::CodecError> {
         self.source.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             source: self.source.rewrite_identities(ctx, map)?,
