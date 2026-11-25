@@ -16,6 +16,7 @@ mod cages;
 mod computed_values;
 mod coverage;
 mod encoding;
+mod exact_forms;
 mod free_geometry;
 mod model;
 mod nurbs;

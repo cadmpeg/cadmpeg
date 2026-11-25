@@ -13,6 +13,7 @@ use cadmpeg_ir::geometry::{
     },
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
@@ -602,7 +603,7 @@ fn revolution_nurbs(
                 * cadmpeg_core::convert::f64_from_index(span + 1)
                     .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         let middle = (a0 + a1) * 0.5;
-        let middle_weight = ((a1 - a0) * 0.5).cos();
+        let middle_weight = ((a1 - a0) * 0.5).portable_cos();
         if span == 0 {
             angular.push((a0, 1.0));
         }
@@ -819,8 +820,8 @@ fn extrusion_rows<T: Copy>(start: &[T], end: &[T]) -> Vec<Vec<T>> {
 }
 
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
-    let cosine = angle.cos();
-    let sine = angle.sin();
+    let cosine = angle.portable_cos();
+    let sine = angle.portable_sin();
     let cross = axis.cross(value);
     value.scale(cosine) + cross.scale(sine) + axis.scale(axis.dot(value) * (1.0 - cosine))
 }
