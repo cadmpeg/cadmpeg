@@ -269,8 +269,8 @@ pub(crate) fn baseline_with_bytes(
     .map_or_else(
         |_| (Vec::new(), None),
         |_| {
-            let written = crate::decode::decode_for_read_back_cached(&bytes)
-                .expect("the unedited write decodes");
+            let written =
+                crate::decode::decode_for_read_back(&bytes).expect("the unedited write decodes");
             (diff(part.ir(), written.ir()), Some(bytes))
         },
     );

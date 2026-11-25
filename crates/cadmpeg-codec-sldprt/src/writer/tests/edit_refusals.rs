@@ -39,8 +39,8 @@ fn decode(bytes: Vec<u8>) -> DecodeResult {
         .unwrap()
 }
 
-fn decode_read_back(bytes: &[u8]) -> std::sync::Arc<DecodeResult> {
-    crate::decode::decode_for_read_back_cached(bytes).unwrap()
+fn decode_read_back(bytes: &[u8]) -> DecodeResult {
+    crate::decode::decode_for_read_back(bytes).unwrap()
 }
 
 fn messages(report: &ExportReport, code: SldprtLossCode) -> Vec<&str> {

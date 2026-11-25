@@ -199,7 +199,7 @@ fn run(
         .filter(|loss| loss.code == SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .filter(|loss| loss.message.contains(&format!("\"{}\"", job.feature)))
         .count();
-    let written = crate::decode::decode_for_read_back_cached(&output)
+    let written = crate::decode::decode_for_read_back(&output)
         .map_err(|error| format!("{label}: output does not decode: {error}"))?;
     let read = named(&written.ir().model.features, &job.feature);
     let [read] = read.as_slice() else {

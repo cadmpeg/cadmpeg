@@ -281,31 +281,6 @@ impl SldprtCodec {
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
         let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::default());
-        let baseline_key = image.map(|_| {
-            let mut key_bytes = Vec::new();
-            for record in records {
-                key_bytes.extend_from_slice(record.id.as_str().as_bytes());
-                key_bytes.push(0);
-                if let Some(data) = record.data {
-                    key_bytes.extend_from_slice(
-                        &cadmpeg_core::decode::u64_from_index(data.len()).to_le_bytes(),
-                    );
-                    key_bytes.extend_from_slice(
-                        cadmpeg_ir::hash::digest::Sha256Digest::digest(data)
-                            .as_str()
-                            .as_bytes(),
-                    );
-                }
-                key_bytes.push(1);
-            }
-            for (name, digest) in digests {
-                key_bytes.extend_from_slice(name.as_str().as_bytes());
-                key_bytes.push(0);
-                key_bytes.extend_from_slice(digest.as_str().as_bytes());
-                key_bytes.push(1);
-            }
-            cadmpeg_ir::hash::digest::Sha256Digest::digest(&key_bytes)
-        });
         let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
             let mut cache = writer::SemanticWriteCache {
@@ -340,7 +315,6 @@ impl SldprtCodec {
         let ((bytes, output), read_back) = history::write::read_back::write_until_read_back(
             ir,
             digests,
-            baseline_key,
             &mut |withheld| {
                 let mut bytes = Vec::new();
                 let mut cache = shared_cache.borrow_mut();
