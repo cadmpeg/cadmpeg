@@ -82,7 +82,6 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
                 entity_ref: Some(marker.into()),
             })
             .collect(),
-        class_assumed: false,
     };
     let parameter = DesignParameter {
         product_definition: None,
@@ -316,7 +315,6 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
             entity_index: 0,
             entity_ref: Some("stored-marker".into()),
         }],
-        class_assumed: false,
     };
 
     assert_eq!(

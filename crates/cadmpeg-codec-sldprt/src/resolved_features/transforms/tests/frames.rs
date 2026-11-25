@@ -111,7 +111,6 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         )
         .unwrap(),
         operands: vec![display_operand],
-        class_assumed: false,
     }];
 
     bind_circle_dimension_centers(&mut relations, &lane).unwrap();
@@ -190,7 +189,6 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
                 entity_ref: Some(hint_b.id().to_string()),
             },
         ],
-        class_assumed: false,
     };
     let parameter = DesignParameter {
         product_definition: None,
@@ -438,7 +436,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         )
         .unwrap(),
         operands: Vec::new(),
-        class_assumed: false,
     };
     assert_eq!(
         relation_parameter_by_display_name(
@@ -941,7 +938,6 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
             entity_index: 0,
             entity_ref: Some("circle-center".into()),
         }],
-        class_assumed: false,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -1406,7 +1402,6 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
             )
             .unwrap(),
             operands: vec![operand.clone()],
-            class_assumed: false,
         }],
         body_selections: Vec::new(),
         edge_selections: Vec::new(),

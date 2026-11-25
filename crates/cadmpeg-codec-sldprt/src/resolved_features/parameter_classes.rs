@@ -267,7 +267,8 @@ fn takes_relation_slot(name: &str) -> bool {
 /// slot. A token to which every such mapping gives one declaration names
 /// that declaration's class. A compound-file lane does not state which
 /// tokens are its own (open item EV-05); every token of it is read as its
-/// own, so a class named there rests on that reading.
+/// own, and a relation class named there holds only where the sketch points
+/// of its dimension measure the dimension's value.
 pub(super) fn token_relation_classes<'l>(
     lane: &'l FeatureInputLane,
     features: &HashSet<&str>,

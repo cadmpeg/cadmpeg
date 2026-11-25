@@ -1020,12 +1020,6 @@ pub(crate) struct FeatureInputRelationInstance {
     pub(crate) scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
     pub(crate) operands: Vec<FeatureInputOperand>,
-    /// Whether the relation class rests only on reading every class token of
-    /// a compound-file lane as the lane's own (open item EV-05): a dimension
-    /// that its nearest declaration does not claim takes the class its
-    /// relation-class token names under that reading.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) class_assumed: bool,
 }
 
 /// Partial wire record; membership is admitted before it becomes a relation.
@@ -1041,8 +1035,6 @@ pub(crate) struct FeatureInputRelationInstanceWire {
     #[serde(flatten)]
     scalars: relation_scalars::RelationScalarsWire,
     operands: Vec<FeatureInputOperand>,
-    #[serde(default)]
-    class_assumed: bool,
 }
 
 impl FeatureInputRelationInstanceWire {
@@ -1057,7 +1049,6 @@ impl FeatureInputRelationInstanceWire {
             feature_ref: self.feature_ref,
             scalars: self.scalars.admit()?,
             operands: self.operands,
-            class_assumed: self.class_assumed,
         })
     }
 }
@@ -1075,7 +1066,6 @@ impl TryFrom<FeatureInputRelationInstanceWire> for FeatureInputRelationInstance 
             feature_ref: wire.feature_ref,
             scalars: wire.scalars.into_checked()?,
             operands: wire.operands,
-            class_assumed: wire.class_assumed,
         })
     }
 }

@@ -926,7 +926,6 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
             entity_index: 0,
             entity_ref: Some("shared".into()),
         }],
-        class_assumed: false,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -1554,7 +1553,6 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
                 entity_ref: Some(marker.id().to_string()),
             })
             .collect(),
-        class_assumed: false,
     };
     let parameter = DesignParameter {
         product_definition: None,
@@ -1657,7 +1655,6 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
                 entity_ref: Some(marker.id().to_string()),
             })
             .collect(),
-        class_assumed: false,
     };
     let parameter = DesignParameter {
         product_definition: None,
@@ -1762,7 +1759,6 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
                 entity_ref: Some(known_marker.id().to_string()),
             },
         ],
-        class_assumed: false,
     };
     let parameter = DesignParameter {
         product_definition: None,

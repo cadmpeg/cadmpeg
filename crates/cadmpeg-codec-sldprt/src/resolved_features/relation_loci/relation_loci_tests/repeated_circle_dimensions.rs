@@ -54,7 +54,6 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
             entity_index: 1,
             entity_ref: None,
         }],
-        class_assumed: false,
     };
     let parameter = DesignParameter {
         product_definition: None,
@@ -129,7 +128,6 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
             entity_index: 0,
             entity_ref: None,
         }],
-        class_assumed: false,
     };
     let mut parameter = DesignParameter {
         product_definition: None,

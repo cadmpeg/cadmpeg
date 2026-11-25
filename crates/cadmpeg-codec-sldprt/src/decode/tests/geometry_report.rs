@@ -4,7 +4,6 @@
 
 use crate::container::ContainerScan;
 use crate::decode::append_design_losses;
-use crate::decode::assumed_dimension_class_notes;
 use crate::decode::multiply_projected_sketch_relation_records;
 use crate::decode::unbound_feature_input_operation_objects;
 use crate::decode::unprojected_sketch_relation_records;
@@ -160,7 +159,6 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         )
         .unwrap(),
         operands: Vec::new(),
-        class_assumed: false,
     };
     let binding =
         |id: &str, class_ref: &str, scalar_ref: &str, ordinal| FeatureInputRelationBinding {
@@ -628,102 +626,5 @@ fn a_relation_row_without_a_constraint_raises_the_unprojected_count() {
     assert_eq!(
         unprojected_sketch_relation_records(&CadIr::empty(), &native),
         1
-    );
-}
-
-/// A relation whose class rests on reading every class token of its
-/// compound-file lane as the lane's own (open item EV-05) charges one note
-/// naming the constraint projected from it and the class; a relation whose
-/// class is read charges none.
-#[test]
-fn an_assumed_relation_class_charges_one_note_naming_its_dimension() {
-    let mut ir = CadIr::empty();
-    let relation = |id: &str, class_assumed| FeatureInputRelationInstance {
-        id: id.into(),
-        parent: "lane".into(),
-        ordinal: 0,
-        offset: 0,
-        family: FeatureInputRelationFamily::PointPointDistance,
-        class_ref: "class".into(),
-        feature_ref: "feature".into(),
-        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            vec!["scalar".into()],
-            None,
-            Some("scalar".into()),
-        )
-        .unwrap(),
-        operands: Vec::new(),
-        class_assumed,
-    };
-    let native = SldprtNative {
-        feature_input_lanes: vec![FeatureInputLane {
-            id: "lane".into(),
-            configuration: None,
-            native_payload: Vec::new().into(),
-            classes: vec![FeatureInputClass {
-                id: "class".into(),
-                parent: "lane".into(),
-                ordinal: 0,
-                offset: 0,
-                name: "sgPntPntDist".into(),
-            }],
-            names: Vec::new(),
-            scalars: Vec::new(),
-            relation_bindings: Vec::new(),
-            relation_instances: vec![relation("assumed", true), relation("read", false)],
-            body_selections: Vec::new(),
-            edge_selections: Vec::new(),
-            surface_selections: Vec::new(),
-            generated_surface_identities: Vec::new(),
-            references: Vec::new(),
-            sketch_entities: Vec::new(),
-        }],
-        ..SldprtNative::default()
-    };
-    let only_note = |ir: &CadIr| {
-        let notes = assumed_dimension_class_notes(ir, &native);
-        let [note] = notes.as_slice() else {
-            panic!("one note: {notes:?}");
-        };
-        assert_eq!(
-            note.code,
-            crate::loss::SldprtLossCode::SketchDimensionClassAssumed.kind()
-        );
-        assert!(
-            note.message.contains("`sgPntPntDist`") && note.message.contains("EV-05"),
-            "{}",
-            note.message
-        );
-        note.message.clone()
-    };
-    assert!(only_note(&ir).contains("sketch dimension `assumed`"));
-
-    ir.model
-        .spatial_sketch_constraints
-        .push(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            id: cadmpeg_ir::sketches::SketchConstraintId::mint("synthetic:test:id#dimension")
-                .unwrap(),
-            sketch: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
-                cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sgPntPntDist").unwrap(),
-                    native_state: None,
-                    parameter: None,
-                    operands: vec![cadmpeg_ir::sketches::SketchNativeOperand {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("entity").unwrap(),
-                        field: None,
-                        object_index: Some(1),
-                        native_ref: None,
-                    }],
-                },
-            )
-            .unwrap(),
-            native_ref: Some("assumed".into()),
-        });
-    let message = only_note(&ir);
-    assert!(
-        message.contains("sketch dimension `synthetic:test:id#dimension`")
-            && message.contains("record `assumed`"),
-        "{message}"
     );
 }

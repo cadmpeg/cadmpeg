@@ -104,7 +104,6 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
                             entity_index: 0,
                             entity_ref: Some(format!("marker-{}", next(10))),
                         }],
-                        class_assumed: false,
                     })
                     .collect();
                 FeatureInputLane {

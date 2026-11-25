@@ -41,7 +41,6 @@ fn explicit_point_circle_input() -> (
             entity_index: 0,
             entity_ref: Some("center".into()),
         }],
-        class_assumed: false,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),

@@ -1564,7 +1564,6 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             entity_index: 0,
             entity_ref: Some(marker_id.into()),
         }],
-        class_assumed: false,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),

@@ -44,7 +44,6 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
                 entity_index: 0,
                 entity_ref: Some(marker.into()),
             }],
-            class_assumed: false,
         }],
         body_selections: Vec::new(),
         edge_selections: Vec::new(),

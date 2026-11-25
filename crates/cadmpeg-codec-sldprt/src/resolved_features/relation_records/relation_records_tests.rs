@@ -742,18 +742,16 @@ fn a_refused_dimension_takes_the_relation_its_token_names() {
             Some(lane.scalars[4].id.clone()),
         )
     );
-    assert!(instances.iter().all(|relation| !relation.class_assumed));
 }
 
-/// In a compound-file lane, whose stream opens with a u16 and a class
-/// declaration and does not state where the lane's own class tokens begin
-/// (open item EV-05), a refused dimension takes the relation class its
-/// relation-class token names when every token is read as the lane's own,
-/// and its relation states that its class rests on that reading. A length
-/// relation declared in place beside the first display scalar's
-/// parameter-class token states that token's class.
-#[test]
-fn a_refused_dimension_of_a_compound_lane_takes_its_token_class_as_assumed() {
+/// The lane of [`refused_dimension_lane`] in a compound-file stream, which
+/// opens with a u16 and a class declaration and does not state where the
+/// lane's own class tokens begin (open item EV-05). A length relation
+/// declared in place beside the first display scalar's parameter-class
+/// token states that token's class. The refused dimension's display scalar
+/// stores `display` metres, and its sketch holds four points, the fourth at
+/// `reach` metres along the x axis from the second, which its operands name.
+fn compound_refused_dimension_lane(display: f64, reach: f64) -> (FeatureInputLane, String) {
     let (mut lane, angle) =
         refused_dimension_lane_of(token_form_lane_opening(&[0x02, 0x00], 0x30, 0x32), 2);
     assert!(crate::archive::compound_opening(&lane.native_payload));
@@ -773,6 +771,36 @@ fn a_refused_dimension_of_a_compound_lane_takes_its_token_class_as_assumed() {
         end - u64::try_from(6 + in_place.len()).unwrap(),
         in_place,
     ));
+    lane.scalars[3].value = cadmpeg_ir::scalar::FiniteReal::new(display).unwrap();
+    lane.sketch_entities = [[1.0, 1.0], [0.0, 0.0], [5.0, 5.0], [reach, 0.0]]
+        .into_iter()
+        .zip(0u32..)
+        .map(|(coordinates, ordinal)| {
+            let mut point = crate::records::SketchInputEntity::new(
+                format!("point-{ordinal}"),
+                "lane",
+                ordinal,
+                10 * u64::from(ordinal + 1),
+                crate::records::SketchInputKind::Point,
+            );
+            point.feature_ref = Some("sketch".into());
+            point.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
+            point
+        })
+        .collect();
+    (lane, angle.id)
+}
+
+/// The driving value of the refused dimension in
+/// [`compound_refused_dimension_lane`].
+const DRIVING_METRES: f64 = 0.025;
+
+/// In a compound-file lane, a refused dimension takes the relation class
+/// its relation-class token names where the sketch points its operands name
+/// measure its value, and its relation binds those points.
+#[test]
+fn a_refused_dimension_of_a_compound_lane_forms_where_its_sketch_points_measure_it() {
+    let (lane, angle) = compound_refused_dimension_lane(DRIVING_METRES, DRIVING_METRES);
     let distance = lane
         .classes
         .iter()
@@ -781,9 +809,7 @@ fn a_refused_dimension_of_a_compound_lane_takes_its_token_class_as_assumed() {
         .id
         .clone();
     let instances = relation_instances(&sketch_history(), &lane).unwrap();
-    assert!(instances
-        .iter()
-        .all(|relation| relation.class_ref != angle.id));
+    assert!(instances.iter().all(|relation| relation.class_ref != angle));
     let dimension = instances
         .iter()
         .find(|relation| relation.scalar_refs().contains(&lane.scalars[3].id))
@@ -792,18 +818,65 @@ fn a_refused_dimension_of_a_compound_lane_takes_its_token_class_as_assumed() {
         (
             dimension.class_ref.clone(),
             dimension.scalar_refs().to_vec(),
-            dimension.class_assumed,
+            dimension
+                .operands
+                .iter()
+                .map(|operand| operand.entity_ref.clone())
+                .collect::<Vec<_>>(),
         ),
         (
             distance,
             vec![lane.scalars[3].id.clone(), lane.scalars[4].id.clone()],
-            true,
+            vec![Some("point-1".to_owned()), Some("point-3".to_owned())],
         )
     );
+    let mut decoded = lane.clone();
+    decoded.relation_instances = instances;
+    assert!(super::unclassed_dimension_note(&sketch_history(), &decoded).is_none());
+}
+
+/// In a compound-file lane, a refused dimension whose sketch points do not
+/// measure its value forms no relation, and one loss note names it and
+/// states that its class is unknown.
+#[test]
+fn a_refused_dimension_of_a_compound_lane_that_its_sketch_points_do_not_measure_stays_native() {
+    let (lane, _) = compound_refused_dimension_lane(DRIVING_METRES, 0.03);
+    let instances = relation_instances(&sketch_history(), &lane).unwrap();
     assert!(instances
         .iter()
-        .filter(|relation| relation.class_assumed)
-        .all(|relation| relation.id == dimension.id));
+        .all(|relation| !relation.scalar_refs().contains(&lane.scalars[3].id)));
+    let mut decoded = lane.clone();
+    decoded.relation_instances = instances;
+    let note = super::unclassed_dimension_note(&sketch_history(), &decoded)
+        .expect("a note for the unclassed dimension");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::SketchDimensionClassUnknown.kind()
+    );
+    assert!(
+        note.message.contains(&format!("`{}`", lane.scalars[3].id))
+            && note.message.contains("EV-05")
+            && !note.message.contains(&format!("`{}`", lane.scalars[4].id)),
+        "{}",
+        note.message
+    );
+}
+
+/// In a compound-file lane, a refused dimension whose display value the
+/// sketch points measure forms no relation when its driving value differs
+/// from that measurement.
+#[test]
+fn a_refused_dimension_of_a_compound_lane_whose_driving_value_its_points_do_not_measure_stays_native(
+) {
+    let (lane, _) = compound_refused_dimension_lane(0.0176, 0.0176);
+    let instances = relation_instances(&sketch_history(), &lane).unwrap();
+    assert!(instances
+        .iter()
+        .all(|relation| !relation.scalar_refs().contains(&lane.scalars[3].id)));
+    assert!(instances
+        .iter()
+        .enumerate()
+        .all(|(ordinal, relation)| relation.ordinal == u32::try_from(ordinal).unwrap()));
 }
 
 /// The relation-class token takes a declaration before the parameter-class
@@ -1440,7 +1513,6 @@ fn indexed_circle_handle_drivers_match_the_linear_search() {
                 feature_ref: "sketch".into(),
                 scalars: RelationScalars::from_refs(refs, parameter, None).unwrap(),
                 operands: Vec::new(),
-                class_assumed: false,
             };
             let linear = linear_handle_driver(&relation, &lane);
             assert_eq!(
@@ -1518,7 +1590,7 @@ fn circle_display_aggregate_matches_the_linear_repeat_check() {
             feature_ref: "sketch",
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: "class",
-            class_assumed: false,
+            gated: false,
             operands: &first.operands,
             scalars: vec![(index, first)],
             circle_displays: CircleDisplays::of(first, name_of(first)),

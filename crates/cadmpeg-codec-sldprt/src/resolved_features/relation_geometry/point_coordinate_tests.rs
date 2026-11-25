@@ -128,7 +128,6 @@ fn fixture(coordinates_m: [f64; 2]) -> (Feature, Vec<SketchEntity>, FeatureInput
                 entity_index: 0,
                 entity_ref: Some(point_id.clone()),
             }],
-            class_assumed: false,
         }],
         body_selections: Vec::new(),
         edge_selections: Vec::new(),

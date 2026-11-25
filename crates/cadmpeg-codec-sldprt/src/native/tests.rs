@@ -123,7 +123,6 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 )
                 .unwrap(),
                 operands: Vec::new(),
-                class_assumed: false,
             });
         models
     })
@@ -1250,7 +1249,6 @@ fn circle_run_relation(
         )
         .unwrap(),
         operands: refs[0].operands.clone(),
-        class_assumed: false,
     }
 }
 

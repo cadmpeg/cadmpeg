@@ -73,7 +73,6 @@ fn dynamic_relation(
                 entity_ref: None,
             })
             .collect(),
-        class_assumed: false,
     }
 }
 
@@ -237,7 +236,6 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
             entity_index: 0,
             entity_ref: Some(marker.id().to_string()),
         }],
-        class_assumed: false,
     };
     let parameter = DesignParameter {
         product_definition: None,

@@ -118,7 +118,7 @@ pub(crate) mod relation_geometry;
 
 mod relation_loci;
 
-mod relation_records;
+pub(crate) mod relation_records;
 
 pub(crate) mod relation_table;
 
