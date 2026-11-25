@@ -140,4 +140,7 @@ Note: Nested frames use the part-local reading and charge
 `assembly.mate-frame-assumed`. Unresolved solved sense charges
 `assembly.mate-frame-unresolved`; a planar mate then retains its native
 response. Enabled or unclassified parameters beyond the plain mate set charge
-`assembly.mate-limits-unresolved` with their IDs. Source responses remain assets.
+`assembly.mate-limits-unresolved` with their IDs. A boolean `enable` switch is
+not charged. A switch set to `false` silences the limit or offset parameters
+whose names carry its own qualifying words, and a switch with more qualifying
+words than a parameter silences that parameter. Source responses remain assets.

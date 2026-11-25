@@ -351,14 +351,8 @@ fn mate_quantity_losses_name_enabled_and_unknown_parameter_ids() {
             json!([{"parameterId":"limitMinimum","value":0.0}]),
             Some("limitMinimum"),
         ),
-        (
-            json!([{"parameterId":"limitsEnabled","value":true}]),
-            Some("limitsEnabled"),
-        ),
-        (
-            json!([{"parameterId":"offsetEnabled","value":true}]),
-            Some("offsetEnabled"),
-        ),
+        (json!([{"parameterId":"limitsEnabled","value":true}]), None),
+        (json!([{"parameterId":"offsetEnabled","value":true}]), None),
         (
             json!([{"parameterId":"unknownControl","value":false}]),
             Some("unknownControl"),

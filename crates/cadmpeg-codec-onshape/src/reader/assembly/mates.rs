@@ -333,10 +333,10 @@ fn quantities(
             }
         }
     }
-    let switches: Vec<Vec<String>> = parameters
+    let switches: Vec<Switch> = parameters
         .iter()
         .filter(|(_, value)| value.as_bool() == Some(false))
-        .filter_map(|(name, _)| switch_scope(name))
+        .filter_map(|(name, _)| Switch::new(name))
         .collect();
     let mut ids = std::collections::BTreeSet::new();
     for (name, value) in parameters {
@@ -358,10 +358,11 @@ fn quantities(
         let lower = name.to_ascii_lowercase();
         if lower.contains("limit") || lower.contains("offset") {
             let tokens = name_tokens(&name);
-            if switches
-                .iter()
-                .any(|scope| scope.iter().all(|token| tokens.contains(token)))
-            {
+            if switches.iter().any(|switch| switch.governs(&tokens)) {
+                continue;
+            }
+            // A boolean enable switch states a mode. It is not a limit value.
+            if value.is_boolean() && Switch::new(&name).is_some() {
                 continue;
             }
             if value.as_bool() == Some(false) {
@@ -415,19 +416,48 @@ fn name_tokens(name: &str) -> Vec<String> {
     tokens
 }
 
-/// The words an `enable` switch governs: its own name without the switch
-/// word. A switch governs a limit or offset only when it names one.
-fn switch_scope(name: &str) -> Option<Vec<String>> {
-    let tokens = name_tokens(name);
-    if !tokens.iter().any(|token| token.starts_with("enable")) {
-        return None;
+/// An `enable` switch: the limit or offset family it names and the
+/// qualifying words of its own name.
+struct Switch {
+    families: Vec<String>,
+    qualifiers: Vec<String>,
+}
+
+impl Switch {
+    /// The switch a parameter name states, if it names a limit or offset.
+    fn new(name: &str) -> Option<Self> {
+        let tokens = name_tokens(name);
+        if !tokens.iter().any(|token| token.starts_with("enable")) {
+            return None;
+        }
+        let (families, qualifiers): (Vec<_>, Vec<_>) = tokens
+            .into_iter()
+            .filter(|token| !token.starts_with("enable"))
+            .partition(|token| is_family(token));
+        (!families.is_empty()).then_some(Self {
+            families,
+            qualifiers,
+        })
     }
-    let scope: Vec<String> = tokens
-        .into_iter()
-        .filter(|token| !token.starts_with("enable"))
-        .collect();
-    scope
-        .iter()
-        .any(|token| matches!(token.as_str(), "limit" | "offset"))
-        .then_some(scope)
+
+    /// Whether the switch governs the limit or offset whose name has `tokens`:
+    /// the same family, and qualifiers that the switch's name and the name
+    /// share. A switch without qualifiers governs the whole family. A switch
+    /// with more words than the name governs a name with qualifiers that all
+    /// occur in the switch.
+    fn governs(&self, tokens: &[String]) -> bool {
+        if !self.families.iter().all(|family| tokens.contains(family)) {
+            return false;
+        }
+        let own: Vec<&String> = tokens
+            .iter()
+            .filter(|token| !is_family(token.as_str()))
+            .collect();
+        self.qualifiers.iter().all(|token| own.contains(&token))
+            || (!own.is_empty() && own.iter().all(|token| self.qualifiers.contains(token)))
+    }
+}
+
+fn is_family(token: &str) -> bool {
+    matches!(token, "limit" | "offset")
 }

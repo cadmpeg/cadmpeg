@@ -263,21 +263,46 @@ fn several_part_studios_keep_each_source_on_its_definition() {
 }
 #[test]
 fn an_off_switch_governs_only_the_limit_it_names() {
+    // (parameters, the id charged, ids left uncharged)
     for (parameters, expected, absent) in [
         (
             json!([{"parameterId":"minimumLimitEnabled","value":false},{"parameterId":"maximumLimit","value":1.0}]),
             Some("maximumLimit"),
-            "minimumLimit",
+            vec!["minimumLimit"],
         ),
         (
             json!([{"parameterId":"limitsEnabled","value":false},{"parameterId":"maximumLimit","value":1.0},{"parameterId":"offsetEnabled","value":true}]),
-            Some("offsetEnabled"),
-            "maximumLimit",
+            None,
+            vec!["maximumLimit", "offsetEnabled"],
         ),
         (
             json!([{"parameterId":"offsetEnabled","value":false},{"parameterId":"limitMaximum","value":1.0}]),
             Some("limitMaximum"),
-            "offsetEnabled",
+            vec!["offsetEnabled"],
+        ),
+        // A switch name with an extra word silences the limit it names.
+        (
+            json!([{"parameterId":"enableMinimumLimitValue","value":false},{"parameterId":"minimumLimit","value":1.0},{"parameterId":"maximumLimit","value":2.0}]),
+            Some("maximumLimit"),
+            vec!["minimumLimit", "enableMinimumLimitValue"],
+        ),
+        // A parameter name with an extra word is silenced by the shorter switch.
+        (
+            json!([{"parameterId":"minimumLimitEnabled","value":false},{"parameterId":"minimumLimitValue","value":1.0},{"parameterId":"maximumLimitValue","value":2.0}]),
+            Some("maximumLimitValue"),
+            vec!["minimumLimitValue"],
+        ),
+        // A switch for one family leaves the other family charged.
+        (
+            json!([{"parameterId":"limitsEnabled","value":false},{"parameterId":"offsetDistance","value":1.0}]),
+            Some("offsetDistance"),
+            vec!["limitsEnabled"],
+        ),
+        // A true switch states a mode and is not charged.
+        (
+            json!([{"parameterId":"limitsEnabled","value":true},{"parameterId":"minimumLimitEnabled","value":true}]),
+            None,
+            vec!["limitsEnabled", "minimumLimitEnabled"],
         ),
     ] {
         let mut definition = definition();
@@ -288,8 +313,17 @@ fn an_off_switch_governs_only_the_limit_it_names() {
         });
         let (_, report) = decode(&bytes);
         let code = "onshape/assembly.mate-limits-unresolved";
-        assert_eq!(count(&report, code, expected.unwrap()), 1, "{parameters}");
-        assert_eq!(count(&report, code, absent), 0, "{parameters}");
+        assert_eq!(
+            count(&report, code, ""),
+            usize::from(expected.is_some()),
+            "{parameters}"
+        );
+        if let Some(id) = expected {
+            assert_eq!(count(&report, code, id), 1, "{parameters}");
+        }
+        for id in absent {
+            assert_eq!(count(&report, code, id), 0, "{id} {parameters}");
+        }
     }
 }
 #[test]
