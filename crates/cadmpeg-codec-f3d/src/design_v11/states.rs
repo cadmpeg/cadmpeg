@@ -4,13 +4,14 @@
 //!
 //! The scope tail of a timeline item stores the id of the ASM history state
 //! after the item. Each model blob with a history partition stores one chain
-//! of states, and the state ids of all histories of a document come from one
-//! clock: the state of a blob after an item is its stored state with the
-//! largest id that is not above the item's id, and the empty state where the
-//! blob stores none. An item that builds the current geometry and that is not
-//! stateless has an evaluation of the state after it, whose base is the state
-//! after the next later such item, and `Current` at the scope's current
-//! position for the last of them. The current position has no evaluation.
+//! of states, numbered on a counter of its own. Where the model blobs of the
+//! document hold one history, the state after an item is its stored state
+//! with the largest id that is not above the item's id, and the empty state
+//! where it stores none. An item that builds the current geometry and that
+//! is not stateless has an evaluation of the state after it, whose base is
+//! the state after the next later such item, and `Current` at the scope's
+//! current position for the last of them. The current position has no
+//! evaluation.
 //!
 //! An item after the rollback marker whose tail flags its stored state ids as
 //! holding no current result, and whose state id names no stored state, has
@@ -175,6 +176,12 @@ impl<'r> Reader<'r, '_> {
             Ok(histories) => histories,
             Err(reason) => return Ok(Err(reason)),
         };
+        if histories.len() > 1 {
+            return Ok(Err(format!(
+                "its model blobs hold {} ASM histories, which number their states on separate counters, and the history that the state id of a timeline item selects is not known (open item DR-1064)",
+                histories.len()
+            )));
+        }
         let stored = histories
             .iter()
             .flat_map(|history| history.states.keys().copied())

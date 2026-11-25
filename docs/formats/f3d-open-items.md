@@ -987,15 +987,15 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once with every side face of the join outside the box and once with some of its side faces inside the box: the GUID of the join's body entry compared with the GUIDs of the browser nodes and of the body entry of the creating `Extrude`, and the tokens compared with the keys of the side entries of the join's table.
 
-### DR-1064. Current history-state identities that decrease along a timeline
+### DR-1064. The history state after a timeline item in a document with several histories
 
-**Question.** Which stored history state holds the result after each timeline item when the current history-state identities of the items that commit a state decrease from one item to a later one?
+**Question.** Where the model blobs of a document hold several `.smbh` histories, which history does the current history-state identity of a timeline item select, and which stored state does each other history hold after the item?
 
-**Known.** `f3d.md` §3.1 "**History chain.**" and "**States of a document.**" give the `delta_state` chain of each `.smbh` history and the state after a timeline item: the stored state with the largest identity at or below the item's current identity. The identities increase from the root state to the head state. A timeline can store two items before the saved rollback marker, each with `s0 = 0` and a current identity that names a stored state, where the later item stores the smaller current identity. Each of the two identities names a `delta_state` of the history.
+**Known.** `f3d.md` §3.1 "**History chain.**" and "**States of a document.**" give the `delta_state` chain of each history. Each history numbers its states on a counter of its own, and two histories of one document store states with equal identities. An item stores one current identity. The current identities of the items that commit a state can decrease from one item to a later one: a timeline stores the current identities `3` and `4` for two items and `3` for a later item, in a document whose two histories store the states `2`, `3`, `4` and `2`, `3`.
 
-**Need.** A Sketch and two new-body `Extrude` items, saved once; the same design after the second `Extrude` is moved before the first in the timeline and the design is computed again, saved once. For each save, the current and preceding identities of both items, compared with the `delta_state` chain and the bodies of each state.
+**Need.** A design with two components, each with a Sketch and a new-body `Extrude`, and a `Combine` whose target body lies in one component and whose tool body lies in the other, saved once. For each timeline item, the current identity compared with the `delta_state` chain and the bodies of each state of both histories.
 
-**Note.** The decoder states no evaluation of the states after the items of such a timeline and charges `history.states-unread`.
+**Note.** The decoder states no evaluation of the states of a scope whose model blobs hold several histories, and charges `history.states-unread`.
 
 ### DR-1054. Bulletin board of a state that changes an earlier body
 
