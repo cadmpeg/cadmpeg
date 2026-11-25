@@ -163,14 +163,24 @@ pub(super) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
             first.as_str() == second.as_str()
         });
     }
+    fn generated(selection: &BodySelection) -> Option<BodyRows<'_, GeneratedBodyRef>> {
+        match selection {
+            BodySelection::Generated { bodies, .. } => Some(BodyRows::Flat(bodies.as_slice())),
+            BodySelection::GeneratedSet { members } => Some(BodyRows::Paired(members)),
+            _ => None,
+        }
+    }
+    if let Some((first, second)) = generated(first).zip(generated(second)) {
+        return any_overlap(
+            first.iter(),
+            &second.iter(),
+            |first: &GeneratedBodyRef, second| {
+                first.feature.as_str() == second.feature.as_str()
+                    && first.local_id.as_str() == second.local_id.as_str()
+            },
+        );
+    }
     match (first, second) {
-        (
-            BodySelection::Generated { bodies: first, .. },
-            BodySelection::Generated { bodies: second, .. },
-        ) => any_overlap(first, &second.iter(), |first: &GeneratedBodyRef, second| {
-            first.feature.as_str() == second.feature.as_str()
-                && first.local_id.as_str() == second.local_id.as_str()
-        }),
         (
             BodySelection::Local { bodies: first, .. },
             BodySelection::Local { bodies: second, .. },
