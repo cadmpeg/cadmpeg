@@ -334,7 +334,8 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
             r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
         ), 0).unwrap(),
     };
-    let output = serialize_property(&property).expect("required invariant");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let output = serialize_property(&ctx, &property).expect("required invariant");
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
     assert_eq!(output.matches(r#"value="changed""#).count(), 1);
     assert!(
@@ -352,11 +353,65 @@ fn xml_serialization_preserves_normalized_whitespace() {
         text: Some("a\tb\nc\rd".into()),
         raw_xml: r#"<String value="old">old</String>"#.into(),
     };
-    let serialized = serialize_value(&value).expect("required invariant");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let serialized = serialize_value(&ctx, &value).expect("required invariant");
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
     assert_eq!(serialized.matches("&#9;").count(), 2);
     assert_eq!(serialized.matches("&#10;").count(), 2);
     assert_eq!(serialized.matches("&#13;").count(), 2);
+}
+
+/// The retained property XML parses in the encode session, so the caller's
+/// depth ceiling refuses a value nested past it. Under the default ceiling the
+/// same document writes.
+#[test]
+fn the_caller_depth_limit_governs_retained_value_xml() {
+    const CEILING: u64 = 64;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut edited = decoded.ir().clone();
+    let mut properties = native_arena::<PropertyRecord>(&edited, "properties");
+    let label = properties
+        .iter_mut()
+        .find(|property| {
+            property.owner == crate::native::native_id("document", "0") && property.name == "Label"
+        })
+        .expect("document Label");
+    let crate::native::PropertyBody::Persisted { values, .. } = &mut label.body else {
+        panic!("the document Label persists its value");
+    };
+    let nesting = usize::try_from(2 * CEILING).expect("nesting fits usize");
+    values[0].raw_xml = format!(
+        r#"<String value="nested">{}{}</String>"#,
+        "<Level>".repeat(nesting),
+        "</Level>".repeat(nesting)
+    );
+    replace_arena(&mut edited, "properties", &properties);
+
+    let mut bytes = Vec::new();
+    FcstdCodec
+        .plan(EncodeInput::new(&edited, None))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the default ceiling admits the nested value");
+
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_recursion_depth = CEILING;
+    let refused = FcstdCodec
+        .plan(EncodeInput::new(&edited, None).with_limits(limits))
+        .and_then(|plan| plan.write_to(&mut Vec::new()));
+    let Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)) = refused else {
+        panic!("the caller ceiling refuses the nested value: {refused:?}");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RecursionDepth
+    );
+    assert_eq!(limit.limit, CEILING);
+    assert_eq!(limit.operation, "FreeCAD retained property value XML");
 }
 
 #[test]

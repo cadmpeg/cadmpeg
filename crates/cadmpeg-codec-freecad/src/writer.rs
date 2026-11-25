@@ -133,7 +133,7 @@ fn write_seekable(
             }
         }
     }
-    let written = written_document(resolution, &objects, &extensions, &properties)?;
+    let written = written_document(ctx, resolution, &objects, &extensions, &properties)?;
     for id in written.unheld {
         omitted.push(UNHELD_PAYLOAD, id);
     }
@@ -280,6 +280,7 @@ impl WrittenDocument {
 /// name, and its object is marked the same way. The edits reported dropped are
 /// the records of the document the written file does not state.
 fn written_document(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     objects: &[ObjectRecord],
     extensions: &[ExtensionRecord],
@@ -299,7 +300,7 @@ fn written_document(
     let properties = properties.as_slice();
     let mut kept = BTreeSet::new();
     for pass in 0..2 {
-        let patch = patch_document(source, properties, &kept)?;
+        let patch = patch_document(ctx, source, properties, &kept)?;
         kept.extend(patch.unwritten);
         let emptied = emptied_owners(properties, &unheld, &kept);
         let (marked, stale) = marked_objects(resolution, objects, &patch.changed_inputs, &emptied);
@@ -328,6 +329,7 @@ fn written_document(
         kept.extend(differing);
     }
     stored_document(
+        ctx,
         resolution,
         (objects, extensions, properties),
         &held,
@@ -342,6 +344,7 @@ fn written_document(
 /// dropped. Where the stored `Document.xml` does not read back, the archive
 /// holds it unchanged and the report names the document.
 fn stored_document(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     expected: (&[ObjectRecord], &[ExtensionRecord], &[PropertyRecord]),
     held: &HashSet<&str>,
@@ -356,7 +359,7 @@ fn stored_document(
             .filter(|property| !unheld.contains(&property.id))
             .map(|property| property.id.clone())
             .collect();
-        let patch = patch_document(source, &stored_properties, &kept)?;
+        let patch = patch_document(ctx, source, &stored_properties, &kept)?;
         let emptied = emptied_owners(&stored_properties, &unheld, &patch.unwritten);
         let (stored_marked, _) =
             marked_objects(resolution, &stored.objects, &HashSet::new(), &emptied);
@@ -752,6 +755,7 @@ struct PatchedProperties {
 }
 
 fn patch_document(
+    ctx: &DecodeContext<'_>,
     source: &str,
     properties: &[PropertyRecord],
     kept: &BTreeSet<String>,
@@ -773,7 +777,7 @@ fn patch_document(
             patched.unwritten.insert(property.id.clone());
             continue;
         };
-        let serialized = match serialize_property(property) {
+        let serialized = match serialize_property(ctx, property) {
             Ok(serialized) => serialized,
             Err(error) => {
                 recover(error)?;
@@ -803,16 +807,35 @@ fn retained_span(source: &str, property: &PropertyRecord, cursor: usize) -> Opti
     (start >= cursor && source.get(start..end) == Some(property.xml.text())).then_some((start, end))
 }
 
-fn serialize_property(property: &PropertyRecord) -> Result<String, CodecError> {
-    validate_property_wrapper(property)?;
+const RETAINED_PROPERTY: &str = "FreeCAD retained property XML";
+const RETAINED_VALUE: &str = "FreeCAD retained property value XML";
+
+/// Parse retained XML under the write session's limits.
+fn parse_retained<'input>(
+    ctx: &DecodeContext<'_>,
+    wrapped: &'input str,
+    operation: &'static str,
+) -> Result<roxmltree::Document<'input>, CodecError> {
+    ctx.parse_xml(wrapped, operation)
+        .map_err(|error| match error {
+            CodecError::Malformed(error) => {
+                CodecError::malformed(format_args!("invalid {operation}: {error}"))
+            }
+            error => error,
+        })
+}
+
+fn serialize_property(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<String, CodecError> {
+    validate_property_wrapper(ctx, property)?;
     if matches!(property.body, PropertyBody::Unreadable(_)) {
         return Ok(property.xml.text().to_owned());
     }
     let mut replacement = property.xml.text().to_owned();
     let wrapped = format!("<Root>{}</Root>", property.xml.text());
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
-    })?;
+    let parsed = parse_retained(ctx, &wrapped, RETAINED_PROPERTY)?;
     let source_ranges = parsed
         .root_element()
         .first_element_child()
@@ -832,7 +855,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<String, CodecError> {
     }
     let mut edits = Vec::new();
     for (value, (start, end)) in property.values().iter().zip(source_ranges) {
-        let serialized = serialize_value(value)?;
+        let serialized = serialize_value(ctx, value)?;
         if serialized == value.raw_xml {
             continue;
         }
@@ -857,11 +880,12 @@ fn serialize_property(property: &PropertyRecord) -> Result<String, CodecError> {
     Ok(replacement)
 }
 
-fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
+fn validate_property_wrapper(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<(), CodecError> {
     let wrapped = format!("<Root>{}</Root>", property.xml.text());
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
-    })?;
+    let parsed = parse_retained(ctx, &wrapped, RETAINED_PROPERTY)?;
     let element = parsed
         .root_element()
         .first_element_child()
@@ -889,11 +913,9 @@ fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError
     Ok(())
 }
 
-fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
+fn serialize_value(ctx: &DecodeContext<'_>, value: &ValueRecord) -> Result<String, CodecError> {
     let wrapped = format!("<Root>{}</Root>", value.raw_xml);
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property value XML: {error}"))
-    })?;
+    let parsed = parse_retained(ctx, &wrapped, RETAINED_VALUE)?;
     let original = parsed
         .root_element()
         .first_element_child()
