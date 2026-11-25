@@ -490,6 +490,7 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
         crate::writer::RetainedBlockPatches {
             active_configuration: false,
             edited_parameters: &HashSet::new(),
+            native: None,
         },
     )
     .unwrap();

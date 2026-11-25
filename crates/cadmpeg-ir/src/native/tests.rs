@@ -964,10 +964,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
 
     struct FieldOwner;
     impl RewriteIdentities for FieldOwner {
-        fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_native_value(
             ctx: &DecodeContext<'_>,
             value: &mut serde_json::Value,
-            map: &mut IdentityMap<'_, F>,
+            map: &mut IdentityMap<'_>,
         ) -> Result<(), CodecError> {
             Face::rewrite_native_value(ctx, value, map)
         }
@@ -978,10 +978,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         ) -> Result<(), CodecError> {
             Ok(())
         }
-        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_identities(
             self,
             _ctx: &DecodeContext<'_>,
-            _map: &mut IdentityMap<'_, F>,
+            _map: &mut IdentityMap<'_>,
         ) -> Result<Self, CodecError> {
             Ok(self)
         }

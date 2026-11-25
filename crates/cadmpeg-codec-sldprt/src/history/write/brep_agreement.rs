@@ -10,11 +10,9 @@
 //! solid.
 
 use std::collections::{BTreeSet, HashSet};
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
@@ -45,6 +43,7 @@ pub(crate) fn stale_solid_losses(
     digests: &CodecDigests,
     native: Option<&SldprtNative>,
     source_image: Option<&[u8]>,
+    cached_baseline: Option<&CadIr>,
     unwritten: &UnwrittenEdits,
     misread: &HashSet<(FeatureId, String)>,
 ) -> Result<Vec<LossNote>, CodecError> {
@@ -82,15 +81,22 @@ pub(crate) fn stale_solid_losses(
     if !(features_changed || parameters_changed || native_changed || configurations_changed) {
         return Ok(Vec::new());
     }
-    let decoded = crate::SldprtCodec
-        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
-        .map_err(|failure| match failure {
-            cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format_args!(
-                "SLDPRT retained source cannot be decoded: {other}"
-            )),
-        })?;
-    let baseline = decoded.ir();
+    let decoded;
+    let baseline = match cached_baseline {
+        Some(baseline) => baseline,
+        None => {
+            decoded =
+                crate::decode::decode_for_read_back(source_image).map_err(
+                    |failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => CodecError::malformed(format_args!(
+                            "SLDPRT retained source cannot be decoded: {other}"
+                        )),
+                    },
+                )?;
+            decoded.ir()
+        }
+    };
     let mut losses = Vec::new();
     // Features a model-level loss names; an active configuration with stated
     // states mirrors the model, so its state edit of the same feature is the

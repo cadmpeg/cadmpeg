@@ -25,14 +25,11 @@ impl RewriteIdentities for HistoryBody {
         self.consumed_by.visit_identity_references(ctx, visitor)
     }
 
-    fn rewrite_identities<F>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
-    ) -> Result<Self, CodecError>
-    where
-        F: FnMut(&str) -> Result<String, CodecError>,
-    {
+        map: &mut IdentityMap<'_>,
+    ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("typed rewrite record")?;
         let Self {
             id,
