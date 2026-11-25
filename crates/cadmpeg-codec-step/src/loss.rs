@@ -59,6 +59,8 @@ pub(crate) enum StepLossCode {
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// The requested write target is written as another catalog row.
+    TargetRequestDisplaced,
     /// The declared schema object identifier names a module edition that the
     /// decoder reads as a published AP edition.
     SourceSchemaEditionAssumed,
@@ -396,6 +398,9 @@ pub(crate) enum StepLossCode {
     /// A non-manifold edge of a closed shell was written as one edge per
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
+    /// An open edge whose ends coincide within the linear tolerance was
+    /// written as one edge: no point of its curve between the ends was found.
+    OpenEdgeUnsplit,
     /// A face the source holds with no boundary on a plane, cylinder, or
     /// cone, whose domain is unbounded, or whose stored boundary does not
     /// resolve to a closed loop, is stated partial with no loop.
@@ -457,6 +462,7 @@ impl StepLossCode {
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
+        Self::TargetRequestDisplaced,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
@@ -619,6 +625,7 @@ impl StepLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
+        Self::OpenEdgeUnsplit,
         Self::TopologyFaceBoundaryUnstated,
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
@@ -654,6 +661,7 @@ impl StepLossCode {
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::TargetRequestDisplaced => "target.request-displaced",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
@@ -834,6 +842,7 @@ impl StepLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
+            Self::OpenEdgeUnsplit => "topology.open-edge-unsplit",
             Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
@@ -937,7 +946,9 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::SourceDialectDisplaced | Self::TargetRequestDisplaced => {
+                LossTaxonomy::SourceDialectDisplaced
+            }
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -1032,6 +1043,7 @@ impl StepLossCode {
             | Self::EdgeEndVertexMissing
             | Self::EdgeNoVertex
             | Self::NonManifoldEdgeSplit
+            | Self::OpenEdgeUnsplit
             | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
@@ -1156,6 +1168,7 @@ mod tests {
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
+                "target.request-displaced",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
@@ -1318,6 +1331,7 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
+                "topology.open-edge-unsplit",
                 "topology.face-boundary-unstated",
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",

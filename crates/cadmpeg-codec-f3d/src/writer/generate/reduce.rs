@@ -2170,6 +2170,35 @@ pub(super) fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topolog
     arenas
 }
 
+/// The records of `geometry` that `kept` does not hold unchanged, by arena:
+/// each arena's name, row count and record ids.
+pub(super) fn geometry_records_outside(
+    geometry: &cadmpeg_ir::document::Topology,
+    kept: &cadmpeg_ir::document::Topology,
+) -> Vec<String> {
+    let mut arenas = Vec::new();
+    macro_rules! list {
+        ($($field:ident),*) => {$(
+            let outside = geometry
+                .$field
+                .iter()
+                .filter(|row| !kept.$field.contains(row))
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>();
+            if !outside.is_empty() {
+                arenas.push(format!(
+                    "{} {}: {}",
+                    outside.len(),
+                    stringify!($field),
+                    outside.join(", ")
+                ));
+            }
+        )*};
+    }
+    for_each_geometry_arena!(list);
+    arenas
+}
+
 /// The F3D edge record stores a parameter range, and an open edge on a curve
 /// with none is written with `[0, 1]`: a range its vertices do not fix, which
 /// the output's validation finds.

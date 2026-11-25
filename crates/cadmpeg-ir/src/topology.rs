@@ -306,6 +306,41 @@ impl Region {
             Some(RegionUnstated::Voids) | None => {}
         }
     }
+
+    /// States the region without `shell`, which the document no longer
+    /// holds, in its partial form (§5.6, Unstated children): a region that
+    /// loses its exterior states `Exterior` with the voids it keeps, and one
+    /// that loses a void states `Voids`. Returns whether it named `shell`.
+    pub(crate) fn lose_shell(&mut self, shell: &str) -> bool {
+        match &mut self.unstated {
+            Some(
+                RegionUnstated::Exterior { voids: listed }
+                | RegionUnstated::Unclassified { shells: listed },
+            ) => {
+                let before = listed.len();
+                listed.retain(|listed| listed.as_str() != shell);
+                listed.len() != before
+            }
+            Some(RegionUnstated::Voids) | None => {
+                let Some(at) = self
+                    .shells
+                    .iter()
+                    .position(|listed| listed.as_str() == shell)
+                else {
+                    return false;
+                };
+                if at == 0 {
+                    let mut voids = std::mem::take(&mut self.shells).split_off(1);
+                    voids.retain(|listed| listed.as_str() != shell);
+                    self.unstated = Some(RegionUnstated::Exterior { voids });
+                } else {
+                    self.shells.retain(|listed| listed.as_str() != shell);
+                    self.unstated = Some(RegionUnstated::Voids);
+                }
+                true
+            }
+        }
+    }
 }
 
 impl crate::schema::EntitySchema for Region {
@@ -475,6 +510,19 @@ impl Shell {
                 .map(|id| ShellMember::FreeVertex { id }),
         );
         shell
+    }
+
+    /// States the shell without its member `member`, which the document no
+    /// longer holds, and marks it (§5.6, Unstated children). Returns whether
+    /// it listed `member`.
+    pub(crate) fn lose_member(&mut self, member: &str) -> bool {
+        let before = self.members.len();
+        self.members.retain(|listed| listed.as_str() != member);
+        let lost = self.members.len() != before;
+        if lost {
+            self.unstated = Some(Unstated::Members);
+        }
+        lost
     }
 
     /// Constructs a shell with one wire edge.
@@ -919,6 +967,37 @@ impl FaceLoops {
             self,
             Self::PartialUnspecified { .. } | Self::PartialClassified { .. }
         )
+    }
+
+    /// States the face without the loop `id`, which the document no longer
+    /// holds, in the partial arm of its classification (§5.6, Unstated
+    /// children). Returns whether the face named `id`.
+    pub(crate) fn lose(&mut self, id: &str) -> bool {
+        if !self.stated().any(|listed| listed.as_str() == id) {
+            return false;
+        }
+        let kept = |loops: &mut Vec<LoopId>| loops.retain(|listed| listed.as_str() != id);
+        *self = match std::mem::replace(self, Self::PartialUnspecified { loops: Vec::new() }) {
+            Self::Unspecified { mut loops } | Self::PartialUnspecified { mut loops } => {
+                kept(&mut loops);
+                Self::PartialUnspecified { loops }
+            }
+            Self::Classified { outer, mut inner } => {
+                kept(&mut inner);
+                Self::PartialClassified {
+                    outer: (outer.as_str() != id).then_some(outer),
+                    inner,
+                }
+            }
+            Self::PartialClassified { outer, mut inner } => {
+                kept(&mut inner);
+                Self::PartialClassified {
+                    outer: outer.filter(|outer| outer.as_str() != id),
+                    inner,
+                }
+            }
+        };
+        true
     }
 
     /// Whether `id` is a loop of this face.
