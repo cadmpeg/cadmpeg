@@ -519,16 +519,6 @@ fn write_archive<W: Write + Seek>(
     Ok(())
 }
 
-/// What [`write_new`] does with each model arena.
-/// `subds`, assets, tessellations and assembly joints are `Dropped`: the
-/// reduction removes them and charges a loss naming each. Configurations are
-/// written from the native Design records after the neutral arena is proved
-/// equal to its projection; without those records the reduction drops them
-/// the same way. `parameters` states what the attempt did with the neutral
-/// parameters. Where the root definition's design scope is written
-/// (`neutral`), its scopes, containers, features and parameters are
-/// `Reported`: the design module charges a loss for each record it does not
-/// write. Sketches and the remaining design arenas are not represented.
 /// Mark every geometry arena of `coverage` reported: the design writes no
 /// B-rep stream.
 fn omit_geometry(coverage: &mut ArenaDispositions) {
@@ -552,6 +542,16 @@ fn omit_geometry(coverage: &mut ArenaDispositions) {
     }
 }
 
+/// What [`write_new`] does with each model arena.
+/// `subds`, assets, tessellations and assembly joints are `Dropped`: the
+/// reduction removes them and charges a loss naming each. Configurations are
+/// written from the native Design records after the neutral arena is proved
+/// equal to its projection; without those records the reduction drops them
+/// the same way. `parameters` states what the attempt did with the neutral
+/// parameters. Where the root definition's design scope is written
+/// (`neutral`), its scopes, containers, features and parameters are
+/// `Reported`: the design module charges a loss for each record it does not
+/// write. Sketches and the remaining design arenas are not represented.
 fn coverage(
     write_design: bool,
     parameters: ArenaDisposition,
