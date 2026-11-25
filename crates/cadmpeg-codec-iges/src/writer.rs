@@ -168,6 +168,7 @@ mod exact;
 mod placement;
 mod rational_support;
 pub(crate) mod target;
+mod turn_cut;
 mod unjoined;
 
 fn body(
@@ -3907,6 +3908,9 @@ struct WrittenCoedge<'ir> {
     /// so it references the stored edge curve.
     model: CarrierEntity,
     pcurves: Vec<WrittenPcurveUse<'ir>>,
+    /// The cut in the model curve of the coedge where a Type 142 boundary
+    /// starts inside it.
+    cut: Option<turn_cut::CoedgeCut>,
 }
 
 /// The Type 141 or Type 142 boundary of one loop with its coedges in
@@ -3929,7 +3933,7 @@ impl WrittenBoundary<'_> {
 
     /// The form in which `coedge` references its stored edge curve.
     fn stored_edge_form(&self, coedge: &WrittenCoedge<'_>) -> Option<StoredEdgeForm> {
-        (coedge.model == CarrierEntity::Stored).then(|| {
+        (coedge.model == CarrierEntity::Stored && coedge.cut.is_none()).then(|| {
             if self.composes_model_curve()
                 && matches!(
                     coedge.carrier.geometry,
@@ -4015,7 +4019,7 @@ fn written_boundary<'ir>(
         } else {
             Sense::Forward
         };
-        chained
+        let mut coedges = chained
             .into_iter()
             .map(|(carrier, chain)| {
                 let coedge: &'ir Coedge = carrier.coedge;
@@ -4030,9 +4034,12 @@ fn written_boundary<'ir>(
                         CarrierEntity::ReversedCopy
                     },
                     pcurves,
+                    cut: None,
                 })
             })
-            .collect::<Result<Vec<_>, CodecError>>()?
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        turn_cut::start_at_parameter_gap(index.ir, loop_, surface, &mut coedges)?;
+        coedges
     } else {
         carriers
             .into_iter()
@@ -4043,6 +4050,7 @@ fn written_boundary<'ir>(
                     carrier,
                     model: CarrierEntity::Stored,
                     pcurves,
+                    cut: None,
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?
@@ -4130,40 +4138,77 @@ fn curve_on_surface_entity(
     let composes = boundary.composes_model_curve();
     let mut model_children = Vec::new();
     let mut pcurve_children = Vec::new();
-    for written in &boundary.coedges {
+    // A boundary that starts inside its first coedge writes that coedge in
+    // two parts: the part after the cut first, the part before it last.
+    let mut parts = boundary
+        .coedges
+        .iter()
+        .map(|written| (written, 0..written.pcurves.len(), None))
+        .collect::<Vec<_>>();
+    if let Some((first, cut)) = boundary
+        .coedges
+        .first()
+        .and_then(|written| Some((written, written.cut.as_ref()?)))
+    {
+        parts[0] = (
+            first,
+            cut.first_use..first.pcurves.len(),
+            Some(&cut.spans[0]),
+        );
+        parts.push((first, 0..cut.first_use, Some(&cut.spans[1])));
+    }
+    for (written, uses, span) in parts {
         let carrier = &written.carrier;
-        match written.model {
-            CarrierEntity::Stored => match edge_indices.get(carrier.edge.id.as_str()) {
-                Some(StoredEdgeCurve::Whole(index)) => model_children.push(*index),
-                Some(StoredEdgeCurve::Constituents(indices)) => {
-                    model_children.extend(indices.iter().copied());
-                }
-                None => {
-                    return Err(CodecError::malformed(format_args!(
-                        "IGES Type 142 loop {} references missing edge entity {}",
-                        boundary.loop_.id, carrier.edge.id
-                    )));
-                }
-            },
-            CarrierEntity::ReversedCopy => {
-                let request = CurveEntityRequest {
-                    version,
-                    curve_id: carrier.curve_id,
-                    geometry: &carrier.geometry,
-                    span: Some(&carrier.span),
-                    sense: Sense::Reversed,
-                    status: EntityStatus::PhysicallyDependent,
-                    reference_offset: 0,
-                };
-                if composes {
-                    model_children.extend(append_curve_constituents(entities, index.ir, request)?);
+        if let Some(span) = span {
+            let request = CurveEntityRequest {
+                version,
+                curve_id: carrier.curve_id,
+                geometry: &carrier.geometry,
+                span: Some(span),
+                sense: if written.model == CarrierEntity::Stored {
+                    Sense::Forward
                 } else {
-                    model_children.push(append_curve_entity(entities, index.ir, request)?);
+                    Sense::Reversed
+                },
+                status: EntityStatus::PhysicallyDependent,
+                reference_offset: 0,
+            };
+            model_children.extend(append_curve_constituents(entities, index.ir, request)?);
+        } else {
+            match written.model {
+                CarrierEntity::Stored => match edge_indices.get(carrier.edge.id.as_str()) {
+                    Some(StoredEdgeCurve::Whole(index)) => model_children.push(*index),
+                    Some(StoredEdgeCurve::Constituents(indices)) => {
+                        model_children.extend(indices.iter().copied());
+                    }
+                    None => {
+                        return Err(CodecError::malformed(format_args!(
+                            "IGES Type 142 loop {} references missing edge entity {}",
+                            boundary.loop_.id, carrier.edge.id
+                        )));
+                    }
+                },
+                CarrierEntity::ReversedCopy => {
+                    let request = CurveEntityRequest {
+                        version,
+                        curve_id: carrier.curve_id,
+                        geometry: &carrier.geometry,
+                        span: Some(&carrier.span),
+                        sense: Sense::Reversed,
+                        status: EntityStatus::PhysicallyDependent,
+                        reference_offset: 0,
+                    };
+                    if composes {
+                        model_children
+                            .extend(append_curve_constituents(entities, index.ir, request)?);
+                    } else {
+                        model_children.push(append_curve_entity(entities, index.ir, request)?);
+                    }
                 }
             }
         }
         pcurve_children.extend(
-            pcurve_use_entities(index, &written.pcurves, pcurve_indices, entities)?
+            pcurve_use_entities(index, &written.pcurves[uses], pcurve_indices, entities)?
                 .into_iter()
                 .map(|(_, index)| index),
         );

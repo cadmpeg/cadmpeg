@@ -12,9 +12,10 @@ use cadmpeg_ir::topology::{Coedge, Face, FaceLoops, Loop, LoopBoundary, LoopRing
 use cadmpeg_ir::CadIr;
 
 use super::{
-    assert_boundary_in_domain, azimuth, boundary, charged, id, origin, parameter_line, read_back,
-    ring_loop, torus_point, written_under, z_axis, Sheet, BAND_HEIGHT, BAND_LOW, CYLINDER_RADIUS,
-    MIRROR_STRETCH, ON_SURFACE, STRETCH, TORUS_MAJOR, TORUS_MINOR,
+    assert_boundary_in_domain, azimuth, boundary, charged, face_boundary, id, largest_gap, origin,
+    parameter_line, read_back, ring_loop, torus_point, written_under, z_axis, Sheet, Stretch,
+    BAND_HEIGHT, BAND_LOW, CYLINDER_RADIUS, MIRROR_STRETCH, ON_SURFACE, STRETCH, TORUS_MAJOR,
+    TORUS_MINOR,
 };
 
 /// A support in its parameters: the point at `(u, v)`, the curve of constant
@@ -175,15 +176,7 @@ const BAND_HOLES: [(&str, [[f64; 2]; 2]); 2] = [
 /// [`BAND_HEIGHT`] with the two [`BAND_HOLES`]. The face states its loops
 /// in the order of `keys`, from `lower`, `upper` and the hole names.
 fn cylinder_band_with_holes(keys: [&str; 4]) -> CadIr {
-    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Cylinder(
-        CylinderSurface::try_new(
-            origin(),
-            z_axis(),
-            Vector3::new(1.0, 0.0, 0.0),
-            CYLINDER_RADIUS,
-        )
-        .expect("a cylinder"),
-    ));
+    let mut sheet = cylinder_sheet();
     for (key, height) in [("lower", 0.0), ("upper", BAND_HEIGHT)] {
         sheet.vertex(key, (CYLINDER.point)(0.0, height));
         sheet.edge(key, (CYLINDER.along_u)(height), [0.0, TAU], [key, key]);
@@ -437,6 +430,16 @@ fn a_hole_near_the_upper_parallel_of_a_torus_band_stays_in_the_band() {
     );
 }
 
+#[test]
+fn a_hole_across_the_azimuth_seam_of_a_torus_band_cuts_each_parallel_there() {
+    assert_torus_band(
+        |classified| {
+            torus_parallel_band(TUBE_BAND, [[-0.1, 0.1], [0.5, 0.9]], [0.0, 0.0], classified)
+        },
+        |_, tube| (TUBE_BAND[0] - ON_SURFACE..=TUBE_BAND[1] + ON_SURFACE).contains(&tube),
+    );
+}
+
 /// The azimuths of the meridians of the band that holds a hole near its
 /// upper meridian.
 const AZIMUTH_BAND: [f64; 2] = [-1.5, 2.5];
@@ -468,15 +471,12 @@ fn a_hole_across_the_tube_seam_of_a_torus_band_moves_into_the_band() {
     );
 }
 
-/// The heights of the cylinder patch beside the band in
-/// [`band_and_patch_on_one_cylinder`].
+/// The heights of the second face on the cylinder in the fixtures with two
+/// faces.
 const PATCH_HEIGHTS: [f64; 2] = [10.0, 12.0];
 
-/// Two faces on one cylinder about `+z`: the band between the circles at
-/// heights 0 and [`BAND_HEIGHT`], whose circles run over azimuths `[0, 2π]`,
-/// with a hole across the azimuth `0`; and a patch at [`PATCH_HEIGHTS`].
-fn band_and_patch_on_one_cylinder() -> CadIr {
-    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Cylinder(
+fn cylinder_sheet() -> Sheet {
+    Sheet::new(SolvedSurfaceGeometry::Cylinder(
         CylinderSurface::try_new(
             origin(),
             z_axis(),
@@ -484,14 +484,151 @@ fn band_and_patch_on_one_cylinder() -> CadIr {
             CYLINDER_RADIUS,
         )
         .expect("a cylinder"),
-    ));
-    for (key, height) in [("lower", 0.0), ("upper", BAND_HEIGHT)] {
-        sheet.vertex(key, (CYLINDER.point)(0.0, height));
-        sheet.edge(key, (CYLINDER.along_u)(height), [0.0, TAU], [key, key]);
+    ))
+}
+
+/// `sheet` with the face of `loops` and, where `second` names a loop of
+/// `sheet`, the face `second` that this loop bounds, on the same support.
+fn faces(mut sheet: Sheet, loops: FaceLoops, second: Option<LoopId>) -> CadIr {
+    let second_face = id(FaceId::mint, "face", "second");
+    if let Some(second) = &second {
+        sheet
+            .ir
+            .geometry
+            .loops
+            .iter_mut()
+            .find(|loop_| loop_.id == *second)
+            .expect("the second loop")
+            .face = second_face.clone();
     }
-    let lower = parameter_line(&mut sheet.ir, "lower", [0.0, 0.0], [1.0, 0.0], TAU);
-    let upper = parameter_line(&mut sheet.ir, "upper", [TAU, BAND_HEIGHT], [-1.0, 0.0], TAU);
-    let loops = vec![
+    let mut ir = sheet.faced(loops);
+    if let Some(second) = second {
+        ir.geometry.faces.push(Face {
+            id: second_face,
+            shell: id(ShellId::mint, "shell", "sheet"),
+            surface: id(SurfaceId::mint, "surface", "face"),
+            sense: Sense::Forward,
+            loops: FaceLoops::classified(second, Vec::new()),
+            name: None,
+            color: None,
+            tolerance: None,
+            native_ref: None,
+        });
+        ir.finalize();
+    }
+    ir
+}
+
+/// Two faces on one cylinder about `+z`: the parameter rectangle `first`,
+/// and the parameter rectangle `second` with its parameter lines moved by
+/// `shift`.
+fn two_patches(first: [[f64; 2]; 2], second: [[f64; 2]; 2], shift: [f64; 2]) -> CadIr {
+    let mut sheet = cylinder_sheet();
+    let first = rectangle_loop(&mut sheet, &CYLINDER, "first", first, [0.0, 0.0], false);
+    let second = rectangle_loop(&mut sheet, &CYLINDER, "second", second, shift, false);
+    faces(
+        sheet,
+        FaceLoops::classified(first, Vec::new()),
+        Some(second),
+    )
+}
+
+/// Assert that each boundary point of each face of `read`, mapped back from
+/// `stretch`, lies on the cylinder in one of the parameter rectangles
+/// `regions`, at some whole turn of the azimuth.
+fn assert_on_cylinder_regions(read: &CadIr, stretch: Stretch, regions: &[[[f64; 2]; 2]]) {
+    for face in &read.geometry.faces {
+        let (points, _) = face_boundary(read, face);
+        assert!(!points.is_empty());
+        for point in points.into_iter().map(|point| stretch.source(point)) {
+            assert!(
+                (point.x.hypot(point.y) - CYLINDER_RADIUS).abs() <= ON_SURFACE,
+                "{point:?} lies off the cylinder"
+            );
+            let azimuth = point.y.atan2(point.x);
+            assert!(
+                regions.iter().any(|[us, vs]| {
+                    [-TAU, 0.0, TAU].iter().any(|turn| {
+                        (us[0] - ON_SURFACE..=us[1] + ON_SURFACE).contains(&(azimuth + turn))
+                    }) && (vs[0] - ON_SURFACE..=vs[1] + ON_SURFACE).contains(&point.z)
+                }),
+                "{point:?} lies on no boundary of the faces"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_face_stated_a_turn_from_the_faces_before_it_moves_by_that_turn() {
+    let first = [[1.0, 2.0], [0.0, 2.0]];
+    let second = [[1.0, 2.0], PATCH_HEIGHTS];
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(two_patches(first, second, [TAU, 0.0]), stretch);
+        assert_eq!(read.geometry.faces.len(), 2);
+        assert_boundary_in_domain(&read);
+        assert_on_cylinder_regions(&read, stretch, &[first, second]);
+    }
+}
+
+#[test]
+fn a_face_that_no_turn_holds_with_the_faces_before_it_is_dropped() {
+    let first = [[1.0, 3.5], [0.0, 2.0]];
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let (losses, read) = written_under(
+            two_patches(first, [[3.0, 7.5], PATCH_HEIGHTS], [0.0, 0.0]),
+            stretch,
+        );
+        let omitted = charged(&losses, "iges/writer.face-omitted");
+        assert_eq!(omitted.len(), 1, "{losses:#?}");
+        assert!(
+            omitted[0].starts_with("face test:model:face#second ")
+                && omitted[0].contains("no one turn of the azimuth holds face"),
+            "{omitted:#?}"
+        );
+        assert!(
+            charged(&losses, "iges/writer.body-omitted").is_empty(),
+            "{losses:#?}"
+        );
+        assert_eq!(read.geometry.faces.len(), 1);
+        assert_boundary_in_domain(&read);
+        assert_on_cylinder_regions(&read, stretch, &[first]);
+    }
+}
+
+/// The band of the cylinder about `+z` between the circles at heights 0 and
+/// [`BAND_HEIGHT`], each one closed edge whose vertex and parameter line
+/// start at the azimuth in `starts`, with the parameter rectangle `hole` cut
+/// out. The lower loop is the outer loop where `classified`. Where `patch`
+/// holds, a second face on the cylinder bounds the azimuths `[1, 2]` at
+/// [`PATCH_HEIGHTS`].
+fn cylinder_band(
+    starts: [f64; 2],
+    hole: Option<[[f64; 2]; 2]>,
+    classified: bool,
+    patch: bool,
+) -> CadIr {
+    let mut sheet = cylinder_sheet();
+    for ((key, height), start) in [("lower", 0.0), ("upper", BAND_HEIGHT)]
+        .into_iter()
+        .zip(starts)
+    {
+        sheet.vertex(key, (CYLINDER.point)(start, height));
+        sheet.edge(
+            key,
+            (CYLINDER.along_u)(height),
+            [start, start + TAU],
+            [key, key],
+        );
+    }
+    let lower = parameter_line(&mut sheet.ir, "lower", [starts[0], 0.0], [1.0, 0.0], TAU);
+    let upper = parameter_line(
+        &mut sheet.ir,
+        "upper",
+        [starts[1] + TAU, BAND_HEIGHT],
+        [-1.0, 0.0],
+        TAU,
+    );
+    let mut loops = vec![
         ring_loop(
             &mut sheet.ir,
             ["lower", "face", "lower"],
@@ -504,73 +641,90 @@ fn band_and_patch_on_one_cylinder() -> CadIr {
             Sense::Reversed,
             upper,
         ),
-        rectangle_loop(
+    ];
+    if let Some(hole) = hole {
+        loops.push(rectangle_loop(
             &mut sheet,
             &CYLINDER,
             "hole",
-            [[-0.1, 0.1], [3.0, 5.0]],
+            hole,
             [0.0, 0.0],
             true,
-        ),
-    ];
-    let patch = rectangle_loop(
-        &mut sheet,
-        &CYLINDER,
-        "patch",
-        [[1.0, 2.0], PATCH_HEIGHTS],
-        [0.0, 0.0],
-        false,
-    );
-    sheet
-        .ir
-        .geometry
-        .loops
-        .iter_mut()
-        .find(|loop_| loop_.id == patch)
-        .expect("the patch loop")
-        .face = id(FaceId::mint, "face", "patch");
-    let mut ir = sheet.faced(FaceLoops::unspecified(loops));
-    ir.geometry.faces.push(Face {
-        id: id(FaceId::mint, "face", "patch"),
-        shell: id(ShellId::mint, "shell", "sheet"),
-        surface: id(SurfaceId::mint, "surface", "face"),
-        sense: Sense::Forward,
-        loops: FaceLoops::classified(patch, Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-        native_ref: None,
+        ));
+    }
+    let patch = patch.then(|| {
+        rectangle_loop(
+            &mut sheet,
+            &CYLINDER,
+            "patch",
+            [[1.0, 2.0], PATCH_HEIGHTS],
+            [0.0, 0.0],
+            false,
+        )
     });
-    ir.finalize();
-    ir
+    let loops = if classified {
+        let lower = loops.remove(0);
+        FaceLoops::classified(lower, loops)
+    } else {
+        FaceLoops::unspecified(loops)
+    };
+    faces(sheet, loops, patch)
+}
+
+/// Assert that the face that `band` builds, with its loops unclassified and
+/// classified, is written and read back under each stretch, alone and beside
+/// a second face, with each boundary point on a circle of the band, on
+/// `hole`, or on the second face, and with each circle written over its
+/// whole turn.
+fn assert_band_written(band: impl Fn(bool, bool) -> CadIr, hole: Option<[[f64; 2]; 2]>) {
+    for (classified, patch) in [(false, false), (true, false), (false, true), (true, true)] {
+        for stretch in [STRETCH, MIRROR_STRETCH] {
+            let read = read_back(band(classified, patch), stretch);
+            assert_eq!(read.geometry.faces.len(), 1 + usize::from(patch));
+            assert_boundary_in_domain(&read);
+            let mut regions = vec![
+                [[0.0, TAU], [0.0, 0.0]],
+                [[0.0, TAU], [BAND_HEIGHT, BAND_HEIGHT]],
+                [[1.0, 2.0], PATCH_HEIGHTS],
+            ];
+            regions.extend(hole);
+            assert_on_cylinder_regions(&read, stretch, &regions);
+            let (points, _) = face_boundary(&read, &read.geometry.faces[0]);
+            for height in [0.0, BAND_HEIGHT] {
+                let azimuths = points
+                    .iter()
+                    .map(|point| stretch.source(*point))
+                    .filter(|point| (point.z - height).abs() <= ON_SURFACE)
+                    .map(|point| point.y.atan2(point.x))
+                    .collect::<Vec<_>>();
+                assert!(
+                    largest_gap(azimuths) <= CIRCLE_GAP,
+                    "the circle at height {height} has a gap"
+                );
+            }
+        }
+    }
+}
+
+/// The largest azimuth gap between boundary samples on a circle that the
+/// writer writes over its whole turn.
+const CIRCLE_GAP: f64 = PI / 4.0;
+
+/// A hole across the azimuth `0` of a band whose circles start there.
+const SEAM_HOLE: [[f64; 2]; 2] = [[-0.1, 0.1], [3.0, 5.0]];
+
+#[test]
+fn a_band_with_a_hole_across_the_seam_of_its_circles_cuts_each_circle_there() {
+    assert_band_written(
+        |classified, patch| cylinder_band([0.0, 0.0], Some(SEAM_HOLE), classified, patch),
+        Some(SEAM_HOLE),
+    );
 }
 
 #[test]
-fn a_face_that_no_turn_holds_is_dropped_and_the_other_faces_keep_the_support() {
-    for stretch in [STRETCH, MIRROR_STRETCH] {
-        let (losses, read) = written_under(band_and_patch_on_one_cylinder(), stretch);
-        let omitted = charged(&losses, "iges/writer.face-omitted");
-        assert_eq!(omitted.len(), 1, "{losses:#?}");
-        assert!(
-            omitted[0].starts_with("face test:model:face#face ")
-                && omitted[0].contains("no one turn of the azimuth"),
-            "{omitted:#?}"
-        );
-        assert!(
-            charged(&losses, "iges/writer.body-omitted").is_empty(),
-            "{losses:#?}"
-        );
-        assert_eq!(read.geometry.faces.len(), 1);
-        assert_boundary_in_domain(&read);
-        let (points, _) = boundary(&read);
-        assert!(!points.is_empty());
-        for point in points.into_iter().map(|point| stretch.source(point)) {
-            assert!(
-                (point.x.hypot(point.y) - CYLINDER_RADIUS).abs() <= ON_SURFACE
-                    && (PATCH_HEIGHTS[0] - ON_SURFACE..=PATCH_HEIGHTS[1] + ON_SURFACE)
-                        .contains(&point.z),
-                "{point:?} lies off the patch"
-            );
-        }
-    }
+fn band_circles_that_start_at_different_azimuths_lie_in_one_turn() {
+    assert_band_written(
+        |classified, patch| cylinder_band([0.0, PI], None, classified, patch),
+        None,
+    );
 }

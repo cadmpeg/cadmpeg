@@ -431,9 +431,14 @@ fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
 /// The support points at sixteen equal steps of each parameter curve on the
 /// boundary of the one face of `read`, and the end points of each curve.
 fn boundary(read: &CadIr) -> (Vec<Point3>, Vec<[f64; 2]>) {
+    assert_eq!(read.geometry.faces.len(), 1);
+    face_boundary(read, &read.geometry.faces[0])
+}
+
+/// The support points at sixteen equal steps of each parameter curve on the
+/// boundary of `face` of `read`, and the end points of each curve.
+fn face_boundary(read: &CadIr, face: &Face) -> (Vec<Point3>, Vec<[f64; 2]>) {
     let geometry = &read.geometry;
-    assert_eq!(geometry.faces.len(), 1);
-    let face = &geometry.faces[0];
     let surface = geometry
         .surfaces
         .iter()
@@ -823,7 +828,11 @@ fn support_points(read: &CadIr) -> Vec<Point3> {
 
 /// The rational support of the one face of `read` and its parameter domain.
 fn rational_support(read: &CadIr) -> (&SolvedSurfaceGeometry, [[f64; 2]; 2]) {
-    let face = &read.geometry.faces[0];
+    face_support(read, &read.geometry.faces[0])
+}
+
+/// The rational support of `face` of `read` and its parameter domain.
+fn face_support<'a>(read: &'a CadIr, face: &Face) -> (&'a SolvedSurfaceGeometry, [[f64; 2]; 2]) {
     let surface = read
         .geometry
         .surfaces
@@ -849,17 +858,19 @@ fn rational_support(read: &CadIr) -> (&SolvedSurfaceGeometry, [[f64; 2]; 2]) {
     )
 }
 
-/// Assert that each parameter curve end on the boundary of the one face of
+/// Assert that each parameter curve end on the boundary of each face of
 /// `read` lies in the parameter domain of its rational support.
 fn assert_boundary_in_domain(read: &CadIr) {
-    let (_, domain) = rational_support(read);
-    let (_, ends) = boundary(read);
-    for end in &ends {
-        for (value, [low, high]) in end.iter().zip(domain) {
-            assert!(
-                (low - ON_SURFACE..=high + ON_SURFACE).contains(value),
-                "the parameter curve end {end:?} lies outside the domain {domain:?}"
-            );
+    for face in &read.geometry.faces {
+        let (_, domain) = face_support(read, face);
+        let (_, ends) = face_boundary(read, face);
+        for end in &ends {
+            for (value, [low, high]) in end.iter().zip(domain) {
+                assert!(
+                    (low - ON_SURFACE..=high + ON_SURFACE).contains(value),
+                    "the parameter curve end {end:?} lies outside the domain {domain:?}"
+                );
+            }
         }
     }
 }

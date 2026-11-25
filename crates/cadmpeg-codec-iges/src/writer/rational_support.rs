@@ -2,7 +2,7 @@
 //! Analytic face supports restated as exact rational B-spline surfaces, which
 //! a trimmed surface (Type 144 over Type 128) can bound.
 
-use super::covered_uses::visit_pole_uses;
+use super::covered_uses::{over, referenced_pcurves, visit_pole_use_lists, visit_pole_uses};
 use super::degrade::{naming, Unwritten};
 use super::exact::nurbs_form;
 use super::same_range;
@@ -15,6 +15,7 @@ use cadmpeg_ir::eval::decode::pcurve_uv;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::portable::Portable;
@@ -22,6 +23,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::topology::{Face, LoopBoundary, LoopRing, PcurveUse, Sense};
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -68,6 +70,7 @@ pub(super) fn rational_analytic_supports(
     let mut pcurves = BTreeMap::new();
     let mut model_space = Vec::new();
     let mut copies = Vec::new();
+    let mut splits = Vec::new();
     for (surface, form) in forms {
         let Some(restated) = restated_support(&ends, &index, surface, &form) else {
             continue;
@@ -84,6 +87,7 @@ pub(super) fn rational_analytic_supports(
         pcurves.extend(restated.pcurves);
         model_space.extend(restated.model_space);
         copies.extend(restated.copies);
+        splits.extend(restated.splits);
     }
     if surfaces.is_empty() {
         return Ok((Cow::Borrowed(ir), Vec::new()));
@@ -102,6 +106,14 @@ pub(super) fn rational_analytic_supports(
     for copy in &copies {
         face_copy(&mut restated, copy);
     }
+    for split in &splits {
+        face_split(&mut restated, split);
+    }
+    let referenced = referenced_pcurves(&restated.geometry);
+    restated.geometry.pcurves.retain(|pcurve| {
+        let id = pcurve.id.as_str();
+        referenced.contains(id) || !splits.iter().any(|split| split.source == id)
+    });
     for pcurve in &mut restated.geometry.pcurves {
         if let Some(nurbs) = pcurves.remove(pcurve.id.as_str()) {
             pcurve.geometry = PcurveGeometry::Nurbs { nurbs };
@@ -416,6 +428,7 @@ struct Restated {
     pcurves: BTreeMap<String, PcurveNurbs>,
     model_space: Vec<ModelSpaceFace>,
     copies: Vec<FaceCopy>,
+    splits: Vec<FaceSplit>,
 }
 
 /// A copy of a parameter curve for the uses on the loops of one face, which
@@ -463,6 +476,93 @@ fn face_copy(ir: &mut CadIr, copy: &FaceCopy) {
     }
 }
 
+/// The pieces of a parameter curve that one face uses across the end of the
+/// turn that holds the face, in the order of the curve's parameter, each with
+/// its parameter range.
+struct FaceSplit {
+    source: String,
+    loops: BTreeSet<String>,
+    pieces: Vec<(PcurveId, [f64; 2])>,
+}
+
+/// Adds the pieces that `split` names, and replaces each use of the source
+/// curve on its loops with uses of the pieces in the direction of the use.
+fn face_split(ir: &mut CadIr, split: &FaceSplit) {
+    let Some(source) = ir
+        .geometry
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == split.source)
+    else {
+        return;
+    };
+    let Some(ascending) = source
+        .parameter_range()
+        .map(|range| range.get()[1] > range.get()[0])
+    else {
+        return;
+    };
+    let Some(pieces) = split
+        .pieces
+        .iter()
+        .map(|(id, range)| over(source, id.clone(), FiniteVector::new(*range)?))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    ir.geometry.pcurves.extend(pieces);
+    let replace = |uses: &mut Vec<PcurveUse>| {
+        *uses = std::mem::take(uses)
+            .into_iter()
+            .flat_map(|pcurve_use| {
+                if pcurve_use.pcurve.as_str() != split.source {
+                    return vec![pcurve_use];
+                }
+                let backward = pcurve_use.parameter_range.is_some_and(|range| {
+                    let [start, end] = range.endpoints();
+                    (end > start) != ascending
+                });
+                let mut pieces = split
+                    .pieces
+                    .iter()
+                    .map(|(id, [start, end])| PcurveUse {
+                        pcurve: id.clone(),
+                        parameter_range: pcurve_use.parameter_range.and_then(|_| {
+                            DirectedParameterRange::new(if backward {
+                                [*end, *start]
+                            } else {
+                                [*start, *end]
+                            })
+                            .ok()
+                        }),
+                        ..pcurve_use.clone()
+                    })
+                    .collect::<Vec<_>>();
+                if backward {
+                    pieces.reverse();
+                }
+                pieces
+            })
+            .collect();
+    };
+    for coedge in ir
+        .geometry
+        .coedges
+        .iter_mut()
+        .filter(|coedge| split.loops.contains(coedge.owner_loop.as_str()))
+    {
+        replace(&mut coedge.pcurves);
+    }
+    for loop_ in ir
+        .geometry
+        .loops
+        .iter_mut()
+        .filter(|loop_| split.loops.contains(loop_.id.as_str()))
+    {
+        visit_pole_use_lists(loop_, replace);
+    }
+}
+
 /// A face written with its model-space boundary only.
 struct ModelSpaceFace {
     face: String,
@@ -471,14 +571,25 @@ struct ModelSpaceFace {
     reason: String,
 }
 
-/// One exact parameter curve: its parameter range, its end points and, for a
-/// line that is not isoparametric, its slope `p / q` in whole numbers.
+/// One exact parameter curve: its parameter range, its end points, for a
+/// line that is not isoparametric its slope `p / q` in whole numbers, and,
+/// for a piece of a curve cut at the end of a turn, the place of the piece
+/// along the curve.
 struct Exact {
     id: String,
     range: [f64; 2],
     start: Point2,
     end: Point2,
     slope: Option<Slope>,
+    piece: Option<usize>,
+}
+
+impl Exact {
+    fn shift(&mut self, shift: Point2) {
+        for point in [&mut self.start, &mut self.end] {
+            *point = Point2::new(point.u + shift.u, point.v + shift.v);
+        }
+    }
 }
 
 /// The slope `p / q` of a parameter line in lowest whole numbers, `q > 0`.
@@ -505,9 +616,7 @@ struct LoopImages {
 impl LoopImages {
     fn shift(&mut self, shift: Point2) {
         for image in &mut self.images {
-            for point in [&mut image.start, &mut image.end] {
-                *point = Point2::new(point.u + shift.u, point.v + shift.v);
-            }
+            image.shift(shift);
         }
     }
 
@@ -642,6 +751,7 @@ fn exact_image(
             start,
             end,
             slope,
+            piece: None,
         }))
     };
     let along = |coordinate: fn(&Point2) -> f64| {
@@ -698,8 +808,9 @@ fn whole_slope(delta: Point2) -> Option<Slope> {
 /// The rational form of the revolved support `surface` over a domain that
 /// holds its faces, with the exact image of each parameter curve on it. A
 /// face that states no loop on a sphere or torus covers the whole support.
-/// None where no such domain holds the faces together; an error naming the
-/// face where no domain holds one face.
+/// Each face moves by the whole turns that place it in one turn with the
+/// faces before it. An error names the first face that no turn holds with
+/// the faces before it.
 fn restated_support(
     ends: &BTreeMap<&str, [Point2; 2]>,
     index: &TopologyIndex<'_>,
@@ -723,6 +834,7 @@ fn restated_support(
     let mut heights = Extent::default();
     let mut placed = BTreeMap::<String, [Point2; 2]>::new();
     let mut copies = Vec::new();
+    let mut splits = Vec::new();
     let mut whole = false;
     for face in faces {
         if face.loops.stated().next().is_none() {
@@ -745,6 +857,7 @@ fn restated_support(
                 for (images, shift) in loops.iter_mut().zip(shifts) {
                     images.shift(shift);
                 }
+                let mut reach = reach;
                 for (axis, parameter) in [(0, "azimuth"), (1, "tube angle")] {
                     if axis == 1 && !form.v_periodic() {
                         continue;
@@ -770,12 +883,44 @@ fn restated_support(
                             ),
                         ))));
                     }
+                    let placed_extent = if axis == 0 { &u_extent } else { &v_extent };
+                    let Some(turns) = aligning_turns(placed_extent, &extent) else {
+                        return Some(Err(naming(face.id.as_str())(CodecError::NotImplemented(
+                            format!(
+                                "IGES restated support {surface}: no one turn of the {parameter} holds face {} with the faces before it",
+                                face.id
+                            ),
+                        ))));
+                    };
+                    for images in &mut loops {
+                        images.shift(along(axis, turns));
+                    }
+                    for value in &mut reach[axis] {
+                        *value += turns;
+                    }
                 }
+                let face_key = face.id.as_str().replace('#', "/");
                 let mut own = BTreeSet::new();
+                let mut pieces = BTreeMap::<String, Vec<(usize, PcurveId, [f64; 2])>>::new();
                 for loop_images in loops {
                     for mut image in loop_images.images {
+                        let source = image.id.clone();
+                        if let Some(piece) = image.piece {
+                            format!(
+                                "iges:writer:pcurve#{}@{face_key}/{piece}",
+                                source.replace('#', "/")
+                            )
+                            .clone_into(&mut image.id);
+                        }
                         if !own.insert(image.id.clone()) {
                             continue;
+                        }
+                        if let Some(piece) = image.piece {
+                            pieces.entry(source).or_default().push((
+                                piece,
+                                PcurveId::try_from(image.id.as_str()).ok()?,
+                                image.range,
+                            ));
                         }
                         for point in [&image.start, &image.end] {
                             u_extent.include(point.u);
@@ -790,9 +935,8 @@ fn restated_support(
                             Some(first) if same_ends(*first, ends) => {}
                             Some(_) => {
                                 let id = PcurveId::try_from(format!(
-                                    "iges:writer:pcurve#{}@{}",
+                                    "iges:writer:pcurve#{}@{face_key}",
                                     image.id.replace('#', "/"),
-                                    face.id.as_str().replace('#', "/")
                                 ))
                                 .ok()?;
                                 copies.push(FaceCopy {
@@ -809,6 +953,19 @@ fn restated_support(
                             }
                         }
                     }
+                }
+                let face_loops = face
+                    .loops
+                    .stated()
+                    .map(|loop_| loop_.as_str().to_owned())
+                    .collect::<BTreeSet<_>>();
+                for (source, mut cut) in pieces {
+                    cut.sort_by_key(|(piece, ..)| *piece);
+                    splits.push(FaceSplit {
+                        source,
+                        loops: face_loops.clone(),
+                        pieces: cut.into_iter().map(|(_, id, range)| (id, range)).collect(),
+                    });
                 }
                 let [u_reach, v_reach] = reach;
                 for u in u_reach {
@@ -839,17 +996,11 @@ fn restated_support(
     }
     let full = |extent: &Extent| {
         let low = extent.0.map_or(-PI, |[low, _]| low);
-        if extent
-            .0
-            .is_some_and(|[_, high]| high > low + TAU + ANGULAR_TOLERANCE)
-        {
-            return None;
-        }
-        Some([low, low + TAU])
+        [low, low + TAU]
     };
     let whole = whole || !model_space.is_empty();
     let [u_start, u_end] = if whole {
-        full(&u_extent)?
+        full(&u_extent)
     } else {
         u_extent.bounds()?
     };
@@ -858,7 +1009,7 @@ fn restated_support(
             if offset == 0.0 {
                 [-FRAC_PI_2, FRAC_PI_2]
             } else {
-                full(&v_extent)?
+                full(&v_extent)
             }
         }
         Profile::Circular { .. } => v_extent.bounds()?,
@@ -876,11 +1027,6 @@ fn restated_support(
             v_extent.bounds()?
         }
     };
-    if u_end - u_start > TAU + ANGULAR_TOLERANCE
-        || (form.v_periodic() && v_end - v_start > TAU + ANGULAR_TOLERANCE)
-    {
-        return None;
-    }
     let u_arc = UnitArc::new([u_start, u_end])?;
     let (v_profile, v_arc) = match form.profile {
         Profile::Ruled {
@@ -985,7 +1131,47 @@ fn restated_support(
         pcurves,
         model_space,
         copies,
+        splits,
     }))
+}
+
+/// The whole turns that move the value `low` to at least `start`.
+fn window_turns(start: f64, low: f64) -> f64 {
+    ((start - low - ANGULAR_TOLERANCE) / TAU).ceil() * TAU
+}
+
+/// The point `value` along the parameter `axis`.
+fn along(axis: usize, value: f64) -> Point2 {
+    if axis == 0 {
+        Point2::new(value, 0.0)
+    } else {
+        Point2::new(0.0, value)
+    }
+}
+
+/// The whole turns of a periodic parameter that move a face of extent `face`
+/// to the least common extent with the faces before it, of extent `placed`.
+/// None where that extent is wider than one turn.
+fn aligning_turns(placed: &Extent, face: &Extent) -> Option<f64> {
+    let (Some([placed_low, placed_high]), Some([low, high])) = (placed.0, face.0) else {
+        return Some(0.0);
+    };
+    let width = |turns: f64| placed_high.max(high + turns) - placed_low.min(low + turns);
+    [
+        0.0,
+        ((placed_low - low) / TAU).floor(),
+        ((placed_low - low) / TAU).ceil(),
+        ((placed_high - high) / TAU).floor(),
+        ((placed_high - high) / TAU).ceil(),
+    ]
+    .map(|count| count * TAU)
+    .into_iter()
+    .min_by(|first, second| {
+        width(*first)
+            .total_cmp(&width(*second))
+            .then(first.abs().total_cmp(&second.abs()))
+    })
+    .filter(|turns| width(*turns) <= TAU + ANGULAR_TOLERANCE)
 }
 
 /// Moves each loop of a face that does not turn around the other parameter
@@ -993,16 +1179,27 @@ fn restated_support(
 /// turn. The loops that turn around the other parameter bound the face in
 /// `axis` and keep their places: the window starts at the least value of
 /// these loops and of `reach`, the bounds their face sides set. Without such
-/// loops, the window is the narrowest that holds every loop.
+/// loops, the window is the narrowest that holds the loops that turn around
+/// neither parameter, and of these windows the narrowest that holds every
+/// loop. A curve of a loop that turns around `axis` and crosses the end of
+/// the window is cut there, and its pieces lie at the two ends of the
+/// window.
 fn windowed(loops: &mut [LoopImages], axis: usize, reach: &[f64]) {
     let other = 1 - axis;
-    // The whole turns that move the value `low` to at least `start`.
-    let turns = |start: f64, low: f64| ((start - low - ANGULAR_TOLERANCE) / TAU).ceil() * TAU;
-    let free = loops
-        .iter()
-        .filter(|images| images.winding[other] == 0)
-        .filter_map(|images| images.extent(axis))
-        .collect::<Vec<_>>();
+    let extents = |turning: bool| {
+        loops
+            .iter()
+            .filter(|images| images.winding[other] == 0 && (turning || images.winding[axis] == 0))
+            .filter_map(|images| images.extent(axis))
+            .collect::<Vec<_>>()
+    };
+    let (moved, whole) = (extents(true), extents(false));
+    let width = |start: f64, extents: &[[f64; 2]]| {
+        extents
+            .iter()
+            .map(|[low, high]| high + window_turns(start, *low) - start)
+            .fold(0.0, f64::max)
+    };
     let start = loops
         .iter()
         .filter(|images| images.winding[other] != 0)
@@ -1011,30 +1208,81 @@ fn windowed(loops: &mut [LoopImages], axis: usize, reach: &[f64]) {
         .chain(reach.iter().copied())
         .min_by(f64::total_cmp)
         .or_else(|| {
-            free.iter()
+            moved
+                .iter()
                 .map(|[start, _]| {
-                    let end = free
-                        .iter()
-                        .map(|[low, high]| high + turns(*start, *low))
-                        .fold(f64::NEG_INFINITY, f64::max);
-                    (*start, end - start)
+                    let misfit = width(*start, &whole) > TAU + ANGULAR_TOLERANCE;
+                    (*start, misfit, width(*start, &moved))
                 })
-                .min_by(|first, second| first.1.total_cmp(&second.1))
-                .map(|(start, _)| start)
+                .min_by(|first, second| first.1.cmp(&second.1).then(first.2.total_cmp(&second.2)))
+                .map(|(start, ..)| start)
         });
     let Some(start) = start else {
         return;
     };
     for images in loops.iter_mut().filter(|images| images.winding[other] == 0) {
-        if let Some([low, _]) = images.extent(axis) {
-            let turns = turns(start, low);
-            images.shift(if axis == 0 {
-                Point2::new(turns, 0.0)
-            } else {
-                Point2::new(0.0, turns)
-            });
+        if images.winding[axis] == 0 {
+            if let Some([low, _]) = images.extent(axis) {
+                images.shift(along(axis, window_turns(start, low)));
+            }
+        } else {
+            images.images = std::mem::take(&mut images.images)
+                .into_iter()
+                .flat_map(|image| windowed_image(image, axis, start))
+                .collect();
         }
     }
+}
+
+/// `image` moved by whole turns of the parameter `axis` to at least `start`,
+/// and cut where it crosses `start` plus one turn into two pieces that lie
+/// at the two ends of the window.
+fn windowed_image(mut image: Exact, axis: usize, start: f64) -> Vec<Exact> {
+    let coordinate = |point: Point2| if axis == 0 { point.u } else { point.v };
+    let (from, to) = (coordinate(image.start), coordinate(image.end));
+    let (low, high) = (from.min(to), from.max(to));
+    let turns = window_turns(start, low);
+    let cut = start + TAU - turns;
+    if high <= cut + ANGULAR_TOLERANCE || high - low > TAU + ANGULAR_TOLERANCE {
+        image.shift(along(axis, turns));
+        return vec![image];
+    }
+    let fraction = (cut - from) / (to - from);
+    let [first, last] = image.range;
+    let parameter = fraction.mul_add(last - first, first);
+    let point = Point2::new(
+        fraction.mul_add(image.end.u - image.start.u, image.start.u),
+        fraction.mul_add(image.end.v - image.start.v, image.start.v),
+    );
+    let point = if axis == 0 {
+        Point2::new(cut, point.v)
+    } else {
+        Point2::new(point.u, cut)
+    };
+    let (head_turns, tail_turns) = if from < to {
+        (turns, turns - TAU)
+    } else {
+        (turns - TAU, turns)
+    };
+    let mut head = Exact {
+        id: image.id.clone(),
+        range: [first, parameter],
+        start: image.start,
+        end: point,
+        slope: image.slope,
+        piece: Some(0),
+    };
+    let mut tail = Exact {
+        id: image.id,
+        range: [parameter, last],
+        start: point,
+        end: image.end,
+        slope: image.slope,
+        piece: Some(1),
+    };
+    head.shift(along(axis, head_turns));
+    tail.shift(along(axis, tail_turns));
+    vec![head, tail]
 }
 
 /// Whether two parameter curve images start and end at the same points.
