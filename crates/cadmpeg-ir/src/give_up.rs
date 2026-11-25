@@ -221,7 +221,7 @@ impl References {
     /// left.
     fn release(&mut self, id: &str, copies: usize) -> bool {
         self.held.get_mut(id).is_none_or(|held| {
-            *held = held.saturating_sub(copies);
+            *held = held.checked_sub(copies).unwrap_or_default();
             *held == 0
         })
     }
