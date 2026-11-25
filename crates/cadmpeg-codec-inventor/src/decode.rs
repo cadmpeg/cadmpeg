@@ -657,6 +657,7 @@ fn decode_container<'a>(
             unknowns: kernel_unknowns,
             stats: kernel_stats,
             annotation_records: kernel_annotations,
+            unbounded_faces: kernel_unbounded_faces,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("inventor"), kernel_brep)?;
     let history_framing = match &container.rse.active_carrier {
@@ -926,6 +927,14 @@ fn decode_container<'a>(
                     kernel_stats.unknown_surface_faces()
                 )),
             );
+        }
+        for face in &kernel_unbounded_faces {
+            losses.push(InventorLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                "ASM face record {} states no loop on a {}, which no face covers whole: face {} is stated partial.",
+                face.record_index,
+                face.surface_kind,
+                face.face.as_str()
+            )));
         }
         if !segment_pairs.is_empty() {
             losses.push(InventorLossCode::RseSegmentPairUntyped.note(format!(
