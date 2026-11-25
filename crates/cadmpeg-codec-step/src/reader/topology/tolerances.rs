@@ -98,6 +98,7 @@ fn apply_body_bounds(ir: &mut CadIr, body_bounds: &HashMap<BodyId, PositiveLengt
             match member {
                 ShellMember::WireEdge { id } => raise(&mut edges, id.clone(), bound),
                 ShellMember::FreeVertex { id } => raise(&mut vertices, id.clone(), bound),
+                ShellMember::Subd { .. } => {}
             }
         }
     }

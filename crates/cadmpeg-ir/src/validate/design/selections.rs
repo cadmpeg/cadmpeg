@@ -456,7 +456,7 @@ fn check_pick<'a>(
                 findings,
                 at,
                 crate::rule!(
-                    "design.pick-states-resolved-document-stores-no",
+                    "design.resolved-without-stored-state",
                     "a pick states `resolved`, but the document stores no state at its anchor"
                 ),
             );
@@ -863,7 +863,7 @@ pub(in crate::validate) fn check_unconfigured(
             findings,
             at,
             crate::rule!(
-                "design.states-step-configuration",
+                "design.path-states-step-configuration",
                 "{what} states a step configuration"
             ),
         );

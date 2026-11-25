@@ -79,7 +79,7 @@ pub(super) fn check<'a>(
             super::error(
                 findings,
                 id,
-                crate::rule!("design.fold-straight-edge-picks", "{message}"),
+                crate::rule!("design.join-input-holds-no-target-body", "{message}"),
             );
         }
     }

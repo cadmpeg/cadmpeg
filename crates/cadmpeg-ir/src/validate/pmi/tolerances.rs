@@ -109,7 +109,7 @@ pub(super) fn check_dimension_statements(
                 findings,
                 annotation,
                 crate::rule!(
-                    "pmi.dimension-states-basic-single-limit-tolerance",
+                    "pmi.basic-or-single-limit-tolerance-without-nominal",
                     "dimension states a basic or single-limit tolerance and no nominal"
                 ),
             ),

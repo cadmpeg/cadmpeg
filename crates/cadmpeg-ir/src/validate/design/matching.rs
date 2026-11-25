@@ -70,7 +70,11 @@ pub(super) struct StateTopology<'a> {
     /// The faces that use each edge through a coedge.
     pub(super) edge_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The faces on which each vertex lies.
-    vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    pub(super) vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The face loops that use each edge through a coedge.
+    pub(super) edge_loops: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The edges each face loop uses through its coedges.
+    pub(super) loop_edges: BTreeMap<&'a str, BTreeSet<&'a str>>,
 }
 
 /// The records of one stored state, collected before adjacency is derived.
@@ -126,16 +130,19 @@ impl<'a> Collected<'a> {
     fn finish(self) -> StateTopology<'a> {
         let mut edge_faces: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
         let mut vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+        let mut edge_loops: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+        let mut loop_edges: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
         for coedge in self.coedges.values() {
             let Some(record) = self.loops.get(coedge.owner_loop.as_str()) else {
                 continue;
             };
             let face = record.face.as_str();
-            if self.faces.contains_key(face) && self.edges.contains_key(coedge.edge.as_str()) {
-                edge_faces
-                    .entry(coedge.edge.as_str())
-                    .or_default()
-                    .insert(face);
+            let edge = coedge.edge.as_str();
+            if self.faces.contains_key(face) && self.edges.contains_key(edge) {
+                edge_faces.entry(edge).or_default().insert(face);
+                let id = record.id.as_str();
+                edge_loops.entry(edge).or_default().insert(id);
+                loop_edges.entry(id).or_default().insert(edge);
             }
         }
         for (edge, faces) in &edge_faces {
@@ -168,6 +175,8 @@ impl<'a> Collected<'a> {
             surfaces: self.surfaces,
             edge_faces,
             vertex_faces,
+            edge_loops,
+            loop_edges,
         }
     }
 }

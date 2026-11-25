@@ -365,7 +365,7 @@ pretty-printed JSON records.
 
 ```sh
 cadmpeg check bracket.f3d -o report.json
-cadmpeg query findings report.json     # severity  check  entity  message
+cadmpeg query findings report.json     # severity  check  rule  entity  message
 cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas

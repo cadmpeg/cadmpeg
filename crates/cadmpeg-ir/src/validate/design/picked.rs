@@ -65,6 +65,7 @@ pub(super) fn check<'a>(
         for definition in std::iter::once(&feature.definition).chain(overrides) {
             probe.definition = definition;
             probe.operation(&definition.operation);
+            probe.chain_operation(&definition.operation);
         }
         for finding in probe.findings {
             if !findings.contains(&finding) {
@@ -269,16 +270,26 @@ fn surface_distance(topology: &StateTopology<'_>, face: &str, point: Point3) -> 
     }
 }
 
-/// The length of a straight edge: one on an unplaced line with two ends, of
-/// bodies with no placement of their own.
-fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
-    let placed = topology.edge_bodies(edge).into_iter().any(|body| {
+/// The position of a vertex.
+fn position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
+    let point = topology.vertices.get(vertex)?.point.as_str();
+    Some(topology.points.get(point)?.position().get())
+}
+
+/// Whether a body that holds `edge` has a placement of its own.
+fn edge_placed(topology: &StateTopology<'_>, edge: &str) -> bool {
+    topology.edge_bodies(edge).into_iter().any(|body| {
         topology
             .bodies
             .get(body)
             .is_some_and(|body| body.transform.is_some())
-    });
-    if placed {
+    })
+}
+
+/// The length of a straight edge: one on an unplaced line with two ends, of
+/// bodies with no placement of their own.
+fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
+    if edge_placed(topology, edge) {
         return None;
     }
     let edge = topology.edges.get(edge)?;
@@ -289,13 +300,13 @@ fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
     if !matches!(curve, SolvedCurveGeometry::Line(_)) {
         return None;
     }
-    let position = |vertex: &str| -> Option<Point3> {
-        let point = topology.vertices.get(vertex)?.point.as_str();
-        Some(topology.points.get(point)?.position().get())
-    };
     let ends = edge.ends.as_ref()?;
-    let start = position(ends.start.as_str())?;
-    Some(position(ends.end.as_str())?.vector_from(start).norm())
+    let start = position(topology, ends.start.as_str())?;
+    Some(
+        position(topology, ends.end.as_str())?
+            .vector_from(start)
+            .norm(),
+    )
 }
 
 fn literal<T: Copy>(dimension: &Dimension<T>) -> Option<T> {
@@ -988,6 +999,8 @@ fn pieces(topology: &StateTopology<'_>, sheet: &str, cut: &BTreeSet<&str>) -> us
         .filter(|&at| root(&mut parent, at) == at)
         .count()
 }
+
+mod chains;
 
 #[cfg(test)]
 mod tests;
