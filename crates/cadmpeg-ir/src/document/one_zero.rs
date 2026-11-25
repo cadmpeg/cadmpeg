@@ -21,6 +21,13 @@ pub(super) fn from_str<T: de::DeserializeOwned>(text: &str) -> Result<T, serde_j
     Ok(value)
 }
 
+/// Reads `value` as one value of `T`, every float zero as 0.
+pub(super) fn from_value<T: de::DeserializeOwned>(
+    value: &serde_json::Value,
+) -> Result<T, serde_json::Error> {
+    T::deserialize(Zeroed(value))
+}
+
 /// A deserializer whose floats read negative zero as zero.
 struct Zeroed<D>(D);
 
