@@ -1465,6 +1465,10 @@ fn decode_container<'a>(
             sketch_inventory.sketches.len(),
         ),
         (
+            crate::coverage::PM_DC_SPATIAL_SKETCHES,
+            spatial_inventory.records.len(),
+        ),
+        (
             crate::coverage::PM_DC_SKETCH_ENTITIES,
             sketch_inventory.entities.len(),
         ),

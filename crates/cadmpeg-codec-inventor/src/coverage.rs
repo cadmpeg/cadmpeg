@@ -42,6 +42,7 @@ pub(crate) const DESIGN_PARAMETERS_TRANSFERRED: CoverageKey =
     CoverageKey::new("design_parameters_transferred");
 pub(crate) const DESIGN_RECORD_ISSUES: CoverageKey = CoverageKey::new("design_record_issues");
 pub(crate) const PM_DC_SKETCHES: CoverageKey = CoverageKey::new("pm_dc_sketches");
+pub(crate) const PM_DC_SPATIAL_SKETCHES: CoverageKey = CoverageKey::new("pm_dc_spatial_sketches");
 pub(crate) const PM_DC_SKETCH_ENTITIES: CoverageKey = CoverageKey::new("pm_dc_sketch_entities");
 pub(crate) const PM_DC_TRANSFORMS: CoverageKey = CoverageKey::new("pm_dc_transforms");
 pub(crate) const PM_DC_DIRECTIONS: CoverageKey = CoverageKey::new("pm_dc_directions");
