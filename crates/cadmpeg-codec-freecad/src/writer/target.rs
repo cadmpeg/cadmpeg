@@ -7,6 +7,8 @@
 //!
 //! [`Encoder::plan`]: cadmpeg_ir::codec::write::Encoder::plan
 
+use std::collections::HashSet;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
@@ -47,6 +49,9 @@ pub(super) struct Resolution<'a> {
     /// The other retained entries that read, each name once, in arena order.
     entries: Vec<EntryRecord>,
     omitted: Omissions,
+    /// Names of the archive members `omitted` already names by their entry
+    /// record.
+    omitted_members: HashSet<String>,
 }
 
 impl<'a> Resolution<'a> {
@@ -84,6 +89,10 @@ impl<'a> Resolution<'a> {
 
     pub(super) const fn omitted(&self) -> &Omissions {
         &self.omitted
+    }
+
+    pub(super) const fn omitted_members(&self) -> &HashSet<String> {
+        &self.omitted_members
     }
 }
 
@@ -272,10 +281,11 @@ pub(super) fn retained_baseline<'a>(
     };
     let mut omitted = Omissions::default();
     let (records, unreadable) = super::read_arena::<EntryRecord>(namespace, "entries")?;
+    let omitted_members = entry_names(namespace, &unreadable);
     for id in unreadable {
         omitted.push(super::UNREADABLE_ENTRY, id);
     }
-    let mut names = std::collections::HashSet::new();
+    let mut names = HashSet::new();
     let mut document_xml = None;
     let mut entries = Vec::with_capacity(records.len());
     for entry in records {
@@ -307,7 +317,28 @@ pub(super) fn retained_baseline<'a>(
         document_xml,
         entries,
         omitted,
+        omitted_members,
     }))
+}
+
+/// The member names the entry records `ids` state, for each record whose
+/// name reads.
+fn entry_names(namespace: &cadmpeg_ir::native::NativeNamespace, ids: &[String]) -> HashSet<String> {
+    #[derive(serde::Deserialize)]
+    struct Named {
+        name: String,
+    }
+    let ids = ids.iter().map(String::as_str).collect::<HashSet<_>>();
+    namespace
+        .arenas()
+        .get("entries")
+        .into_iter()
+        .flatten()
+        .map(cadmpeg_ir::native::NativeRecord::id)
+        .zip(namespace.arena_iter_as::<Named>("entries"))
+        .filter(|(id, _)| ids.contains(id))
+        .filter_map(|(_, named)| named.ok().map(|named| named.name))
+        .collect()
 }
 
 /// The document facts, `SchemaVersion`, and vocabulary that `bytes` declare,

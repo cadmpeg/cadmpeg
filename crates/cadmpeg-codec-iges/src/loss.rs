@@ -159,6 +159,9 @@ loss_codes! {
     WriterFaceOmitted => "writer.face-omitted",
     /// A body the writer cannot write was dropped with the records only it uses.
     WriterBodyOmitted => "writer.body-omitted",
+    /// An open shell was written as unjoined trimmed surfaces for a version
+    /// that defines no open shell.
+    WriterOpenShellUnjoined => "writer.open-shell-unjoined",
     /// An open edge with no stated range was written over one of several
     /// ranges its vertices bound, or between its vertices' feet on its curve.
     WriterEdgeRangeAssumed => "writer.edge-range-assumed",
@@ -230,6 +233,7 @@ impl IgesLossCode {
             | Self::WriterBodyOpacityNotRepresented
             | Self::WriterBodyVisibilityNotRepresented
             | Self::WriterEdgeRangeAssumed
+            | Self::WriterOpenShellUnjoined
             | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
             Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
@@ -241,11 +245,11 @@ impl IgesLossCode {
         match self {
             Self::WriterSupportEdgeNotRepresented
             | Self::WriterFaceOmitted
-            | Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
-            Self::WriterEdgeRangeAssumed | Self::VertexToleranceWidened => {
-                LossTaxonomy::TopologyGaugeSubstituted
-            }
-            Self::OccurrenceExpansionOutputTruncated
+            | Self::WriterBodyOmitted
+            | Self::WriterOpenShellUnjoined => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::VertexToleranceWidened
+            | Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
@@ -401,6 +405,7 @@ mod tests {
                 "writer.body-visibility-not-represented",
                 "writer.face-omitted",
                 "writer.body-omitted",
+                "writer.open-shell-unjoined",
                 "writer.edge-range-assumed",
                 "geometry.vertex-tolerance-widened",
                 "projection.invalid",
