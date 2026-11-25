@@ -340,6 +340,52 @@ fn a_parameter_with_no_cache_and_no_expressible_expression_is_not_written() {
 }
 
 #[test]
+fn a_value_with_no_finite_literal_in_its_unit_is_written_in_its_canonical_unit() {
+    let mut ir = scoped_cube();
+    let mut spin = parameter("spin", "Spin", ParameterDefinition::Unset, Some(1.0e307));
+    spin.kind = ValueKind::Quantity(Quantity::ANGLE);
+    let huge = parameter(
+        "huge",
+        "Huge",
+        neutral(Node::mul(
+            number(1.0e300, Some(UnitSymbol::Mm)),
+            MulOp::Multiply,
+            number(1.0e300, None),
+        )),
+        None,
+    );
+    ir.design.parameters.extend([spin, huge]);
+    let (report, decoded_ir) = write(&ir);
+    let spin = decoded_ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Spin")
+        .expect("Spin is written");
+    assert!(spin.expression.ends_with(" rad"), "{}", spin.expression);
+    assert!(decoded_ir
+        .model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.name != "Huge"));
+    let unwritable = loss(&report, "export/value.unwritable");
+    assert!(
+        unwritable
+            .iter()
+            .any(|message| message.contains("canonical unit")
+                && message.contains(parameter_id("spin").as_str())),
+        "{unwritable:#?}"
+    );
+    assert!(
+        unwritable
+            .iter()
+            .any(|message| message.contains("no finite number")
+                && message.contains(parameter_id("huge").as_str())),
+        "{unwritable:#?}"
+    );
+}
+
+#[test]
 fn a_reference_cycle_is_written_as_a_cached_value_where_it_is_broken() {
     let mut ir = scoped_cube();
     ir.design.parameters.extend([

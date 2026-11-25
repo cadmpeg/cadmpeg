@@ -18,8 +18,9 @@ use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
 use cadmpeg_ir::scalar::{FiniteReal, Length};
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, RetainedSourceRecord};
 
+use crate::loss::F3dLossCode;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_manifest_version;
 use crate::F3dCodec;
@@ -173,6 +174,53 @@ fn a_design_edit_the_history_cannot_state_is_named() {
         "{:?}",
         report.notes
     );
+}
+
+/// A saved design whose retained archive does not decode is written from its
+/// `design` records, with a loss naming why its history was not restored.
+#[test]
+fn a_retained_archive_that_does_not_decode_is_charged() {
+    let decoded = decode(SOURCE);
+    let id = parameter(decoded.ir(), "d1");
+    let mut read = saved(decoded.ir());
+    read.edit()
+        .expect("editor")
+        .set_dimension(&id, millimetres(3.0))
+        .expect("edit");
+    let mut fidelity = decoded.source_fidelity().clone();
+    fidelity
+        .remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .expect("a retained archive");
+    fidelity
+        .insert_retained_record(
+            crate::ids::file_source_image_id(),
+            RetainedSourceRecord::whole("f3d", b"not an archive".to_vec()),
+        )
+        .expect("one retained archive");
+
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&read, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .expect("plan");
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).expect("write");
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::WriterHistoryUnrestored.kind()),
+        "{:#?}",
+        report.losses
+    );
+    let written = decode(&bytes);
+    assert!(written
+        .ir()
+        .design
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name.as_ref().is_some_and(|name| *name == "d1")));
 }
 
 /// A saved design written to a catalog row other than its source's dialect

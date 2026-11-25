@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::subset_lowering::{lower_subset_curves, SubsetLowering};
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -49,8 +50,12 @@ pub(super) struct Generated {
 pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Generated, CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
-    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
+    let SubsetLowering {
+        ir: lowered,
+        unlowered,
+    } = lower_subset_curves(target, |_| true);
     let mut reduction = Reduction::new(lowered.as_ref());
+    reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
     let (mut staged, mut coverage, design_losses) = loop {
         let mut staged = tempfile::tempfile()?;
@@ -250,15 +255,10 @@ fn attempt<W: Write + Seek>(
         (None, None) => Vec::new(),
     };
     let mut configurations = Vec::new();
+    let mut renamed_entries = Vec::new();
     if write_design {
-        let mut configuration_names = BTreeSet::new();
-        for configuration in &native.design_configurations {
-            if !configuration_names.insert(configuration.entry_name().as_str()) {
-                return Err(Failure::design(CodecError::malformed(format_args!(
-                    "duplicate F3D configuration identity: {}",
-                    configuration.entry_name()
-                ))));
-            }
+        let names = configuration_entry_names(&native.design_configurations);
+        for (configuration, name) in native.design_configurations.iter().zip(names) {
             if configuration.active_row().is_some() {
                 return Err(Failure::design(CodecError::NotImplemented(
                     "source-less F3D generation does not write the Design configuration root record"
@@ -268,9 +268,22 @@ fn attempt<W: Write + Seek>(
             let payload =
                 crate::records::configuration::encode_configuration_payload(configuration)
                     .map_err(Failure::design)?;
-            configurations.push((configuration.entry_name(), payload));
+            if name != *configuration.entry_name() {
+                renamed_entries.push(format!(
+                    "{} from {} to {name}",
+                    configuration.id(),
+                    configuration.entry_name()
+                ));
+            }
+            configurations.push((name, payload));
         }
     }
+    let renamed_entries = cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes these configuration documents under other entry names: Fusion reads a \
+         configuration document only under a unique, well-formed name in the design folder",
+        renamed_entries,
+    );
     let design_bulk = encode_design_bulkstream(
         target,
         &native,
@@ -309,6 +322,7 @@ fn attempt<W: Write + Seek>(
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
             let mut losses = plan.into_losses();
             losses.extend(unstated_visibility);
+            losses.extend(renamed_entries);
             return Ok((
                 coverage(
                     write_design,
@@ -325,6 +339,7 @@ fn attempt<W: Write + Seek>(
     let written = neutral.is_some();
     let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
     losses.extend(unstated_visibility);
+    losses.extend(renamed_entries);
     Ok((
         coverage(write_design, parameters, written, ArenaDisposition::Written),
         losses,
@@ -395,13 +410,88 @@ fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossN
     losses
 }
 
+/// The folder of the design asset that holds its configuration documents.
+const CONFIGURATION_FOLDER: &str = "DesignConfigurationTable.BlobParts";
+/// The fixed fields of a ZIP local file header.
+const ZIP_LOCAL_HEADER_BYTES: usize = 30;
+/// The largest ZIP local file header with its name: less than 64 KiB.
+const ZIP_LOCAL_ENTRY_LIMIT: usize = 0xFFFE;
+/// The longest entry name.
+const ENTRY_NAME_LIMIT: usize = ZIP_LOCAL_ENTRY_LIMIT - ZIP_LOCAL_HEADER_BYTES;
+
+/// The entry name each configuration document is written under: its own
+/// where it is legal and the first of its spelling, and otherwise a free name
+/// in the design's configuration folder that keeps its base name where that
+/// is legal.
+fn configuration_entry_names(
+    configurations: &[crate::records::configuration::DesignConfiguration],
+) -> Vec<String> {
+    use crate::records::configuration::DesignConfigurationKind;
+    let mut taken = BTreeSet::new();
+    let kept = configurations
+        .iter()
+        .map(|configuration| {
+            let name = configuration.entry_name();
+            (legal_entry_name(name) && taken.insert(name.clone())).then(|| name.clone())
+        })
+        .collect::<Vec<_>>();
+    let mut ordinal = 0usize;
+    configurations
+        .iter()
+        .zip(kept)
+        .map(|(configuration, kept)| {
+            kept.unwrap_or_else(|| {
+                let base = configuration
+                    .entry_name()
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .unwrap_or_default();
+                let named = format!("{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{base}");
+                if legal_entry_name(&named) && taken.insert(named.clone()) {
+                    return named;
+                }
+                let (stem, extension) = match configuration.kind() {
+                    DesignConfigurationKind::Table => ("DesignConfigurationTable", "dsgcfg"),
+                    DesignConfigurationKind::Rule => ("DesignConfigurationRule", "dsgcfgrule"),
+                };
+                loop {
+                    ordinal += 1;
+                    let numbered = format!(
+                        "{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{stem}.{ordinal}.{extension}"
+                    );
+                    if taken.insert(numbered.clone()) {
+                        return numbered;
+                    }
+                }
+            })
+        })
+        .collect()
+}
+
+/// Whether the decoder reads `name` back as an entry of the written design:
+/// a path in the design folder of non-empty segments, none `.` or `..`,
+/// holding no backslash or control character, that a ZIP header holds.
+fn legal_entry_name(name: &str) -> bool {
+    name.len() <= ENTRY_NAME_LIMIT
+        && name
+            .strip_prefix(DESIGN_FOLDER)
+            .and_then(|path| path.strip_prefix('/'))
+            .is_some_and(|path| {
+                path.split('/').all(|segment| {
+                    !matches!(segment, "" | "." | "..")
+                        && !segment
+                            .contains(|character: char| character == '\\' || character.is_control())
+                })
+            })
+}
+
 /// The members of a written archive.
 enum ArchiveEntries<'a> {
     /// The generic form: the history stream, the configurations, one Design
     /// segment and one Protein package per appearance.
     Generated {
         smbh: &'a [u8],
-        configurations: &'a [(&'a String, Vec<u8>)],
+        configurations: &'a [(String, Vec<u8>)],
         design_bulk: Option<&'a [u8]>,
         meta_stream: Option<&'a [u8]>,
         proteins: &'a [Vec<u8>],
@@ -448,7 +538,7 @@ fn write_archive<W: Write + Seek>(
                 smbh,
             )?;
             for (name, payload) in *configurations {
-                entry((*name).clone(), payload)?;
+                entry(name.clone(), payload)?;
             }
             if let Some(bulk_stream) = design_bulk {
                 entry(

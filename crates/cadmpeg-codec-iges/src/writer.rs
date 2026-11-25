@@ -461,14 +461,17 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         None => (None, Vec::new()),
     };
     let ir = complete.as_ref().unwrap_or(ir);
-    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
+    let lowering = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
-    })?;
+    });
+    if let Some(subset) = lowering.unlowered.into_iter().next() {
+        return Err(subset.error);
+    }
     let mut range_losses = Vec::new();
-    let ranged = state_open_edge_ranges(lowered.as_ref(), &mut range_losses)?;
+    let ranged = state_open_edge_ranges(lowering.ir.as_ref(), &mut range_losses)?;
     let ir = ranged.as_ref();
     let index = TopologyIndex::new(ir);
     let arena = DecodeArena::new();

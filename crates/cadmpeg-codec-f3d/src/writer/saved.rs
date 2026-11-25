@@ -14,18 +14,22 @@ use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::report::loss::LossNote;
 
+use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
 /// `input`'s document with the arenas the CADIR wire omits restored from
 /// its retained archive, where it was read from CADIR JSON and `target` does
 /// not replay it unedited. A restore that the design edits refuse leaves the
 /// document as read, which the generator writes from its `design` records,
-/// and adds the refusal to `notes`.
+/// and adds the refusal to `notes`. A restore that fails for a reason other
+/// than a limit also charges `f3d:writer.history-unrestored` to `losses`.
 pub(crate) fn restore(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
     let replays = target.entry().is_none() || target.preserves_source();
     let Some(image) = saved_source(input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
@@ -52,6 +56,10 @@ pub(crate) fn restore(
         }
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
         Err(error) => {
+            losses.push(F3dLossCode::WriterHistoryUnrestored.note(format!(
+                "the history arenas were not restored from the retained F3D archive ({error}); \
+                 the file is written from the design records"
+            )));
             notes.push(error.to_string());
             Ok(None)
         }

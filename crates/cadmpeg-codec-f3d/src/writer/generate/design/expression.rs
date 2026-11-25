@@ -91,7 +91,8 @@ pub(super) fn print<'a>(
 }
 
 /// The value of `node` in canonical units, over the subset [`print`] writes,
-/// with each reference's value as `value` gives it.
+/// with each reference's value as `value` gives it. The value is not finite
+/// where the arithmetic overflows.
 pub(super) fn evaluate(
     node: &Node<ParameterRef>,
     value: &impl Fn(&ParameterId) -> Option<f64>,
@@ -126,7 +127,7 @@ pub(super) fn evaluate(
         }
         _ => return None,
     };
-    result.is_finite().then_some(result)
+    Some(result)
 }
 
 /// The Fusion text of source tokens in the Fusion dialect, with each
