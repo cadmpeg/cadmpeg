@@ -250,21 +250,19 @@ pub fn document_local_sha256_without_carried(
 ) -> Result<String, CodecError> {
     let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
     let omitted_arenas = edited_omitted_arenas(ctx, ir)?;
-    let document = (|| {
-        Ok::<_, CodecError>(NormalizedDocument {
-            ir_version: ir.ir_version(),
-            fragment: ir.fragment,
-            source: source.cloned(),
-            units: CanonicalUnitsWire::default(),
-            tolerances: &ir.tolerances,
-            geometry: ir.geometry.sorted(),
-            model: ir.model.sorted()?,
-            design: ir.design.sorted(),
-            process: ir.process.sorted(),
-            native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
-            omitted_arenas,
-        })
-    })()?;
+    let document = NormalizedDocument {
+        ir_version: ir.ir_version(),
+        fragment: ir.fragment,
+        source: source.cloned(),
+        units: CanonicalUnitsWire::default(),
+        tolerances: &ir.tolerances,
+        geometry: ir.geometry.sorted(),
+        model: ir.model.sorted(),
+        design: ir.design.sorted(),
+        process: ir.process.sorted(),
+        native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
+        omitted_arenas,
+    };
     match canonical_json_sha256(ctx, &document) {
         Ok(digest) => Ok(digest),
         Err(error) => {

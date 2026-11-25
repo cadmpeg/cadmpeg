@@ -334,6 +334,18 @@ impl SurfaceGeometry {
         }
     }
 
+    /// States this carrier without its construction: as its retained cache
+    /// where it holds one, and as `Unknown` otherwise (§3.3).
+    pub(crate) fn release_construction(&mut self) {
+        if let Self::Procedural { cache, .. } = self {
+            *self = Self::Solved(
+                cache
+                    .take()
+                    .unwrap_or(SolvedSurfaceGeometry::Unknown { record: None }),
+            );
+        }
+    }
+
     /// Solved carrier retained from the source cache, when this carrier is
     /// procedural.
     #[must_use]
@@ -667,6 +679,18 @@ impl CurveGeometry {
         match self {
             Self::Procedural { construction, .. } => Some(construction),
             Self::Solved(_) => None,
+        }
+    }
+
+    /// States this carrier without its construction: as its retained cache
+    /// where it holds one, and as `Unknown` otherwise (§3.3).
+    pub(crate) fn release_construction(&mut self) {
+        if let Self::Procedural { cache, .. } = self {
+            *self = Self::Solved(
+                cache
+                    .take()
+                    .unwrap_or(SolvedCurveGeometry::Unknown { record: None }),
+            );
         }
     }
 

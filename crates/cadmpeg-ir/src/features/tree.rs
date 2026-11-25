@@ -70,19 +70,6 @@ impl TreeChildren {
         &self.active_child
     }
 
-    /// Keep only the children `keep` accepts, and no active child where
-    /// `keep` refuses it.
-    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&FeatureId) -> bool) {
-        self.children.0.retain(|child| keep(child));
-        if self
-            .active_child
-            .as_ref()
-            .is_some_and(|active| !self.children.0.contains(active))
-        {
-            self.active_child = None;
-        }
-    }
-
     /// Add a child unless it is already a member.
     pub fn insert(&mut self, child: FeatureId) {
         self.children.insert(child);

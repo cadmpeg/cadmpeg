@@ -1870,7 +1870,6 @@ macro_rules! declare_model_wire {
             where
                 S: Serializer,
             {
-                feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
                 if !self.is_finalized() {
                     let mut sorted = self.clone();
                     sorted.finalize();
@@ -1937,11 +1936,8 @@ macro_rules! declare_model_wire {
 
         impl Model {
             /// Borrow every arena the wire carries in canonical identity order.
-            pub(crate) fn sorted(&self) -> Result<SortedModel<'_>, CodecError> {
-                if let Err(error) = feature_parents::validate(&[self]) {
-                    return Err(CodecError::malformed(format_args!("{error}")));
-                }
-                Ok(SortedModel { $($field: sorted_model_value!(self, $field),)* })
+            pub(crate) fn sorted(&self) -> SortedModel<'_> {
+                SortedModel { $($field: sorted_model_value!(self, $field),)* }
             }
         }
     };

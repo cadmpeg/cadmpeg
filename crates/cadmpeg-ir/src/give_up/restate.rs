@@ -4,8 +4,8 @@
 //! A record is rewritten through its JSON, typed by the CADIR schema: a pick
 //! of a lost record is `Native` (§5.8), an expression that names one is
 //! `Source` with no tokens (§5.13), a procedural definition on one is
-//! `Unknown`, a curve or surface carrier that names one is `Unknown`,
-//! a name that names one leaves its entry's native name alone (§5.7), and a
+//! `Unknown`, a curve or surface carrier that names one is its retained
+//! cache where it holds one and `Unknown` otherwise, a name that names one leaves its entry's native name alone (§5.7), and a
 //! collection whose order carries no meaning loses the member that names one.
 
 use std::collections::BTreeSet;
@@ -452,11 +452,32 @@ impl<'a> Restate<'a> {
         Fate::Kept
     }
 
-    /// A curve or surface carrier that names a lost id, its construction or
-    /// its retained record, is `Unknown` (§3.3).
+    /// A curve or surface carrier that names a lost id is stated in the form
+    /// that holds only what was read (§3.3): a procedural carrier whose
+    /// construction stays loses only its cache, one whose construction is
+    /// lost is its cache where the cache names no lost id, and every other
+    /// is `Unknown`.
     fn carrier_geometry(&self, carrier: &str, value: &mut Value) -> Fate {
         if !names(value, self.gone) {
             return Fate::Clean;
+        }
+        if value.get("kind").and_then(Value::as_str) == Some("procedural") {
+            if let Some(procedural) = value.get_mut("value").and_then(Value::as_object_mut) {
+                if !procedural
+                    .get("construction")
+                    .is_some_and(|construction| names(construction, self.gone))
+                {
+                    procedural.remove("cache");
+                    return Fate::Kept;
+                }
+                if let Some(cache) = procedural
+                    .remove("cache")
+                    .filter(|cache| !names(cache, self.gone))
+                {
+                    *value = serde_json::json!({"kind": "solved", "value": cache});
+                    return Fate::Kept;
+                }
+            }
         }
         let unknown = if carrier == CURVE_GEOMETRY {
             cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {

@@ -37,8 +37,11 @@ fn predecessor_document() -> CadIr {
     ir
 }
 
+/// The wire leaves out the features and their parent relations (CADIR v11
+/// §3.4), so a parent graph the model refuses still writes, and validation
+/// locates the finding on the child.
 #[test]
-fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings() {
+fn mutated_parent_graphs_write_and_produce_located_validation_findings() {
     for mutation in [
         "missing parent",
         "missing child",
@@ -73,9 +76,11 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
             }
             _ => unreachable!(),
         }
-        assert!(serde_json::to_value(&ir.model).is_err(), "{mutation}");
-        assert!(serde_json::to_value(&ir).is_err(), "{mutation}");
-        assert!(ir.to_canonical_json().is_err(), "{mutation}");
+        let model = serde_json::to_value(&ir.model).expect(mutation);
+        assert!(model.get("features").is_none(), "{mutation}");
+        serde_json::to_value(&ir).expect(mutation);
+        let written = ir.to_canonical_json().expect(mutation);
+        assert!(!written.contains("test:parent-wire:feature#"), "{mutation}");
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(
             report.findings.iter().any(|finding| {

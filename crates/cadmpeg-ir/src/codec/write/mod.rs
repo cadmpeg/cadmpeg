@@ -754,37 +754,39 @@ impl EncoderBackend for CadirEncoder {
 }
 
 /// A copy of `ir` without each record whose canonical JSON is refused and
-/// without each record that needs one, as §3.3 drops a record (§3.4). A
-/// record that holds a non-finite number charges `export:value.unwritable`,
-/// and any other refused record `export:record.invalid`, naming it and the
+/// without each record that needs one, as §3.3 drops a record (§3.4). Each
+/// refused record charges `export:record.invalid`, naming it and the
 /// records dropped and marked with it.
 ///
 /// # Errors
 ///
-/// `refusal`, of the whole document, where no record alone is refused.
+/// A resource refusal for the walk of the carriers.
 fn without_unwritable_records(
     ir: &CadIr,
     refusal: &crate::hash::finite_json::CanonicalJsonError,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
     let unwritable: std::collections::BTreeMap<_, _> =
         ir.arenas().unwritable().into_iter().collect();
-    if unwritable.is_empty() {
-        return Err(CodecError::Malformed(refusal.to_string()));
-    }
+    debug_assert!(
+        !unwritable.is_empty(),
+        "a document whose canonical JSON is refused holds a record whose canonical JSON alone \
+         is refused: every value outside the records is a checked type ({refusal})"
+    );
+    debug_assert!(
+        !unwritable.values().any(|refusal| matches!(
+            refusal,
+            crate::hash::finite_json::CanonicalJsonError::NonFinite { .. }
+        )),
+        "no record the CADIR wire writes holds a non-finite number: every float of a record \
+         is a checked type"
+    );
     let mut ir = ir.clone();
-    ir.finalize();
     let removed = canonical::drop_seeds(&mut ir, unwritable.keys().cloned().collect())?;
     let losses = removed
         .into_iter()
         .filter_map(|(seed, released)| {
             let refusal = unwritable.get(&seed)?;
-            let code = match refusal {
-                crate::hash::finite_json::CanonicalJsonError::NonFinite { .. } => {
-                    loss::ExportLossCode::ValueUnwritable
-                }
-                _ => canonical::record_invalid_code(&seed.arena),
-            };
-            Some(code.note(format!(
+            Some(canonical::record_invalid_code(&seed.arena).note(format!(
                 "the {} write drops record {} of arena {}, whose canonical JSON is refused \
                  ({refusal}), with each record that needs it; dropped=[{}], marked=[{}]",
                 CadirEncoder::FORMAT.as_str(),
@@ -821,19 +823,24 @@ fn within_the_bounds(
     Ok((ir, losses))
 }
 
-/// Whether `ir` holds a record of a home or native arena.
-/// The empty CADIR document with the document-level fields of `ir`: its
-/// `fragment` flag, `repro` metadata, scope, source metadata and tolerances.
+/// The CADIR empty file of `ir` (§3.4): no records, with the document-level
+/// fields of `ir`, its `fragment` flag, `repro` metadata, scope, source
+/// metadata and tolerances, and `repro.roots` empty, since the file holds
+/// no record a root names.
 fn without_records(ir: &CadIr) -> CadIr {
     let mut empty = CadIr::empty();
     empty.fragment = ir.fragment;
     empty.repro.clone_from(&ir.repro);
+    if let Some(repro) = &mut empty.repro {
+        repro.roots.clear();
+    }
     empty.source.clone_from(&ir.source);
     empty.tolerances = ir.tolerances;
     empty.set_scope(ir.scope());
     empty
 }
 
+/// Whether `ir` holds a record of a home or native arena.
 fn holds_records(ir: &CadIr) -> bool {
     ir.entity_count() > 0 || holds_native_records(ir)
 }
