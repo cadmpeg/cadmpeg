@@ -928,13 +928,13 @@ fn hidden_occurrence_native_stream_is_scoped_with_its_member() {
             ctx,
             "design_hidden_occurrences",
             &mut fields,
-            "part/occurrence-2",
+            &|text| super::super::rescope(text, "part/occurrence-2"),
         )
         .unwrap();
     });
     assert_eq!(
         fields["stream"],
-        "f3d:xref/part/occurrence-2/Design/BulkStream.dat"
+        "f3d:part/occurrence-2@Design/BulkStream.dat"
     );
     assert_eq!(fields["record_index"], 11);
     assert_eq!(fields["target"], 30);
