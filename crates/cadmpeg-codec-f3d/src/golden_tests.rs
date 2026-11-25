@@ -929,6 +929,41 @@ fn neutral_document(ir: &CadIr) -> String {
     }))
 }
 
+/// `edited` with the tolerance of each vertex whose tolerance the decode of
+/// `round_trip` widened (CADIR §2.3): the moved point opens a gap at its
+/// vertex, which the decode states.
+fn with_widened_tolerances(edited: &CadIr, round_trip: &DecodeResult) -> CadIr {
+    let widened = |id: &str| {
+        round_trip
+            .source_fidelity()
+            .annotations
+            .exactness()
+            .get(id)
+            .and_then(|note| {
+                note.fields()
+                    .iter()
+                    .find(|(field, _)| field.as_str() == "tolerance")
+            })
+            .is_some_and(|(_, exactness)| *exactness == cadmpeg_ir::Exactness::Derived)
+    };
+    let mut expected = edited.clone();
+    for vertex in &mut expected.geometry.vertices {
+        if !widened(vertex.id.as_str()) {
+            continue;
+        }
+        if let Some(decoded) = round_trip
+            .ir()
+            .geometry
+            .vertices
+            .iter()
+            .find(|decoded| decoded.id == vertex.id)
+        {
+            vertex.tolerance = decoded.tolerance;
+        }
+    }
+    expected
+}
+
 /// An edit to a decoded document survives the patch writer.
 #[test]
 fn an_edit_survives_the_patch_writer() {
@@ -968,7 +1003,7 @@ fn an_edit_survives_the_patch_writer() {
                          edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
                     );
                     if let Err(mismatch) = snapshots_agree(
-                        &neutral_document(edited),
+                        &neutral_document(&with_widened_tolerances(edited, &round_trip)),
                         &neutral_document(round_trip.ir()),
                     ) {
                         panic!(

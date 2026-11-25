@@ -177,11 +177,13 @@
       "vertices": [
         {
           "id": "f3d:brep:entity#13",
-          "point": "f3d:brep:entity#16"
+          "point": "f3d:brep:entity#16",
+          "tolerance": 9.354143466934854
         },
         {
           "id": "f3d:brep:entity#14",
-          "point": "f3d:brep:entity#17"
+          "point": "f3d:brep:entity#17",
+          "tolerance": 11.180339887498949
         },
         {
           "id": "f3d:brep:entity#15",
@@ -720,6 +722,18 @@
         },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "decode",
+            "code": "geometry.vertex-tolerance-widened",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "info",
+        "message": "widened 2 vertex tolerance(s) to each vertex's largest distance from the curve ends compared with it; the largest widening is 11.18032988749895 mm"
       }
     ],
     "notes": [
@@ -734,6 +748,18 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
+        "f3d:brep:entity#13": {
+          "fields": {
+            "tolerance": "derived"
+          },
+          "kind": "fields"
+        },
+        "f3d:brep:entity#14": {
+          "fields": {
+            "tolerance": "derived"
+          },
+          "kind": "fields"
+        },
         "f3d:brep:entity#6": {
           "fields": {
             "geometry.value.normal": "derived",

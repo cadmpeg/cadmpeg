@@ -49,7 +49,7 @@ impl Widened {
     pub(super) fn message(&self) -> String {
         format!(
             "widened {} vertex tolerance(s) to each vertex's largest distance from the curve ends \
-             compared with it; the largest widening is {:.17} mm",
+             compared with it; the largest widening is {} mm",
             self.vertices.len(),
             self.largest
         )

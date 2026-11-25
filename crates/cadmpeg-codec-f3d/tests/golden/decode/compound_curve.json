@@ -181,7 +181,8 @@
         },
         {
           "id": "f3d:brep:entity#14",
-          "point": "f3d:brep:entity#17"
+          "point": "f3d:brep:entity#17",
+          "tolerance": 10.0
         },
         {
           "id": "f3d:brep:entity#15",
@@ -695,6 +696,18 @@
         },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "decode",
+            "code": "geometry.vertex-tolerance-widened",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "info",
+        "message": "widened 1 vertex tolerance(s) to each vertex's largest distance from the curve ends compared with it; the largest widening is 9.99999 mm"
       }
     ],
     "notes": [
@@ -709,6 +722,12 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
+        "f3d:brep:entity#14": {
+          "fields": {
+            "tolerance": "derived"
+          },
+          "kind": "fields"
+        },
         "f3d:brep:entity#6": {
           "fields": {
             "geometry.value.normal": "derived",
