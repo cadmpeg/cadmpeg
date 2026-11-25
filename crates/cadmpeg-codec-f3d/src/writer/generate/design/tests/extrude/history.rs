@@ -41,7 +41,7 @@ fn decoded_rollback(decoded: &CadIr) -> (Option<Rollback>, Vec<Member>) {
 
 /// `ir` with an unresolved fillet inserted in its timeline before the datum
 /// `after`, its last member. Returns the fillet's id.
-fn with_fillet(ir: &mut CadIr) -> FeatureId {
+pub(super) fn with_fillet(ir: &mut CadIr) -> FeatureId {
     let fillet = feature(
         "fillet",
         FeatureOperation::Unresolved {
@@ -328,7 +328,7 @@ fn a_design_whose_timeline_holds_no_body_decodes_with_no_body_loss() {
 /// The unit cube as `Sketch` and `Extrude`, then a second `Extrude` of the
 /// same profile, rolled back before the second extrude. Returns the design
 /// and the second extrude.
-fn with_a_rolled_back_extrude() -> (CadIr, FeatureId) {
+pub(super) fn with_a_rolled_back_extrude() -> (CadIr, FeatureId) {
     let mut ir = sketch_and_extrude(blind(), false);
     let second = feature(
         "second",

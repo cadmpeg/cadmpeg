@@ -23,10 +23,12 @@ mod views;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::record_residual_unavailable;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::frames::DesignRecords;
+use super::{Culprit, RecordFailure};
 use crate::records::parameters::DesignParameterDiscriminator;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
@@ -276,20 +278,37 @@ impl<'a> ItemRecords<'a> {
         }
     }
 
-    /// Every record of the item.
-    fn write(&self, ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), CodecError> {
-        #[cfg(test)]
-        if let Some(error) = super::requested_item_failure() {
-            return Err(error);
-        }
+    /// The feature the item writes.
+    fn feature(&self) -> &'a FeatureId {
         match &self.kind {
-            ItemKind::Extrude { plan, records } => {
-                extrude::write(ctx, plan, records, &self.place, out)
-            }
-            ItemKind::Revolve { plan, records } => {
-                revolve::write(ctx, plan, records, &self.place, out)
-            }
+            ItemKind::Extrude { plan, .. } => plan.feature,
+            ItemKind::Revolve { plan, .. } => plan.feature,
         }
+    }
+
+    /// Every record of the item. A failure names the item.
+    fn write(&self, ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), RecordFailure> {
+        let mut written = || {
+            #[cfg(test)]
+            if let Some(error) = super::requested_record_failure(self.feature()) {
+                return Err(error);
+            }
+            match &self.kind {
+                ItemKind::Extrude { plan, records } => {
+                    extrude::write(ctx, plan, records, &self.place, out)
+                }
+                ItemKind::Revolve { plan, records } => {
+                    revolve::write(ctx, plan, records, &self.place, out)
+                }
+            }
+        };
+        written().map_err(|error| RecordFailure {
+            error,
+            culprit: Some(Culprit::Item {
+                feature: self.feature().clone(),
+                rolled: self.place.rolled().is_some(),
+            }),
+        })
     }
 
     /// The values the writer chooses where the specification leaves the
@@ -854,13 +873,14 @@ pub(super) fn archive(
     ctx: &Context<'_>,
     mut records: DesignRecords,
     streams: Option<(&[u8], &[u8])>,
-) -> Result<(Members, Vec<LossNote>), CodecError> {
+) -> Result<(Members, Vec<LossNote>), RecordFailure> {
     if streams.is_some() == ctx.roster.bodies.is_empty() {
         return Err(CodecError::malformed(format_args!(
             "a design with {} result bodies and {} B-rep streams",
             ctx.roster.bodies.len(),
             if streams.is_some() { "its" } else { "no" }
-        )));
+        ))
+        .into());
     }
     fixed::write(ctx, &mut records)?;
     units::write(ctx, &mut records)?;

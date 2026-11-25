@@ -272,7 +272,7 @@ fn attempt<W: Write + Seek>(
                 target,
                 snapshot.as_deref().map(|snapshot| (&*smbh, snapshot)),
             )
-            .map_err(Failure::neutral_design)?;
+            .map_err(Failure::records)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
         let mut coverage = coverage(

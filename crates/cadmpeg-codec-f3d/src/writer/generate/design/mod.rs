@@ -15,7 +15,10 @@
 //! scope's configuration, arrangements and occurrence states, for every
 //! current state's `Stale` or `Failed` status and poses, and for every stored
 //! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
-//! failure. Its fallbacks, in [`Part`] order, write the sketches without
+//! failure. A failure that names the records of a rolled-back item drops
+//! that item alone; one that names the item of a feature written with its
+//! state drops the items written with their states. Its other fallbacks, in
+//! [`Part`] order, write the sketches without
 //! their dimensions, the geometry item in the Base Feature, the design without its
 //! construction planes and the sketches on them, the design without its
 //! `Sketch` items, then no design ([`dropped_records`]): they never drop a
@@ -139,9 +142,10 @@ thread_local! {
 
 #[cfg(test)]
 thread_local! {
-    /// Makes the next attempt that writes a geometry item on this thread
-    /// fail in the item's records.
-    static FAIL_NEXT_ITEM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The identities whose records fail to write in every attempt on this
+    /// thread.
+    static FAIL_RECORDS: std::cell::RefCell<BTreeSet<String>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
 }
 
 /// `written` without the result body of the last of `items` where
@@ -157,12 +161,17 @@ fn hide_requested_body<'a>(written: Vec<&'a BodyId>, items: &[Item<'_>]) -> Vec<
     written.into_iter().filter(|body| *body != hidden).collect()
 }
 
-/// The failure [`FAIL_NEXT_ITEM`] requests, once.
+/// The failure [`FAIL_RECORDS`] requests for the records of `id`.
 #[cfg(test)]
-fn requested_item_failure() -> Option<cadmpeg_core::CodecError> {
-    FAIL_NEXT_ITEM.with(|fail| fail.replace(false)).then(|| {
-        cadmpeg_core::CodecError::NotImplemented("a test failure of the item records".into())
-    })
+fn requested_record_failure(id: &impl std::fmt::Display) -> Option<cadmpeg_core::CodecError> {
+    let id = id.to_string();
+    FAIL_RECORDS
+        .with(|fail| fail.borrow().contains(&id))
+        .then(|| {
+            cadmpeg_core::CodecError::NotImplemented(format!(
+                "a test failure of the records of {id}"
+            ))
+        })
 }
 
 /// The failure [`FAIL_NEXT_PLAN`] requests, once per requested attempt.
@@ -206,22 +215,54 @@ impl Part {
     const ORDER: [Self; 4] = [Self::Dimensions, Self::Item, Self::Planes, Self::Sketches];
 }
 
-/// The parts the writer has dropped, each with the failure that dropped it.
+/// The records a failure to write the design scope names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Culprit {
+    /// The records of the geometry item of `feature`, rolled back after the
+    /// timeline marker or written with its state.
+    Item { feature: FeatureId, rolled: bool },
+}
+
+/// A failure to write the records of the design scope, and the records it
+/// names where the writer can drop them alone.
+#[derive(Debug)]
+pub(super) struct RecordFailure {
+    pub(super) error: CodecError,
+    pub(super) culprit: Option<Culprit>,
+}
+
+impl From<CodecError> for RecordFailure {
+    fn from(error: CodecError) -> Self {
+        Self {
+            error,
+            culprit: None,
+        }
+    }
+}
+
+/// The parts and records the writer has dropped, each with the failure that
+/// dropped it.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Fallback {
     dropped: Vec<(Part, String)>,
-    /// The failure of the ASM history that dropped the geometry items, where
-    /// one did.
-    history: Option<HistoryFault>,
+    /// The failure that dropped the geometry items written with their
+    /// states, where it names what failed.
+    fault: Option<ItemFault>,
+    /// The rolled-back items whose records the writer cannot write, each
+    /// with the failure.
+    rolled: BTreeMap<FeatureId, String>,
 }
 
-/// A failure of the ASM history of the geometry items. Their records are
-/// not at fault, so the writer still writes the rolled-back items, which
-/// commit no state.
+/// What failed where the geometry items written with their states are
+/// dropped. The rolled-back items commit no state and do not need them, so
+/// the writer still writes those.
 #[derive(Clone, Debug)]
-struct HistoryFault {
-    /// The feature whose state the failure concerns, where it names one.
-    cause: Option<FeatureId>,
+enum ItemFault {
+    /// The ASM history, with the feature whose state the failure concerns
+    /// where it names one.
+    History(Option<FeatureId>),
+    /// The records of the item of the feature.
+    Records(FeatureId),
 }
 
 impl Fallback {
@@ -237,22 +278,60 @@ impl Fallback {
     /// concerns where it names one.
     fn item_failure(&self) -> Option<(String, Option<&FeatureId>)> {
         let reason = self.reason(Part::Item)?;
-        Some(match &self.history {
-            Some(fault) => (
+        Some(match &self.fault {
+            Some(ItemFault::History(cause)) => (
                 format!("the writer cannot write its history state ({reason})"),
-                fault.cause.as_ref(),
+                cause.as_ref(),
             ),
-            None => (
-                format!("the writer cannot write its records ({reason})"),
-                None,
-            ),
+            Some(ItemFault::Records(feature)) => (records_reason(reason), Some(feature)),
+            None => (records_reason(reason), None),
         })
     }
 
     /// Whether the writer writes no rolled-back item: the geometry items
-    /// are dropped for a failure of their records.
+    /// are dropped for a failure that names no records.
     fn drops_rolled_items(&self) -> bool {
-        self.reason(Part::Item).is_some() && self.history.is_none()
+        self.reason(Part::Item).is_some() && self.fault.is_none()
+    }
+
+    /// Why the writer writes no rolled-back item for `feature`, where its
+    /// records failed.
+    fn rolled_failure(&self, feature: &FeatureId) -> Option<String> {
+        self.rolled
+            .get(feature)
+            .map(|reason| records_reason(reason))
+    }
+
+    /// Drop the records `culprit` names for `reason`. Returns whether the
+    /// writer had not dropped them yet.
+    pub(super) fn drop_records(
+        &mut self,
+        target: &CadIr,
+        missing_states: MissingStateForm,
+        culprit: &Culprit,
+        reason: &str,
+    ) -> bool {
+        match culprit {
+            Culprit::Item {
+                feature,
+                rolled: true,
+            } => {
+                if self.rolled.contains_key(feature) {
+                    return false;
+                }
+                self.rolled.insert(feature.clone(), reason.to_owned());
+                true
+            }
+            Culprit::Item {
+                feature,
+                rolled: false,
+            } => self.drop_items(
+                target,
+                missing_states,
+                ItemFault::Records(feature.clone()),
+                reason,
+            ),
+        }
     }
 
     /// Drop the geometry items for `reason`, a failure of their ASM history
@@ -265,9 +344,21 @@ impl Fallback {
         cause: Option<FeatureId>,
         reason: &str,
     ) -> bool {
+        self.drop_items(target, missing_states, ItemFault::History(cause), reason)
+    }
+
+    /// Drop the geometry items written with their states for `reason`, a
+    /// failure of `fault`. Returns whether they were dropped.
+    fn drop_items(
+        &mut self,
+        target: &CadIr,
+        missing_states: MissingStateForm,
+        fault: ItemFault,
+        reason: &str,
+    ) -> bool {
         let dropped = self.drop_part(target, missing_states, Part::Item, reason);
         if dropped {
-            self.history = Some(HistoryFault { cause });
+            self.fault = Some(fault);
         }
         dropped
     }
@@ -427,11 +518,11 @@ pub(super) fn plan<'a>(
             (run, None) => run,
         }
     };
-    let (rolled_items, rolled_reasons) = rolled_back_items(
+    let (rolled_items, mut rolled_reasons) = rolled_back_items(
         target,
         scope,
         &features,
-        rolled,
+        (rolled..features.len()).filter(|&at| fallback.rolled_failure(features[at]).is_none()),
         &sketches,
         &mut parameters,
         if fallback.drops_rolled_items() {
@@ -442,6 +533,11 @@ pub(super) fn plan<'a>(
                 .try_fold(ordinal, |next, item| item.next_ordinal(next))
                 .ok_or(ORDINALS_EXCEEDED)
         },
+    );
+    rolled_reasons.extend(
+        features[rolled..]
+            .iter()
+            .filter_map(|feature| Some((*feature, fallback.rolled_failure(feature)?))),
     );
     let rolled_back = features[rolled..].iter().copied().collect::<BTreeSet<_>>();
     let marker = sketches
@@ -559,24 +655,25 @@ pub(super) fn plan<'a>(
     }))
 }
 
-/// The stateful features from position `rolled` of `features`, the scope's
-/// features in timeline order, that the writer writes after the timeline
-/// marker with their definitions, with the reason for each it does not
-/// write. Their parameters take the source ordinals from `ordinal`, or
-/// `ordinal` names why no item is written.
+/// The stateful features at `positions` of `features`, the scope's features
+/// in timeline order, that the writer writes after the timeline marker with
+/// their definitions, with the reason for each it does not write. Their
+/// parameters take the source ordinals from `ordinal`, or `ordinal` names
+/// why no item is written.
 fn rolled_back_items<'a>(
     target: &'a CadIr,
     scope: &'a DesignScope,
     features: &[&'a FeatureId],
-    rolled: usize,
+    positions: impl Iterator<Item = usize>,
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
     ordinal: Result<u32, &'static str>,
-) -> (Vec<Item<'a>>, BTreeMap<&'a FeatureId, &'static str>) {
+) -> (Vec<Item<'a>>, BTreeMap<&'a FeatureId, String>) {
     let mut items = Vec::new();
     let mut reasons = BTreeMap::new();
     let mut ordinal = ordinal;
-    for (position, feature) in features.iter().enumerate().skip(rolled) {
+    for position in positions {
+        let feature = &features[position];
         if target.is_stateless(feature, None).unwrap_or(false) {
             continue;
         }
@@ -592,11 +689,16 @@ fn rolled_back_items<'a>(
                 items.push(planned);
             }
             Err(reason) => {
-                reasons.insert(*feature, reason);
+                reasons.insert(*feature, reason.to_owned());
             }
         }
     }
     (items, reasons)
+}
+
+/// Why the writer writes no item whose records failed with `reason`.
+fn records_reason(reason: &str) -> String {
+    format!("the writer cannot write its records ({reason})")
 }
 
 /// Why a rolled-back item is not written where its parameters exceed the
@@ -816,7 +918,7 @@ impl NeutralDesign<'_> {
         &mut self,
         target: &CadIr,
         streams: Option<(&[u8], &[u8])>,
-    ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    ) -> Result<Vec<(String, Vec<u8>)>, RecordFailure> {
         let scope = root_scope(target)
             .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
         let seed = match streams {

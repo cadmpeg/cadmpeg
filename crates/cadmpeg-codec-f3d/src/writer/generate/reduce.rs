@@ -52,6 +52,7 @@ use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 
+use super::design::{Culprit, RecordFailure};
 use super::native_geometry::{
     native_procedural_curve, native_procedural_surface, ProceduralOwners,
 };
@@ -108,8 +109,8 @@ pub(super) enum Stage {
 pub(super) struct Failure {
     pub(super) stage: Stage,
     pub(super) error: CodecError,
-    /// The timeline feature the failure concerns, where it names one.
-    pub(super) cause: Option<FeatureId>,
+    /// The records the failure names, where it names any.
+    pub(super) culprit: Option<Culprit>,
 }
 
 impl Failure {
@@ -117,7 +118,7 @@ impl Failure {
         Self {
             stage: Stage::Brep,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 
@@ -125,7 +126,7 @@ impl Failure {
         Self {
             stage: Stage::Design,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 
@@ -133,15 +134,29 @@ impl Failure {
         Self {
             stage: Stage::NeutralDesign,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 
+    /// A failure of the ASM history, with the feature whose state it
+    /// concerns where it names one.
     pub(super) fn history(error: CodecError, cause: Option<FeatureId>) -> Self {
         Self {
             stage: Stage::History,
             error,
-            cause,
+            culprit: cause.map(|feature| Culprit::Item {
+                feature,
+                rolled: false,
+            }),
+        }
+    }
+
+    /// A failure to write the design scope's records.
+    pub(super) fn records(failure: RecordFailure) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error: failure.error,
+            culprit: failure.culprit,
         }
     }
 
@@ -149,7 +164,7 @@ impl Failure {
         Self {
             stage: Stage::Archive,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 }
@@ -317,7 +332,7 @@ impl<'a> Reduction<'a> {
         let Failure {
             stage,
             error,
-            cause,
+            culprit,
         } = failure;
         if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
             return Err(error);
@@ -326,9 +341,12 @@ impl<'a> Reduction<'a> {
         let progressed = match stage {
             Stage::Archive => false,
             Stage::NeutralDesign => {
-                self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
+                culprit.is_some_and(|culprit| self.drop_records(&reason, &culprit))
+                    || self.drop_design_part(&reason)
+                    || self.drop_neutral_design(&reason)
             }
             Stage::History => {
+                let cause = culprit.map(|Culprit::Item { feature, .. }| feature);
                 self.drop_history_items(&reason, cause)
                     || self.drop_design_part(&reason)
                     || self.drop_neutral_design(&reason)
@@ -1403,6 +1421,14 @@ impl<'a> Reduction<'a> {
             && self
                 .fallback
                 .drop_next(&self.ir, self.missing_states, reason)
+    }
+
+    /// Drop the records `culprit` names, and each record that needs them.
+    fn drop_records(&mut self, reason: &str, culprit: &Culprit) -> bool {
+        self.writes_neutral_design()
+            && self
+                .fallback
+                .drop_records(&self.ir, self.missing_states, culprit, reason)
     }
 
     /// Drop the timeline items whose states the history holds, the first

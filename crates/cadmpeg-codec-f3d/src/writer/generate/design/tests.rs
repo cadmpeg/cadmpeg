@@ -243,6 +243,14 @@ fn tails(decoded: &CadIr) -> Vec<Tail> {
         .collect()
 }
 
+/// Makes the records of each of `ids` fail to write in every later attempt
+/// on this thread.
+fn fail_records<'a>(ids: impl IntoIterator<Item = &'a str>) {
+    super::FAIL_RECORDS.with(|fail| {
+        fail.borrow_mut().extend(ids.into_iter().map(str::to_owned));
+    });
+}
+
 fn loss<'a>(report: &'a ExportReport, code: &str) -> Vec<&'a str> {
     report
         .losses
