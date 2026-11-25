@@ -76,6 +76,17 @@ macro_rules! test_ctx {
     };
 }
 
+/// Synthesizes `ir` in one encode session under the desktop limits.
+fn synthesize(ir: &CadIr, version: IgesVersion) -> Result<super::Synthesis, super::Unwritten> {
+    crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+        },
+        |ctx| super::synthesize(ctx, ir, version),
+    )
+}
+
 mod cages;
 mod closed_edge_range;
 mod design_content;

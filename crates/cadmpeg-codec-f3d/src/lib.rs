@@ -150,15 +150,15 @@ impl F3dCodec {
     /// Replay retained source bytes when the document is the one the decode
     /// returned (§3.1, Rule B); otherwise patch. Returns which branch ran.
     fn write_preserved_bytes(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ir: &CadIr,
         fidelity: &cadmpeg_ir::SourceFidelity,
-        limits: cadmpeg_core::decode::ResourceLimits,
         data: &[u8],
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
-        if fidelity.edited(ir, limits)? {
-            writer::patch::write_semantic(ir, data, limits, writer, notes)?;
+        if fidelity.edited(ctx, ir)? {
+            writer::patch::write_semantic(ctx, ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;
@@ -249,20 +249,22 @@ impl EncoderBackend for F3dCodec {
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 
     fn restore(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: &ResolvedWrite<'_>,
         notes: &mut Vec<String>,
         _losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target, notes)
+        writer::saved::restore(ctx, input, target, notes)
     }
 }
 

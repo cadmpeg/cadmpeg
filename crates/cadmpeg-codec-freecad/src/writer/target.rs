@@ -130,12 +130,13 @@ const DIALECT_UNAVAILABLE: &str =
 /// no such entry with a readable `Document.xml` gives this writer, which has no
 /// synthesis path, nothing to write.
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let resolution = resolve(input.ir, resolved, input.limits)?;
-    let baseline = admit_unedited(input.ir, input.fidelity, input.limits)?;
-    finish(&resolution, input.fidelity, baseline)
+    let resolution = resolve(ctx, input.ir, resolved)?;
+    let baseline = admit_unedited(ctx, input.ir, input.fidelity)?;
+    finish(ctx, &resolution, input.fidelity, baseline)
 }
 
 /// Native `fcstd` arenas this writer handles itself: property values patch
@@ -189,18 +190,18 @@ enum Baseline {
 /// A document whose sidecar records no digest (no sidecar, or every decode
 /// below `Full`) is [`Baseline::Unrecorded`].
 fn admit_unedited(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
-    limits: ResourceLimits,
 ) -> Result<Baseline, CodecError> {
     let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
         return Ok(Baseline::Unrecorded);
     };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
-    let current = uncarried_digest(&ctx, ir)?;
-    ctx.finish_session()?;
+    let current = uncarried_digest(ctx, ir)?;
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     Ok(if current == *expected {
         Baseline::Unedited
     } else {
@@ -216,12 +217,13 @@ fn admit_unedited(
 /// charges `export:edit.dropped` naming the document, because the digest does
 /// not isolate the edited record (§3.4, Paths item 4).
 fn finish(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     baseline: Baseline,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+    let outcome = write(ctx, &mut bytes, resolution)?;
     let write_path = WritePath::Patched {
         consumption: PatchConsumption::Independent(Consumption::NotConsumed),
     };
@@ -256,14 +258,14 @@ fn finish(
 
 /// Decide what to write, from the request and the source.
 fn resolve<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     resolved: &ResolvedWrite<'_>,
-    limits: ResourceLimits,
 ) -> Result<Resolution<'a>, CodecError> {
     if resolved.displaced_source().is_some() {
         return Err(resolved.unavailable(TRANSCODE_UNAVAILABLE));
     }
-    let resolution = retained_baseline(ir, resolved.target_id(), limits)?
+    let resolution = retained_baseline(ctx, ir, resolved.target_id())?
         .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))?;
     if FcstdDialect::from_schema_version(resolution.schema_version()).id() != *resolved.target_id()
     {
@@ -283,19 +285,16 @@ fn resolve<'a>(
 /// whose name an earlier entry already takes, is left out of the archive and
 /// reported. `target` is the dialect the resolution names.
 pub(super) fn retained_baseline<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     target: &DialectId,
-    limits: ResourceLimits,
 ) -> Result<Option<Resolution<'a>>, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(None);
     };
-    let policy = DecodePolicy { limits };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let mut omitted = Omissions::default();
-    let (records, unreadable) = super::read_arena::<EntryRecord>(&ctx, namespace, "entries")?;
-    let omitted_members = entry_names(&ctx, namespace, &unreadable);
+    let (records, unreadable) = super::read_arena::<EntryRecord>(ctx, namespace, "entries")?;
+    let omitted_members = entry_names(ctx, namespace, &unreadable);
     for id in unreadable {
         omitted.push(super::UNREADABLE_ENTRY, id);
     }
@@ -315,7 +314,7 @@ pub(super) fn retained_baseline<'a>(
         return Ok(None);
     };
     let Some((document, schema_version, vocabulary)) =
-        read_declaration(document_xml.data(), &policy)?
+        read_declaration(document_xml.data(), ctx.policy())?
     else {
         return Ok(None);
     };
@@ -333,7 +332,7 @@ pub(super) fn retained_baseline<'a>(
         entries,
         omitted,
         omitted_members,
-        limits,
+        limits: ctx.policy().limits,
     }))
 }
 

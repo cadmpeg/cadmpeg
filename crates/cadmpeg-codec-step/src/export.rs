@@ -3863,7 +3863,7 @@ impl<'a> Builder<'a> {
                 return Ok(false);
             };
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                EvaluationAdmission::Decode(self.context),
+                EvaluationAdmission::Write(self.context),
                 &pcurve.geometry,
                 0.5 * (first + second),
             ))?
@@ -3872,7 +3872,7 @@ impl<'a> Builder<'a> {
             };
             let uv = uv.get();
             let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                EvaluationAdmission::Decode(self.context),
+                EvaluationAdmission::Write(self.context),
                 self.ir,
                 &surface.geometry,
                 uv.u,
@@ -4450,7 +4450,7 @@ impl<'a> Builder<'a> {
         let at = |parameter: f64| {
             Ok::<_, cadmpeg_core::decode::ResourceLimit>(
                 cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.context),
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Write(self.context),
                     aligned.as_ref(),
                     parameter,
                 ))?
@@ -4502,7 +4502,7 @@ impl<'a> Builder<'a> {
         };
         let lift = |parameter: f64| {
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                EvaluationAdmission::Decode(self.context),
+                EvaluationAdmission::Write(self.context),
                 pcurve,
                 parameter,
             ))?
@@ -4511,7 +4511,7 @@ impl<'a> Builder<'a> {
             };
             let uv = uv.get();
             finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                EvaluationAdmission::Decode(self.context),
+                EvaluationAdmission::Write(self.context),
                 self.ir,
                 &surface.geometry,
                 uv.u,

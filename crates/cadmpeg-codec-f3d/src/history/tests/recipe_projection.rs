@@ -82,9 +82,11 @@ fn projection_caches_end_after_history_consumers() {
             &mut namespace,
         )
         .expect("store native history");
-    native =
-        crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop())
-            .expect("load native history");
+    native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &namespace,
+    )
+    .expect("load native history");
     assert!(crate::history::projection_was_finalized(
         &native.asm_histories
     ));

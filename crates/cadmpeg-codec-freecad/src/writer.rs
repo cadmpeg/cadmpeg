@@ -31,8 +31,12 @@ use target::Resolution;
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-fn write(output: &mut Vec<u8>, resolution: &Resolution<'_>) -> Result<WriteOutcome, CodecError> {
-    write_seekable(&mut std::io::Cursor::new(output), resolution)
+fn write(
+    ctx: &DecodeContext<'_>,
+    output: &mut Vec<u8>,
+    resolution: &Resolution<'_>,
+) -> Result<WriteOutcome, CodecError> {
+    write_seekable(ctx, &mut std::io::Cursor::new(output), resolution)
 }
 
 const UNREADABLE_ENTRY: &str = "whose archive entry record does not read";
@@ -101,27 +105,23 @@ fn read_arena<T: DeserializeOwned>(
 /// from [`target::retained_baseline`], so the dialect written here is the one
 /// the retained `Document.xml` declares.
 fn write_seekable(
+    ctx: &DecodeContext<'_>,
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
 ) -> Result<WriteOutcome, CodecError> {
     let namespace = resolution.namespace();
     let entries = resolution.entries();
     let mut omitted = resolution.omitted().clone();
-    let policy = DecodePolicy {
-        limits: resolution.limits(),
-    };
-    let arena = DecodeArena::new();
-    let (records, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let (physical_ledger, unreadable_spans) =
-        read_arena::<ArchiveSpan>(&records, namespace, "physical_ledger")?;
+        read_arena::<ArchiveSpan>(ctx, namespace, "physical_ledger")?;
     for id in unreadable_spans {
         omitted.push(UNREADABLE_SPAN, id);
     }
-    let (objects, unreadable_objects) = read_arena::<ObjectRecord>(&records, namespace, "objects")?;
+    let (objects, unreadable_objects) = read_arena::<ObjectRecord>(ctx, namespace, "objects")?;
     let (extensions, unreadable_extensions) =
-        read_arena::<ExtensionRecord>(&records, namespace, "extensions")?;
+        read_arena::<ExtensionRecord>(ctx, namespace, "extensions")?;
     let (properties, unreadable_properties) =
-        read_arena::<PropertyRecord>(&records, namespace, "properties")?;
+        read_arena::<PropertyRecord>(ctx, namespace, "properties")?;
     let mut omitted_members = resolution.omitted_members().clone();
     for span in &physical_ledger {
         if let ArchiveSpanRole::CompressedPayload(name) = &span.role {

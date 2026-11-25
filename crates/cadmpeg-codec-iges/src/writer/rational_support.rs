@@ -93,7 +93,7 @@ fn pcurve_ends<'ir>(
         let [start, end] = range.get();
         let at = |parameter| {
             finite_or_refusal(pcurve_uv(
-                EvaluationAdmission::Decode(ctx),
+                EvaluationAdmission::Write(ctx),
                 &pcurve.geometry,
                 parameter,
             ))

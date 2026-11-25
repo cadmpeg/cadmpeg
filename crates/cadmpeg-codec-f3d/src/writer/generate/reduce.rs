@@ -18,7 +18,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
 use cadmpeg_ir::codec::write::{
@@ -138,8 +138,8 @@ impl Failure {
 /// The document the generator writes, and the losses taken to reach it.
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
-    /// The caller's session ceilings.
-    limits: ResourceLimits,
+    /// The encode session.
+    ctx: &'a DecodeContext<'a>,
     losses: Vec<LossNote>,
     design_dropped: bool,
     neutral_dropped: bool,
@@ -157,14 +157,14 @@ pub(super) struct Reduction<'a> {
 
 impl<'a> Reduction<'a> {
     pub(super) fn new(
+        ctx: &'a DecodeContext<'a>,
         ir: &'a CadIr,
         missing_states: MissingStateForm,
-        limits: ResourceLimits,
     ) -> Self {
         Self {
             missing_states,
             ir: Cow::Borrowed(ir),
-            limits,
+            ctx,
             losses: Vec::new(),
             design_dropped: false,
             neutral_dropped: false,
@@ -513,11 +513,10 @@ impl<'a> Reduction<'a> {
     }
 
     fn tolerant_use_curve_coedges(&self) -> HashSet<String> {
-        let Some(native) = self
-            .ir
-            .native
-            .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace, self.limits).ok())
+        let Some(native) =
+            self.ir.native.namespace("f3d").and_then(|namespace| {
+                crate::native::F3dNative::load_inner(self.ctx, namespace).ok()
+            })
         else {
             return HashSet::new();
         };
@@ -658,8 +657,8 @@ impl<'a> Reduction<'a> {
     fn state_open_edge_ranges(&mut self) -> Result<(), CodecError> {
         let owners = ProceduralOwners::new(&self.ir);
         let Some(plan) = open_edge_ranges(
+            self.ctx,
             &self.ir,
-            self.limits,
             |curve| {
                 owners
                     .curve(curve)
@@ -785,7 +784,7 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = kept.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept, self.limits)?;
+        let unreachable = retain_bodies(self.ctx, self.ir.to_mut(), &kept)?;
         self.losses.extend(losses);
         self.charge_removed(
             &unreachable,
@@ -881,24 +880,20 @@ impl<'a> Reduction<'a> {
             .iter()
             .map(|curve| (curve.id.as_str(), curve))
             .collect::<HashMap<_, _>>();
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy {
-            limits: self.limits,
-        };
-        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
         let mut starts = Vec::new();
         let mut omitted = Vec::new();
         for (index, edge) in geometry.edges.iter().enumerate() {
             if edge.ends.is_some() {
                 continue;
             }
-            let start = closed_curve_start(edge, &curves, tolerance, &ctx)?.and_then(|position| {
-                let point = PointId::mint(format!("{}/start-point", edge.id))
-                    .map_err(|error| error.to_string())?;
-                let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
-                    .map_err(|error| error.to_string())?;
-                Ok((point, vertex, position))
-            });
+            let start =
+                closed_curve_start(edge, &curves, tolerance, self.ctx)?.and_then(|position| {
+                    let point = PointId::mint(format!("{}/start-point", edge.id))
+                        .map_err(|error| error.to_string())?;
+                    let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
+                        .map_err(|error| error.to_string())?;
+                    Ok((point, vertex, position))
+                });
             match start {
                 Ok(start) => starts.push((index, start)),
                 Err(reason) => omitted.push((edge.id.clone(), reason)),
@@ -1125,7 +1120,7 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = bodies.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept, self.limits)?;
+        let unreachable = retain_bodies(self.ctx, self.ir.to_mut(), &kept)?;
         split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched)?;
         let kinds = super::preconditions::derived_body_kinds(&self.ir.geometry);
         for (body, kind) in self.ir.to_mut().geometry.bodies.iter_mut().zip(kinds) {
@@ -1414,12 +1409,11 @@ impl<'a> Reduction<'a> {
         if bodies.is_empty() {
             return Ok(false);
         }
-        let reach = Reach::new(&self.ir.geometry, self.limits)?;
-        let native = self
-            .ir
-            .native
-            .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace, self.limits).ok());
+        let reach = Reach::new(self.ctx, &self.ir.geometry)?;
+        let native =
+            self.ir.native.namespace("f3d").and_then(|namespace| {
+                crate::native::F3dNative::load_inner(self.ctx, namespace).ok()
+            });
         let without_native = crate::native::F3dNative::default();
         let writes = |group: &[String], native: &crate::native::F3dNative| {
             let mut alone = CadIr::empty();
@@ -1517,7 +1511,7 @@ impl<'a> Reduction<'a> {
         kept: &BTreeSet<&str>,
         reason: &str,
     ) -> Result<BTreeSet<String>, CodecError> {
-        let removed = retain_bodies(self.ir.to_mut(), kept, self.limits)?;
+        let removed = retain_bodies(self.ctx, self.ir.to_mut(), kept)?;
         self.charge_removed(&removed, &BTreeSet::new(), reason);
         Ok(removed)
     }
@@ -1617,7 +1611,7 @@ fn closed_curve_start(
         },
     };
     let point =
-        |parameter| match curve_point_solved(EvaluationAdmission::Decode(ctx), solved, parameter) {
+        |parameter| match curve_point_solved(EvaluationAdmission::Write(ctx), solved, parameter) {
             Ok(point) => Ok(Some(point)),
             Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::ResourceLimit(limit)),
             Err(_) => Ok(None),
@@ -2240,11 +2234,9 @@ fn unranged_open_edges(geometry: &cadmpeg_ir::document::Topology) -> Option<Loss
 
 impl Reach {
     fn new(
+        ctx: &DecodeContext<'_>,
         geometry: &cadmpeg_ir::document::Topology,
-        limits: ResourceLimits,
     ) -> Result<Self, CodecError> {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
         let mut adjacency = HashMap::<String, Vec<String>>::new();
         let mut every = BTreeSet::new();
         let mut rows = HashMap::new();
@@ -2255,7 +2247,7 @@ impl Reach {
                     let owner = row.id.as_str();
                     every.insert(owner.to_owned());
                     rows.insert(owner.to_owned(), (arena_ordinal, row_ordinal));
-                    row.visit_identity_references(&ctx, &mut |target| {
+                    row.visit_identity_references(ctx, &mut |target| {
                         if target != owner {
                             adjacency.entry(owner.to_owned()).or_default().push(target.to_owned());
                         }
@@ -2339,11 +2331,11 @@ impl Reach {
 /// Keep the bodies in `kept` and every topology and geometry record they
 /// reach; remove the rest. Returns the removed ids.
 fn retain_bodies(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     kept: &BTreeSet<&str>,
-    limits: ResourceLimits,
 ) -> Result<BTreeSet<String>, CodecError> {
-    let reach = Reach::new(&ir.geometry, limits)?;
+    let reach = Reach::new(ctx, &ir.geometry)?;
     let reachable = reach.from(kept.iter().copied());
     let removed = reach
         .every

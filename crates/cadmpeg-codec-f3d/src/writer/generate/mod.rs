@@ -52,9 +52,9 @@ pub(super) struct Generated {
 /// states it cannot write (cadir-v11.md §3.4), and report the rest as losses
 /// (see [`reduce`]).
 pub(super) fn write_new(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     missing_states: MissingStateForm,
-    limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<Generated, CodecError> {
     // The history-true form writes the state at its timeline marker, which
@@ -70,7 +70,7 @@ pub(super) fn write_new(
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
-    let mut reduction = Reduction::new(lowered.as_ref(), missing_states, limits);
+    let mut reduction = Reduction::new(ctx, lowered.as_ref(), missing_states);
     reduction.prepare()?;
     let (staged, mut coverage, design_losses) = loop {
         let mut staged = std::io::Cursor::new(Vec::new());
@@ -80,12 +80,12 @@ pub(super) fn write_new(
             reduction.writes_neutral_design(),
             missing_states,
             reduction.fallback(),
-            limits,
+            ctx,
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
             Err(failure) => reduction.degrade(failure, |target, native, stage| {
-                writes_alone(target, native, stage, limits)
+                writes_alone(ctx, target, native, stage)
             })?,
         }
     };
@@ -117,15 +117,15 @@ pub(super) fn write_new(
 /// Whether `stage` writes `target` (one body of the document, without its
 /// native namespace) on its own, with `native` for the B-rep stream.
 fn writes_alone(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &crate::native::F3dNative,
     stage: Stage,
-    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> bool {
     match stage {
         Stage::Brep => {
             let attributes = attributes::AttributeIndex::new(target, native);
-            encode_brep(target, native, &attributes, limits).is_ok()
+            encode_brep(ctx, target, native, &attributes).is_ok()
         }
         Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
             target,
@@ -133,7 +133,7 @@ fn writes_alone(
             false,
             MissingStateForm::GeometryTrue,
             &design::Fallback::default(),
-            limits,
+            ctx,
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -141,22 +141,15 @@ fn writes_alone(
 }
 
 fn encode_brep(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &crate::native::F3dNative,
     attributes: &attributes::AttributeIndex<'_>,
-    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy { limits };
-    let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena,
-        &policy,
-        cadmpeg_core::decode::DecodeDepth::Full,
-    );
-    encode_smbh(target, native, attributes, &ctx)
+    encode_smbh(target, native, attributes, ctx)
 }
 
 /// Write `target` once. `write_design` states whether its native Design
@@ -171,7 +164,7 @@ fn attempt<W: Write + Seek>(
     write_neutral: bool,
     missing_states: MissingStateForm,
     fallback: &design::Fallback,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -190,7 +183,7 @@ fn attempt<W: Write + Seek>(
     } else {
         Failure::design
     };
-    let loaded_native = f3d_native(target, limits).map_err(Failure::design)?;
+    let loaded_native = f3d_native(ctx, target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let mut native = loaded_native.unwrap_or_default();
     let stamped = neutral
@@ -208,7 +201,7 @@ fn attempt<W: Write + Seek>(
             .map_err(Failure::neutral_design)?;
     }
     if write_design {
-        validate_assembly_projection(target, Some(&native), limits).map_err(Failure::design)?;
+        validate_assembly_projection(ctx, target, Some(&native)).map_err(Failure::design)?;
     }
     // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);
@@ -223,7 +216,7 @@ fn attempt<W: Write + Seek>(
     let brep = if body_less {
         Ok(Vec::new())
     } else {
-        encode_brep(target, &native, &attributes, limits)
+        encode_brep(ctx, target, &native, &attributes)
     };
     let smbh = match brep {
         Ok(smbh) => smbh,
@@ -232,10 +225,10 @@ fn attempt<W: Write + Seek>(
         Err(error)
             if stamped
                 && writes_alone(
+                    ctx,
                     target,
                     &crate::native::F3dNative::default(),
                     Stage::Brep,
-                    limits,
                 ) =>
         {
             return Err(Failure::neutral_design(error));
@@ -255,7 +248,7 @@ fn attempt<W: Write + Seek>(
         let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
             validate_configuration_projection(target, &native)?;
             validate_source_less_history_graph(target, &native)?;
-            let parameters = design::parameters::native_or_neutral(target, &native, limits)?;
+            let parameters = design::parameters::native_or_neutral(ctx, target, &native)?;
             validate_source_less_design_ownership(&native)?;
             validate_source_less_sketch_graph(&native)?;
             validate_source_less_recipes(&native)?;
@@ -280,7 +273,7 @@ fn attempt<W: Write + Seek>(
         let snapshot = if body_less {
             None
         } else {
-            Some(snapshot_stream(target, &native, limits).map_err(Failure::neutral_design)?)
+            Some(snapshot_stream(ctx, target, &native).map_err(Failure::neutral_design)?)
         };
         let members = design
             .archive(
@@ -425,9 +418,9 @@ fn attempt<W: Write + Seek>(
 /// The snapshot stream of a Base Feature design: the B-rep stream of
 /// `target` whose bodies carry no name and the ASM body key `-1`.
 fn snapshot_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &crate::native::F3dNative,
-    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     let mut unnamed = native.clone();
     unnamed.persistent_design_links.retain(|link| {
@@ -438,7 +431,7 @@ fn snapshot_stream(
     });
     let attributes =
         attributes::AttributeIndex::new(target, &unnamed).with_body_keys(target, |_| -1);
-    design::history::snapshot(&encode_brep(target, &unnamed, &attributes, limits)?)
+    design::history::snapshot(&encode_brep(ctx, target, &unnamed, &attributes)?)
 }
 
 /// The losses of the roster path's archive: the appearances, whose Protein

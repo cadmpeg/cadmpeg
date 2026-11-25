@@ -1677,8 +1677,11 @@ fn null_locus_arena_preserves_base_wire_fields_and_order() {
         .unwrap();
     assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));
     assert_eq!(
-        crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop())
-            .unwrap(),
+        crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &namespace
+        )
+        .unwrap(),
         native
     );
 }

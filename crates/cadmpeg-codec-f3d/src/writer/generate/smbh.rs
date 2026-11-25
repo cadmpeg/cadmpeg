@@ -1621,7 +1621,7 @@ fn closed_edge_traversal(
         .endpoints();
     for parameter in range {
         let end = match cadmpeg_ir::eval::decode::curve_point_solved(
-            EvaluationAdmission::Decode(ctx),
+            EvaluationAdmission::Write(ctx),
             geometry,
             parameter,
         ) {
@@ -2233,9 +2233,9 @@ mod tests {
         let target = decoded_wire(&synthetic_free_vertex_body_smbh());
         let mut valid_output = Vec::new();
         write_new(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &target,
             MissingStateForm::GeometryTrue,
-            cadmpeg_core::decode::ResourceLimits::desktop(),
             &mut valid_output,
         )
         .expect("unmodified free wire writes");
@@ -2274,9 +2274,9 @@ mod tests {
         ] {
             let mut output = Vec::new();
             let generated = write_new(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &target,
                 MissingStateForm::GeometryTrue,
-                cadmpeg_core::decode::ResourceLimits::desktop(),
                 &mut output,
             )
             .expect("invalid wire ownership still writes");

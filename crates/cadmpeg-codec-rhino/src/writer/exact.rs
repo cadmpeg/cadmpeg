@@ -807,7 +807,7 @@ fn pcurve_point(
     parameter: f64,
 ) -> Result<Point2, String> {
     match cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
         geometry,
         parameter,
     )) {

@@ -3,18 +3,18 @@
 //! edit-and-patch engine.
 
 use crate::native::F3dNative;
-use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Sense;
 
 pub(super) fn f3d_native(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    limits: ResourceLimits,
 ) -> Result<Option<F3dNative>, CodecError> {
     ir.native
         .namespace("f3d")
-        .map(|namespace| F3dNative::load(namespace, limits))
+        .map(|namespace| F3dNative::load_inner(ctx, namespace))
         .transpose()
         .map_err(Into::into)
 }
@@ -43,9 +43,9 @@ pub(super) fn validate_configuration_projection(
 }
 
 pub(crate) fn validate_assembly_projection(
+    ctx: &DecodeContext<'_>,
     target: &CadIr,
     native: Option<&F3dNative>,
-    limits: ResourceLimits,
 ) -> Result<(), CodecError> {
     let Some(native) = native else {
         return target
@@ -60,7 +60,7 @@ pub(crate) fn validate_assembly_projection(
             });
     };
     let expanded = crate::tree::expand(
-        &limits,
+        &ctx.policy().limits,
         &target.model.product_definitions,
         &target.model.occurrences,
         &std::collections::BTreeMap::new(),

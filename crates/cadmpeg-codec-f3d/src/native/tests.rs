@@ -112,9 +112,11 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
         )
         .unwrap(),
     );
-    let error =
-        crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop())
-            .unwrap_err();
+    let error = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &namespace,
+    )
+    .unwrap_err();
     let message = error.to_string();
     assert!(message.contains("f3d:native:bulletin#1"));
     assert!(message.contains("f3d:native:missing-state#1"));
@@ -147,9 +149,11 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         )
         .unwrap();
     let original = decoded.ir().native.namespace("f3d").unwrap();
-    let typed =
-        crate::native::F3dNative::load(original, cadmpeg_core::decode::ResourceLimits::desktop())
-            .unwrap();
+    let typed = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        original,
+    )
+    .unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed
         .store(
@@ -159,9 +163,9 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     assert_eq!(
         typed,
-        crate::native::F3dNative::load(
-            &round_trip,
-            cadmpeg_core::decode::ResourceLimits::desktop()
+        crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &round_trip
         )
         .unwrap()
     );

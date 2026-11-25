@@ -23,21 +23,20 @@ use crate::{ids, F3dCodec};
 /// document as read, which the generator writes from its `design` records,
 /// and adds the refusal to `notes`.
 pub(crate) fn restore(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
 ) -> Result<Option<CadIr>, CodecError> {
     let replays = target.entry().is_none() || target.preserves_source();
-    let Some(image) = saved_source(input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
+    let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
     let restored = F3dCodec
         .decode(
             &mut Cursor::new(image),
             &DecodeOptions {
-                policy: cadmpeg_core::decode::DecodePolicy {
-                    limits: input.limits,
-                },
+                policy: *ctx.policy(),
                 ..DecodeOptions::default()
             },
         )

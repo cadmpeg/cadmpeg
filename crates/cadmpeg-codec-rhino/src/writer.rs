@@ -2375,7 +2375,7 @@ fn validate_nurbs_trim(
     for (index, parameter) in samples.into_iter().enumerate() {
         // A non-finite pcurve point fails the domain test.
         let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             &pcurve.geometry,
             parameter,
         ) {
@@ -2398,7 +2398,7 @@ fn validate_nurbs_trim(
         }
         // A non-finite surface point is measured as a finite one is.
         let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             surface,
             uv.u,
             uv.v,
@@ -2464,7 +2464,7 @@ fn validate_singular_trim(
     };
     for parameter in span_samples(explicit.domain, knots) {
         let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             &pcurve.geometry,
             parameter,
         ) {
@@ -2494,7 +2494,7 @@ fn validate_singular_trim(
             }
             WritableFaceSurface::Nurbs { surface, .. } => {
                 match cadmpeg_ir::eval::decode::nurbs_surface_point(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                     surface,
                     uv.u,
                     uv.v,

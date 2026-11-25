@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -24,9 +24,11 @@ const OFF_CATALOG_SOURCE_REASON: &str =
     "the semantic writer cannot synthesize it, and writing another schema would change what the \
      file declares; name a target to choose one";
 
-/// Resolve the request against the source and synthesize the selected schema.
+/// Resolve the request against the source and synthesize the selected
+/// schema in the encode's session `context`.
 pub(crate) fn plan(
     codec: &StepCodec,
+    context: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
@@ -35,20 +37,15 @@ pub(crate) fn plan(
     };
     let (schema, displaced) = schema_at(index);
     let mut bytes = Vec::new();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits: input.limits,
-    };
-    let context = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let recovered =
-        cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, &context)?;
+        cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, context)?;
     let outcome = write_step_outcome(
         &recovered.document,
         &mut bytes,
         schema,
         &codec.options,
         recovered.recovered_edges,
-        &context,
+        context,
     )?;
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {

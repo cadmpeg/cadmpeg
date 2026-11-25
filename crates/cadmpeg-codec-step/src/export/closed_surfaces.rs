@@ -105,7 +105,7 @@ impl Builder<'_> {
                     self.ir.tolerances.linear.get()
                 };
                 let Some(bound) = nurbs_bound(
-                    EvaluationAdmission::Decode(self.context),
+                    EvaluationAdmission::Write(self.context),
                     n,
                     forward,
                     tolerance,

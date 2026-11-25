@@ -32,12 +32,13 @@ use crate::{ids, F3dCodec, PreservedWritePath};
 /// The sealed encoder stamps the target identity and maps
 /// [`Consumption`] onto the report; this body states only what was done.
 pub(crate) fn plan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let off_catalog = target.entry().is_none();
     if off_catalog || target.preserves_source() {
-        let cause = match preserve(input) {
+        let cause = match preserve(ctx, input) {
             Ok(Preservation::Written {
                 bytes,
                 write_path,
@@ -55,7 +56,7 @@ pub(crate) fn plan(
                 crate::dialect::TARGETS[0].id
             ))
         });
-        return synthesized_body(input, cause, displaced);
+        return synthesized_body(ctx, input, cause, displaced);
     }
     let cause = if let Some(message) = target.displacement_message() {
         Synthesis::displaced(message)
@@ -72,7 +73,7 @@ pub(crate) fn plan(
     let requested = target
         .request_displacement_message()
         .map(|message| F3dLossCode::TargetRequestDisplaced.note(message));
-    synthesized_body(input, cause, requested)
+    synthesized_body(ctx, input, cause, requested)
 }
 
 enum Preservation {
@@ -85,7 +86,10 @@ enum Preservation {
     SourceImageUnavailable,
 }
 
-fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
+fn preserve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    input: EncodeInput<'_>,
+) -> Result<Preservation, CodecError> {
     let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
         sidecar
             .retained_record(ids::FILE_SOURCE_IMAGE_ID)
@@ -98,14 +102,8 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(
-        input.ir,
-        fidelity,
-        input.limits,
-        data,
-        &mut bytes,
-        &mut notes,
-    )?;
+    let write_path =
+        F3dCodec::write_preserved_bytes(ctx, input.ir, fidelity, data, &mut bytes, &mut notes)?;
     Ok(Preservation::Written {
         bytes,
         write_path,
@@ -155,8 +153,10 @@ impl Synthesis {
     fn displaced(message: String) -> Self {
         Self {
             consumption: Consumption::NotConsumed,
-            loss: Some(F3dLossCode::SourceDialectDisplaced.note(message.clone())),
-            cause: Some(SynthesisCause::PatchDeclined { reason: message }),
+            loss: Some(F3dLossCode::SourceDialectDisplaced.note(message)),
+            cause: Some(SynthesisCause::PatchDeclined {
+                reason: "the write target displaces the source dialect".into(),
+            }),
         }
     }
 
@@ -182,20 +182,23 @@ impl Synthesis {
             consumption: Consumption::Degraded {
                 reason: format!("patch declined: {reason}"),
             },
-            loss: Some(F3dLossCode::WriterPatchDeclined.note(reason.clone())),
+            loss: Some(F3dLossCode::WriterPatchDeclined.note(
+                "the retained F3D source cannot carry the document, so the file is synthesized \
+                 from the document",
+            )),
             cause: Some(SynthesisCause::PatchDeclined { reason }),
         }
     }
 }
 
 fn synthesized_body(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     synthesis: Synthesis,
     displaced: Option<LossNote>,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let generated =
-        super::generate::write_new(input.ir, input.missing_states, input.limits, &mut bytes)?;
+    let generated = super::generate::write_new(ctx, input.ir, input.missing_states, &mut bytes)?;
     let geometry_true = generated.geometry_true;
     let Synthesis {
         consumption,

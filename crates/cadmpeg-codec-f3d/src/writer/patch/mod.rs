@@ -64,9 +64,9 @@ use records::{
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
 pub(crate) fn write_semantic(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     source_image: &[u8],
-    limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
@@ -78,16 +78,17 @@ pub(crate) fn write_semantic(
                 .into(),
         ));
     }
-    let policy = cadmpeg_core::decode::DecodePolicy { limits };
+    let policy = *ctx.policy();
+    let limits = policy.limits;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (encode_ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(source_image, &arena, &policy)?;
-    let target_native = f3d_native(target, limits)?;
+    let target_native = f3d_native(ctx, target)?;
     if let Some(native) = target_native.as_ref() {
         validate_configuration_projection(target, native)?;
-        validate_assembly_projection(target, Some(native), limits)?;
+        validate_assembly_projection(ctx, target, Some(native))?;
     } else {
-        validate_assembly_projection(target, None, limits)?;
+        validate_assembly_projection(ctx, target, None)?;
     }
     let baseline = F3dCodec
         .decode(
@@ -113,7 +114,7 @@ pub(crate) fn write_semantic(
             "F3D semantic patching refuses a source whose design intent was not decoded".into(),
         ));
     }
-    let baseline_native = f3d_native(baseline.ir(), limits)?;
+    let baseline_native = f3d_native(ctx, baseline.ir())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
         target: target_native.as_ref(),

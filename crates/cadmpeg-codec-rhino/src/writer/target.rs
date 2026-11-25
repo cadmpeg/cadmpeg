@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino target resolution and export reporting.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     output_empty, target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions,
@@ -43,12 +43,13 @@ fn unjoined_regions(ir: &cadmpeg_ir::CadIr) -> std::collections::BTreeSet<&str> 
         .collect()
 }
 
-/// Synthesize the resolved archive version.
+/// Synthesize the resolved archive version in the encode's session `ctx`.
 ///
 /// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
 /// position; the preserved resolution has no row and is refused here because
 /// 3DM has no replay path.
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
@@ -71,13 +72,8 @@ pub(crate) fn plan(
     };
     let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits: input.limits,
-    };
-    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir, &ctx)?;
-    let written = super::write(&recovered.document, version, &unjoined, &ctx, &mut bytes)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir, ctx)?;
+    let written = super::write(&recovered.document, version, &unjoined, ctx, &mut bytes)?;
     let withheld_meshes = super::withheld_body_meshes(ir);
     let written_meshes = || {
         ir.model

@@ -181,10 +181,11 @@ impl EncoderBackend for RhinoCodec {
     /// because 3DM has no retained-image path.
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

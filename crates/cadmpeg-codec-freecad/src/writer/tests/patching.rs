@@ -558,14 +558,19 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .and_then(cadmpeg_ir::SourceMeta::dialect)
         .expect("decoded FCStd source is classified")
         .dialect();
-    let resolution = retained_baseline(
-        decoded.ir(),
-        source_dialect,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("the retained Document.xml reads")
-    .expect("the decoded schema-4 baseline is preserved");
-    crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let resolution = retained_baseline(&ctx, decoded.ir(), source_dialect)
+        .expect("the retained Document.xml reads")
+        .expect("the decoded schema-4 baseline is preserved");
+    crate::writer::write_seekable(&ctx, &mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
 }

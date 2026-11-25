@@ -203,17 +203,17 @@ fn writer_accepts_a_standalone_joint_nested_below_a_component_insert_key() {
 
     target.model.assembly_joints = nested;
     crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &target,
         Some(&native),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .expect("the writer re-projects the nested occurrence path");
 
     target.model.assembly_joints = projected.joints;
     assert!(crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &target,
-        Some(&native),
-        cadmpeg_core::decode::ResourceLimits::desktop()
+        Some(&native)
     )
     .is_err());
 
@@ -325,9 +325,9 @@ fn writer_checks_the_insertion_selected_by_a_shared_occurrence_path() {
     }
     target.model.assembly_joints = projected.joints;
     crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &target,
         Some(&native),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .unwrap();
     for connector in target.model.assembly_joints[0].connectors_mut() {
@@ -337,9 +337,9 @@ fn writer_checks_the_insertion_selected_by_a_shared_occurrence_path() {
         };
     }
     assert!(crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &target,
-        Some(&native),
-        cadmpeg_core::decode::ResourceLimits::desktop()
+        Some(&native)
     )
     .is_err());
 }

@@ -1352,16 +1352,16 @@ impl EncoderBackend for FcstdCodec {
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
-    const DEFINITION_PER_FILE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

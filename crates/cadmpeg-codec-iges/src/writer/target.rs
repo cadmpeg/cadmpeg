@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IGES target planning and retained-image replay.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses,
@@ -14,36 +14,38 @@ use cadmpeg_ir::{CadIr, SourceFidelity};
 use crate::loss::IgesLossCode;
 
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     match resolved.target() {
         // Off-catalog same-format source: only a verbatim replay can honor it.
-        ResolvedTarget::Preserved { .. } => {
-            match replay_bytes(input.ir, input.fidelity, input.limits)? {
-                Replay::Replayed { bytes } => Ok(replayed_body(input, bytes)),
-                Replay::Declined(reason) => Err(resolved.unavailable(match reason {
-                    DeclineReason::Rejected(reason) => {
-                        format!(
-                            "{reason}; the semantic writer cannot synthesize the inherited dialect"
-                        )
-                    }
-                    DeclineReason::SourceImageUnavailable => {
-                        "its retained source image is unavailable for byte replay and the \
+        ResolvedTarget::Preserved { .. } => match replay_bytes(ctx, input.ir, input.fidelity)? {
+            Replay::Replayed { bytes } => Ok(replayed_body(input, bytes)),
+            Replay::Declined(reason) => Err(resolved.unavailable(match reason {
+                DeclineReason::Rejected(reason) => {
+                    format!("{reason}; the semantic writer cannot synthesize the inherited dialect")
+                }
+                DeclineReason::SourceImageUnavailable => {
+                    "its retained source image is unavailable for byte replay and the \
                      semantic writer cannot synthesize it"
-                            .to_owned()
-                    }
-                })),
-            }
-        }
+                        .to_owned()
+                }
+            })),
+        },
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }
         | ResolvedTarget::Default { index, .. } => {
             let version = crate::IgesVersion::ALL[*index];
             if resolved.preserves_source() {
-                replay_or_synthesize(input, version)
+                replay_or_synthesize(ctx, input, version)
             } else {
-                synthesized_body(input, version, Synthesis::from_resolution(input, resolved))
+                synthesized_body(
+                    ctx,
+                    input,
+                    version,
+                    Synthesis::from_resolution(input, resolved),
+                )
             }
         }
     }
@@ -52,14 +54,20 @@ pub(crate) fn plan(
 /// A same-format source at the resolved target: replay its retained image when
 /// it is intact, otherwise regenerate and report why replay was declined.
 fn replay_or_synthesize(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
 ) -> Result<ExportBody, CodecError> {
-    let replay_failure = match replay_bytes(input.ir, input.fidelity, input.limits)? {
+    let replay_failure = match replay_bytes(ctx, input.ir, input.fidelity)? {
         Replay::Replayed { bytes } => return Ok(replayed_body(input, bytes)),
         Replay::Declined(reason) => reason,
     };
-    synthesized_body(input, version, Synthesis::ReplayDeclined(replay_failure))
+    synthesized_body(
+        ctx,
+        input,
+        version,
+        Synthesis::ReplayDeclined(replay_failure),
+    )
 }
 
 fn replayed_body(input: EncodeInput<'_>, bytes: Vec<u8>) -> ExportBody {
@@ -75,21 +83,15 @@ fn replayed_body(input: EncodeInput<'_>, bytes: Vec<u8>) -> ExportBody {
 }
 
 fn synthesized_body(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
     cause: Synthesis,
 ) -> Result<ExportBody, CodecError> {
     let (consumption, loss, synthesis_cause) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits: input.limits,
-    };
-    let context = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let recovered =
-        cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, &context)?;
-    let synthesis =
-        super::degrade::synthesize_dropping(&recovered.document, version, input.limits)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, ctx)?;
+    let synthesis = super::degrade::synthesize_dropping(ctx, &recovered.document, version)?;
     losses.extend(synthesis.losses.clone());
     if !recovered.sampled_agreements.is_empty() {
         losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -147,8 +149,10 @@ impl Synthesis {
             Self::Fresh => (Consumption::NotConsumed, None, None),
             Self::Displaced(message) => (
                 Consumption::NotConsumed,
-                Some(IgesLossCode::SourceDialectDisplaced.note(message.clone())),
-                Some(SynthesisCause::PatchDeclined { reason: message }),
+                Some(IgesLossCode::SourceDialectDisplaced.note(message)),
+                Some(SynthesisCause::PatchDeclined {
+                    reason: "the write target displaces the source dialect".into(),
+                }),
             ),
             Self::ReplayDeclined(DeclineReason::SourceImageUnavailable) => (
                 Consumption::Degraded {
@@ -202,9 +206,9 @@ impl Replay {
 }
 
 fn replay_bytes(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
-    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Replay, CodecError> {
     let (Some(_), Some(fidelity)) = (
         ir.source
@@ -215,7 +219,7 @@ fn replay_bytes(
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
     let record = fidelity.retained_record(crate::SOURCE_IMAGE_ID);
-    if fidelity.edited(ir, limits)? {
+    if fidelity.edited(ctx, ir)? {
         return Ok(Replay::declined_for_record(
             record,
             "decoded model no longer matches the preserved IGES source digest; byte replay skipped",

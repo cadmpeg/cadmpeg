@@ -127,6 +127,7 @@ impl EncoderBackend for UsdCodec {
 
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
@@ -138,7 +139,7 @@ impl EncoderBackend for UsdCodec {
             .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
         let (mut body, members) = writer::plan(input, &target, packaged)?;
         if binary {
-            let (bytes, left_out) = crate_layer(&body.bytes, input.limits)?;
+            let (bytes, left_out) = crate_layer(ctx, &body.bytes)?;
             body.bytes = bytes;
             body.losses
                 .extend(cadmpeg_ir::codec::write::value_unwritable(
@@ -169,22 +170,18 @@ impl EncoderBackend for UsdCodec {
 /// The USDC form of the written text layer `text`, and the fields left out
 /// because their value has no USDC form.
 ///
-/// The text is this writer's own, so it parses: only a decode budget stops
-/// the parse.
-fn crate_layer(
-    text: &[u8],
-    limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(Vec<u8>, Vec<String>), CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy { limits };
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text, &arena, &policy)?;
-    let layer = text::grammar::parse_layer(&ctx, text).inspect_err(|error| {
+/// The text is this writer's own, so it parses: only the encode session's
+/// budget stops the parse.
+fn crate_layer(ctx: &DecodeContext<'_>, text: &[u8]) -> Result<(Vec<u8>, Vec<String>), CodecError> {
+    let layer = text::grammar::parse_layer(ctx, text).inspect_err(|error| {
         debug_assert!(
             matches!(error, CodecError::ResourceLimit(_)),
             "the written layer parses: {error}"
         );
     })?;
-    ctx.finish_session()?;
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     usdc::write::write(&layer)
 }
 

@@ -6,7 +6,7 @@ use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::fmt;
 
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{
@@ -44,10 +44,11 @@ impl EncoderBackend for StepCodec {
     /// because every emitted schema stamps object-identifier arcs.
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        crate::writer::target::plan(self, input, &target)
+        crate::writer::target::plan(self, ctx, input, &target)
     }
 }
 

@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::without_faces_and_bodies;
 use cadmpeg_ir::report::loss::LossNote;
@@ -68,9 +68,9 @@ pub(super) fn ends_the_write(error: &CodecError) -> bool {
 /// faces, else the bodies, that use a record the failure names and synthesizes
 /// again; when the failure names none, writes the empty file.
 pub(super) fn synthesize_dropping(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: crate::IgesVersion,
-    limits: ResourceLimits,
 ) -> Result<Synthesis, CodecError> {
     let mut document = Cow::Borrowed(ir);
     let mut dropped = Vec::new();
@@ -81,7 +81,7 @@ pub(super) fn synthesize_dropping(
             dropped.append(&mut notes);
             document = Cow::Owned(unjoined);
         }
-        let unwritten = match super::synthesize(&document, version, limits) {
+        let unwritten = match super::synthesize(ctx, &document, version) {
             Ok(mut synthesis) => {
                 dropped.append(&mut synthesis.losses);
                 synthesis.losses = dropped;
@@ -92,7 +92,7 @@ pub(super) fn synthesize_dropping(
         };
         let culprits = Culprits::named(&Uses::new(&document), &unwritten.records);
         if culprits.faces.is_empty() && culprits.bodies.is_empty() {
-            return empty_file(&document, version, limits, &unwritten.error, dropped);
+            return empty_file(ctx, &document, version, &unwritten.error, dropped);
         }
         let smaller = without_faces_and_bodies(
             &document,
@@ -102,7 +102,7 @@ pub(super) fn synthesize_dropping(
         if smaller.geometry.faces.len() == document.geometry.faces.len()
             && smaller.geometry.bodies.len() == document.geometry.bodies.len()
         {
-            return empty_file(&document, version, limits, &unwritten.error, dropped);
+            return empty_file(ctx, &document, version, &unwritten.error, dropped);
         }
         dropped.extend(culprits.losses(&unwritten.error));
         document = Cow::Owned(smaller);
@@ -112,16 +112,16 @@ pub(super) fn synthesize_dropping(
 /// The last step: every body goes, with each record that no body uses, and
 /// the file holds what remains outside the geometry.
 fn empty_file(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: crate::IgesVersion,
-    limits: ResourceLimits,
     error: &CodecError,
     mut dropped: Vec<LossNote>,
 ) -> Result<Synthesis, CodecError> {
     let mut empty = ir.clone();
     empty.geometry = cadmpeg_ir::document::Topology::default();
     let mut synthesis =
-        super::synthesize(&empty, version, limits).map_err(|unwritten| unwritten.error)?;
+        super::synthesize(ctx, &empty, version).map_err(|unwritten| unwritten.error)?;
     dropped.extend(ir.geometry.bodies.iter().map(|body| {
         IgesLossCode::WriterBodyOmitted.note(format!(
             "body {} was not written, with its topology and the records only it uses: {error}",

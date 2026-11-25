@@ -69,12 +69,12 @@ impl WritableEdgeCurve<'_> {
     > {
         match self {
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
                 parameter.get(),
             ),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                 nurbs,
                 cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)
                     .ok_or(cadmpeg_ir::eval::EvaluationFailure::NoValue)?

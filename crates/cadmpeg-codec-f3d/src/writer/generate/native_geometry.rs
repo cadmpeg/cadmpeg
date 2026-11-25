@@ -6222,9 +6222,9 @@ mod pcurve_chart_tests {
             });
             let mut output = vec![0x93, 0x2a];
             let generated = crate::writer::generate::write_new(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &target,
                 cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
-                cadmpeg_core::decode::ResourceLimits::desktop(),
                 &mut output,
             )
             .expect("a spring whose construction cannot be written still writes");

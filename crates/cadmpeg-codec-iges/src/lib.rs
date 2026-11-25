@@ -211,10 +211,11 @@ impl EncoderBackend for IgesCodec {
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

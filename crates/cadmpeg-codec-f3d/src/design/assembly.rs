@@ -2125,9 +2125,9 @@ mod tests {
         };
         let native = serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
         crate::writer::primitives::validate_assembly_projection(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &cadmpeg_ir::document::CadIr::empty(),
             Some(&native),
-            cadmpeg_core::decode::ResourceLimits::desktop(),
         )
         .expect("the writer re-projects the same skipped joint");
     }

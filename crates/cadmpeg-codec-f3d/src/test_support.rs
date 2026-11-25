@@ -81,7 +81,8 @@ pub(crate) fn plan_inherited_write(
 
 /// Write `ir` under an inherited target, with `fidelity` or source-less, and
 /// assert that the file is written, decodes again, and charges a loss whose
-/// code is `code` (`namespace/code`) and whose message holds `fragment`.
+/// code is `code` (`namespace/code`). The loss message or the synthesis cause
+/// holds `fragment`.
 pub(crate) fn assert_written_with_loss(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
@@ -98,12 +99,14 @@ pub(crate) fn assert_written_with_loss(
         .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
         .expect("the written file decodes");
     assert_decodes_back(&report, decoded.report());
+    let cause = report
+        .synthesis_cause()
+        .map(ToString::to_string)
+        .unwrap_or_default();
     assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.code.to_string() == code && loss.message.contains(fragment)),
-        "expected a {code} loss naming {fragment:?}: {:#?}",
+        report.losses.iter().any(|loss| loss.code.to_string() == code
+            && (loss.message.contains(fragment) || cause.contains(fragment))),
+        "expected a {code} loss naming {fragment:?}, or the synthesis cause naming it: {cause:?} {:#?}",
         report.losses
     );
     report

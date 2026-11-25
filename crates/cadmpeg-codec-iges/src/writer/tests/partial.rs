@@ -41,12 +41,7 @@ fn a_solid_with_a_partial_face_writes_its_complete_faces_as_a_shell() {
     face.loops = FaceLoops::PartialUnspecified { loops };
     let partial = face.id.as_str().to_owned();
 
-    let written = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let written = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert_eq!(written.counts.get("186_manifold_solid_brep"), None);
     assert_eq!(written.counts.get("514_shell"), Some(&1));
     assert_eq!(written.counts.get("510_face"), Some(&3));
@@ -74,24 +69,15 @@ fn a_solid_with_a_partial_face_writes_its_complete_faces_as_a_shell() {
 fn a_region_whose_voids_are_unstated_keeps_every_face() {
     let mut ir = tetrahedron();
     ir.geometry.regions[0].unstated = Some(RegionUnstated::Voids);
-    let written = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let written = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert_eq!(written.counts.get("186_manifold_solid_brep"), None);
     assert_eq!(written.counts.get("510_face"), Some(&4));
 }
 
 #[test]
 fn a_complete_solid_is_still_a_manifold_solid() {
-    let written = crate::writer::synthesize(
-        &tetrahedron(),
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let written =
+        crate::writer::tests::synthesize(&tetrahedron(), IgesVersion::V5_3).expect("synthesis");
     assert_eq!(written.counts.get("186_manifold_solid_brep"), Some(&1));
     assert!(!messages(&written)
         .iter()

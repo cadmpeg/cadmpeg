@@ -9,7 +9,7 @@ use crate::entities::affine_parameter_map;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::open_edge_ranges;
 use cadmpeg_ir::codec::write::{
@@ -453,9 +453,9 @@ fn append_name_properties(
 }
 
 fn synthesize(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: crate::IgesVersion,
-    limits: ResourceLimits,
 ) -> Result<Synthesis, Unwritten> {
     // IGES holds no cage, so a cage body is not written either (§5.6); the
     // `subds` coverage charges the cage.
@@ -476,11 +476,8 @@ fn synthesize(
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
-    let ctx = &ctx;
     let mut range_losses = Vec::new();
-    let ranged = state_open_edge_ranges(lowered.as_ref(), limits, &mut range_losses)?;
+    let ranged = state_open_edge_ranges(ctx, lowered.as_ref(), &mut range_losses)?;
     let brep = has_brep_topology(ranged.as_ref());
     let planar = if brep {
         Cow::Borrowed(ranged.as_ref())
@@ -699,8 +696,8 @@ fn synthesize(
 /// States the range of each open edge whose curve and vertices fix one
 /// (CADIR §3.4): an IGES edge record stores the range its curve runs over.
 fn state_open_edge_ranges<'ir>(
+    ctx: &DecodeContext<'_>,
     ir: &'ir CadIr,
-    limits: ResourceLimits,
     losses: &mut Vec<LossNote>,
 ) -> Result<Cow<'ir, CadIr>, CodecError> {
     let constructions = ir
@@ -716,8 +713,8 @@ fn state_open_edge_ranges<'ir>(
         .map(|curve| (&curve.id, curve))
         .collect::<HashMap<_, _>>();
     let Some(plan) = open_edge_ranges(
+        ctx,
         ir,
-        limits,
         |curve| {
             let construction = curves.get(curve)?.geometry.procedural_construction()?;
             constructions
@@ -2878,7 +2875,7 @@ fn ignored_carrier_geometry(
                 continue;
             }
             let evaluated_start = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                 &curve.geometry,
                 range[0],
             ))?;
@@ -2896,7 +2893,7 @@ fn ignored_carrier_geometry(
                 continue;
             }
             let evaluated_end = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                 &curve.geometry,
                 range[1],
             ))?;
@@ -5012,7 +5009,7 @@ impl<'a> PcurveOrientationContext<'a, '_> {
             // A non-finite pcurve point is evaluated on the support as a finite
             // one is.
             let pcurve_point = |parameter, position| match cadmpeg_ir::eval::decode::pcurve_uv(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(self.ctx),
                 &pcurve.geometry,
                 parameter,
             ) {
@@ -5027,14 +5024,14 @@ impl<'a> PcurveOrientationContext<'a, '_> {
             let start_uv = pcurve_point(range[0], "start")?;
             let end_uv = pcurve_point(range[1], "end")?;
             let start = model_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(self.ctx),
                 self.index.ir,
                 self.surface,
                 start_uv.u,
                 start_uv.v,
             );
             let end = model_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(self.ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(self.ctx),
                 self.index.ir,
                 self.surface,
                 end_uv.u,
@@ -5315,7 +5312,7 @@ fn generated_endpoint_coordinate_scale(
         };
         for parameter in range {
             if let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                 &curve.geometry,
                 parameter,
             ))? {
@@ -6121,7 +6118,7 @@ fn extrusion_surface_entities(
         // A directrix end outside the finite range is refused as the composite
         // directrix's non-finite end is.
         let directrix_end = |parameter, label: &str| match cadmpeg_ir::eval::decode::curve_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             &geometry,
             parameter,
         ) {
@@ -6307,7 +6304,7 @@ fn revolution_surface_entities(
         [start_parameter, terminate_parameter]
     };
     let start = cadmpeg_ir::eval::decode::curve_point(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
         &geometry,
         evaluation_interval[0],
     )
@@ -6320,7 +6317,7 @@ fn revolution_surface_entities(
         }
     })?;
     let end = cadmpeg_ir::eval::decode::curve_point(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
         &geometry,
         evaluation_interval[1],
     )
@@ -6713,7 +6710,7 @@ fn nurbs_surface_closed_u(
 ) -> Result<bool, CodecError> {
     for v in [v_range[0], v_range[0].midpoint(v_range[1]), v_range[1]] {
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             nurbs,
             u_range[0],
             v,
@@ -6722,7 +6719,7 @@ fn nurbs_surface_closed_u(
             return Ok(false);
         };
         let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             nurbs,
             u_range[1],
             v,
@@ -6745,7 +6742,7 @@ fn nurbs_surface_closed_v(
 ) -> Result<bool, CodecError> {
     for u in [u_range[0], u_range[0].midpoint(u_range[1]), u_range[1]] {
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             nurbs,
             u,
             v_range[0],
@@ -6754,7 +6751,7 @@ fn nurbs_surface_closed_v(
             return Ok(false);
         };
         let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             nurbs,
             u,
             v_range[1],
@@ -7143,7 +7140,7 @@ fn curve_reference_span_inner(
                         })?)?,
                     };
                     let start = cadmpeg_ir::eval::decode::curve_point(
-                        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                         geometry,
                         range[0],
                     )
@@ -7156,7 +7153,7 @@ fn curve_reference_span_inner(
                         )),
                     })?;
                     let end = cadmpeg_ir::eval::decode::curve_point(
-                        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                         geometry,
                         range[1],
                     )
@@ -7511,7 +7508,7 @@ fn edge_span(
         )
     ) {
         let evaluated_start = cadmpeg_ir::eval::decode::curve_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             geometry,
             range[0],
         )
@@ -7525,7 +7522,7 @@ fn edge_span(
             )),
         })?;
         let evaluated_end = cadmpeg_ir::eval::decode::curve_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             geometry,
             range[1],
         )
@@ -8051,7 +8048,7 @@ fn nurbs_is_closed(
     domain: [f64; 2],
 ) -> Result<bool, CodecError> {
     let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
         nurbs,
         domain[0],
     ))?
@@ -8059,7 +8056,7 @@ fn nurbs_is_closed(
         return Ok(false);
     };
     let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
         nurbs,
         domain[1],
     ))?

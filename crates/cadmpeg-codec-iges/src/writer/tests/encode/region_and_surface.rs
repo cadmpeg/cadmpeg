@@ -123,12 +123,7 @@ fn synthesized_solid_preserves_long_name_color_and_visibility() {
     body.color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
     body.visible = Some(false);
 
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
     }));
@@ -158,12 +153,7 @@ fn synthesized_solid_writes_short_body_name_to_directory() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some("RED_BODY".into());
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
     }));
@@ -187,12 +177,7 @@ fn synthesized_solid_round_trips_long_body_name() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some("A LONGER BODY NAME".into());
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
     }));
@@ -203,12 +188,8 @@ fn synthesized_solid_round_trips_long_body_name() {
         round_trip.ir().geometry.bodies[0].name.as_deref(),
         Some("A LONGER BODY NAME")
     );
-    let rewritten = crate::writer::synthesize(
-        round_trip.ir(),
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("decoded name writes again");
+    let rewritten = crate::writer::tests::synthesize(round_trip.ir(), IgesVersion::V5_3)
+        .expect("decoded name writes again");
     let redecoded = IgesCodec
         .decode(&mut Cursor::new(rewritten.bytes), &DecodeOptions::default())
         .expect("rewritten IGES decodes");
@@ -228,24 +209,15 @@ fn decoded_body_name_edit_writes_updated_property() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some("FIRST NAME".into());
-    let first = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("first synthesis");
+    let first = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("first synthesis");
     let mut decoded = IgesCodec
         .decode(&mut Cursor::new(first.bytes), &DecodeOptions::default())
         .expect("first IGES decodes")
         .ir()
         .clone();
     decoded.geometry.bodies[0].name = Some("SECOND NAME".into());
-    let updated = crate::writer::synthesize(
-        &decoded,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("updated synthesis");
+    let updated =
+        crate::writer::tests::synthesize(&decoded, IgesVersion::V5_3).expect("updated synthesis");
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(updated.bytes), &DecodeOptions::default())
         .expect("updated IGES decodes");
@@ -265,12 +237,7 @@ fn synthesized_solid_round_trips_iges_string_sensitive_name() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some(" A,B;7H@R0@ ".into());
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
@@ -291,12 +258,7 @@ fn synthesized_solid_round_trips_name_across_parameter_cards() {
     let mut ir = decoded.ir().clone();
     let name = "NAME WITH PUNCTUATION,;H".repeat(12);
     ir.geometry.bodies[0].name = Some(name.clone());
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
@@ -316,12 +278,7 @@ fn synthesized_solid_reports_unencodable_body_name() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some("Café".into());
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert!(generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
             && loss.message.contains("Type 406 Form 15")
@@ -339,12 +296,7 @@ fn synthesized_solid_writes_custom_rgb_and_reports_opacity() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyColorNotRepresented.kind()
     }));
@@ -386,12 +338,7 @@ fn synthesized_trimmed_sheet_writes_custom_rgb_in_legacy_versions() {
         .expect("sheet body");
     body.color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0);
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
-        let generated = crate::writer::synthesize(
-            &ir,
-            version,
-            cadmpeg_core::decode::ResourceLimits::desktop(),
-        )
-        .expect("synthesis");
+        let generated = crate::writer::tests::synthesize(&ir, version).expect("synthesis");
         assert_eq!(generated.counts.get("314_color_definition"), Some(&1));
         let round_trip = IgesCodec
             .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
@@ -427,12 +374,7 @@ fn synthesized_trimmed_sheet_round_trips_name_in_legacy_versions() {
         .expect("sheet body");
     body.name = Some("LEGACY SHEET NAME".into());
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
-        let generated = crate::writer::synthesize(
-            &ir,
-            version,
-            cadmpeg_core::decode::ResourceLimits::desktop(),
-        )
-        .expect("synthesis");
+        let generated = crate::writer::tests::synthesize(&ir, version).expect("synthesis");
         let round_trip = IgesCodec
             .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
             .expect("generated IGES decodes");
@@ -465,12 +407,7 @@ fn synthesized_trimmed_sheet_presents_owning_body() {
     body.name = Some("SHEET_A".into());
     body.color = cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0);
     body.visible = Some(false);
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
@@ -513,12 +450,7 @@ fn synthesized_brep_sheet_presents_owning_shell() {
     body.name = Some("SHELL_A".into());
     body.color = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0);
     body.visible = Some(false);
-    let generated = crate::writer::synthesize(
-        &ir,
-        IgesVersion::V5_3,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");

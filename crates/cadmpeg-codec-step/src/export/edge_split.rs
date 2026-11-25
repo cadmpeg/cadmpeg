@@ -104,7 +104,7 @@ pub(super) fn midpoint(
         return Ok(Split::Unsplittable);
     }
     let point = finite_or_refusal(model_curve_point_by_id(
-        EvaluationAdmission::Decode(ctx),
+        EvaluationAdmission::Write(ctx),
         index,
         curve_id,
         middle,

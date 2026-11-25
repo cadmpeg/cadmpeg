@@ -405,8 +405,8 @@ fn f3z_container_only_records_the_outer_document_digest() {
     assert!(!decoded
         .source_fidelity()
         .edited(
-            decoded.ir(),
-            cadmpeg_core::decode::ResourceLimits::desktop()
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            decoded.ir()
         )
         .unwrap());
 }

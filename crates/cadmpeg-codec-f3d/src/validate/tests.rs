@@ -1818,9 +1818,9 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     .iter()
     .any(invalid_identity));
 
-    let mut native = crate::native::F3dNative::load(
+    let mut native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir.native.namespace("f3d").unwrap(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .unwrap();
     native.design_record_headers.push(DesignRecordHeader {
