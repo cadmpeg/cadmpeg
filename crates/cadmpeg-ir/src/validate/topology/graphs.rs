@@ -4,13 +4,14 @@
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
+use crate::geometry::SurfaceGeometry;
 use crate::index::identities::BorrowedIdentities;
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
 use crate::topology::RegionUnstated;
-use crate::validate::record_finding;
+use crate::validate::{record_finding, record_related_finding};
 
 #[derive(Clone, Copy)]
 enum RadialStatus {
@@ -280,12 +281,105 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
             );
         }
     }
+    check_cage_shells(ir, findings);
+}
+
+/// A subdivision cage belongs to exactly one shell, and a shell whose
+/// `members` name a cage names nothing else, holds no face, and is the only
+/// shell of its body's only region (§5.6).
+fn check_cage_shells(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let cage_owners = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            for cage in shell.subds() {
+                add(cage.as_str(), ());
+            }
+        }
+    });
+    for cage in &ir.geometry.subds {
+        if cage_owners.match_count(cage.id.as_str()) != 1 {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                Some(cage.id.as_str()),
+                crate::rule!(
+                    "topology.cage-must-belong-exactly-one",
+                    "subdivision cage must belong to exactly one shell"
+                ),
+            );
+        }
+    }
+    let face_shells = BorrowedIdentities::build(|add| {
+        for face in &ir.geometry.faces {
+            add(face.shell.as_str(), ());
+        }
+    });
+    let region_shells = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            add(shell.region.as_str(), ());
+        }
+    });
+    let region_bodies = BorrowedIdentities::build(|add| {
+        for region in &ir.geometry.regions {
+            add(region.id.as_str(), region.body.as_str());
+        }
+    });
+    let body_regions = BorrowedIdentities::build(|add| {
+        for region in &ir.geometry.regions {
+            add(region.body.as_str(), ());
+        }
+    });
+    for shell in &ir.geometry.shells {
+        if shell.subds().next().is_none() {
+            continue;
+        }
+        let owner = Some(shell.id.as_str());
+        if shell.members.len() > 1 {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-holds-other-members",
+                    "shell holding a subdivision cage holds other members"
+                ),
+            );
+        }
+        if face_shells.contains(shell.id.as_str()) {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-holds-faces",
+                    "shell holding a subdivision cage holds faces"
+                ),
+            );
+        }
+        let only_region = region_bodies
+            .get(shell.region.as_str())
+            .is_none_or(|body| body_regions.match_count(body) == 1);
+        if region_shells.match_count(shell.region.as_str()) > 1 || !only_region {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-not-only-shell-body",
+                    "shell holding a subdivision cage is not the only shell of its body's only region"
+                ),
+            );
+        }
+    }
 }
 
 /// Each stored child list names children whose parent pointer names its
 /// owner, and each child is listed by the owner its parent pointer names: a
 /// region's `shells`, a face's `loops`, and a loop ring's `coedges` (D29). A
-/// shell's `members` name each wire edge and free vertex once.
+/// shell's `members` name each wire edge, free vertex, and cage once.
 pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &mut Vec<Finding>) {
     let shell_regions = BorrowedIdentities::build(|add| {
         for shell in &ir.geometry.shells {
@@ -376,9 +470,9 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
         }
         let mut seen = BorrowedIdentities::new();
         for member in shell
-            .wire_edges()
-            .map(crate::ids::EdgeId::as_str)
-            .chain(shell.free_vertices().map(crate::ids::VertexId::as_str))
+            .members
+            .iter()
+            .map(crate::topology::ShellMember::as_str)
         {
             if seen.insert(member, ()).is_some() {
                 record_finding(
@@ -703,6 +797,66 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
     }
 }
 
+/// A face `Unspecified` with no loops is the only face of its shell, and its surface is no
+/// plane, cylinder, or cone, and no placed surface whose basis, through every
+/// placement, is one (part 10, Topology and model records; §5.6). Each face
+/// is checked by itself: a partial face states no boundary and is not one,
+/// and a marked shell does not state how many faces it holds, so only the
+/// surface is checked there. A procedural surface is read through its
+/// construction, which this rule does not evaluate.
+pub(in crate::validate) fn check_loopless_faces(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let geometry = &ir.geometry;
+    let child_lists = geometry.child_lists();
+    let surfaces = BorrowedIdentities::build(|add| {
+        for surface in &geometry.surfaces {
+            add(surface.id.as_str(), surface);
+        }
+    });
+    for shell in &geometry.shells {
+        let faces = child_lists.stated_shell_faces(&shell.id);
+        let complete = child_lists.complete_shell_faces(&shell.id).is_some();
+        for face in faces.iter().filter(|face| {
+            face.loops
+                .boundary()
+                .is_some_and(crate::topology::FaceBoundary::is_empty)
+        }) {
+            if complete && faces.len() > 1 {
+                record_related_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    face.id.as_str(),
+                    &[shell.id.as_str()],
+                    crate::rule!(
+                        "topology.loopless-face-shares-shell",
+                        "a face with no loops shares its shell with {} other face(s); it is the only face of its shell",
+                        faces.len() - 1
+                    ),
+                );
+            }
+            let kind =
+                surfaces
+                    .get(face.surface.as_str())
+                    .and_then(|surface| match &surface.geometry {
+                        SurfaceGeometry::Solved(solved) => solved.plane_cylinder_or_cone(),
+                        SurfaceGeometry::Procedural { .. } => None,
+                    });
+            if let Some(kind) = kind {
+                record_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    Some(face.id.as_str()),
+                    crate::rule!(
+                        "topology.loopless-face-bounded-surface",
+                        "a face with no loops lies on a {kind}, which a face bounds with a loop"
+                    ),
+                );
+            }
+        }
+    }
+}
+
 /// A partial face and a marked region, shell, or body are reported at
 /// Warning (part 10, Topology and model records).
 pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -731,7 +885,7 @@ pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec
                 .faces
                 .iter()
                 .filter(|face| face.loops.is_partial())
-                .map(|face| (face.id.as_str(), "face does not state every loop")),
+                .map(|face| (face.id.as_str(), "face does not state its boundary in full")),
         );
     for (id, message) in partial {
         record_finding(

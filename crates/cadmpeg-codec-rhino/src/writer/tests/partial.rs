@@ -12,7 +12,9 @@ use cadmpeg_ir::topology::{BodyKind, FaceLoops, RegionUnstated};
 use super::planar_tetrahedron;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
-fn write(ir: &cadmpeg_ir::CadIr) -> Result<(Vec<u8>, Vec<String>), cadmpeg_core::CodecError> {
+fn write(
+    ir: &cadmpeg_ir::CadIr,
+) -> Result<(Vec<u8>, Vec<String>), cadmpeg_ir::codec::write::EncodeError> {
     let mut bytes = Vec::new();
     let plan = RhinoCodec.plan(
         EncodeInput::new(ir, None),
@@ -58,11 +60,25 @@ fn a_partial_face_is_left_out_of_an_open_brep() {
 }
 
 #[test]
-fn a_marked_region_with_no_partial_face_stays_refused() {
+fn a_marked_region_with_no_partial_face_is_written_as_one_sheet_per_face() {
     let mut ir = planar_tetrahedron();
     ir.geometry.regions[0].unstated = Some(RegionUnstated::Voids);
-    assert!(matches!(
-        write(&ir),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let body = ir.geometry.bodies[0].id.as_str().to_owned();
+
+    let (decoded, losses) = super::written(&ir);
+    let geometry = &decoded.geometry;
+    assert_eq!(geometry.bodies.len(), 4);
+    assert!(geometry
+        .bodies
+        .iter()
+        .all(|body| body.kind == BodyKind::Sheet));
+    assert_eq!(geometry.faces.len(), 4);
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterBodySplit
+                .kind()
+                .to_string()
+        ) && loss.contains(&body)),
+        "{losses:?}"
+    );
 }

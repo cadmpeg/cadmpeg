@@ -18022,7 +18022,7 @@
           ]
         },
         {
-          "description": "A loop is not stated, and the source does not classify the loops.",
+          "description": "The boundary is not stated in full, and the source does not classify\nthe loops: a loop is not stated, or the source states none on a\nsurface whose domain is unbounded and the face lists none (§5.6).",
           "type": "object",
           "properties": {
             "kind": {
@@ -18044,7 +18044,7 @@
           ]
         },
         {
-          "description": "A loop is not stated, and the source classifies the loops.",
+          "description": "The boundary is not stated in full, and the source classifies the\nloops: a loop is not stated.",
           "type": "object",
           "properties": {
             "kind": {
@@ -25742,10 +25742,6 @@
         "axis",
         "mode"
       ]
-    },
-    "JointId": {
-      "description": "Stable assembly-joint identity.",
-      "$ref": "#/$defs/Identity"
     },
     "JointKind": {
       "description": "What a joint does to its connectors.",
@@ -51597,7 +51593,7 @@
       "additionalProperties": false
     },
     "Shell": {
-      "description": "An oriented boundary of a region.\n\nIts faces are the faces whose [`Face::shell`] names it; `members` lists\nonly the wire edges and free vertices, which name no parent.",
+      "description": "An oriented boundary of a region.\n\nIts faces are the faces whose [`Face::shell`] names it; `members` lists\nonly the wire edges, free vertices, and subdivision cages, which name no\nparent.",
       "type": "object",
       "properties": {
         "id": {
@@ -51609,7 +51605,7 @@
           "$ref": "#/$defs/RegionId"
         },
         "members": {
-          "description": "Wire edges and free vertices owned by the shell.",
+          "description": "Wire edges, free vertices, and the subdivision cage owned by the\nshell.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/ShellMember"
@@ -51728,6 +51724,25 @@
             "id": {
               "description": "Arena id of the vertex.",
               "$ref": "#/$defs/VertexId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "description": "The subdivision cage that is the shell's only member (§5.6).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "subd"
+            },
+            "id": {
+              "description": "Arena id of the cage.",
+              "$ref": "#/$defs/SubdId"
             }
           },
           "additionalProperties": false,
@@ -55924,7 +55939,7 @@
           ]
         },
         {
-          "description": "An assembly joint.",
+          "description": "A design feature whose operation is a joint (§6.7).",
           "type": "object",
           "properties": {
             "kind": {
@@ -55932,8 +55947,8 @@
               "const": "joint"
             },
             "joint": {
-              "description": "The joint.",
-              "$ref": "#/$defs/JointId"
+              "description": "The joint feature.",
+              "$ref": "#/$defs/FeatureId"
             }
           },
           "additionalProperties": false,
@@ -62351,6 +62366,10 @@
           "items": {
             "$ref": "#/$defs/TessellationChannel"
           }
+        },
+        "native_ref": {
+          "description": "The source's record of the mesh.",
+          "type": "string"
         }
       },
       "additionalProperties": false,

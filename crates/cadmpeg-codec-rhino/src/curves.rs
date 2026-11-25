@@ -9,6 +9,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::OrthonormalFrame3;
@@ -1990,7 +1991,7 @@ fn arc_nurbs(
                 * cadmpeg_core::convert::f64_from_index(span + 1)
                     .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         let amid = (a0 + a1) * 0.5;
-        let weight = ((a1 - a0) * 0.5).cos();
+        let weight = ((a1 - a0) * 0.5).portable_cos();
         let p0 = circle_point(circle, a0);
         let pm = circle_point_scaled(circle, amid, 1.0 / weight);
         let p1 = circle_point(circle, a1);
@@ -2037,9 +2038,9 @@ fn circle_point(circle: &Circle, angle: f64) -> Point3 {
 
 fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3 {
     let radial = Vector3::new(
-        circle.xaxis.x * angle.cos() + circle.yaxis.x * angle.sin(),
-        circle.xaxis.y * angle.cos() + circle.yaxis.y * angle.sin(),
-        circle.xaxis.z * angle.cos() + circle.yaxis.z * angle.sin(),
+        circle.xaxis.x * angle.portable_cos() + circle.yaxis.x * angle.portable_sin(),
+        circle.xaxis.y * angle.portable_cos() + circle.yaxis.y * angle.portable_sin(),
+        circle.xaxis.z * angle.portable_cos() + circle.yaxis.z * angle.portable_sin(),
     );
     let center = circle.center.get();
     let radius = circle.radius.get();

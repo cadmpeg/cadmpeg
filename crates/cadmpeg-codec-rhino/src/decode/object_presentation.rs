@@ -318,8 +318,8 @@ fn appearance_id(color: Color) -> AppearanceId {
     )
 }
 
-/// Each body with the object its faces, wire edges, or free vertices were
-/// decoded from.
+/// Each body with the object its faces, wire edges, free vertices, or cage
+/// were decoded from.
 fn body_objects<'p>(
     ir: &CadIr,
     lookup: &dyn Fn(Option<&SourceObjectAssociation>) -> Option<&'p ObjectPresentation>,
@@ -349,6 +349,11 @@ fn body_objects<'p>(
         .points
         .iter()
         .map(|point| (point.id.as_str(), point.source_object.as_ref()))
+        .collect::<HashMap<_, _>>();
+    let subds = geometry
+        .subds
+        .iter()
+        .map(|subd| (subd.id.as_str(), subd.source_object.as_ref()))
         .collect::<HashMap<_, _>>();
     let edges = geometry
         .edges
@@ -383,6 +388,7 @@ fn body_objects<'p>(
                 ShellMember::FreeVertex { id } => vertices
                     .get(id.as_str())
                     .and_then(|vertex| points.get(vertex.point.as_str()).copied().flatten()),
+                ShellMember::Subd { id } => subds.get(id.as_str()).copied().flatten(),
             };
             if let Some(presentation) = lookup(association) {
                 found.entry(*body).or_insert(presentation);

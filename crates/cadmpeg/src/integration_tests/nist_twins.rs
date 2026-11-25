@@ -142,7 +142,7 @@ fn load(relative: &str) -> Design {
     let loaded = crate::loader::load_artifact(
         &cadmpeg_registry::InputCatalog::with_builtins(),
         &path,
-        DecodeOptions::default(),
+        &DecodeOptions::default(),
         None,
     )
     .unwrap_or_else(|error| panic!("{}: {error}", path.display()));

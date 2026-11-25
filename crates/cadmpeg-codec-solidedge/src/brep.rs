@@ -942,12 +942,31 @@ pub(crate) fn project(
         let Some(face_node) = nodes.get(&face.index).copied() else {
             continue;
         };
+        let surface = surface_id(stream, face.surface);
+        let carrier_geometry = if loop_ids.is_empty() {
+            ir.geometry
+                .surfaces
+                .iter()
+                .find(|candidate| candidate.id == surface)
+                .map(|candidate| &candidate.geometry)
+        } else {
+            None
+        };
+        let (loops, unbounded) = FaceLoops::unspecified_on(loop_ids, carrier_geometry);
+        let id = face_id(stream, face.index);
+        if let Some(carrier_kind) = unbounded {
+            losses.push(SolidEdgeLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                "partition {stream} FACE {} states no loop on a {carrier_kind}, which no face covers whole: face {} is stated partial",
+                face.index,
+                id.as_str()
+            )));
+        }
         ir.geometry.faces.push(Face {
-            id: face_id(stream, face.index),
+            id,
             shell: shell_id(stream, face.shell),
-            surface: surface_id(stream, face.surface),
+            surface,
             sense: face_sense,
-            loops: FaceLoops::unspecified(loop_ids),
+            loops,
             name: None,
             color: None,
             tolerance: tolerance(face_node, losses),

@@ -23,6 +23,9 @@ fn source() -> crate::document::SourceMeta {
 fn cube() -> (CadIr, BodyId) {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.source = Some(source());
+    ir.model
+        .product_definitions
+        .retain(|definition| !definition.is_root());
     ir.model.product_definitions.push(ProductDefinition::root(
         "test:model:product-definition#root".try_into().unwrap(),
         ExternalDocument::default(),

@@ -2272,18 +2272,23 @@ fn emit_e5_faces_loops_coedges(
             annotations.derived(&face_id, field)?;
         }
         admission.charge()?;
+        let loops = match loop_ids.split_first() {
+            // The source states the outer boundary first.
+            Some((outer, inner)) => {
+                cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
+            }
+            None => crate::assemble::unspecified_loops_on(
+                ir,
+                &surface_for_ref[&face.surface].0,
+                Vec::new(),
+            ),
+        };
         ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
             sense: face_plan.sense,
-            loops: match loop_ids.split_first() {
-                // The source states the outer boundary first.
-                Some((outer, inner)) => {
-                    cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
-                }
-                None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            },
+            loops,
             name: None,
             color: None,
             tolerance: None,

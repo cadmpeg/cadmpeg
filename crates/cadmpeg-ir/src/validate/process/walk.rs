@@ -33,9 +33,6 @@ pub(super) struct ChoiceSite {
 /// The values one record holds that the process rules check.
 #[derive(Default)]
 pub(super) struct Found {
-    /// The deepest JSON nesting inside the record, counting the record's own
-    /// object as one level.
-    pub(super) depth: usize,
     pub(super) choices: Vec<ChoiceSite>,
     /// Every `ParamRef`: a process dimension's binding and an expression's
     /// reference.
@@ -295,7 +292,6 @@ impl Reader {
 
     fn open(&mut self, container: Container) {
         self.containers.push(container);
-        self.found.depth = self.found.depth.max(self.containers.len());
     }
 
     /// The JSON pointer of the value about to be written.

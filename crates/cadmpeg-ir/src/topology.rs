@@ -10,9 +10,10 @@
 
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NonEmptyMembers;
+use crate::geometry::SurfaceGeometry;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
-    PointId, RegionId, ShellId, SurfaceId, VertexId,
+    PointId, RegionId, ShellId, SubdId, SurfaceId, VertexId,
 };
 use crate::math::Point3;
 use crate::scalar::{Fraction, UnitBinary32};
@@ -389,12 +390,30 @@ pub enum ShellMember {
         /// Arena id of the vertex.
         id: VertexId,
     },
+    /// The subdivision cage that is the shell's only member (§5.6).
+    Subd {
+        /// Arena id of the cage.
+        id: SubdId,
+    },
+}
+
+impl ShellMember {
+    /// The member's arena id.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::WireEdge { id } => id.as_str(),
+            Self::FreeVertex { id } => id.as_str(),
+            Self::Subd { id } => id.as_str(),
+        }
+    }
 }
 
 /// An oriented boundary of a region.
 ///
 /// Its faces are the faces whose [`Face::shell`] names it; `members` lists
-/// only the wire edges and free vertices, which name no parent.
+/// only the wire edges, free vertices, and subdivision cages, which name no
+/// parent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -403,7 +422,8 @@ pub struct Shell {
     pub id: ShellId,
     /// Owning region.
     pub region: RegionId,
-    /// Wire edges and free vertices owned by the shell.
+    /// Wire edges, free vertices, and the subdivision cage owned by the
+    /// shell.
     pub members: Vec<ShellMember>,
     /// Marks a shell a face, wire edge, free vertex, or cage of which the
     /// document does not state (§5.6, Unstated children).
@@ -473,7 +493,7 @@ impl Shell {
     pub fn wire_edges(&self) -> impl Iterator<Item = &EdgeId> {
         self.members.iter().filter_map(|member| match member {
             ShellMember::WireEdge { id } => Some(id),
-            ShellMember::FreeVertex { .. } => None,
+            ShellMember::FreeVertex { .. } | ShellMember::Subd { .. } => None,
         })
     }
 
@@ -481,7 +501,15 @@ impl Shell {
     pub fn free_vertices(&self) -> impl Iterator<Item = &VertexId> {
         self.members.iter().filter_map(|member| match member {
             ShellMember::FreeVertex { id } => Some(id),
-            ShellMember::WireEdge { .. } => None,
+            ShellMember::WireEdge { .. } | ShellMember::Subd { .. } => None,
+        })
+    }
+
+    /// Subdivision cages belonging directly to the shell.
+    pub fn subds(&self) -> impl Iterator<Item = &SubdId> {
+        self.members.iter().filter_map(|member| match member {
+            ShellMember::Subd { id } => Some(id),
+            ShellMember::WireEdge { .. } | ShellMember::FreeVertex { .. } => None,
         })
     }
 
@@ -739,12 +767,15 @@ pub enum FaceLoops {
         /// Inner loops in source order.
         inner: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source does not classify the loops.
+    /// The boundary is not stated in full, and the source does not classify
+    /// the loops: a loop is not stated, or the source states none on a
+    /// surface whose domain is unbounded and the face lists none (§5.6).
     PartialUnspecified {
         /// The loops stated, in source order.
         loops: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source classifies the loops.
+    /// The boundary is not stated in full, and the source classifies the
+    /// loops: a loop is not stated.
     PartialClassified {
         /// The outer loop, where it is stated.
         #[serde(
@@ -827,6 +858,30 @@ impl FaceLoops {
         Self::Unspecified { loops: ids }
     }
 
+    /// The loops a source states for a face, in source order, where it does
+    /// not classify them, on `surface`. A face whose source states no loop on
+    /// a solved surface whose domain is unbounded (a plane, a cylinder, or a
+    /// cone, through every placement) has no extent to state, so it is stated
+    /// in its partial form with no loop (§5.6, Faces and loops), and the
+    /// second value names that surface for the
+    /// `topology.face-boundary-unstated` loss the decoder charges naming the
+    /// face. A procedural surface has the domain its construction gives it,
+    /// so a face on one keeps its unclassified form.
+    #[must_use]
+    pub fn unspecified_on(
+        loops: Vec<LoopId>,
+        surface: Option<&SurfaceGeometry>,
+    ) -> (Self, Option<&'static str>) {
+        let unbounded = match surface {
+            Some(SurfaceGeometry::Solved(solved)) => solved.plane_cylinder_or_cone(),
+            Some(SurfaceGeometry::Procedural { .. }) | None => None,
+        };
+        match unbounded {
+            Some(kind) if loops.is_empty() => (Self::PartialUnspecified { loops }, Some(kind)),
+            _ => (Self::unspecified(loops), None),
+        }
+    }
+
     /// Classified loops. Loop order is outer then inner.
     #[must_use]
     pub const fn classified(outer: LoopId, inner: Vec<LoopId>) -> Self {
@@ -855,7 +910,9 @@ impl FaceLoops {
         }
     }
 
-    /// Whether a loop of the face is not stated.
+    /// Whether the face's boundary is not stated in full: a loop of it is not
+    /// stated, or its source states none on a surface whose domain is
+    /// unbounded (§5.6).
     #[must_use]
     pub const fn is_partial(&self) -> bool {
         matches!(
