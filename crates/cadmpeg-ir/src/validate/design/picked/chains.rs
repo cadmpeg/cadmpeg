@@ -28,8 +28,8 @@ use crate::topology::EdgeCarrier;
 
 use super::super::matching::StateTopology;
 use super::super::ops::picks::{class, is_point_or_plane, Class};
+use super::apart::{apart, curve_distance, placed_position};
 use super::{all_entities, entities, picks, planar, position, Entity, InState, Probe};
-use apart::{apart, curve_distance, placed_position};
 
 /// How the edges of a selection join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -714,5 +714,4 @@ impl<'a> Probe<'_, 'a> {
     }
 }
 
-mod apart;
 mod sketch;

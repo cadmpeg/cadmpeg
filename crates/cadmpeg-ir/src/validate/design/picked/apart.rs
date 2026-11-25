@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lower bounds, in model coordinates, on how far an edge's curve lies from
-//! a face's surface or from a point (§10: in-IR arithmetic).
+//! a face's surface or from a point, and the lengths of line edges (§10:
+//! in-IR arithmetic).
 //!
-//! The carriers read are the ones the §10 rows on patch supports and spine
-//! limits name (Surfacing, wireframe, forms, and sheet metal): planes,
+//! The carriers read are planes,
 //! cylinders, cones, spheres, tori, and NURBS surfaces whose weights share
 //! one sign; line edges between two vertices, circles, and NURBS curves whose
 //! weights share one sign; each placed by rigid maps, its body's and those of
@@ -22,8 +22,8 @@ use crate::scalar::NonZeroReal;
 use crate::topology::{Body, EdgeCarrier};
 use crate::transform::Transform;
 
-use super::super::super::matching::StateTopology;
-use super::super::position;
+use super::super::matching::StateTopology;
+use super::position;
 
 /// A rigid map into model coordinates; `None` is the identity.
 type Placement = Option<Transform>;
@@ -527,4 +527,22 @@ pub(super) fn placed_position(topology: &StateTopology<'_>, vertex: &str) -> Opt
     let faces = faces.filter_map(|face| topology.face_body(face));
     let placement = held_by(faces)?;
     point(placement, position(topology, vertex)?)
+}
+
+/// A lower bound on the distance from `point` to the surface of `face`.
+/// `None` where no bound reads the surface.
+pub(super) fn surface_distance(
+    topology: &StateTopology<'_>,
+    face: &str,
+    point: Point3,
+) -> Option<f64> {
+    Some(Sheet::of(topology, face)?.distance(point))
+}
+
+/// The length of a line edge between two vertices.
+pub(super) fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
+    match Reach::of(topology, edge)? {
+        Reach::Segment(start, end) => Some(start.distance(end)),
+        Reach::Line { .. } | Reach::Circle { .. } | Reach::Hull(_) => None,
+    }
 }

@@ -25,17 +25,18 @@ use crate::design::ops::sheet_metal::{
 use crate::design::refs::EntityRef;
 use crate::design::selection::{Anchor, MemberOrder, PickTarget, Picked, Picks, Selection};
 use crate::features::ConfigurationId;
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::geometry::SolvedSurfaceGeometry;
 use crate::ids::VertexId;
 use crate::math::Point3;
 use crate::report::check::{Finding, Ruled};
 use crate::scalar::NonNegativeLength;
-use crate::topology::{BodyKind, EdgeCarrier};
+use crate::topology::BodyKind;
 
 use super::index::DesignIndex;
 use super::matching::{Matcher, Matchers, StateTopology};
 use super::selections::{anchored_states, Site};
 use super::Holder;
+use apart::{straight_length, surface_distance};
 
 /// Checks the picks of every feature definition in the stored states they
 /// anchor in.
@@ -247,66 +248,10 @@ fn cylindrical(topology: &StateTopology<'_>, face: &str) -> Option<bool> {
     }
 }
 
-/// The distance of `point` from the surface of `face`, where the surface is
-/// an unplaced plane or cylinder of a body with no placement of its own.
-fn surface_distance(topology: &StateTopology<'_>, face: &str, point: Point3) -> Option<f64> {
-    if topology.face_body(face)?.transform.is_some() {
-        return None;
-    }
-    let (geometry, false) = surface_shape(topology, face)? else {
-        return None;
-    };
-    match geometry {
-        SolvedSurfaceGeometry::Plane(plane) => {
-            let normal = *plane.frame().axis().as_raw();
-            Some(point.vector_from(plane.origin().get()).dot(normal).abs())
-        }
-        SolvedSurfaceGeometry::Cylinder(cylinder) => {
-            let axis = *cylinder.frame().axis().as_raw();
-            let offset = point.vector_from(cylinder.origin().get());
-            Some((offset.cross(axis).norm() - cylinder.radius().get()).abs())
-        }
-        _ => None,
-    }
-}
-
 /// The position of a vertex.
 fn position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
     let point = topology.vertices.get(vertex)?.point.as_str();
     Some(topology.points.get(point)?.position().get())
-}
-
-/// Whether a body that holds `edge` has a placement of its own.
-fn edge_placed(topology: &StateTopology<'_>, edge: &str) -> bool {
-    topology.edge_bodies(edge).into_iter().any(|body| {
-        topology
-            .bodies
-            .get(body)
-            .is_some_and(|body| body.transform.is_some())
-    })
-}
-
-/// The length of a straight edge: one on an unplaced line with two ends, of
-/// bodies with no placement of their own.
-fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
-    if edge_placed(topology, edge) {
-        return None;
-    }
-    let edge = topology.edges.get(edge)?;
-    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) = &edge.carrier else {
-        return None;
-    };
-    let curve = topology.curves.get(curve.as_str())?.geometry.solved()?;
-    if !matches!(curve, SolvedCurveGeometry::Line(_)) {
-        return None;
-    }
-    let ends = edge.ends.as_ref()?;
-    let start = position(topology, ends.start.as_str())?;
-    Some(
-        position(topology, ends.end.as_str())?
-            .vector_from(start)
-            .norm(),
-    )
 }
 
 pub(super) fn literal<T: Copy>(dimension: &Dimension<T>) -> Option<T> {
@@ -1004,6 +949,7 @@ fn pieces(topology: &StateTopology<'_>, sheet: &str, cut: &BTreeSet<&str>) -> us
         .count()
 }
 
+mod apart;
 mod chains;
 mod operands;
 
