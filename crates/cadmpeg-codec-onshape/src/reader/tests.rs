@@ -163,8 +163,8 @@ fn rooted_two_part_studio() -> Model {
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "id":"synthetic:test:component#file", "storage":{"kind":"file", "document":{}},
-            "bodies":[], "sketches":[], "bom_properties":{},
+            "id":"synthetic:test:component#whole", "storage":{"kind":"file", "document":{}},
+            "bodies":[], "bom_properties":{},
             "occurrences":["synthetic:test:occurrence#0", "synthetic:test:occurrence#1"],
             "instance_bodies":[], "representations":[]
         }));
