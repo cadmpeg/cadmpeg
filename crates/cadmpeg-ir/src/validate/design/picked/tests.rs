@@ -1032,6 +1032,61 @@ fn a_spine_limit_without_a_spine_resolves_to_a_point_or_a_plane() {
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
+#[test]
+fn a_spine_limit_pick_of_a_stated_kind_leaves_the_target_s_other_picks_judged() {
+    let mut ir = fixture::document();
+    let three = bottom_edges(&ir)[..3].to_vec();
+    with(&mut ir, |ir| {
+        let mut stated = pick(1, edge(ir, three[0]));
+        stated.target = PickTarget::Entity(TopoName::Generated {
+            kind: NameKind::Edge,
+            feature: fixture::feature("extrude"),
+            role: None,
+            generator: None,
+            index: Some(1),
+        });
+        let mut operation = spine_sweep(ir, &three, face(ir, bottom(ir)));
+        let FeatureOperation::Sweep(sweep) = &mut operation else {
+            unreachable!("spine_sweep builds a sweep")
+        };
+        sweep.limits.start = Some(Selection {
+            at: Anchor::Current,
+            picks: Picks::Named(Members::new(vec![stated, pick(0, edge(ir, three[1]))]).unwrap()),
+            native: None,
+        });
+        operation
+    });
+    assert_eq!(
+        ruled(&ir, "design.spine-limit-picks-no-point-or-plane").len(),
+        1
+    );
+    let resolves = ruled(&ir, "design.spine-limit-resolves-no-point-or-plane");
+    assert_eq!(resolves.len(), 1);
+    assert!(resolves[0].contains(ir.geometry.edges[three[1]].id.as_str()));
+}
+
+#[test]
+fn a_spine_limit_that_no_body_holds_lies_in_the_document_frame() {
+    let rule = "design.spine-limit-off-spine";
+    let mut ir = fixture::document();
+    let three = bottom_edges(&ir)[..3].to_vec();
+    let raised = ir.geometry.edges[level_edges(&ir, 10.0)[0]]
+        .start()
+        .unwrap()
+        .clone();
+    ir.geometry.bodies.clear();
+    with(&mut ir, |ir| spine_sweep(ir, &three, face(ir, bottom(ir))));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| {
+        spine_sweep(ir, &three, face(ir, level(ir, 10.0)))
+    });
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    with(&mut ir, |ir| {
+        spine_sweep(ir, &three, EntityRef::Vertex(raised))
+    });
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
 mod operands;
 mod separation;
 mod sketch_profiles;

@@ -21,14 +21,14 @@ use crate::design::ops::swept::{Spine, SpineLimits, SweepSection};
 use crate::design::options::{
     BodyForm, CornerRound, SectionCondition, SolidOutput, Support, Thickness, WallSide,
 };
-use crate::design::selection::{MemberOrder, Selection, SetSelection};
+use crate::design::selection::{MemberOrder, Picked, Selection, SetSelection};
 use crate::geometry::SolvedCurveGeometry;
 use crate::math::Point3;
 use crate::topology::EdgeCarrier;
 
 use super::super::matching::StateTopology;
-use super::super::ops::picks::{is_point_or_plane, refused};
-use super::{all_entities, planar, position, resolved_entities, Entity, InState, Probe};
+use super::super::ops::picks::{class, is_point_or_plane, Class};
+use super::{all_entities, entities, picks, planar, position, Entity, InState, Probe};
 use apart::{apart, curve_distance, placed_position};
 
 /// How the edges of a selection join.
@@ -531,11 +531,12 @@ impl<'a> Probe<'_, 'a> {
 
     /// `SpineLimits` targets are points or planes on the spine, where the
     /// state exists (§6.6). A target that resolves to an edge, a body, or a
-    /// face that is not planar is no point or plane; a target whose pick
-    /// states such a kind is judged by its kind (`ops::swept`). A face is off
-    /// the spine where a bound shows every spine edge apart from it, and a
-    /// vertex that ends no spine edge where a bound shows it apart from every
-    /// one. A face that is no plane is reported once, as no plane.
+    /// face that is not planar is no point or plane; a pick that states such
+    /// a kind is judged by its kind (`ops::swept`), and each other pick of the
+    /// target by what it resolves to. A face is off the spine where a bound
+    /// shows every spine edge apart from it, and a vertex that ends no spine
+    /// edge where a bound shows it apart from every one. A face that is no
+    /// plane is reported once, as no plane.
     fn spine_limits<O: MemberOrder>(
         &mut self,
         spine: Option<&'a Selection<O>>,
@@ -544,14 +545,25 @@ impl<'a> Probe<'_, 'a> {
         let mut off = BTreeSet::new();
         let mut shapeless = BTreeSet::new();
         for target in [&limits.start, &limits.end].into_iter().flatten() {
-            if refused(target, is_point_or_plane).is_some() {
+            let judged: Vec<&'a Picked> = picks(target)
+                .iter()
+                .filter(|pick| {
+                    let class = class(pick);
+                    class == Class::Unknown || is_point_or_plane(class)
+                })
+                .collect();
+            if judged.is_empty() {
                 continue;
             }
             for state in self.states(&target.at) {
                 let Some(topology) = state.matcher.topology() else {
                     continue;
                 };
-                for entity in resolved_entities(&state.matcher, topology, target) {
+                let resolved = judged
+                    .iter()
+                    .filter_map(|pick| entities(&state.matcher, topology, pick))
+                    .flatten();
+                for entity in resolved {
                     match entity {
                         Entity::Edge(id) | Entity::Body(id) => {
                             shapeless.insert(id);

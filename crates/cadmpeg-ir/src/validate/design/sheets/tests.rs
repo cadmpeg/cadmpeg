@@ -305,6 +305,36 @@ fn an_arrangement_overriding_a_definition_is_read_over_each_configuration() {
 }
 
 #[test]
+fn an_arrangement_suppression_takes_precedence_over_its_configuration() {
+    let mut ir = grouped(apply("a", Some(0)), apply("b", Some(0)));
+    feature_mut(&mut ir, "first").suppressed = Some(Dimension::Literal(true));
+    suppressed_in_large(&mut ir, "first", true);
+    assert_eq!(ruled(&ir, GOVERN), 0);
+    let large = ir
+        .design
+        .configurations
+        .iter()
+        .find(|configuration| configuration.id.as_str().ends_with("#large"))
+        .unwrap()
+        .id
+        .clone();
+    let mut arrangement = fixture::arrangement(
+        "positional",
+        crate::design::configuration::ArrangementKind::Positional,
+    );
+    arrangement.configuration = Some(large);
+    arrangement.overrides.features.insert(
+        fixture::feature("first"),
+        FeatureStateOverride {
+            suppressed: Some(false),
+            definition: None,
+        },
+    );
+    ir.design.arrangements.push(arrangement);
+    assert_eq!(ruled(&ir, GOVERN), 1);
+}
+
+#[test]
 fn a_suppressed_feature_makes_no_sheet_and_cuts_none() {
     let rule = "design.sheet-cut-no-sheet-metal-body";
     let mut ir = fixture::document();

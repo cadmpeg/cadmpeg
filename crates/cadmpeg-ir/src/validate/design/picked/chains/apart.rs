@@ -7,7 +7,8 @@
 //! cylinders, cones, spheres, tori, and NURBS surfaces whose weights share
 //! one sign; line edges between two vertices, circles, and NURBS curves whose
 //! weights share one sign; each placed by rigid maps, its body's and those of
-//! each `Transformed` carrier it nests in. Each bound holds for the whole
+//! each `Transformed` carrier it nests in. A face, edge, or vertex that no
+//! body holds lies in its document's frame. Each bound holds for the whole
 //! carrier, so it holds for the face or edge on it. A NURBS curve or surface
 //! whose weights share one sign lies in the convex hull of its poles, and so
 //! in their box. An elliptic cone lies between the circular cones of its
@@ -35,11 +36,17 @@ fn body_placement(body: &Body) -> Option<Placement> {
     }
 }
 
-/// The one placement every body gives, where each is rigid and all agree.
-fn common<'b>(mut bodies: impl Iterator<Item = Option<&'b Body>>) -> Option<Placement> {
-    let first = body_placement(bodies.next().unwrap_or(None)?)?;
+/// The placement the bodies that hold an entity give it: none where no body
+/// holds it, so that it lies in its document's frame, else the one every
+/// body gives, where each is rigid and all agree.
+fn held_by<'b>(bodies: impl IntoIterator<Item = &'b Body>) -> Option<Placement> {
+    let mut bodies = bodies.into_iter();
+    let Some(first) = bodies.next() else {
+        return Some(None);
+    };
+    let first = body_placement(first)?;
     bodies
-        .all(|body| body.and_then(body_placement) == Some(first))
+        .all(|body| body_placement(body) == Some(first))
         .then_some(first)
 }
 
@@ -199,7 +206,7 @@ enum Sheet {
 
 impl Sheet {
     fn of(topology: &StateTopology<'_>, face: &str) -> Option<Self> {
-        let mut placement = body_placement(topology.face_body(face)?)?;
+        let mut placement = held_by(topology.face_body(face))?;
         let surface = topology.faces.get(face)?.surface.as_str();
         let mut geometry = topology.surfaces.get(surface)?.geometry.solved()?;
         while let SolvedSurfaceGeometry::Transformed(placed) = geometry {
@@ -378,11 +385,11 @@ enum Reach {
 impl Reach {
     fn of(topology: &StateTopology<'_>, edge: &str) -> Option<Self> {
         let bodies = topology.edge_bodies(edge);
-        let body = if bodies.is_empty() {
-            None
-        } else {
-            common(bodies.iter().map(|body| topology.bodies.get(body).copied()))?
-        };
+        let body = held_by(
+            bodies
+                .iter()
+                .filter_map(|body| topology.bodies.get(body).copied()),
+        )?;
         let record = topology.edges.get(edge)?;
         let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) = &record.carrier else {
             return None;
@@ -513,10 +520,11 @@ pub(super) fn curve_distance(
     Reach::of(topology, edge)?.distance(point)
 }
 
-/// The model position of `vertex`, where every face it lies on belongs to a
-/// held body and those bodies give it one rigid placement.
+/// The model position of `vertex`, where the bodies of the faces it lies on
+/// give it one rigid placement.
 pub(super) fn placed_position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
-    let faces = topology.vertex_faces.get(vertex)?;
-    let placement = common(faces.iter().map(|face| topology.face_body(face)))?;
+    let faces = topology.vertex_faces.get(vertex).into_iter().flatten();
+    let faces = faces.filter_map(|face| topology.face_body(face));
+    let placement = held_by(faces)?;
     point(placement, position(topology, vertex)?)
 }
