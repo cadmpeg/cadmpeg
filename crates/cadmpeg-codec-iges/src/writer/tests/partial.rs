@@ -12,7 +12,7 @@ use crate::{IgesCodec, IgesVersion};
 
 /// A tetrahedron solid as a document of another codec states it: with no
 /// IGES native records.
-fn tetrahedron() -> cadmpeg_ir::CadIr {
+pub(super) fn tetrahedron() -> cadmpeg_ir::CadIr {
     let mut ir = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),

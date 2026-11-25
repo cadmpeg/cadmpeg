@@ -12,7 +12,9 @@
 //! - every validation finding over the geometry document, neutral and
 //!   codec-native, is also a finding over the full one, so each of its
 //!   references, `native_ref` included, resolves wherever the full one's does;
-//! - the geometry decode's loss codes are a subset of the full decode's;
+//! - the geometry decode's loss codes are a subset of the full decode's, with
+//!   `decode/depth.not-delivered` added for the design the source holds
+//!   beyond the geometry depth (§2.1);
 //! - where the geometry decode keeps the whole file's bytes, each class it
 //!   cut is marked `untyped` in its sidecar.
 //!
@@ -202,6 +204,7 @@ fn compare(
     let full_codes = loss_codes(full);
     let extra = loss_codes(geometry)
         .difference(&full_codes)
+        .filter(|code| code.as_str() != DEPTH_NOT_DELIVERED)
         .cloned()
         .collect::<Vec<_>>();
     if !extra.is_empty() {
@@ -286,6 +289,8 @@ fn findings(
         .map(|finding| format!("{:?}: {}", finding.check, finding.message))
         .collect())
 }
+
+const DEPTH_NOT_DELIVERED: &str = "decode/depth.not-delivered";
 
 fn loss_codes(result: &DecodeResult) -> BTreeSet<String> {
     result
@@ -443,6 +448,21 @@ mod tests {
             }
         }
         assert_geometry_agrees_with_full(&ScriptedCodec(changes_geometry), &inputs());
+    }
+
+    #[test]
+    fn a_cut_that_charges_the_design_it_leaves_out_agrees() {
+        fn charges_design(depth: DecodeDepth) -> Decoded {
+            let mut decoded = sound_cut(depth);
+            decoded
+                .body
+                .source_holds(cadmpeg_core::decode::ArenaClass::Design);
+            decoded
+        }
+        assert_eq!(
+            assert_geometry_agrees_with_full(&ScriptedCodec(charges_design), &inputs()).cut,
+            1
+        );
     }
 
     #[test]

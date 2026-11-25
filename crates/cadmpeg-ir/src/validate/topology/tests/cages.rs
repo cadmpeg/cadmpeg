@@ -4,7 +4,7 @@
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::ids::{BodyId, RegionId, ShellId, SubdId};
 use crate::report::check::{Check, Finding};
-use crate::topology::{Region, Shell, ShellMember};
+use crate::topology::{BodyKind, Region, Shell, ShellMember};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
@@ -28,6 +28,35 @@ fn cage_findings(findings: &[Finding]) -> Vec<&str> {
         .filter(|finding| finding.message.contains("subdivision cage"))
         .map(|finding| finding.message.as_str())
         .collect()
+}
+
+#[test]
+fn a_cage_belongs_to_a_shell() {
+    let (mut ir, _) = cube_with_cage();
+    let found = findings(&mut ir);
+    assert_eq!(
+        cage_findings(&found),
+        ["subdivision cage must belong to exactly one shell"],
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn an_open_cage_object_is_a_sheet_body() {
+    let ir = directed_subd_sum().unwrap();
+    let [body] = ir.geometry.bodies.as_slice() else {
+        panic!("one cage body: {:#?}", ir.geometry.bodies);
+    };
+    assert_eq!(body.kind, BodyKind::Sheet);
+    let [shell] = ir.geometry.shells.as_slice() else {
+        panic!("one cage shell: {:#?}", ir.geometry.shells);
+    };
+    assert_eq!(
+        shell.members,
+        [ShellMember::Subd {
+            id: ir.geometry.subds[0].id.clone()
+        }]
+    );
 }
 
 #[test]
@@ -75,7 +104,7 @@ fn a_shell_holding_a_cage_holds_nothing_else() {
     for (check, message) in [
         (
             Check::WireTopology,
-            "subdivision cage belongs to more than one shell".to_owned(),
+            "subdivision cage must belong to exactly one shell".to_owned(),
         ),
         (
             Check::WireTopology,

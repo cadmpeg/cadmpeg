@@ -265,7 +265,7 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
     // The AP242 name with no object identifier declares the schema and leaves
     // the edition unspecified. The reader's single Part 21 grammar is that
     // row's declared strategy and the edition axis is undeclared rather than
-    // substituted, so this is a verified read: `DecodeMode::Strict` accepts it.
+    // substituted, so this is a verified read: a pinned decode strictness accepts it.
     let matched = {
         StepDialect::classify(&exchange(
             &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"],
