@@ -92,7 +92,6 @@ struct SurfacePlan {
 struct CurvePlan {
     geometry: CurveGeometry,
     parameter_range: Option<[f64; 2]>,
-    edge_tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
     cache_fit_tolerance: Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance>,
 }
 
@@ -393,7 +392,6 @@ fn build_plan(
                                 CurvePlan {
                                     geometry,
                                     parameter_range: None,
-                                    edge_tolerance: None,
                                     cache_fit_tolerance: None,
                                 },
                             );
@@ -532,7 +530,6 @@ fn build_plan(
                     let plan = oriented_plan.unwrap_or(CurvePlan {
                         geometry,
                         parameter_range: None,
-                        edge_tolerance: None,
                         cache_fit_tolerance: None,
                     });
                     merge_curve_plan(
@@ -583,9 +580,6 @@ fn build_plan(
                                 helix.cache.clone(),
                             )),
                             parameter_range: Some(helix.parameter_range),
-                            edge_tolerance: Some(cadmpeg_ir::scalar::PositiveReal::new(
-                                helix.fit_tolerance.get(),
-                            )?),
                             cache_fit_tolerance: Some(helix.fit_tolerance),
                         },
                     );
