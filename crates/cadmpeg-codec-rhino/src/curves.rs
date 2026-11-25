@@ -841,7 +841,7 @@ pub(crate) fn remap_nurbs_domain(
 /// `children` holds each piece with its start parameter, and `end` closes the
 /// last interval. A NURBS piece takes its interval by an affine knot map, a
 /// nested polycurve by an affine map of its own parameters, and a circle
-/// whose turn already spans its interval stays as it is. Any other piece
+/// whose interval is its own domain `[0, 2π]` stays as it is. Any other piece
 /// takes its exact NURBS form over the interval; a piece with no such form
 /// stays as it is.
 pub(crate) fn fit_polycurve_pieces(
@@ -922,7 +922,7 @@ fn fit_polycurve_piece(
         DecodedCurve::Leaf {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
             ..
-        } if ((target[1].get() - target[0].get()) - TAU).abs() < CIRCLE_TOLERANCE => {
+        } if target.map(FiniteReal::get) == [0.0, TAU] => {
             return Ok(());
         }
         DecodedCurve::Leaf { .. } => match exact_nurbs(ctx, piece, offset) {

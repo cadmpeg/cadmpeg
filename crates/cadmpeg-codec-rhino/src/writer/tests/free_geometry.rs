@@ -1147,3 +1147,130 @@ fn composite_with_abutting_domains_keeps_its_stated_range() {
         [-3.0, -0.8]
     );
 }
+
+#[test]
+fn composite_breaks_off_by_rounding_take_the_stored_parameters() {
+    // Laid by length, the second piece would start at 6.0 and end short of
+    // the stated range end; its stored start lies a few ulps past 6.0.
+    let stored = 6.0 + 4.0 * f64::EPSILON * 6.0;
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, -stored, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [stored, 7.0],
+            ),
+        ],
+        [5.0, 7.0],
+    );
+    let nurbs = written_joined_nurbs(&ir);
+    let degree = usize::try_from(nurbs.degree()).expect("a degree");
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [5.0, 7.0]
+    );
+
+    // Laid by length, the pieces end a few ulps short of the stated end.
+    let end = 2.0 + 4.0 * f64::EPSILON * 2.0;
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, end],
+    );
+    let nurbs = written_joined_nurbs(&ir);
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [0.0, end]
+    );
+}
+
+#[test]
+fn composite_whose_pieces_do_not_join_is_written_as_its_pieces() {
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(5.0, 5.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, 2.0],
+    );
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.curves.len(), 2, "{losses:?}");
+    let split = crate::loss::RhinoLossCode::WriterCurveSplit
+        .kind()
+        .to_string();
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with(&split) && loss.contains("rhino:test:curve#joined")),
+        "{losses:?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn polycurve_with_a_near_full_turn_circle_piece_is_written_over_its_stored_interval() {
+    use crate::test_support::test_archive as support;
+
+    // The circle piece's interval is a full turn plus less than the circle
+    // tolerance, so its laid length would fall short of the stored break.
+    let turn = std::f64::consts::TAU + 1.0e-11;
+    let children = [
+        (
+            support::ARC_CLASS,
+            support::arc_payload([0.0, std::f64::consts::TAU], [0.0, std::f64::consts::TAU]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let bytes = support::archive(&[support::object_record(
+        4,
+        support::POLYCURVE_CLASS,
+        &support::polycurve_payload(&[0.0, turn, turn + 1.0], &children),
+    )]);
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the polycurve archive decodes");
+
+    let nurbs = written_joined_nurbs(decoded.ir());
+    let degree = usize::try_from(nurbs.degree()).expect("a degree");
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [0.0, turn + 1.0]
+    );
+}

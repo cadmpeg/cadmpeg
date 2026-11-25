@@ -29,12 +29,19 @@ use cadmpeg_ir::topology::{Coedge, Edge};
 use super::exact::{self, ParameterMap, Spline};
 use super::EPS_WRITE_DEGENERATE;
 
-/// A Brep scope with its carriers in 3DM form, each face the writer leaves
-/// out with the reason, and each edge it writes as one edge for each use.
+/// A Brep scope with its carriers in 3DM form.
 pub(super) struct ConvertedScope {
     pub(super) ir: CadIr,
+    pub(super) findings: ScopeFindings,
+}
+
+/// Each face the writer leaves out of a Brep scope with the reason, each edge
+/// it writes as one edge for each use, and each edge whose curve pieces it
+/// joins across a gap, with the widest gap.
+pub(super) struct ScopeFindings {
     pub(super) dropped: Vec<(String, String)>,
     pub(super) unjoined: Vec<String>,
+    pub(super) rejoined: Vec<(String, f64)>,
 }
 
 /// The solved form of `geometry`: its solved carrier, or the cache of its
@@ -276,8 +283,10 @@ impl<'a> CompoundIndex<'a> {
     /// `[breaks[i], breaks[i + 1]]`. A compound states them. A composite
     /// lays its components end to end, each as long as its own domain, from
     /// the start of `curve`'s range, else from the start of its first
-    /// component's domain. A component whose domain starts at its break ends
-    /// at its own stored domain end.
+    /// component's domain. A break within `BREAK_SLACK` of the next
+    /// component's domain start, or of the end of `curve`'s range, takes that
+    /// stored value, and a component whose domain starts at its break ends at
+    /// its own stored domain end.
     fn breaks(
         &self,
         ctx: &DecodeContext<'_>,
@@ -294,15 +303,20 @@ impl<'a> CompoundIndex<'a> {
                 let _nested = ctx
                     .enter_nested("Rhino writer composite curve")
                     .map_err(|error| error.to_string())?;
-                let mut breaks = Vec::new();
+                let mut breaks: Vec<f64> = Vec::new();
                 for (id, _) in joint.components() {
                     let component = self
                         .curves
                         .get(id)
                         .ok_or_else(|| format!("its component {id} is missing"))?;
                     let [d0, d1] = self.domain(ctx, component)?;
-                    let start = match breaks.last() {
-                        Some(last) => *last,
+                    let start = match breaks.last_mut() {
+                        Some(last) => {
+                            if within_break_slack(*last, d0) {
+                                *last = d0;
+                            }
+                            *last
+                        }
                         None => {
                             let start = curve
                                 .parameter_range
@@ -312,6 +326,12 @@ impl<'a> CompoundIndex<'a> {
                         }
                     };
                     breaks.push(if d0 == start { d1 } else { start + (d1 - d0) });
+                }
+                if let (Some(range), Some(last)) = (curve.parameter_range, breaks.last_mut()) {
+                    let end = range.endpoints()[1];
+                    if within_break_slack(*last, end) {
+                        *last = end;
+                    }
                 }
                 Ok(breaks)
             }
@@ -358,18 +378,25 @@ impl<'a> CompoundIndex<'a> {
     ) -> Option<Result<NurbsCurve, String>> {
         let curve = self.curves.get(id)?;
         let joint = self.joint(curve)?;
-        Some(self.nurbs(ctx, curve, &joint, range))
+        Some(
+            self.nurbs(ctx, curve, &joint, range, 0.0)
+                .map(|(nurbs, _)| nurbs),
+        )
     }
 
     /// The NURBS curve that equals `curve`, joined by `joint`, over `range`:
-    /// each component over its part of `range`, joined end to end.
+    /// each component over its part of `range`, joined end to end, with the
+    /// widest gap past `JOIN_GAP` it closes. The join moves the meeting ends
+    /// of two components to their midpoint, and ends farther apart than both
+    /// `JOIN_GAP` and `gap_limit` are an error.
     fn nurbs(
         &self,
         ctx: &DecodeContext<'_>,
         curve: &Curve,
         joint: &Joint<'_>,
         range: [f64; 2],
-    ) -> Result<NurbsCurve, String> {
+        gap_limit: f64,
+    ) -> Result<(NurbsCurve, f64), String> {
         let _nested = ctx
             .enter_nested("Rhino writer compound curve")
             .map_err(|error| error.to_string())?;
@@ -381,14 +408,24 @@ impl<'a> CompoundIndex<'a> {
         if parameters.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err("the compound's component intervals are out of order".into());
         }
-        let [lo, hi] = range;
         let (first, last) = (parameters[0], parameters[components.len()]);
+        let lo = if within_break_slack(first, range[0]) {
+            first
+        } else {
+            range[0]
+        };
+        let hi = if within_break_slack(last, range[1]) {
+            last
+        } else {
+            range[1]
+        };
         if lo < first || hi > last {
             return Err(format!(
                 "the range [{lo}, {hi}] leaves the compound's interval [{first}, {last}]"
             ));
         }
         let mut pieces = Vec::new();
+        let mut widest = 0.0_f64;
         for (index, (id, same_sense)) in components.into_iter().enumerate() {
             let [start, end] = [parameters[index], parameters[index + 1]];
             let span = [lo.max(start), hi.min(end)];
@@ -422,7 +459,11 @@ impl<'a> CompoundIndex<'a> {
                 [local[1], local[0]]
             };
             let mut piece = match self.joint(component) {
-                Some(nested) => self.nurbs(ctx, component, &nested, local)?,
+                Some(nested) => {
+                    let (nested, gap) = self.nurbs(ctx, component, &nested, local, gap_limit)?;
+                    widest = widest.max(gap);
+                    nested
+                }
                 None => match solved_curve(&component.geometry) {
                     None | Some(SolvedCurveGeometry::Unknown { .. }) => {
                         return Err(format!("its component {id} has no solved form"));
@@ -461,27 +502,39 @@ impl<'a> CompoundIndex<'a> {
                 .iter()
                 .fold(1.0_f64, |scale, lane| scale.max(lane.abs()));
             let gap = end.distance(start);
-            if !matches!(
-                gap.partial_cmp(&(exact::JOIN_GAP * scale)),
-                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
-            ) {
-                return Err(format!("the components are {gap} apart where they meet"));
+            if gap <= exact::JOIN_GAP * scale {
+                continue;
             }
+            if gap <= gap_limit {
+                widest = widest.max(gap);
+                continue;
+            }
+            return Err(format!("the components are {gap} apart where they meet"));
         }
         crate::curves::join_nurbs_segments(ctx, pieces, 0)
-            .map(|join| join.curve)
+            .map(|join| (join.curve, widest))
             .map_err(|error| format!("the components do not join into one NURBS curve: {error}"))
     }
 }
 
-/// The edge curve in 3DM form where it needs another one, `None` where the
-/// stated solved carrier is written as it is.
+/// Relative distance within which a composite break laid by component
+/// lengths meets a stored parameter.
+const BREAK_SLACK: f64 = 1e-9;
+
+fn within_break_slack(laid: f64, stored: f64) -> bool {
+    (laid - stored).abs() <= BREAK_SLACK * laid.abs().max(stored.abs()).max(1.0)
+}
+
+/// The edge curve in 3DM form where it needs another one, with the widest
+/// gap it closes between joined pieces that meet within `tolerance`, `None`
+/// where the stated solved carrier is written as it is.
 fn edge_curve(
     ctx: &DecodeContext<'_>,
     compounds: &CompoundIndex<'_>,
     edge: &Edge,
     curve: &Curve,
-) -> Result<Option<SolvedCurveGeometry>, String> {
+    tolerance: f64,
+) -> Result<Option<(SolvedCurveGeometry, f64)>, String> {
     let range = edge
         .param_range()
         .ok_or("the edge states no parameter range")?
@@ -491,8 +544,8 @@ fn edge_curve(
     }
     if let Some(joint) = compounds.joint(curve) {
         return compounds
-            .nurbs(ctx, curve, &joint, range)
-            .map(|nurbs| Some(SolvedCurveGeometry::Nurbs(nurbs)))
+            .nurbs(ctx, curve, &joint, range, tolerance)
+            .map(|(nurbs, gap)| Some((SolvedCurveGeometry::Nurbs(nurbs), gap)))
             .map_err(|reason| format!("curve {}: {reason}", curve.id.as_str()));
     }
     let solved = solved_curve(&curve.geometry)
@@ -506,10 +559,10 @@ fn edge_curve(
         _ => false,
     };
     if writable {
-        return Ok(procedural.then(|| solved.clone()));
+        return Ok(procedural.then(|| (solved.clone(), 0.0)));
     }
     curve_nurbs(solved, range)
-        .map(|nurbs| Some(SolvedCurveGeometry::Nurbs(nurbs)))
+        .map(|nurbs| Some((SolvedCurveGeometry::Nurbs(nurbs), 0.0)))
         .map_err(|reason| format!("curve {}: {reason}", curve.id.as_str()))
 }
 
@@ -993,13 +1046,20 @@ pub(super) fn convert_scope(
     }
     let mut edge_curves = BTreeMap::<&str, SolvedCurveGeometry>::new();
     let mut edge_failures = BTreeMap::<&str, String>::new();
+    let mut rejoined = Vec::new();
     for edge in &geometry.edges {
         let converted = match edge.curve() {
             None if super::is_singular_edge(edge) => Ok(None),
             None => Err("the edge has no curve".to_owned()),
             Some(id) => match curves.get(id.as_str()) {
                 None => Err(format!("its curve {} is missing", id.as_str())),
-                Some(curve) => edge_curve(ctx, compounds, edge, curve),
+                Some(curve) => edge_curve(
+                    ctx,
+                    compounds,
+                    edge,
+                    curve,
+                    super::stated_write_tolerance(edge.tolerance, ir),
+                ),
             },
         };
         match converted {
@@ -1010,9 +1070,12 @@ pub(super) fn convert_scope(
                     "its curve is shared by several edges and needs its own NURBS form".into(),
                 );
             }
-            Ok(Some(curve)) => {
+            Ok(Some((curve, gap))) => {
                 if let Some(id) = edge.curve() {
                     edge_curves.insert(id.as_str(), curve);
+                }
+                if gap > 0.0 {
+                    rejoined.push((edge.id.as_str().to_owned(), gap));
                 }
             }
             Err(reason) => {
@@ -1269,8 +1332,11 @@ pub(super) fn convert_scope(
         .retain(|pcurve| used.contains(pcurve.id.as_str()));
     ConvertedScope {
         ir: converted,
-        dropped,
-        unjoined,
+        findings: ScopeFindings {
+            dropped,
+            unjoined,
+            rejoined,
+        },
     }
 }
 
