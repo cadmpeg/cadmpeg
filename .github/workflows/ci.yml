@@ -514,9 +514,9 @@ jobs:
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
     # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
-    # 3-core runner the test build takes 65 to 85 minutes and the tests about
+    # 3-core runner the test build takes 65 to 96 minutes and the tests about
     # 20; on the 5-core runner, 13 and 9.
-    timeout-minutes: 150
+    timeout-minutes: 170
     strategy:
       fail-fast: false
       matrix:
@@ -555,7 +555,7 @@ jobs:
       # Each step's timeout ends it before the job's, so the job fails rather
       # than being cancelled, and the report and cache steps run.
       - name: Build tests
-        timeout-minutes: 100
+        timeout-minutes: 120
         run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
 
       - name: Unit and integration tests
