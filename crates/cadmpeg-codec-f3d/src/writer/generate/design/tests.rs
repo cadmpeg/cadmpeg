@@ -710,39 +710,6 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
         .any(|message| message.contains("component aggregate")));
 }
 
-/// A Base Feature archive writes its own Design records, so it drops the
-/// native arenas whose record indices they would reuse (f3d.md §3.1).
-#[test]
-fn a_base_feature_write_drops_the_native_arenas_whose_indices_it_reuses() {
-    use cadmpeg_ir::codec::write::NativeDisposition;
-    let mut output = Vec::new();
-    let generated = crate::writer::generate::write_new(
-        &scoped_cube(),
-        cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
-        &mut output,
-    )
-    .expect("the cube is written as a Base Feature");
-    for arena in [
-        "design_record_headers",
-        "sketch_points",
-        "persistent_references",
-    ] {
-        assert_eq!(
-            generated
-                .native
-                .disposition("f3d", arena, "f3d:test:record#0"),
-            NativeDisposition::Dropped,
-            "{arena}"
-        );
-    }
-    assert_eq!(
-        generated
-            .native
-            .disposition("f3d", "design_parameters", "f3d:test:record#0"),
-        NativeDisposition::Written
-    );
-}
-
 #[test]
 fn the_history_is_one_insertion_state() {
     let (_, ir) = write(&scoped_cube());

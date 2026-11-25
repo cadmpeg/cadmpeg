@@ -79,7 +79,7 @@ pub(super) fn write_new(
     let mut reduction = Reduction::new(lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
-    let (mut staged, mut coverage, design_losses, unwritten_native) = loop {
+    let (mut staged, mut coverage, design_losses) = loop {
         let mut staged = tempfile::tempfile()?;
         match attempt(
             reduction.ir(),
@@ -89,9 +89,7 @@ pub(super) fn write_new(
             reduction.fallback(),
             &mut staged,
         ) {
-            Ok((coverage, losses, unwritten_native)) => {
-                break (staged, coverage, losses, unwritten_native)
-            }
+            Ok((coverage, losses)) => break (staged, coverage, losses),
             Err(failure) => reduction.degrade(failure, writes_alone)?,
         }
     };
@@ -111,16 +109,9 @@ pub(super) fn write_new(
         .ok()
         .flatten()
         .is_some_and(|design| design.rolls_back());
-    let (mut losses, mut native) = reduction.finish();
+    let (mut losses, native) = reduction.finish();
     losses.extend(staged_loss);
     losses.extend(design_losses);
-    for arena in unwritten_native {
-        native.drop_arena(
-            "f3d",
-            arena,
-            "whose record indices the written Design records reuse",
-        );
-    }
     Ok(Generated {
         coverage,
         native,
@@ -164,8 +155,8 @@ fn encode_brep(
 /// records are written, and `write_neutral` whether its design scope is, in
 /// the form `missing_states` names; `fallback` names the parts of the design
 /// scope's form dropped after a failure. A failure names the stage that
-/// failed. Returns the arena coverage, the losses of the design scope's
-/// records, and the native arenas the written Design records leave out.
+/// failed. Returns the arena coverage and the losses of the design scope's
+/// records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
@@ -173,7 +164,7 @@ fn attempt<W: Write + Seek>(
     missing_states: MissingStateForm,
     fallback: &design::Fallback,
     staged: W,
-) -> Result<(ArenaDispositions, Vec<LossNote>, &'static [&'static str]), Failure> {
+) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
     if let Some(error) = write_neutral.then(design::requested_test_failure).flatten() {
         return Err(Failure::neutral_design(error));
@@ -307,7 +298,7 @@ fn attempt<W: Write + Seek>(
                 "the history-true design holds no body at its timeline marker, so the archive stores no B-rep stream and these geometry records were not written: {}",
                 reduce::geometry_records_by_arena(&target.geometry).join("; ")
             )));
-            return Ok((coverage, losses, BASE_FEATURE_UNWRITTEN_ARENAS));
+            return Ok((coverage, losses));
         }
         losses.extend(unstated_visibility);
         losses.extend(cadmpeg_ir::codec::write::value_unwritable(
@@ -320,7 +311,7 @@ fn attempt<W: Write + Seek>(
                 .filter(|body| body.visible == Some(false))
                 .map(|body| body.id.to_string()),
         ));
-        return Ok((coverage, losses, BASE_FEATURE_UNWRITTEN_ARENAS));
+        return Ok((coverage, losses));
     }
     let mut neutral_records = None;
     let parameter_bytes = match (neutral.as_mut(), &native_parameters) {
@@ -416,7 +407,6 @@ fn attempt<W: Write + Seek>(
                     ArenaDisposition::Written,
                 ),
                 losses,
-                &[],
             ));
         }
         None if neutral.is_some() => ArenaDisposition::Reported,
@@ -429,7 +419,6 @@ fn attempt<W: Write + Seek>(
     Ok((
         coverage(write_design, parameters, written, ArenaDisposition::Written),
         losses,
-        &[],
     ))
 }
 
@@ -450,22 +439,6 @@ fn snapshot_stream(
         attributes::AttributeIndex::new(target, &unnamed).with_body_keys(target, |_| -1);
     design::history::snapshot(&encode_brep(target, &unnamed, &attributes)?)
 }
-/// The native arenas a Base Feature archive leaves out: it writes its own
-/// Design records, whose indices these records would reuse (f3d.md §3.1,
-/// "Records of a Base Feature design").
-const BASE_FEATURE_UNWRITTEN_ARENAS: &[&str] = &[
-    "construction_recipes",
-    "persistent_references",
-    "lost_edge_references",
-    "sketch_points",
-    "sketch_curve_identities",
-    "sketch_relations",
-    "sketch_texts",
-    "design_body_members",
-    "design_entity_headers",
-    "design_record_headers",
-    "design_material_assignments",
-];
 
 /// The losses of the appearances of a Base Feature archive, whose Protein
 /// package is the design's own.
