@@ -470,7 +470,7 @@ fn inherit_writes_an_off_catalog_source_dialect_with_nothing_retained_as_the_row
     assert_eq!(
         loss.code,
         cadmpeg_ir::codec::write::target::target_loss_kind(
-            "sldprt",
+            cadmpeg_ir::loss_namespace!("sldprt"),
             cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED
         )
     );
@@ -515,7 +515,7 @@ fn inherit_synthesizes_an_off_catalog_cadir_read_part_at_the_catalog_row() {
     assert_eq!(
         loss.code,
         cadmpeg_ir::codec::write::target::target_loss_kind(
-            "sldprt",
+            cadmpeg_ir::loss_namespace!("sldprt"),
             cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED
         )
     );

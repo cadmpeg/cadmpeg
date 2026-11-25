@@ -239,7 +239,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .find(|loss| {
             loss.code
                 == cadmpeg_ir::codec::write::target::target_loss_kind(
-                    "iges",
+                    cadmpeg_ir::loss_namespace!("iges"),
                     cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
                 )
         })

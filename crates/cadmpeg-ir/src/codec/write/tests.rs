@@ -185,9 +185,9 @@ fn a_pinned_strictness_writes_a_displaced_target() {
         .losses
         .iter()
         .map(|loss| code_name(&loss.code))
-        .filter(|code| code.starts_with("test:target."))
+        .filter(|code| code.starts_with("target."))
         .collect::<Vec<_>>();
-    assert_eq!(codes, ["test:target.source-dialect-displaced"]);
+    assert_eq!(codes, ["target.source-dialect-displaced"]);
 }
 
 fn recorded_at(depth: DecodeDepth) -> CadIr {

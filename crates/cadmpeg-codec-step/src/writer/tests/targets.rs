@@ -123,7 +123,10 @@ fn written_as_the_default(ir: &CadIr) -> String {
     };
     assert_eq!(
         loss.code,
-        target_loss_kind("step", SOURCE_DIALECT_DISPLACED)
+        target_loss_kind(
+            cadmpeg_ir::loss_namespace!("step"),
+            SOURCE_DIALECT_DISPLACED
+        )
     );
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     let text = written_text(plan);
@@ -407,7 +410,13 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == target_loss_kind("step", SOURCE_DIALECT_DISPLACED))
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("step"),
+                    SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("schema displacement is charged");
     assert!(loss.message.contains("step:ap203-e1"));
     assert!(loss.message.contains("step:ap214"));

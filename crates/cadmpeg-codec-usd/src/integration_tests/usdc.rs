@@ -160,7 +160,10 @@ fn inherit_writes_an_off_catalog_source_as_the_default() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == target_loss_kind("usd", SOURCE_DIALECT_DISPLACED))
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(cadmpeg_ir::loss_namespace!("usd"), SOURCE_DIALECT_DISPLACED)
+        })
         .expect("the source dialect displacement is charged");
     assert!(
         loss.message.contains(&source) && loss.message.contains("usd:usda-1.0"),

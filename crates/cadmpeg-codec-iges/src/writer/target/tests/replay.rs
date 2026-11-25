@@ -71,7 +71,7 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .find(|loss| {
             loss.code
                 == cadmpeg_ir::codec::write::target::target_loss_kind(
-                    "iges",
+                    cadmpeg_ir::loss_namespace!("iges"),
                     cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
                 )
         })

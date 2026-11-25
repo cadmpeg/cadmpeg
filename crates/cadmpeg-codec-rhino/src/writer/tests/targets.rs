@@ -129,7 +129,10 @@ fn written_as_the_default(ir: &CadIr) -> String {
     };
     assert_eq!(
         loss.code,
-        target_loss_kind("rhino", SOURCE_DIALECT_DISPLACED)
+        target_loss_kind(
+            cadmpeg_ir::loss_namespace!("rhino"),
+            SOURCE_DIALECT_DISPLACED
+        )
     );
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     let round_trip = RhinoCodec
@@ -172,7 +175,13 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == target_loss_kind("rhino", SOURCE_DIALECT_DISPLACED))
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("rhino"),
+                    SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("dialect displacement is charged");
     assert!(loss.message.contains("rhino:archive-50"));
     assert!(loss.message.contains("rhino:archive-70"));

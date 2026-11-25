@@ -136,7 +136,7 @@ fn f3z_archive_merges_identity_occurrences() {
         decoded.ir(),
         Some(decoded.source_fidelity()),
         &cadmpeg_ir::codec::write::target::target_loss_kind(
-            "f3d",
+            cadmpeg_ir::loss_namespace!("f3d"),
             cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
         )
         .to_string(),
@@ -171,7 +171,7 @@ fn f3z_archive_merges_identity_occurrences() {
         report.losses.iter().any(|loss| {
             loss.code
                 == cadmpeg_ir::codec::write::target::target_loss_kind(
-                    "f3d",
+                    cadmpeg_ir::loss_namespace!("f3d"),
                     cadmpeg_ir::codec::write::target::REQUEST_DISPLACED,
                 )
                 && loss.message.contains("f3d:manifest-3-2-0-0")

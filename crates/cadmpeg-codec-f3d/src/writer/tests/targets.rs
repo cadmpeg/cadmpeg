@@ -53,7 +53,10 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == target_loss_kind("f3d", SOURCE_DIALECT_DISPLACED))
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(cadmpeg_ir::loss_namespace!("f3d"), SOURCE_DIALECT_DISPLACED)
+        })
         .expect("the source dialect displacement is charged");
     assert!(displacement.message.contains("f3d:f3z-multi-document"));
     assert!(displacement.message.contains("f3d:manifest-3-2-0-0"));
@@ -82,7 +85,7 @@ fn cross_format_write_has_no_dialect_displacement() {
         &FidelityResolution::NotConsumed {}
     );
     assert!(plan.report().losses.iter().all(|loss| loss.code
-        != target_loss_kind("f3d", SOURCE_DIALECT_DISPLACED)
+        != target_loss_kind(cadmpeg_ir::loss_namespace!("f3d"), SOURCE_DIALECT_DISPLACED)
         && loss.code != F3dLossCode::SourcePreservedImageUnavailable.kind()));
 }
 

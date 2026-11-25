@@ -3,7 +3,7 @@
 
 use crate::codec::FormatId;
 use crate::document::CadIr;
-use crate::report::loss::{LossKind, LossNote, LossTaxonomy, NamespacedLossKind};
+use crate::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind};
 use crate::report::Severity;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::{
@@ -37,26 +37,17 @@ pub const SOURCE_DIALECT_DISPLACED: &str = "target.source-dialect-displaced";
 /// the request names (§3.2, §3.4).
 pub const REQUEST_DISPLACED: &str = "target.request-displaced";
 
-/// The kind of a `target.*` loss `code` that the encoder of `format` charges.
-/// Each encoder charges it in its own namespace. §3.2 states no strict floor
-/// for either code, so a strict write does not refuse on one.
-///
-/// # Panics
-///
-/// Panics if `format` is not a loss namespace. Every encoder format is one.
+/// The kind of a `target.*` loss `code` that an encoder charges in its own
+/// `namespace`. §3.2 states no strict floor for either code, so a strict
+/// write does not refuse on one.
 #[must_use]
-pub fn target_loss_kind(format: &str, code: &str) -> LossKind {
-    NamespacedLossKind::new_owned(
-        format.to_owned(),
-        code.to_owned(),
-        LossTaxonomy::SourceDialectDisplaced,
-    )
-    .expect("an encoder format is a loss namespace")
-    .with_strict_floor(None)
-    .into()
+pub fn target_loss_kind(namespace: LossNamespace<'_>, code: &str) -> LossKind {
+    NamespacedLossKind::new(namespace, code, LossTaxonomy::SourceDialectDisplaced)
+        .with_strict_floor(None)
+        .into()
 }
 
-fn target_loss(format: &str, code: &str, message: String) -> LossNote {
+fn target_loss(format: LossNamespace<'_>, code: &str, message: String) -> LossNote {
     LossNote::new(target_loss_kind(format, code), message).with_severity(Severity::Warning)
 }
 
@@ -252,7 +243,7 @@ impl<'a> ResolvedWrite<'a> {
     /// names no row, so it charges only the source code.
     fn written(
         &self,
-        format: &str,
+        format: LossNamespace<'_>,
         synthesized: bool,
         row: Option<WrittenRow>,
     ) -> (DialectId, Vec<LossNote>) {
@@ -300,8 +291,9 @@ impl<'a> ResolvedWrite<'a> {
                 source: DefaultSource::UnrecordedDialect,
                 ..
             } => Some(format!(
-                "the {format} source records no dialect; the file is written as \
-                 {written}{because}"
+                "the {} source records no dialect; the file is written as \
+                 {written}{because}",
+                format.as_str()
             )),
             ResolvedTarget::Explicit { .. } | ResolvedTarget::Default { .. } => None,
         };
@@ -409,7 +401,7 @@ pub trait TargetResolution: resolution_sealed::Sealed + Clone {
     #[doc(hidden)]
     fn report_target(
         &self,
-        format: &str,
+        format: LossNamespace<'_>,
         synthesized: bool,
         row: Option<WrittenRow>,
     ) -> (Option<DialectId>, Vec<LossNote>);
@@ -418,7 +410,7 @@ pub trait TargetResolution: resolution_sealed::Sealed + Clone {
 impl TargetResolution for () {
     fn report_target(
         &self,
-        _format: &str,
+        _format: LossNamespace<'_>,
         _synthesized: bool,
         row: Option<WrittenRow>,
     ) -> (Option<DialectId>, Vec<LossNote>) {
@@ -430,7 +422,7 @@ impl TargetResolution for () {
 impl TargetResolution for ResolvedWrite<'_> {
     fn report_target(
         &self,
-        format: &str,
+        format: LossNamespace<'_>,
         synthesized: bool,
         row: Option<WrittenRow>,
     ) -> (Option<DialectId>, Vec<LossNote>) {
@@ -497,19 +489,24 @@ impl TargetDomain for DialectFree {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Catalog {
     rows: TargetCatalog,
+    fallback: (usize, &'static TargetDescriptor),
     replay_rows: &'static [DialectId],
 }
 
 impl Catalog {
     /// Builds a native target domain whose optional default indexes one of
-    /// `targets`.
+    /// `targets`. An `Inherit` request that inherits no row resolves to the
+    /// default, or to the newest (last) row when there is none.
     #[must_use]
-    pub const fn new(
-        targets: &'static [cadmpeg_core::target::TargetDescriptor],
-        default: Option<usize>,
-    ) -> Self {
+    pub const fn new(targets: &'static [TargetDescriptor], default: Option<usize>) -> Self {
+        let rows = TargetCatalog::new(targets, default);
+        let index = match default {
+            Some(index) => index,
+            None => targets.len() - 1,
+        };
         Self {
-            rows: TargetCatalog::new(targets, default),
+            rows,
+            fallback: (index, &targets[index]),
             replay_rows: &[],
         }
     }
@@ -537,7 +534,7 @@ impl TargetDomain for Catalog {
         request: TargetRequest<'a>,
         _format: FormatId,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
-        resolve_write_request(ir, request, self.rows, self.replay_rows)
+        resolve_write_request(ir, request, *self)
     }
 }
 
@@ -562,22 +559,20 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
 fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
-    catalog: TargetCatalog,
-    replay_rows: &'static [DialectId],
+    domain: Catalog,
 ) -> Result<ResolvedWrite<'a>, CodecError> {
+    let Catalog {
+        rows: catalog,
+        fallback: (index, entry),
+        replay_rows,
+    } = domain;
     let format = catalog.namespace();
     let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
     let source = source_identity(ir, format);
-    let default = |source: DefaultSource| {
-        let (index, entry) = catalog
-            .default()
-            .or_else(|| catalog.iter().enumerate().next_back())
-            .expect("a native catalog declares a row");
-        ResolvedTarget::Default {
-            index,
-            entry,
-            source,
-        }
+    let default = |source: DefaultSource| ResolvedTarget::Default {
+        index,
+        entry,
+        source,
     };
     let target = match request {
         TargetRequest::Explicit(requested) => {

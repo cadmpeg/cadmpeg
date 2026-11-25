@@ -155,7 +155,13 @@ fn inherit_writes_a_source_dialect_the_writer_cannot_synthesize_as_the_default()
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == target_loss_kind("iges", SOURCE_DIALECT_DISPLACED))
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("iges"),
+                    SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("the source dialect displacement is charged");
     assert!(displacement.message.contains("iges:1.0-fixed-ascii"));
     assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
@@ -209,11 +215,11 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         ),
         &FidelityResolution::NotProvided {}
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == target_loss_kind("iges", SOURCE_DIALECT_DISPLACED)));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == target_loss_kind(
+            cadmpeg_ir::loss_namespace!("iges"),
+            SOURCE_DIALECT_DISPLACED
+        )));
     assert!(plan
         .report()
         .losses

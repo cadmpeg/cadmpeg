@@ -17,7 +17,7 @@ use crate::report::{
         CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
         SynthesisFidelity, WritePath as ReportWritePath,
     },
-    loss::LossNote,
+    loss::{LossNamespace, LossNote},
     strictness::Strictness,
     Severity,
 };
@@ -184,8 +184,14 @@ impl<E: EncoderBackend> Encoder for E {
             mut notes,
             written_row,
         } = body;
+        let namespace = const {
+            match LossNamespace::new(E::FORMAT.as_str()) {
+                Ok(namespace) => namespace,
+                Err(_) => panic!("an encoder format is a loss namespace"),
+            }
+        };
         let (identity, mut losses) = target.report_target(
-            E::FORMAT.as_str(),
+            namespace,
             matches!(write_path, WritePath::Synthesized { .. }),
             written_row,
         );
