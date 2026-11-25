@@ -1256,6 +1256,86 @@ fn an_object_snapshot_with_an_unproven_body_frame_keeps_its_subtree_native() {
         .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
 }
 
+fn leaf_path() -> DesignComponentPath {
+    path(
+        902,
+        &[
+            (159, Kind::Component),
+            (100, Kind::Occurrence),
+            (SUB_MODULE, Kind::Occurrence),
+            (LEAF, Kind::Occurrence),
+        ],
+        pose(EYE, [0.5, 0.25, 2.0]),
+    )
+}
+
+fn snapshot_of_the_module(carriers: &mut [DesignComponentOccurrence]) {
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 100)
+            .unwrap(),
+    );
+}
+
+#[test]
+fn an_object_snapshot_that_no_path_names_keeps_its_closing_matrix_in_a_stream_whose_paths_resolve()
+{
+    let (original, components) = fixture(1);
+    let paths = [leaf_path()];
+    let expected = project(&original, &components, &paths);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let projection = project(&carriers, &components, &paths);
+    for chain in [&[100][..], &[100, u32::try_from(SUB_MODULE).unwrap()]] {
+        let id = instance(&carriers, chain);
+        assert_close(world(&projection, &id), world(&expected, &id));
+    }
+    let leaf = instance(
+        &carriers,
+        &[
+            100,
+            u32::try_from(SUB_MODULE).unwrap(),
+            u32::try_from(LEAF).unwrap(),
+        ],
+    );
+    assert_close(
+        world(&projection, &leaf),
+        millimetres(pose(EYE, [0.5, 0.25, 2.0])),
+    );
+    assert!(!has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrenceObjectPreludeAssumed
+    ));
+}
+
+#[test]
+fn an_object_snapshot_stays_native_when_a_path_of_its_stream_is_not_read_or_not_applied() {
+    let (original, mut components) = fixture(1);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let module = instance(&carriers, &[100]);
+    let unplaced = |projection: &super::super::LocalComponentProjection| {
+        projection
+            .occurrences
+            .iter()
+            .all(|occurrence| occurrence.id != module)
+            && has(projection, F3dLossCode::LocalOccurrenceUnplaced)
+            && !has(projection, F3dLossCode::LocalOccurrenceObjectPreludeAssumed)
+    };
+    // A path record of the stream that no admitted form reads.
+    components.get_mut(STREAM).unwrap().unadmitted_paths = 1;
+    assert!(unplaced(&project(&carriers, &components, &[leaf_path()])));
+    components.get_mut(STREAM).unwrap().unadmitted_paths = 0;
+    // A path that names no expanded occurrence.
+    let mut stray = leaf_path();
+    stray.elements[0].record_index = 902;
+    assert!(unplaced(&project(&carriers, &components, &[stray])));
+    // A stream without any path record.
+    assert!(unplaced(&project(&carriers, &components, &[])));
+}
+
 #[test]
 fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose() {
     let (original, components) = fixture(1);

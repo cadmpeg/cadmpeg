@@ -403,10 +403,16 @@ struct PathPoseOutcome {
     /// Occurrences placed from the closing matrix of a marker-carrying object
     /// prelude without a component-path proof.
     marked_prelude_placements: usize,
+    /// Occurrences placed from the closing matrix of an unmarked object
+    /// prelude that no component-path carrier of a complete stream names.
+    object_prelude_placements: usize,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
     /// Expanded instances with an independently resolved world pose.
     applied_instances: BTreeSet<String>,
+    /// Carriers that a component-path record names as its target, whether or
+    /// not the record resolves.
+    path_targets: BTreeSet<String>,
 }
 
 /// One expanded local occurrence, for path resolution.
@@ -1171,6 +1177,9 @@ impl<'a> Projector<'a> {
                 self.path_poses.unresolved += 1;
                 continue;
             };
+            if let Some(carrier) = carriers.get(&(stream, *target)) {
+                self.path_poses.path_targets.insert(carrier.id.clone());
+            }
             let root_contained = carriers.get(&(stream, *target)).is_some_and(|carrier| {
                 self.stream_components(carrier)
                     .and_then(|(_, stream_components)| {
@@ -1396,17 +1405,41 @@ impl<'a> Projector<'a> {
         Ok(())
     }
 
+    /// Whether the closing matrix of `carrier` is its placement. The stream of
+    /// `carrier` stores component-path carriers, reads every one of them, and
+    /// each names one expanded occurrence, and none names `carrier` as its
+    /// target. A carrier that no such path poses has then no current pose that
+    /// differs from its closing matrix.
+    fn closing_matrix_assumed(&self, carrier: &DesignComponentOccurrence) -> bool {
+        self.path_poses.unresolved == 0
+            && self.path_poses.disagreeing == 0
+            && !self.path_poses.path_targets.contains(&carrier.id)
+            && self
+                .stream_components(carrier)
+                .is_some_and(|(stream, components)| {
+                    components.unadmitted_paths == 0
+                        && self
+                            .sources
+                            .paths
+                            .iter()
+                            .any(|path| crate::ids::native_stream(&path.id) == Some(stream))
+                })
+    }
+
     /// Keep object snapshots with unresolved body frames in their stored frame.
     fn reject_unproven_object_poses(&mut self) {
+        let unnamed = |key: &String, carrier: &DesignComponentOccurrence| {
+            carrier.needs_object_pose_proof()
+                && carrier.transform().is_some()
+                && !self.path_poses.applied_instances.contains(key)
+        };
         let mut rejected = self
             .occurrences
             .iter()
             .filter_map(|(key, (_, carrier))| {
                 carrier
                     .filter(|carrier| {
-                        carrier.needs_object_pose_proof()
-                            && carrier.transform().is_some()
-                            && !self.path_poses.applied_instances.contains(key)
+                        unnamed(key, carrier) && !self.closing_matrix_assumed(carrier)
                     })
                     .map(|_| key.clone())
             })
@@ -1437,6 +1470,14 @@ impl<'a> Projector<'a> {
                     && carrier.is_some_and(|carrier| {
                         carrier.has_marked_object_prelude() && carrier.transform().is_some()
                     })
+            })
+            .count();
+        self.path_poses.object_prelude_placements = self
+            .occurrences
+            .iter()
+            .filter(|(key, (_, carrier))| {
+                !rejected.contains(key.as_str())
+                    && carrier.is_some_and(|carrier| unnamed(key, carrier))
             })
             .count();
         for key in rejected {
@@ -1682,6 +1723,12 @@ impl<'a> Projector<'a> {
             losses.push(F3dLossCode::LocalOccurrenceMarkedPreludeAssumed.note(format!(
                 "{} local occurrence(s) are placed from the closing matrix of an object-prelude carrier with a source marker and no component-path proof; the reference frame of that matrix is assumed to be the component frame",
                 self.path_poses.marked_prelude_placements
+            )));
+        }
+        if self.path_poses.object_prelude_placements != 0 {
+            losses.push(F3dLossCode::LocalOccurrenceObjectPreludeAssumed.note(format!(
+                "{} local occurrence(s) are placed from the closing matrix of an object-prelude carrier that no component-path carrier names as its target; every component-path carrier of its Design stream names an expanded occurrence, and the reference frame of the closing matrix is assumed to be the component frame",
+                self.path_poses.object_prelude_placements
             )));
         }
         if self.path_poses.unresolved != 0 {
