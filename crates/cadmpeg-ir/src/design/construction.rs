@@ -111,9 +111,7 @@ pub struct Construction<K: ConstructionKind> {
     pub resolved_in: BTreeMap<ConfigurationId, K::Value>,
 }
 
-/// The wire form of [`Construction`]. Each construction nested in its
-/// inputs has passed the construction ceiling; reading admits this one
-/// level above the deepest of them.
+/// The wire form of [`Construction`].
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(

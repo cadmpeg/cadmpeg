@@ -131,9 +131,11 @@ fn f3z_archive_merges_identity_occurrences() {
     let report = crate::test_support::assert_written_with_loss(
         decoded.ir(),
         Some(decoded.source_fidelity()),
-        &crate::loss::F3dLossCode::SourceDialectDisplaced
-            .kind()
-            .to_string(),
+        &cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("f3d"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+        )
+        .to_string(),
         "f3d:f3z-multi-document",
     );
     assert!(report
@@ -163,7 +165,11 @@ fn f3z_archive_merges_identity_occurrences() {
         .expect("an explicit F3Z request writes the single-document row");
     assert!(
         report.losses.iter().any(|loss| {
-            loss.code == crate::loss::F3dLossCode::TargetRequestDisplaced.kind()
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("f3d"),
+                    cadmpeg_ir::codec::write::target::REQUEST_DISPLACED,
+                )
                 && loss.message.contains("f3d:manifest-3-2-0-0")
         }),
         "{:#?}",
