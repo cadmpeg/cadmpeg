@@ -618,8 +618,8 @@
       "exactness": {
         "f3d:brep:entity#6": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         }

@@ -240,6 +240,7 @@ fn push_info(findings: &mut Vec<Finding>, id: String, message: std::fmt::Argumen
     findings.push(Finding {
         related: Vec::new(),
         check: Check::NativeLinks,
+        rule: cadmpeg_ir::rule_name!("nx/deltas_source.retained-stream-admission"),
         severity: Severity::Info,
         message: format!("{id}: {message}"),
         entity: Some(id),
