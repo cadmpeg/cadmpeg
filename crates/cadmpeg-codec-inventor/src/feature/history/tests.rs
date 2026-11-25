@@ -294,6 +294,7 @@ fn projection_orders_history_and_marks_suppression() {
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("feature projection");
@@ -431,6 +432,7 @@ fn project_work_planes(
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("feature projection")
@@ -479,6 +481,7 @@ fn projection_writes_browser_work_planes_in_history_order() {
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("feature projection");

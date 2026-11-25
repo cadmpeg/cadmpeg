@@ -57,8 +57,10 @@ bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face
 sheet bodies. Exact solved carriers for procedural surfaces and curves are
 regenerated as neutral geometry and reported as `procedural_reduced`. It
 validates topology ownership, edge spans, radial incidence, and supported
-surface and pcurve geometry before output. Unsupported neutral or native
-content is explicitly refused. Edited source documents may report
+surface and pcurve geometry before output. Model content IGES has no place
+for (features, parameters, sketches, attributes, appearances, product
+structure, meshes, SubD) is left out and reported as `export:arena.omitted`.
+Unsupported geometry or native content is explicitly refused. Edited source documents may report
 `passthrough_record_omitted` losses for native direction, display, or
 occurrence-expansion records that are not regenerated. The bounded full-file
 gate is [`scripts/verify-iges-bounded.py`](../../scripts/verify-iges-bounded.py).

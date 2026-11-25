@@ -232,7 +232,56 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "AXIS"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D3",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D3"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "PROFILE"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "REVOLVE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -243,7 +292,32 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "curve": "iges:model:curve#D1",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D3",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D5"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [],

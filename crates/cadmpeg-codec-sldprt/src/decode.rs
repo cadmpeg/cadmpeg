@@ -3741,10 +3741,12 @@ fn build_geometry_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -3762,6 +3764,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
@@ -4516,8 +4519,7 @@ fn build_geometry_ir(
         annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
     }
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(id.as_str(), "body", Exactness::Derived)?;
-        annotation_builder.field_exactness(id.as_str(), "faces", Exactness::Derived)?;
+        annotation_builder.field_exactness(id.as_str(), "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -5276,10 +5278,12 @@ fn build_metadata_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -5297,6 +5301,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;

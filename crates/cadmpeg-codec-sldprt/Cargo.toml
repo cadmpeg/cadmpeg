@@ -39,9 +39,6 @@ cadmpeg-test-support = { workspace = true }
 cadmpeg-parasolid = { workspace = true, features = ["test-support"] }
 # Measured round-trip assertions on written documents.
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
-# Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
-# the normal library build.
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [lints]
 workspace = true

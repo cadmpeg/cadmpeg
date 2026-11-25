@@ -567,6 +567,7 @@ pub(crate) fn project_inventory_fixture(
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("native feature projection")

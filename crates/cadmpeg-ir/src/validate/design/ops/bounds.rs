@@ -59,7 +59,11 @@ impl<'a> Site<'a> {
     ) {
         let literal = Values::new(None);
         if let Some(message) = breach(&literal) {
-            error(findings, self.entity, format_args!("{message}"));
+            error(
+                findings,
+                self.entity,
+                crate::rule!("design.bounded-value", "{message}"),
+            );
             return;
         }
         if !literal.bound.get() {
@@ -79,7 +83,7 @@ impl<'a> Site<'a> {
                 warning(
                     findings,
                     self.entity,
-                    format_args!(
+                    crate::rule!("design.cached-values-parameters-dimensions-bind", 
                         "{message}, in {at}, by the cached values of the parameters its dimensions bind"
                     ),
                 );

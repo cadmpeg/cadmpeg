@@ -953,6 +953,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 
@@ -986,6 +987,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
         definition: ProceduralCurveDefinition::Helix(crate::geometry::helix::HelixCurveConstruction::try_new([0.0, std::f64::consts::TAU], crate::geometry::helix::HelixFrame { center: Point3::new(0.0, 0.0, 0.0), major: Vector3::new(1.0, 0.0, 0.0), minor: Vector3::new(0.0, 1.0, 0.0), pitch: Vector3::new(0.0, 0.0, 1.0), axis: Vector3::new(0.0, 0.0, 1.0) }, 0.0, None).unwrap()),
         cache_fit_tolerance: None,
     });
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 

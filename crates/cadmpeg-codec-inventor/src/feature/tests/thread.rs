@@ -275,6 +275,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )?;
     assert_eq!(projection.unresolved_features, 0);
