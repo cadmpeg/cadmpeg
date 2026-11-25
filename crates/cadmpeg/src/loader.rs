@@ -7,7 +7,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context};
 use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, DecodeSidecar, ReadFailure, ReadOptions};
+use cadmpeg_ir::{CadIr, CadirRead, DecodeSidecar, ReadFailure, ReadOptions};
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection, DETECTION_PREFIX_LEN,
@@ -164,19 +164,36 @@ fn load(
         .into(),
     })?;
     let input_bytes = cadmpeg_core::decode::u64_from_index(prefix.len());
-    let document = match artifact_store::load_matching_sidecar(path, &prefix, max_bytes)? {
-        SidecarLoad::Absent => LoadedDocument::neutral(read.document, input_bytes),
-        SidecarLoad::Stale(loss) => {
-            LoadedDocument::neutral(read.document, input_bytes).with_stale_sidecar(loss)
-        }
-        SidecarLoad::Matching(sidecar) => {
-            let DecodeSidecar {
-                report, fidelity, ..
-            } = *sidecar;
-            LoadedDocument::restored(read.document, report, fidelity, input_bytes)
-        }
-    };
-    Ok(document.with_read_report(read.report))
+    Ok(
+        match artifact_store::load_matching_sidecar(path, &prefix, max_bytes)? {
+            SidecarLoad::Absent => LoadedDocument::read(read, input_bytes),
+            SidecarLoad::Stale(loss) => {
+                LoadedDocument::read(read, input_bytes).with_stale_sidecar(loss)
+            }
+            SidecarLoad::Matching(sidecar) => {
+                let DecodeSidecar {
+                    report,
+                    mut fidelity,
+                    ..
+                } = *sidecar;
+                let CadirRead {
+                    document,
+                    report: read_report,
+                    fidelity: read,
+                } = read;
+                let (_, retained) = read.into_parts();
+                for (id, record) in retained {
+                    if fidelity.retained_record(id.as_str()).is_none() {
+                        fidelity
+                            .insert_retained_record(id, record)
+                            .map_err(|error| anyhow!("{}: {error}", path.display()))?;
+                    }
+                }
+                LoadedDocument::restored(document, report, fidelity, input_bytes)
+                    .with_read_report(read_report)
+            }
+        },
+    )
 }
 
 /// Whether the file name has the decode-sidecar suffix that `dump` writes

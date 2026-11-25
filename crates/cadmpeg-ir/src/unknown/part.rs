@@ -228,6 +228,50 @@ pub struct GivenUpPart {
     stub: NativeUnknownRecord,
     retained: RetainedSourceRecord,
     loss: LossNote,
+    /// The loss message before the records the give-up drops.
+    head: String,
+    tail: Option<Tail>,
+}
+
+/// The records a give-up drops and marks and the entries it loses, which
+/// its loss names after the head.
+#[derive(Debug, Clone, Default)]
+struct Tail {
+    dropped: Vec<String>,
+    marked: Option<Vec<String>>,
+    /// The outcome of each stored state that the release changed.
+    stated: Vec<String>,
+    lost: Vec<String>,
+}
+
+/// The loss message of a part: `head`, then the lists of `tail`.
+fn message(head: &str, tail: Option<&Tail>) -> String {
+    let Some(tail) = tail else {
+        return head.to_owned();
+    };
+    let mut message = format!("{head}; dropped=[{}]", tail.dropped.join(", "));
+    if let Some(marked) = &tail.marked {
+        message.push_str("; marked=[");
+        message.push_str(&marked.join(", "));
+        message.push(']');
+    }
+    for stated in &tail.stated {
+        message.push_str("; ");
+        message.push_str(stated);
+    }
+    if !tail.lost.is_empty() {
+        message.push_str("; lost=[");
+        message.push_str(&tail.lost.join(", "));
+        message.push(']');
+    }
+    message
+}
+
+/// Puts the ids of `more` into the sorted set `ids`.
+fn join_sorted(ids: &mut Vec<String>, more: impl IntoIterator<Item = String>) {
+    ids.extend(more);
+    ids.sort_unstable();
+    ids.dedup();
 }
 
 impl GivenUpPart {
@@ -279,6 +323,8 @@ impl GivenUpPart {
                 links: Vec::new(),
             },
             retained,
+            head: loss.message.clone(),
+            tail: None,
             loss,
         })
     }
@@ -368,6 +414,8 @@ impl GivenUpPart {
             mut stub,
             retained,
             mut loss,
+            mut head,
+            tail,
         } = self;
         let nested = match &stream {
             Some(inner) => {
@@ -381,17 +429,20 @@ impl GivenUpPart {
         address.extend_from_slice(container.as_str().as_bytes());
         address.extend_from_slice(&part_address(kind, stream.as_ref(), offset));
         let id = part_id(codec, &address)?;
-        restate_loss(&mut loss, stub.id.as_str(), id.as_str());
+        if loss.code == record_unreadable_kind() {
+            restate_record(&mut head, stub.id.as_str(), id.as_str());
+        }
         let old_field = format!(
             " stream={:?} offset=",
             stream.as_ref().map_or("", StreamName::as_str)
         );
-        if let Some(at) = loss.message.find(&old_field) {
-            loss.message.replace_range(
+        if let Some(at) = head.find(&old_field) {
+            head.replace_range(
                 at..at + old_field.len(),
                 &format!(" stream={:?} offset=", nested.as_str()),
             );
         }
+        loss.message = message(&head, tail.as_ref());
         ctx.retain_bytes(
             u64_from_index(loss.message.len()),
             "nested given-up part loss",
@@ -408,6 +459,8 @@ impl GivenUpPart {
             stub,
             retained: retained.with_owner(nested),
             loss,
+            head,
+            tail,
         })
     }
 
@@ -416,6 +469,31 @@ impl GivenUpPart {
     #[must_use]
     pub fn loss(&self) -> LossNote {
         self.loss.clone()
+    }
+
+    /// Names in the loss the records that a release drops and marks because
+    /// they need the part's record, and the `stated` outcome of each stored
+    /// state it changed, for a decoder that releases them after it gave the
+    /// part up (§3.3).
+    ///
+    /// # Errors
+    ///
+    /// A resource refusal for the restated loss text.
+    pub(crate) fn name_released(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        dropped: impl IntoIterator<Item = String>,
+        marked: impl IntoIterator<Item = String>,
+        stated: impl IntoIterator<Item = String>,
+    ) -> Result<(), CodecError> {
+        let tail = self.tail.get_or_insert_with(Tail::default);
+        join_sorted(&mut tail.dropped, dropped);
+        join_sorted(tail.marked.get_or_insert_with(Vec::new), marked);
+        tail.stated.extend(stated);
+        let restated = message(&self.head, Some(tail));
+        ctx.retain_bytes(u64_from_index(restated.len()), "given-up part loss")?;
+        self.loss.message = restated;
+        Ok(())
     }
 
     /// Links the stub to the innermost record that contains the part, for a
@@ -480,15 +558,17 @@ impl GivenUpPart {
 /// from `from` to `to`, as when a decoder composing several documents
 /// rescopes one document's records. Returns whether `loss` names `from`.
 pub fn restate_loss(loss: &mut LossNote, from: &str, to: &str) -> bool {
-    if loss.code != record_unreadable_kind() {
-        return false;
-    }
+    loss.code == record_unreadable_kind() && restate_record(&mut loss.message, from, to)
+}
+
+/// Restates the `record=` field of the loss text `text` from `from` to
+/// `to`. Returns whether `text` names `from`.
+fn restate_record(text: &mut String, from: &str, to: &str) -> bool {
     let field = format!(" record={from}: ");
-    let Some(at) = loss.message.find(&field) else {
+    let Some(at) = text.find(&field) else {
         return false;
     };
-    loss.message
-        .replace_range(at..at + field.len(), &format!(" record={to}: "));
+    text.replace_range(at..at + field.len(), &format!(" record={to}: "));
     true
 }
 
@@ -571,10 +651,12 @@ impl DecodeParts for DecodeContext<'_> {
         let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?
             .with_untyped(part.holds.iter().copied());
         let sorted = |records: &[Identity]| {
-            let mut ids: Vec<&str> = records.iter().map(Identity::as_str).collect();
-            ids.sort_unstable();
-            ids.dedup();
-            ids.join(", ")
+            let mut ids = Vec::new();
+            join_sorted(
+                &mut ids,
+                records.iter().map(|record| record.as_str().to_owned()),
+            );
+            ids
         };
         let stream = part.stream.as_ref().map_or("", StreamName::as_str);
         let name = part
@@ -587,18 +669,18 @@ impl DecodeParts for DecodeContext<'_> {
             .as_ref()
             .map(|consequence| format!("; {consequence}"))
             .unwrap_or_default();
-        let lost = if part.lost.is_empty() {
-            String::new()
-        } else {
-            format!("; lost=[{}]", part.lost.join(", "))
-        };
-        let message = format!(
-            "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}{consequence}; dropped=[{}]; marked=[{}]{lost}",
+        let head = format!(
+            "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}{consequence}",
             part.kind,
             part.offset(),
-            sorted(&part.dropped),
-            sorted(&part.marked)
         );
+        let tail = Tail {
+            dropped: sorted(&part.dropped),
+            marked: Some(sorted(&part.marked)),
+            stated: Vec::new(),
+            lost: part.lost.clone(),
+        };
+        let message = message(&head, Some(&tail));
         self.retain_bytes(u64_from_index(message.len()), "given-up part loss")?;
         let provenance = match part.stream.clone() {
             Some(stream) => SourceProvenance::in_stream(part.codec, stream, part.offset()),
@@ -620,6 +702,8 @@ impl DecodeParts for DecodeContext<'_> {
             },
             retained,
             loss,
+            head,
+            tail: Some(tail),
         })
     }
 }

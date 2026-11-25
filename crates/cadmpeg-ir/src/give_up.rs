@@ -140,12 +140,8 @@ impl Released {
 
     /// The `dropped=[..]; marked=[..]` tail of the loss, `prefix` naming the
     /// records dropped before the cascade, such as the given-up id itself,
-    /// with one `delta of <state>: dropped=[..]; marked=[..]` for the delta
-    /// of each stored state that changed.
+    /// followed by the [`Self::stated`] entries.
     pub(crate) fn tail(&self, prefix: &[&str]) -> String {
-        fn list<'a>(ids: impl IntoIterator<Item = &'a str>) -> String {
-            ids.into_iter().collect::<Vec<_>>().join(", ")
-        }
         let dropped: BTreeSet<&str> = prefix
             .iter()
             .copied()
@@ -155,6 +151,15 @@ impl Released {
             format!("dropped=[{}]", list(dropped)),
             format!("marked=[{}]", list(self.marked.iter().map(String::as_str))),
         ];
+        parts.extend(self.stated());
+        parts.join("; ")
+    }
+
+    /// One `delta of <state>: dropped=[..]; marked=[..]` entry for the delta
+    /// of each stored state that changed, and one entry for each state
+    /// dropped because its delta cannot state what leaves it.
+    pub(crate) fn stated(&self) -> Vec<String> {
+        let mut parts = Vec::new();
         for (path, state) in &self.states {
             parts.push(format!(
                 "delta of {path}: dropped=[{}]; marked=[{}]",
@@ -168,8 +173,13 @@ impl Released {
                 list(occurrences.iter().map(String::as_str))
             ));
         }
-        parts.join("; ")
+        parts
     }
+}
+
+/// The ids of `ids`, separated by commas.
+fn list<'a>(ids: impl IntoIterator<Item = &'a str>) -> String {
+    ids.into_iter().collect::<Vec<_>>().join(", ")
 }
 
 /// One record that names an id the document no longer holds, with each path
@@ -321,12 +331,12 @@ impl References {
     }
 }
 
-/// The canonical JSON text of the copies of one record: the record's own
-/// where there is one copy, and the array of the copies otherwise. A value
-/// with no canonical JSON keeps its plain JSON text.
+/// The compact canonical JSON text of the copies of one record: the
+/// record's own where there is one copy, and the array of the copies
+/// otherwise. A value with no canonical JSON keeps its plain JSON text.
 pub(crate) fn record_text<T: Serialize>(copies: &[T]) -> String {
     fn text<U: Serialize + ?Sized>(value: &U) -> String {
-        crate::hash::finite_json::to_canonical_json_string(value).unwrap_or_else(|_| {
+        crate::hash::finite_json::to_compact_canonical_json_string(value).unwrap_or_else(|_| {
             crate::hash::finite_json::to_json_value(value)
                 .map(|value| value.to_string())
                 .unwrap_or_default()
@@ -469,6 +479,26 @@ impl Cascade {
             unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
         })
     }
+
+    /// The state of a batch of releases of `lost`, ids that no record of
+    /// `ir` may hold, so that the walk of the references finds the records
+    /// that name them.
+    fn naming(
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        lost: &[String],
+    ) -> Result<Self, CodecError> {
+        ir.finalize();
+        let mut named = References::default();
+        for id in lost {
+            named.name(id);
+        }
+        Ok(Self {
+            references: ir.references_from(named),
+            lazy: Lazy::default(),
+            unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
+        })
+    }
 }
 
 /// Removes every copy of `seed` and releases it, then drops each carrier
@@ -511,23 +541,80 @@ fn remove(
         }
     );
     if geometric || !released.dropped.is_empty() || !released.states.is_empty() {
-        loop {
-            let orphans = orphans(ctx, ir, unreached)?;
-            if orphans.is_empty() {
-                break;
-            }
-            release(
-                ctx,
-                ir,
-                references,
-                lazy,
-                BTreeSet::new(),
-                orphans,
-                &mut released,
-            )?;
-        }
+        drop_orphans(ctx, ir, references, lazy, unreached, &mut released)?;
     }
     Ok(Some(released))
+}
+
+/// Releases each id of `ids`, records a read gave up before they reached
+/// `ir`, as [`remove`] releases a removed seed: drops each record that needs
+/// one, transitively, marks each record that holds one, and drops each
+/// carrier left with no user (§3.3). An id a record of `ir` holds names that
+/// record, so nothing needs the given-up one, and it releases nothing.
+///
+/// # Errors
+///
+/// A resource refusal for a rewritten `unknowns` arena or for the walk of
+/// the carriers.
+pub(crate) fn release_lost(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    ids: &[String],
+) -> Result<Vec<(String, Released)>, CodecError> {
+    let mut cascade = Cascade::naming(ctx, ir, ids)?;
+    let Cascade {
+        references,
+        lazy,
+        unreached,
+    } = &mut cascade;
+    let mut released_ids = Vec::new();
+    for id in ids {
+        if references.holds(id) {
+            continue;
+        }
+        let mut released = Released::new(id.clone());
+        release(
+            ctx,
+            ir,
+            references,
+            lazy,
+            BTreeSet::from([id.clone()]),
+            Vec::new(),
+            &mut released,
+        )?;
+        if !released.dropped.is_empty() || !released.states.is_empty() {
+            drop_orphans(ctx, ir, references, lazy, unreached, &mut released)?;
+        }
+        released_ids.push((id.clone(), released));
+    }
+    Ok(released_ids)
+}
+
+/// Drops each carrier that the releases so far left with no user, until
+/// none is left, recording each in `released`.
+fn drop_orphans(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    references: &mut References,
+    lazy: &Lazy,
+    unreached: &BTreeSet<String>,
+    released: &mut Released,
+) -> Result<(), CodecError> {
+    loop {
+        let orphans = orphans(ctx, ir, unreached)?;
+        if orphans.is_empty() {
+            return Ok(());
+        }
+        release(
+            ctx,
+            ir,
+            references,
+            lazy,
+            BTreeSet::new(),
+            orphans,
+            released,
+        )?;
+    }
 }
 
 /// Each surface, curve, pcurve, and point carrier of `ir` that no record

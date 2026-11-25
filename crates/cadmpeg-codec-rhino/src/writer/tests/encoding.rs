@@ -38,7 +38,7 @@ fn angular_tolerance_above_pi_is_written_as_the_default_and_named() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("document angular tolerance")),
         "{losses:?}"
     );
@@ -90,7 +90,7 @@ fn name_with_null_character_is_written_up_to_it_and_named() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable") && loss.contains(&body)),
+            .any(|loss| loss.starts_with("rhino/writer.attributes-omitted") && loss.contains(&body)),
         "{losses:?}"
     );
 }
