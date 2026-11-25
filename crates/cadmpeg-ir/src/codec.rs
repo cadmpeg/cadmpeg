@@ -276,6 +276,9 @@ impl DecodeResult {
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.give_up_repeated_ids();
+        if !ctx.container_only() {
+            result.widen_vertex_tolerances(ctx.policy())?;
+        }
         result.record_content_digest(ctx.policy())?;
         result.record_omitted_arenas_baseline(ctx.policy());
         if result.report().format() != format.as_str() {
@@ -416,6 +419,20 @@ impl DecodeResult {
                     repeated.id, repeated.copies, repeated.arena, repeated.id
                 )));
         }
+    }
+
+    /// States the tolerance of each vertex the source stores farther from a
+    /// curve end part 10 compares it with than the coincidence allowance
+    /// there, and charges `geometry.vertex-tolerance-widened` (§2.3).
+    fn widen_vertex_tolerances(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
+        if let Some(widened) =
+            vertex_tolerance::widen(&mut self.ir, &mut self.source_fidelity.annotations, policy)?
+        {
+            self.report
+                .losses
+                .push(DecodeLossCode::VertexToleranceWidened.note(widened.message()));
+        }
+        Ok(())
     }
 
     /// Records the SHA-256 of the canonical JSON of the document the decode
@@ -814,6 +831,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
 }
 
 mod loss;
+mod vertex_tolerance;
 pub mod write;
 
 #[cfg(test)]

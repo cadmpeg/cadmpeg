@@ -5,8 +5,9 @@
 //! content classes the requested depth names with the classes the document
 //! holds, for a class a decoder states the source holds beyond the delivered
 //! depth, for the records its normalizer gave up, for an id a decoder
-//! emitted twice with different content, and for a document it took no
-//! content digest of, so every codec reports them under one namespace.
+//! emitted twice with different content, for a document it took no
+//! content digest of, and for the vertex tolerances it widened, so every
+//! codec reports them under one namespace.
 
 use cadmpeg_core::decode::ArenaClass;
 
@@ -36,6 +37,9 @@ pub(crate) enum DecodeLossCode {
     /// The document has no canonical JSON, so the wrapper took no content
     /// digest of it.
     ContentDigestUnavailable,
+    /// The wrapper stated the tolerance of vertices the source stores
+    /// farther from a compared curve end than the coincidence allowance.
+    VertexToleranceWidened,
 }
 
 impl DecodeLossCode {
@@ -46,6 +50,7 @@ impl DecodeLossCode {
             Self::IdRepeated => "id.repeated",
             Self::NormalizeIncomplete => "normalize.incomplete",
             Self::ContentDigestUnavailable => "content-digest.unavailable",
+            Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
         }
     }
 
@@ -54,6 +59,7 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => Severity::Error,
             Self::IdRepeated => Severity::Error,
             Self::NormalizeIncomplete | Self::ContentDigestUnavailable => Severity::Warning,
+            Self::VertexToleranceWidened => Severity::Info,
         }
     }
 
@@ -66,20 +72,24 @@ impl DecodeLossCode {
             Self::DepthNotDelivered {
                 class: ArenaClass::Design | ArenaClass::Process,
             } => LossTaxonomy::ParametricRecordOmitted,
-            Self::IdRepeated | Self::NormalizeIncomplete | Self::ContentDigestUnavailable => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::IdRepeated
+            | Self::NormalizeIncomplete
+            | Self::ContentDigestUnavailable
+            | Self::VertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
     /// A shallower delivery refuses a strict decode. A record the
     /// normalizer gave up keeps all its content in a spelling the decoder
-    /// stated, so it refuses nothing; a repeated id and a missing content
-    /// digest refuse nothing either.
+    /// stated, so it refuses nothing; a repeated id, a missing content
+    /// digest, and a widened tolerance refuse nothing either.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::DepthNotDelivered { .. } => Some(Severity::Warning),
-            Self::IdRepeated | Self::NormalizeIncomplete | Self::ContentDigestUnavailable => None,
+            Self::IdRepeated
+            | Self::NormalizeIncomplete
+            | Self::ContentDigestUnavailable
+            | Self::VertexToleranceWidened => None,
         }
     }
 
