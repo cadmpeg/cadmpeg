@@ -169,10 +169,11 @@ fn state(
 }
 
 /// The states of a single chain, whose changes are given head first, in
-/// stored order (asm.md §3.2): the records stand in node-index order, and
-/// the node indices alternate between the two ends of the chain, the head
-/// `0`, the tail `1`, the head's next state `2`, the tail's previous state
-/// `3`, and so on.
+/// the order Fusion stores them (f3d.md §3.1, "History chain"): the records
+/// stand in node-index order, and the node indices alternate between the
+/// two ends of the chain, the head `0`, the tail `1`, the head's next state
+/// `2`, the tail's previous state `3`, and so on. The state identities
+/// decrease from the head to `2` at the tail.
 fn chain_of(changes: &[&[EntityChange]]) -> Vec<DeltaStateView<'static>> {
     let last = changes.len() - 1;
     let node = |at: usize| {
@@ -186,8 +187,9 @@ fn chain_of(changes: &[&[EntityChange]]) -> Vec<DeltaStateView<'static>> {
     let mut states = changes
         .iter()
         .enumerate()
-        .map(|(at, &c)| {
-            state(
+        .map(|(at, &c)| DeltaStateView {
+            state_id: i64::try_from(2 + last - at).unwrap(),
+            ..state(
                 node(at),
                 (at > 0).then(|| node(at - 1)),
                 (at < last).then(|| node(at + 1)),
@@ -237,12 +239,17 @@ fn walk_follows_the_links_of_a_stored_chain_from_the_head_to_the_tail() {
     assert_eq!(
         states
             .iter()
-            .map(|state| (state.node_index, state.previous_ref, state.next_ref))
+            .map(|state| (
+                state.state_id,
+                state.node_index,
+                state.previous_ref,
+                state.next_ref
+            ))
             .collect::<Vec<_>>(),
         [
-            (0, None, Some(2)),
-            (1, Some(2), None),
-            (2, Some(0), Some(1))
+            (4, 0, None, Some(2)),
+            (2, 1, Some(2), None),
+            (3, 2, Some(0), Some(1))
         ]
     );
     let (closed, seen) = walk_states(&states, 4, &[]);

@@ -28,6 +28,7 @@ mod references;
 pub(super) fn validate(
     ctx: &DecodeContext<'_>,
     ids: &ModelIndex<'_>,
+    file_keys: &std::collections::BTreeSet<&str>,
     owner: &Feature,
     axis: &DatumAxis,
     linear_tolerance: f64,
@@ -56,6 +57,7 @@ pub(super) fn validate(
     let mut walk = Walk {
         ctx,
         ids,
+        file_keys,
         owner,
         linear_tolerance,
         findings,
@@ -76,6 +78,8 @@ fn error(findings: &mut Vec<Finding>, owner: &Feature, message: Ruled<'_>) {
 struct Walk<'a, 'b, 'ir> {
     ctx: &'a DecodeContext<'b>,
     ids: &'a ModelIndex<'ir>,
+    /// The keys of the document's component files (§2.2).
+    file_keys: &'a std::collections::BTreeSet<&'a str>,
     owner: &'a Feature,
     linear_tolerance: f64,
     findings: &'a mut Vec<Finding>,
@@ -690,7 +694,7 @@ impl Walk<'_, '_, '_> {
             if let Some(body) = &witness.body {
                 body.visit_identity_references(self.ctx, &mut |_| Ok(()))?;
                 let mut nested = Vec::new();
-                super::nested::check(self.ctx, body.as_ref().clone(), &mut nested)?;
+                super::nested::check(self.ctx, body.as_ref().clone(), self.file_keys, &mut nested)?;
                 for mut finding in nested {
                     if let Some(entity) = finding.entity.replace(self.owner.id.as_str().to_owned())
                     {

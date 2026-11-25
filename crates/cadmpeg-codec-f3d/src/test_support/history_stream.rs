@@ -33,17 +33,21 @@ impl EntityChange {
     }
 }
 
+/// The partition writes the node index of its state as its owner
+/// reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BulletinBoard {
-    pub(crate) owner: i64,
     pub(crate) number: i64,
     pub(crate) changes: Vec<EntityChange>,
 }
 
 /// A history partition in chain order: `states[0]` is the head, the current
 /// model, and the last state is the tail, the initial model. The stream
-/// stores the states in node-index order, and the node indices alternate
-/// between the two ends of the chain (asm.md §3.2).
+/// stores the states as Fusion does (f3d.md §3.1, "History chain"): in
+/// node-index order, with node indices that alternate between the two ends
+/// of the chain, state identities that decrease from the head to `2` at the
+/// tail, and the node index of each state as the owner reference of its
+/// boards. Unlike a Fusion root state, the tail can hold boards.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct HistoryPartition {
     pub(crate) states: Vec<Vec<BulletinBoard>>,
@@ -69,8 +73,9 @@ impl HistoryPartition {
                 2 * (last - at) + 1
             }
         };
-        // The head state's id equals the preamble stream size.
-        let state_id = |at: i64| count - at;
+        // The tail state's id is `2`, and the head state's id equals the
+        // preamble stream size.
+        let state_id = |at: i64| count + 1 - at;
         for part in ["Begin", "of", "ASM", "History"] {
             t_subident(smbh, part);
         }
@@ -98,7 +103,7 @@ impl HistoryPartition {
             smbh.push(0x0b);
             for board in boards {
                 t_long(smbh, 1);
-                t_ref(smbh, board.owner);
+                t_ref(smbh, node_of(at));
                 t_long(smbh, board.number);
                 for change in &board.changes {
                     t_long(smbh, 1);
@@ -286,11 +291,7 @@ impl DesignScale {
                 tool_revisions = Some(base..base + body_records(1));
             }
             if !changes.is_empty() {
-                boards.push(BulletinBoard {
-                    owner: 0,
-                    number: 2,
-                    changes,
-                });
+                boards.push(BulletinBoard { number: 2, changes });
             }
             let mut inserted = (0..self.bodies)
                 .filter(|&body| self.insertion_state(body) == state)
@@ -306,7 +307,6 @@ impl DesignScale {
                 }
             }
             boards.push(BulletinBoard {
-                owner: 0,
                 number: 1,
                 changes: inserted,
             });

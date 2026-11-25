@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::without_faces_and_bodies;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::ShellMember;
 use cadmpeg_ir::CadIr;
@@ -64,8 +65,9 @@ pub(super) fn ends_the_write(error: &CodecError) -> bool {
 
 /// Synthesizes `ir`, with each open shell that `version` does not define
 /// written as unjoined trimmed surfaces. Each time the write fails, drops the
-/// faces, else the bodies, that use a record the failure names and synthesizes
-/// again; when the failure names none, writes the empty file.
+/// faces, else the bodies, that use a record the failure names, else the
+/// curves it names that no face or body uses, and synthesizes again; when the
+/// failure names none, writes the empty file.
 pub(super) fn synthesize_dropping(
     ir: &CadIr,
     version: crate::IgesVersion,
@@ -90,7 +92,12 @@ pub(super) fn synthesize_dropping(
         };
         let culprits = Culprits::named(&Uses::new(&document), &unwritten.records);
         if culprits.faces.is_empty() && culprits.bodies.is_empty() {
-            return empty_file(&document, version, &unwritten.error, dropped);
+            let Some((smaller, mut notes)) = without_free_curves(&document, &unwritten) else {
+                return empty_file(&document, version, &unwritten.error, dropped);
+            };
+            dropped.append(&mut notes);
+            document = Cow::Owned(smaller);
+            continue;
         }
         let smaller = without_faces_and_bodies(
             &document,
@@ -105,6 +112,38 @@ pub(super) fn synthesize_dropping(
         dropped.extend(culprits.losses(&unwritten.error));
         document = Cow::Owned(smaller);
     }
+}
+
+/// `ir` without the curves that `unwritten` names, which no face or body
+/// uses, and without the constructions that define them, with a loss for each
+/// curve; `None` where `unwritten` names no curve.
+fn without_free_curves(ir: &CadIr, unwritten: &Unwritten) -> Option<(CadIr, Vec<LossNote>)> {
+    let named =
+        |curve: &&cadmpeg_ir::geometry::Curve| unwritten.records.contains(curve.id.as_str());
+    let curves = ir.geometry.curves.iter().filter(named).collect::<Vec<_>>();
+    if curves.is_empty() {
+        return None;
+    }
+    let constructions = curves
+        .iter()
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .collect::<BTreeSet<_>>();
+    let notes = curves
+        .iter()
+        .map(|curve| {
+            IgesLossCode::WriterFreeGeometryOmitted.note(format!(
+                "free record {} was not written: {}",
+                curve.id, unwritten.error
+            ))
+        })
+        .collect();
+    let mut smaller = ir.clone();
+    smaller.geometry.curves.retain(|curve| !named(&curve));
+    smaller
+        .geometry
+        .procedural_curves
+        .retain(|construction| !constructions.contains(&construction.id));
+    Some((smaller, notes))
 }
 
 /// The last step: every body goes, with each record that no body uses, and
@@ -200,8 +239,20 @@ impl Culprits {
     }
 }
 
+/// The faces of `ir` that use the record `id`.
+pub(super) fn face_users(ir: &CadIr, id: &str) -> BTreeSet<String> {
+    Uses::new(ir)
+        .faces
+        .get(id)
+        .into_iter()
+        .flatten()
+        .map(|face| (*face).to_owned())
+        .collect()
+}
+
 /// For each record id, the faces and the bodies that use it. A body uses the
-/// records of the faces in its shells.
+/// records of the faces in its shells, and a composite curve uses its
+/// segments.
 struct Uses<'ir> {
     faces: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
     bodies: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
@@ -230,12 +281,34 @@ impl<'ir> Uses<'ir> {
             .iter()
             .map(|vertex| (vertex.id.as_str(), vertex))
             .collect::<BTreeMap<_, _>>();
+        let curves = geometry
+            .curves
+            .iter()
+            .map(|curve| (curve.id.as_str(), curve))
+            .collect::<BTreeMap<_, _>>();
+        let curve_records = |id: &'ir str, records: &mut Vec<&'ir str>| {
+            let mut pending = vec![id];
+            let mut seen = BTreeSet::new();
+            while let Some(id) = pending.pop() {
+                if !seen.insert(id) {
+                    continue;
+                }
+                records.push(id);
+                if let Some(SolvedCurveGeometry::Composite { segments, .. }) =
+                    curves.get(id).and_then(|curve| curve.geometry.solved())
+                {
+                    pending.extend(segments.iter().map(|segment| segment.curve.as_str()));
+                }
+            }
+        };
         let edge_records = |id: &'ir str, records: &mut Vec<&'ir str>| {
             records.push(id);
             let Some(edge) = edges.get(id).copied() else {
                 return;
             };
-            records.extend(edge.curve().map(cadmpeg_ir::ids::CurveId::as_str));
+            if let Some(curve) = edge.curve() {
+                curve_records(curve.as_str(), records);
+            }
             for vertex in edge.vertices() {
                 records.push(vertex.as_str());
                 records.extend(
@@ -276,7 +349,9 @@ impl<'ir> Uses<'ir> {
                         continue;
                     };
                     records.extend(coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()));
-                    records.extend(coedge.use_curve.iter().map(|use_| use_.curve.as_str()));
+                    if let Some(use_curve) = &coedge.use_curve {
+                        curve_records(use_curve.curve.as_str(), &mut records);
+                    }
                     edge_records(coedge.edge.as_str(), &mut records);
                 }
             }

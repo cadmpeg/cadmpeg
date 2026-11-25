@@ -4,8 +4,12 @@
 //! are no line segments.
 
 use crate::design::evaluation::EvaluationStatus;
-use crate::design::ops::sketch::{EntityDefinition, EntityForm, Planar, PlanarCurve, SketchEntity};
+use crate::design::ops::sketch::{
+    EntityDefinition, EntityForm, Planar, PlanarCurve, SketchEntity, SpatialCurve,
+};
 use crate::design::selection::{MemberOrder, PickTarget, Selection};
+use crate::features::geometry::FinitePoint3;
+use crate::geometry::InlineCurve;
 use crate::math::portable::Portable;
 use crate::math::Point3;
 use crate::units::FinitePoint2;
@@ -120,26 +124,71 @@ pub(super) fn shape<'a, O: MemberOrder>(
     Some(link(&points, &curves, tolerance).shape)
 }
 
+/// Whether points lie on one line, within `tolerance` of the line through
+/// the first point and the point farthest from it. `None` where the points
+/// lie within `tolerance` of one point.
+fn collinear(points: &[Point3], tolerance: f64) -> Option<bool> {
+    let (&first, rest) = points.split_first()?;
+    let far = rest
+        .iter()
+        .copied()
+        .max_by(|a, b| first.distance(*a).total_cmp(&first.distance(*b)))?;
+    if first.distance(far) <= tolerance {
+        return None;
+    }
+    let direction = far.vector_from(first).unit()?;
+    Some(
+        points
+            .iter()
+            .all(|point| point.vector_from(first).cross(direction).norm() <= tolerance),
+    )
+}
+
+/// Whether a sketch curve is straight: a NURBS curve where its control
+/// points are collinear within `tolerance`, and a spatial piece by its
+/// carrier. `None` where it is not read.
+fn straight(curve: &PlanarCurve, tolerance: f64) -> Option<bool> {
+    match curve {
+        PlanarCurve::Line { .. } | PlanarCurve::InfiniteLine { .. } => Some(true),
+        PlanarCurve::Arc { .. }
+        | PlanarCurve::Circle { .. }
+        | PlanarCurve::Ellipse { .. }
+        | PlanarCurve::Parabola { .. }
+        | PlanarCurve::Hyperbola { .. } => Some(false),
+        PlanarCurve::Nurbs(nurbs) => {
+            let points: Vec<Point3> = nurbs.control_points().into_iter().map(at).collect();
+            collinear(&points, tolerance)
+        }
+        PlanarCurve::Spatial(SpatialCurve::Bounded(piece)) => match &piece.carrier {
+            InlineCurve::Line(_) => Some(true),
+            InlineCurve::Circle(_)
+            | InlineCurve::Ellipse(_)
+            | InlineCurve::Parabola(_)
+            | InlineCurve::Hyperbola(_) => Some(false),
+            InlineCurve::Nurbs(nurbs) => {
+                let points: Vec<Point3> = nurbs
+                    .control_points()
+                    .into_iter()
+                    .map(FinitePoint3::get)
+                    .collect();
+                collinear(&points, tolerance)
+            }
+            InlineCurve::Polyline(_) | InlineCurve::Transformed { .. } => None,
+        },
+        PlanarCurve::Point(_) | PlanarCurve::Spatial(SpatialCurve::Point(_)) => None,
+    }
+}
+
 /// The picked sketch curves of `selection` that are no line segments.
 pub(super) fn curved<'a, O: MemberOrder>(
     index: &DesignIndex<'a>,
     selection: &'a Selection<O>,
+    tolerance: f64,
 ) -> Vec<&'a str> {
     entities(index, selection)
         .into_iter()
         .flatten()
-        .filter(|entity| {
-            matches!(
-                solved(entity),
-                Some(
-                    PlanarCurve::Arc { .. }
-                        | PlanarCurve::Circle { .. }
-                        | PlanarCurve::Ellipse { .. }
-                        | PlanarCurve::Parabola { .. }
-                        | PlanarCurve::Hyperbola { .. }
-                )
-            )
-        })
+        .filter(|entity| solved(entity).and_then(|curve| straight(curve, tolerance)) == Some(false))
         .map(|entity| entity.id.as_str())
         .collect()
 }

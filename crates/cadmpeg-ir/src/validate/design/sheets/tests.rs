@@ -4,10 +4,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::fixture::{self, design_findings, id};
+use crate::design::configuration::FeatureStateOverride;
 use crate::design::container::{Container, UnorderedKind};
 use crate::design::dimension::Dimension;
 use crate::design::feature::{FeatureOperation, OperationFamily};
 use crate::design::names::{NameKind, TopoName};
+use crate::design::ops::body::{DeleteBodies, Retention};
 use crate::design::ops::shared::SheetCutNormal;
 use crate::design::ops::sheet_metal::{SheetMetal, SheetMetalKind};
 use crate::design::ops::swept::Extrude;
@@ -125,4 +127,151 @@ fn two_rules_applied_in_one_unordered_container_govern_no_body_together() {
     assert_eq!(ruled(&document("b", 0), rule), 1);
     assert_eq!(ruled(&document("a", 0), rule), 0);
     assert_eq!(ruled(&document("b", 1), rule), 0);
+}
+
+const GOVERN: &str = "design.apply-rules-govern-one-body";
+
+fn wall() -> FeatureOperation {
+    sheet(SheetMetalKind::Wall {
+        profile: selection(0),
+        thickness: Some(Dimension::Literal(PositiveLength::new(1.0).unwrap())),
+        side: None,
+        rule: None,
+    })
+}
+
+fn apply(rule: &str, body: Option<u32>) -> FeatureOperation {
+    sheet(SheetMetalKind::ApplyRule {
+        rule: id("sheet-metal-rule", rule),
+        bodies: body.map(selection),
+    })
+}
+
+/// Appends a feature of `operation` to the design.
+fn add(ir: &mut CadIr, key: &str, operation: FeatureOperation) {
+    let mut feature = fixture::unresolved(key, OperationFamily::SheetMetal);
+    feature.definition.operation = operation;
+    ir.design.features.push(feature);
+}
+
+/// Appends `member` to the fixture's timeline.
+fn append(ir: &mut CadIr, member: Member) {
+    let timeline = ir
+        .design
+        .containers
+        .iter_mut()
+        .find_map(|container| match container {
+            Container::Ordered { id, members, .. } if id.as_str().ends_with("#timeline") => {
+                Some(members)
+            }
+            _ => None,
+        })
+        .unwrap();
+    timeline.push(member);
+}
+
+/// Gives the feature `key` the definition of `operation` in configuration
+/// "large".
+fn in_large(ir: &mut CadIr, key: &str, operation: FeatureOperation) {
+    let feature = fixture::feature(key);
+    let mut definition = ir
+        .design
+        .features
+        .iter()
+        .find(|record| record.id == feature)
+        .unwrap()
+        .definition
+        .clone();
+    definition.operation = operation;
+    let large = ir
+        .design
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.id.as_str().ends_with("#large"))
+        .unwrap();
+    large.overrides.features.insert(
+        feature,
+        FeatureStateOverride {
+            suppressed: None,
+            definition: Some(definition),
+        },
+    );
+}
+
+/// The fixture with the timeline ending in an unordered group of the
+/// features `first` and `second`.
+fn grouped(first: FeatureOperation, second: FeatureOperation) -> CadIr {
+    let mut ir = fixture::document();
+    add(&mut ir, "first", first);
+    add(&mut ir, "second", second);
+    ir.design.containers.push(Container::Unordered {
+        id: id("container", "rules"),
+        kind: UnorderedKind::Group,
+        members: BTreeSet::from([
+            Member::Feature(fixture::feature("first")),
+            Member::Feature(fixture::feature("second")),
+        ]),
+    });
+    append(&mut ir, Member::Container(id("container", "rules")));
+    ir
+}
+
+#[test]
+fn rules_applied_in_force_in_no_one_configuration_govern_no_body_together() {
+    let mut ir = grouped(apply("a", Some(0)), wall());
+    assert_eq!(ruled(&ir, GOVERN), 0);
+    in_large(&mut ir, "second", apply("b", Some(0)));
+    assert_eq!(ruled(&ir, GOVERN), 1);
+    in_large(&mut ir, "first", wall());
+    assert_eq!(ruled(&ir, GOVERN), 0);
+}
+
+#[test]
+fn rules_applied_in_order_or_to_no_listed_body_are_not_paired() {
+    assert_eq!(
+        ruled(&grouped(apply("a", None), apply("b", None)), GOVERN),
+        0
+    );
+    let mut ir = fixture::document();
+    for (key, rule) in [("first", "a"), ("second", "b")] {
+        add(&mut ir, key, apply(rule, Some(0)));
+        append(&mut ir, Member::Feature(fixture::feature(key)));
+    }
+    assert_eq!(ruled(&ir, GOVERN), 0);
+}
+
+#[test]
+fn a_sheet_cut_extrude_cuts_a_sheet_no_feature_before_it_deletes() {
+    let rule = "design.sheet-cut-no-sheet-metal-body";
+    let deleted = |retain| {
+        let mut ir = fixture::document();
+        ir.design.features[0].definition.operation = wall();
+        let pick = Picked {
+            target: PickTarget::FeatureResult(fixture::feature("extrude")),
+            context: None,
+            native: None,
+            domain: None,
+            witness: None,
+            resolved: None,
+        };
+        ir.design.features[1].definition.operation =
+            FeatureOperation::DeleteBodies(Box::new(DeleteBodies {
+                bodies: Selection {
+                    at: Anchor::Current,
+                    picks: Picks::Named(Members::new(vec![pick]).unwrap()),
+                    native: None,
+                },
+                retain: Some(retain),
+                native_options: BTreeMap::new(),
+                source_settings: BTreeMap::new(),
+            }));
+        add(&mut ir, "cut", cutting());
+        append(&mut ir, Member::Feature(fixture::feature("cut")));
+        ir
+    };
+    assert_eq!(ruled(&deleted(Retention::DeleteSelected), rule), 1);
+    assert_eq!(ruled(&deleted(Retention::KeepSelected), rule), 0);
+    let mut suppressed = deleted(Retention::DeleteSelected);
+    suppressed.design.features[1].suppressed = Some(Dimension::Literal(true));
+    assert_eq!(ruled(&suppressed, rule), 0);
 }
