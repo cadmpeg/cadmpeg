@@ -634,13 +634,10 @@ fn over_range(nurbs: NurbsCurve, range: [f64; 2]) -> Result<NurbsCurve, String> 
     if knot_domain(&nurbs) == Some(range) {
         return Ok(nurbs);
     }
-    let target = range
-        .map(FiniteReal::new)
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .and_then(|target| <[FiniteReal; 2]>::try_from(target).ok())
-        .ok_or("the edge range is not finite")?;
-    crate::curves::remap_nurbs_domain(nurbs, target, 0).map_err(|error| error.to_string())
+    let [Some(start), Some(end)] = range.map(FiniteReal::new) else {
+        return Err("the edge range is not finite".to_owned());
+    };
+    crate::curves::remap_nurbs_domain(nurbs, [start, end], 0).map_err(|error| error.to_string())
 }
 
 /// The pcurve uses of `coedge` that lie on `surface`: each use whose pcurve
