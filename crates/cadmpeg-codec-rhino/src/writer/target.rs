@@ -43,8 +43,12 @@ pub(crate) fn plan(
 ) -> Result<ExportBody, CodecError> {
     let version = target
         .synthesized_row()
-        .and_then(|(index, _)| RhinoArchiveVersion::ALL.get(index).copied())
-        .ok_or_else(|| target.unavailable("the Rhino catalog declares no row to synthesize"))?;
+        .and_then(|(index, _)| RhinoArchiveVersion::ALL.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the Rhino catalog declares a default and is projected from RhinoArchiveVersion::ALL"
+    );
+    let version = version.unwrap_or(RhinoArchiveVersion::V8);
     // The writer writes no cage, so it writes no cage body (§5.6); the
     // `subds` coverage charges the cage.
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);

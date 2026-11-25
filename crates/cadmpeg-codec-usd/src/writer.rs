@@ -202,12 +202,14 @@ pub(crate) fn plan(
     target: &ResolvedWrite<'_>,
     packaged: bool,
 ) -> Result<(ExportBody, Vec<Member>), CodecError> {
-    let Some(version) = target
+    let version = target
         .synthesized_row()
-        .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied())
-    else {
-        return Err(target.unavailable("the USD catalog declares no row to synthesize"));
-    };
+        .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the USD catalog declares a default and is projected from TARGET_VERSIONS"
+    );
+    let version = version.unwrap_or("1.0");
     let metres = match input.scene.meters_per_unit {
         None => 1.0,
         Some(metres) if metres.is_finite() && metres > 0.0 => metres,

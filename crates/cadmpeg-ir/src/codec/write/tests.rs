@@ -158,6 +158,38 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
 }
 
+/// A displaced write is written and reported under a pinned strictness:
+/// §3.2 gives the `target.*` codes no strict floor.
+#[test]
+fn a_pinned_strictness_writes_a_displaced_target() {
+    let mut ir = CadIr::empty();
+    ir.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "identity": {"kind": "unclassified", "format": "test"},
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    let plan = CatalogEncoder
+        .plan(
+            EncodeInput::new(&ir, None).with_strictness(&pinned),
+            TargetRequest::Inherit,
+        )
+        .expect("a pinned strictness writes a displaced target");
+    let codes = plan
+        .report()
+        .losses
+        .iter()
+        .map(|loss| code_name(&loss.code))
+        .filter(|code| code.starts_with("test:target."))
+        .collect::<Vec<_>>();
+    assert_eq!(codes, ["test:target.source-dialect-displaced"]);
+}
+
 fn recorded_at(depth: DecodeDepth) -> CadIr {
     let mut ir = CadIr::empty();
     ir.set_scope(depth.scope())

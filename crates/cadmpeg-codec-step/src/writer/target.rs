@@ -23,10 +23,12 @@ pub(crate) fn plan(
 ) -> Result<ExportBody, CodecError> {
     let schema = resolved
         .synthesized_row()
-        .and_then(|(index, _)| StepSchema::from_target_index(index))
-        .ok_or_else(|| {
-            resolved.unavailable("the resolved target index is outside the STEP schema catalog")
-        })?;
+        .and_then(|(index, _)| StepSchema::from_target_index(index));
+    debug_assert!(
+        schema.is_some(),
+        "the STEP catalog declares a default and is projected from StepSchema::ALL"
+    );
+    let schema = schema.unwrap_or(StepSchema::Ap214);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(

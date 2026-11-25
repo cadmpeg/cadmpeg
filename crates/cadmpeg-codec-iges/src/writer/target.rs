@@ -19,8 +19,12 @@ pub(crate) fn plan(
 ) -> Result<ExportBody, CodecError> {
     let version = resolved
         .synthesized_row()
-        .and_then(|(index, _)| crate::IgesVersion::ALL.get(index).copied())
-        .ok_or_else(|| resolved.unavailable("the IGES catalog declares no row to synthesize"))?;
+        .and_then(|(index, _)| crate::IgesVersion::ALL.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the IGES catalog declares a default and is projected from IgesVersion::ALL"
+    );
+    let version = version.unwrap_or(crate::IgesVersion::V5_3);
     if resolved.preserves_source() {
         replay_or_synthesize(input, version)
     } else {

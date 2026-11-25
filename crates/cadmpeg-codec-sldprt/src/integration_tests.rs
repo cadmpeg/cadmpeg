@@ -486,6 +486,50 @@ fn inherit_writes_an_off_catalog_source_dialect_with_nothing_retained_as_the_row
     assert_eq!(classify(written), "sldprt:unknown");
 }
 
+/// A part read from CADIR JSON with no retained source holds native records
+/// whose history arenas it does not carry, so the patch of its source dialect
+/// refuses. The part is then synthesized at the catalog row (§3.4, Paths),
+/// and `sldprt/target.source-dialect-displaced` names both dialects.
+#[test]
+fn inherit_synthesizes_an_off_catalog_cadir_read_part_at_the_catalog_row() {
+    let result = decode(versioned_part());
+    let read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
+    assert!(!read.model.omitted_arenas_held());
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&read, None),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .expect("the part is synthesized at the catalog row");
+    assert_eq!(named_target(&plan), "sldprt:unknown");
+    let charged: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .cloned()
+        .collect();
+    let [loss] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:#?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::codec::write::target::target_loss_kind(
+            "sldprt",
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED
+        )
+    );
+    assert!(
+        loss.message.contains("sldprt:sw-version-12000-plus")
+            && loss.message.contains("sldprt:unknown"),
+        "{}",
+        loss.message
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), "sldprt:unknown");
+}
+
 /// Cross-dialect synthesis does not consume the retained Native envelope: it
 /// synthesizes one.
 #[test]

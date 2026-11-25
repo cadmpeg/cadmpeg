@@ -311,9 +311,7 @@ fn written_row(written: &Written) -> Option<WrittenRow> {
     };
     Some(WrittenRow {
         target: dialect.clone(),
-        reason: "the retained document blocks decide the swSolidWorks envelope this writer \
-                 emits"
-            .to_owned(),
+        reason: "the swSolidWorks envelope this writer emits states this row".to_owned(),
     })
 }
 

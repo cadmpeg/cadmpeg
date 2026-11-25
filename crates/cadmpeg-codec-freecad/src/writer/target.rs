@@ -115,8 +115,9 @@ const PATCH_ONLY: &str =
 /// `Inherit` asks for preservation instead. This writer repacks the retained
 /// entry set and patches `Document.xml` inside it, which reproduces whatever
 /// schema the source declared — schema 2 and schema 3 included, neither of which
-/// is a synthesis target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is.
+/// is a synthesis target. With no recorded source dialect, the resolution
+/// names the newest catalog row and the file is the dialect the retained
+/// `Document.xml` declares.
 ///
 /// The source bytes are the archive entries the document's `fcstd` records
 /// hold (§3.4, Paths), whatever format `ir.source` names. A document that holds

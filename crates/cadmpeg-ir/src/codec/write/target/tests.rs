@@ -10,26 +10,6 @@ use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
-#[test]
-fn an_empty_native_catalog_has_no_format_identity_request() {
-    let ir = CadIr::empty();
-    let error = resolve_write_request(
-        &ir,
-        TargetRequest::Inherit,
-        TargetCatalog::empty("cadir"),
-        &[],
-    )
-    .unwrap_err();
-
-    let CodecError::UnsupportedTarget(refusal) = error else {
-        panic!("an empty native catalog must refuse without inventing an identity request")
-    };
-    assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "no_default", "source": {"kind": "no_source"}})
-    );
-    assert!(refusal.available().is_empty());
-}
 const CATALOG_WRITE_CATALOG: TargetCatalog = TargetCatalog::new(CATALOG_WRITE_TARGETS, Some(1));
 
 fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
@@ -81,9 +61,12 @@ fn an_explicit_replay_row_is_written_as_the_default_and_flagged() {
         .unwrap();
         let default = CATALOG_WRITE_CATALOG.default().unwrap().1;
         assert_eq!(resolved.target_id(), &default.id);
-        let message = resolved
-            .request_displacement_message()
-            .expect("a replay-only row is written displaced");
+        let (target, losses) = charged(&resolved, true, None);
+        assert_eq!(target, default.id.as_str());
+        let [(code, message)] = losses.as_slice() else {
+            panic!("a replay-only row is written displaced: {losses:?}")
+        };
+        assert_eq!(code, REQUEST_DISPLACED);
         assert!(
             message.contains(token) && message.contains(default.id.as_str()),
             "{message}"
@@ -96,7 +79,7 @@ fn an_explicit_replay_row_is_written_as_the_default_and_flagged() {
         REPLAY,
     )
     .unwrap();
-    assert_eq!(on_catalog.request_displacement_message(), None);
+    assert_eq!(charged(&on_catalog, true, None).1, vec![]);
     assert!(resolve_write_request(
         &ir,
         TargetRequest::Explicit("test:missing"),
@@ -187,22 +170,110 @@ fn write_request_inherit_writes_a_same_format_unrecorded_source_as_the_default()
     );
 }
 
+/// A catalog that declares no default resolves an `Inherit` request with no
+/// recorded dialect to its newest row, and the writer writes a file.
 #[test]
-fn write_request_inherit_with_an_unrecorded_source_and_no_default_names_both() {
-    let ir = catalog_write_ir(Some(("test", None)));
-    let error = resolve_write_request(
-        &ir,
+fn write_request_inherit_with_no_default_takes_the_newest_row() {
+    let catalog = TargetCatalog::new(CATALOG_WRITE_TARGETS, None);
+    let unrecorded = catalog_write_ir(Some(("test", None)));
+    let resolved = resolve_write_request(&unrecorded, TargetRequest::Inherit, catalog, &[])
+        .expect("a catalog without a default still resolves");
+    assert_eq!(resolved.target_id().as_str(), "test:new");
+    let (target, losses) = charged(&resolved, true, None);
+    assert_eq!(target, "test:new");
+    assert_eq!(
+        losses,
+        [(
+            SOURCE_DIALECT_DISPLACED.to_owned(),
+            "the test source records no dialect; the file is written as test:new".to_owned()
+        )]
+    );
+
+    for ir in [
+        catalog_write_ir(None),
+        catalog_write_ir(Some(("other", Some("other:only")))),
+    ] {
+        let resolved = resolve_write_request(&ir, TargetRequest::Inherit, catalog, &[])
+            .expect("a catalog without a default still resolves");
+        assert_eq!(charged(&resolved, true, None), ("test:new".into(), vec![]));
+    }
+}
+
+/// An `Inherit` request names no row, so a written row other than the one
+/// resolution chose charges only `target.source-dialect-displaced` for a
+/// source that records no dialect, and nothing for a source of another format.
+#[test]
+fn an_inherit_write_of_another_row_charges_only_the_source_code() {
+    let row = Some(WrittenRow {
+        target: cadmpeg_core::dialect_id!("test:old"),
+        reason: "the stored envelope decides the row".into(),
+    });
+    let unrecorded = catalog_write_ir(Some(("test", None)));
+    let resolved = resolve_write_request(
+        &unrecorded,
         TargetRequest::Inherit,
-        TargetCatalog::new(CATALOG_WRITE_TARGETS, None),
+        CATALOG_WRITE_CATALOG,
         &[],
     )
-    .unwrap_err();
-    let CodecError::UnsupportedTarget(refusal) = error else {
-        panic!("a catalog without a default has nothing to write")
+    .unwrap();
+    assert_eq!(
+        charged(&resolved, true, row.clone()),
+        (
+            "test:old".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the test source records no dialect; the file is written as test:old; the \
+                 stored envelope decides the row"
+                    .to_owned()
+            )]
+        )
+    );
+
+    let foreign = catalog_write_ir(Some(("other", Some("other:only"))));
+    let resolved =
+        resolve_write_request(&foreign, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, &[])
+            .unwrap();
+    assert_eq!(charged(&resolved, true, row), ("test:old".into(), vec![]));
+}
+
+/// §3.2 pins a strict floor only where it states one with the code, and it
+/// states none for either `target.*` code.
+#[test]
+fn the_target_codes_pin_no_strict_floor() {
+    for code in [SOURCE_DIALECT_DISPLACED, REQUEST_DISPLACED] {
+        assert_eq!(super::target_loss_kind("test", code).strict_floor(), None);
+    }
+}
+
+/// A replay-only request written as a row the writer states names the
+/// request and the written row.
+#[test]
+fn a_displaced_request_written_as_a_stated_row_names_the_written_row() {
+    const REPLAY: &[DialectId] = &[cadmpeg_core::dialect_id!("test:archive")];
+    let ir = catalog_write_ir(None);
+    let resolved = resolve_write_request(
+        &ir,
+        TargetRequest::Explicit("archive"),
+        CATALOG_WRITE_CATALOG,
+        REPLAY,
+    )
+    .unwrap();
+    let row = WrittenRow {
+        target: cadmpeg_core::dialect_id!("test:old"),
+        reason: "the stored envelope decides the row".into(),
     };
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "no_default", "source": {"kind": "unrecorded_dialect"}})
+        charged(&resolved, true, Some(row)),
+        (
+            "test:old".into(),
+            vec![(
+                REQUEST_DISPLACED.to_owned(),
+                "requested target archive is a row the writer reaches only by replaying a \
+                 source of that dialect; the file is written as test:old; the stored envelope \
+                 decides the row"
+                    .to_owned()
+            )]
+        )
     );
 }
 
