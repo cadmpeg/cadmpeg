@@ -100,11 +100,11 @@ fn a_pcurve_nesting_chain_one_past_the_bound_is_refused() {
     );
 }
 
-/// The CADIR text reader admits a chain whose text is at the document's
-/// depth bound and refuses one placement more, far inside the IR's own
-/// nesting bound.
+/// The parser behind `CadIr::from_json` admits a chain whose text is at the
+/// document's depth bound and refuses one placement more, far inside the IR's
+/// own nesting bound. `CadIr::read` gives such a record up (§3.3).
 #[test]
-fn the_cadir_reader_reads_a_chain_at_the_document_bound_and_refuses_one_more() {
+fn from_json_reads_a_chain_at_the_document_bound_and_refuses_one_more() {
     let text =
         |placements| serde_json::to_string(&placed_plane(placements).expect("admitted nesting"));
     let deepest = (0..MAX_GEOMETRY_NESTING)
