@@ -21,6 +21,7 @@ mod detect;
 mod dialect;
 mod ids;
 mod inspect;
+mod joint;
 mod layers;
 /// Byte-offset constants generated from `docs/layouts/usd.toml`.
 mod layout;
