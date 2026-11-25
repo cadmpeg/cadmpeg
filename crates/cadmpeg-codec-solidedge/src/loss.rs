@@ -28,7 +28,6 @@ pub(crate) enum SolidEdgeLossCode {
     AssemblyOccurrenceUnread,
     AssemblyReferenceUnread,
     AssemblyVisibilityUnread,
-    FeaturePatternSenseUnread,
     PartitionUnreadable,
     PartitionIncomplete,
     PrimaryStateAssumed,
