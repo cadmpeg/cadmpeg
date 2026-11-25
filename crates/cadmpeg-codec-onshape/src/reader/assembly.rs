@@ -741,7 +741,7 @@ impl Structure<'_, '_> {
                 OnshapeLossCode::AssemblyReferenceUnresolved,
                 format!(
                     "part identity remains unbound at the pinned default configuration; {}",
-                    self.index.description(instance)
+                    index::description(instance)
                 ),
             );
             if !local_document {
@@ -778,7 +778,7 @@ impl Structure<'_, '_> {
             OnshapeLossCode::AssemblyReferenceUnresolved,
             format!(
                 "instance retains an unresolved product reference; {}",
-                self.index.description(instance)
+                index::description(instance)
             ),
         );
         Ok(pid)

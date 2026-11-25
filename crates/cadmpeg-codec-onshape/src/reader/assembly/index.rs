@@ -251,27 +251,28 @@ impl<'a> Index<'a> {
         let [document, element, _, microversion, configuration] = self.reference(row);
         [document, element, microversion, configuration]
     }
-    /// The identity fields as the row states them.
-    pub(super) fn description(&self, row: &Value) -> String {
-        let stated = |field: &str| {
-            row.get(field).map_or_else(
-                || "omitted".to_owned(),
-                |value| {
-                    value
-                        .as_str()
-                        .map_or_else(|| value.to_string(), |text| format!("{text:?}"))
-                },
-            )
-        };
-        format!(
-            "documentId={}, elementId={}, partId={}, documentMicroversion={}, configuration={}",
-            stated("documentId"),
-            stated("elementId"),
-            stated("partId"),
-            stated("documentMicroversion"),
-            stated("configuration"),
+}
+
+/// The identity fields as the row states them.
+pub(super) fn description(row: &Value) -> String {
+    let stated = |field: &str| {
+        row.get(field).map_or_else(
+            || "omitted".to_owned(),
+            |value| {
+                value
+                    .as_str()
+                    .map_or_else(|| value.to_string(), |text| format!("{text:?}"))
+            },
         )
-    }
+    };
+    format!(
+        "documentId={}, elementId={}, partId={}, documentMicroversion={}, configuration={}",
+        stated("documentId"),
+        stated("elementId"),
+        stated("partId"),
+        stated("documentMicroversion"),
+        stated("configuration"),
+    )
 }
 
 /// Whether two records with one identity key state the same content: every
