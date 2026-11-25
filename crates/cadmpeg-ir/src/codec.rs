@@ -239,6 +239,30 @@ impl DecodeBody {
             transfer_ledger: TransferLedger::default(),
         }
     }
+
+    /// Charges `decode/depth.not-delivered` for `class` where the source
+    /// holds records of `class` that the delivered depth leaves out, as the
+    /// joints of a `Geometry`-depth decode (§2.1). A class the delivered
+    /// depth holds is not charged, and a class is charged once.
+    pub fn source_holds(&mut self, class: ArenaClass) {
+        let depth = self.transfer.depth();
+        if depth.scope().holds(class) {
+            return;
+        }
+        let note = held_beyond_depth(depth, class);
+        if !self.losses.contains(&note) {
+            self.losses.push(note);
+        }
+    }
+}
+
+/// The loss for records of `class` that the source holds and a decode at
+/// `depth` leaves out.
+fn held_beyond_depth(depth: DecodeDepth, class: ArenaClass) -> DecodeLoss {
+    DecodeLossCode::DepthNotDelivered { class }.note(format!(
+        "the source holds {class} records that a {depth}-depth decode does not deliver, so they \
+         and the references to them are absent"
+    ))
 }
 
 impl DecodeResult {
@@ -291,7 +315,8 @@ impl DecodeResult {
     /// `format`, the codec's registry format. The document records the scope
     /// of the depth the backend's transfer state reports, less each class
     /// `requested` excludes that the document leaves empty; each class
-    /// `requested` names that the document lacks adds an error loss.
+    /// `requested` names that the document lacks adds an error loss, unless
+    /// the body already charges it through [`DecodeBody::source_holds`].
     ///
     /// The normalizer runs under `policy`, the decode's own. Only a refusal
     /// that stops the session refuses the decode; where the normalizer gives
@@ -314,6 +339,12 @@ impl DecodeResult {
             CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
         })?;
         for class in scope.missing_from(requested.scope()) {
+            if body
+                .losses
+                .contains(&held_beyond_depth(body.transfer.depth(), class))
+            {
+                continue;
+            }
             body.losses
                 .push(DecodeLossCode::DepthNotDelivered { class }.note(format!(
                     "requested {requested} depth but the {format} decoder did not deliver \
