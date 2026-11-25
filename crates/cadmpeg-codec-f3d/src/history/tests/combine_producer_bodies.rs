@@ -375,7 +375,7 @@ fn a_slot_whose_last_update_has_no_scope_names_its_inserting_feature() {
 
 #[test]
 fn generated_tools_with_distinct_native_members_keep_one_native_per_body() {
-    let (combine, _, losses) = combine_case(
+    let (combine, results, losses) = combine_case(
         &[],
         &[(2, TOOL_NATIVE), (3, SECOND_TOOL_NATIVE)],
         vec![1],
@@ -410,5 +410,13 @@ fn generated_tools_with_distinct_native_members_keep_one_native_per_body() {
         ]
     );
     assert!(depends_on(&combine, FIRST) && depends_on(&combine, SECOND));
+    assert!(results.iter().any(|result| {
+        result.output_of.as_str() == SECOND
+            && result
+                .bodies()
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .eq(["2", "3"])
+    }));
     assert_eq!(producer_unresolved(&losses), 0);
 }
