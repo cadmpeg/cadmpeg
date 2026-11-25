@@ -11,24 +11,29 @@ use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameKind, TopoName};
 use crate::design::ops::body::Graft;
 use crate::design::ops::dressup::{
-    BlendControls, Chamfer, ChamferSet, ChamferSize, Corner, EdgeSetback, Setbacks,
+    BlendControls, Chamfer, ChamferSet, ChamferSize, Corner, EdgeSetback, Fillet, FilletSection,
+    FilletSet, FilletSize, Setbacks, Stations,
 };
 use crate::design::ops::sheet_metal::{
     BendSet, BendSpec, Convert, ConvertBend, ConvertFrom, Flange, FlangeWidth, SheetMetal,
-    SheetMetalKind, StampForm, StampOutline,
+    SheetMetalKind, StampForm, StampOutline, VertexBend,
 };
-use crate::design::ops::surface::Unsew;
+use crate::design::ops::surface::{Patch, PatchBounds, PatchEdge, Unsew};
+use crate::design::ops::swept::{Guide, Loft, LoftShape, Revolve};
+use crate::design::options::{
+    BodyForm, CornerRound, SheetOutput, SolidOutput, Thickness, ThinWall, WallSide,
+};
 use crate::design::refs::EntityRef;
 use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, SetSelection};
 use crate::design::selection::{MemberOrder, Selection};
 use crate::document::CadIr;
 use crate::features::geometry::FinitePoint3;
-use crate::geometry::analytic::CylinderSurface;
-use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::geometry::analytic::{CircleCurve, CylinderSurface};
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::ids::VertexId;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, NonNegativeLength, PositiveLength};
-use crate::topology::BodyKind;
+use crate::topology::{BodyKind, EdgeCarrier};
 
 /// A pick of `entity`, told apart from the other picks by `key`.
 fn pick(key: u32, entity: EntityRef) -> Picked {
@@ -323,19 +328,23 @@ fn unsew_edges_divide_one_sheet_in_two() {
     assert!(ruled(&ir, divide).is_empty());
 }
 
+fn controls(corners: Vec<Corner>) -> BlendControls {
+    BlendControls {
+        corner_style: None,
+        corners,
+        limits: Vec::new(),
+        keep: None,
+        transitions: Vec::new(),
+        overflow: None,
+        keep_features: None,
+        round_corners: None,
+    }
+}
+
 fn chamfer(sets: Vec<ChamferSet>, corners: Vec<Corner>) -> FeatureOperation {
     FeatureOperation::Chamfer(Box::new(Chamfer {
         sets,
-        controls: BlendControls {
-            corner_style: None,
-            corners,
-            limits: Vec::new(),
-            keep: None,
-            transitions: Vec::new(),
-            overflow: None,
-            keep_features: None,
-            round_corners: None,
-        },
+        controls: controls(corners),
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
     }))
@@ -469,4 +478,248 @@ fn a_pick_without_resolved_entities_or_a_matching_name_is_not_judged() {
     });
     curve_bottom(&mut ir);
     assert!(ruled(&ir, "design.picked-face-not-planar").is_empty());
+}
+
+fn edges(ir: &CadIr, edges: &[usize]) -> Vec<EntityRef> {
+    edges.iter().map(|index| edge(ir, *index)).collect()
+}
+
+/// A vertex at which `degree` ends of `edges` meet.
+fn meeting(ir: &CadIr, edges: &[usize], degree: usize) -> EntityRef {
+    let mut degrees = BTreeMap::new();
+    for index in edges {
+        for end in ir.geometry.edges[*index].vertices() {
+            *degrees.entry(end.clone()).or_insert(0) += 1;
+        }
+    }
+    let (vertex, _) = degrees
+        .into_iter()
+        .find(|(_, count)| *count == degree)
+        .unwrap();
+    EntityRef::Vertex(vertex)
+}
+
+/// Makes the curve of edge `index` the circle of radius 5 about the vertical
+/// axis through the cube's middle.
+fn round_edge(ir: &mut CadIr, index: usize) {
+    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) =
+        ir.geometry.edges[index].carrier.clone()
+    else {
+        unreachable!("the fixture's edges lie on curves")
+    };
+    let circle = CircleCurve::try_new(
+        Point3::new(5.0, 5.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        5.0,
+    )
+    .unwrap();
+    let record = ir
+        .geometry
+        .curves
+        .iter_mut()
+        .find(|record| record.id == curve);
+    record.unwrap().geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle));
+}
+
+#[test]
+fn a_contour_flange_profile_is_one_open_chain_bent_where_two_pieces_meet() {
+    let contour = |ir: &CadIr, profile: &[usize], at: EntityRef| {
+        sheet(SheetMetalKind::ContourFlange {
+            profile: current(edges(ir, profile)),
+            edges: None,
+            width: None,
+            extent: None,
+            thickness: None,
+            bend: bend(),
+            vertex_bends: vec![VertexBend {
+                vertex: current(vec![at]),
+                radius: positive(1.0),
+                radius_side: None,
+            }],
+            rule: None,
+        })
+    };
+    let open = "design.contour-flange-profile-not-open-chain";
+    let joint = "design.vertex-bend-not-chain-joint";
+    let mut ir = fixture::document();
+    let around = bottom_edges(&ir);
+    let three = &around[..3];
+    with(&mut ir, |ir| contour(ir, three, meeting(ir, three, 2)));
+    assert!(ruled(&ir, open).is_empty());
+    assert!(ruled(&ir, joint).is_empty());
+    with(&mut ir, |ir| contour(ir, three, meeting(ir, three, 1)));
+    assert!(ruled(&ir, open).is_empty());
+    assert_eq!(ruled(&ir, joint).len(), 1);
+    with(&mut ir, |ir| contour(ir, &around, meeting(ir, &around, 2)));
+    assert_eq!(ruled(&ir, open).len(), 1);
+    assert!(ruled(&ir, joint).is_empty());
+}
+
+#[test]
+fn a_variable_fillet_chain_starts_at_an_end_of_its_chain() {
+    let fillet = |ir: &CadIr, chain: &[usize], start: EntityRef| {
+        let stations = Stations {
+            points: Vec::new(),
+            law: None,
+            chain_start: Some(current(vec![start])),
+        };
+        FeatureOperation::Fillet(Box::new(Fillet {
+            sets: vec![FilletSet::Edges {
+                edges: current(edges(ir, chain)),
+                section: FilletSection {
+                    size: Some(FilletSize::Variable(stations)),
+                    profile: None,
+                    weight: None,
+                },
+                spine: None,
+                hold: [None, None],
+            }],
+            controls: controls(Vec::new()),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let rule = "design.chain-start-not-chain-end";
+    let mut ir = fixture::document();
+    let around = bottom_edges(&ir);
+    let three = &around[..3];
+    with(&mut ir, |ir| fillet(ir, three, meeting(ir, three, 1)));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| fillet(ir, three, meeting(ir, three, 2)));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    with(&mut ir, |ir| fillet(ir, &around, meeting(ir, &around, 2)));
+    assert!(ruled(&ir, rule).is_empty());
+}
+
+#[test]
+fn a_patch_loop_is_one_closed_chain() {
+    let patch = |ir: &CadIr, outer: &[usize]| {
+        let outer = outer.iter().map(|index| PatchEdge {
+            curve: current(vec![edge(ir, *index)]),
+            condition: None,
+        });
+        FeatureOperation::Patch(Box::new(Patch {
+            bounds: PatchBounds::Loops {
+                outer: outer.collect(),
+                inner: Vec::new(),
+            },
+            passing: None,
+            planar: None,
+            simplified: None,
+            output: SheetOutput {
+                solid: None,
+                boolean: None,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let rule = "design.patch-loop-not-closed-chain";
+    let mut ir = fixture::document();
+    let around = bottom_edges(&ir);
+    with(&mut ir, |ir| patch(ir, &around));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| patch(ir, &around[..3]));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
+#[test]
+fn a_guide_path_is_one_connected_chain() {
+    let loft = |ir: &CadIr, path: &[usize]| {
+        FeatureOperation::Loft(Box::new(Loft {
+            start: None,
+            sections: Vec::new(),
+            end: None,
+            cross: Vec::new(),
+            spine: None,
+            guides: vec![Guide {
+                path: current(edges(ir, path)),
+                tangency: None,
+                influence: None,
+            }],
+            correspondence: None,
+            shape: LoftShape {
+                style: None,
+                max_degree: None,
+                rebuild: None,
+                ruled: None,
+                closed: None,
+                relimit: None,
+                merge_tangent_faces: None,
+                smoothing: None,
+                section_law: None,
+            },
+            output: SolidOutput {
+                body: None,
+                boolean: None,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let rule = "design.path-picks-not-one-chain";
+    let mut ir = fixture::document();
+    let around = bottom_edges(&ir);
+    let (_, star) = corner(&ir);
+    with(&mut ir, |ir| loft(ir, &around[..3]));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| loft(ir, &around));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| loft(ir, &star));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    with(&mut ir, |ir| loft(ir, &[0, apart(ir)]));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
+#[test]
+fn a_thin_wall_side_and_corners_fit_whether_its_profile_closes() {
+    let revolve = |ir: &CadIr, profile: &[usize], side: WallSide, corners: Option<CornerRound>| {
+        let wall = ThinWall {
+            thickness: Thickness::OneSide {
+                value: positive(1.0),
+                side: Some(side),
+            },
+            ends: None,
+            corner_round: corners,
+        };
+        FeatureOperation::Revolve(Box::new(Revolve {
+            profile: current(edges(ir, profile)),
+            loops: None,
+            axis: None,
+            span: None,
+            fit: None,
+            output: SolidOutput {
+                body: Some(BodyForm::Thin(wall)),
+                boolean: None,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let side = "design.wall-side-profile-closure";
+    let closed = "design.corner-round-closed-profile";
+    let lines = "design.round-corner-profile-not-lines";
+    let mut ir = fixture::document();
+    let around = bottom_edges(&ir);
+    let three = &around[..3];
+    with(&mut ir, |ir| revolve(ir, &around, WallSide::Inside, None));
+    assert!(ruled(&ir, side).is_empty());
+    with(&mut ir, |ir| revolve(ir, &around, WallSide::Left, None));
+    assert_eq!(ruled(&ir, side).len(), 1);
+    with(&mut ir, |ir| revolve(ir, three, WallSide::Outside, None));
+    assert_eq!(ruled(&ir, side).len(), 1);
+    let sharp = Some(CornerRound::Sharp);
+    with(&mut ir, |ir| {
+        revolve(ir, &around, WallSide::Inside, sharp.clone())
+    });
+    assert_eq!(ruled(&ir, closed).len(), 1);
+    with(&mut ir, |ir| revolve(ir, three, WallSide::Left, sharp));
+    assert!(ruled(&ir, closed).is_empty());
+    assert!(ruled(&ir, side).is_empty());
+    let round = Some(CornerRound::Round(positive(1.0)));
+    with(&mut ir, |ir| revolve(ir, three, WallSide::Left, round));
+    assert!(ruled(&ir, lines).is_empty());
+    round_edge(&mut ir, three[0]);
+    assert_eq!(ruled(&ir, lines).len(), 1);
 }

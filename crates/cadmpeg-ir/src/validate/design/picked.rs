@@ -65,6 +65,7 @@ pub(super) fn check<'a>(
         for definition in std::iter::once(&feature.definition).chain(overrides) {
             probe.definition = definition;
             probe.operation(&definition.operation);
+            probe.chain_operation(&definition.operation);
         }
         for finding in probe.findings {
             if !findings.contains(&finding) {
@@ -988,6 +989,8 @@ fn pieces(topology: &StateTopology<'_>, sheet: &str, cut: &BTreeSet<&str>) -> us
         .filter(|&at| root(&mut parent, at) == at)
         .count()
 }
+
+mod chains;
 
 #[cfg(test)]
 mod tests;
