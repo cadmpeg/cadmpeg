@@ -5,8 +5,11 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::products::{owner, sole_placement, Occurrence, ProductDefinitionKind};
+use cadmpeg_ir::products::{
+    owner, sole_placement, Occurrence, ProductDefinition, ProductDefinitionKind,
+};
 use cadmpeg_ir::report::loss::{LossKind, LossNote};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::BodyKind;
@@ -515,9 +518,11 @@ fn a_solidworks_assembly_decodes_under_its_own_dialect() {
         .collect();
     assert!(messages[1].starts_with("1 face group colours in 1 bodies"));
     assert!(messages[2].starts_with("1 part colour overrides and 0 display state"));
-    assert_eq!(ir.geometry.bodies.len(), 3);
+    // Three library bodies; two of them are also listed by a second body set,
+    // whose definition holds a copy of each.
+    assert_eq!(ir.geometry.bodies.len(), 5);
     assert!(ir.geometry.bodies.iter().all(|b| b.kind == BodyKind::Solid));
-    assert_eq!(ir.geometry.faces.len(), 18);
+    assert_eq!(ir.geometry.faces.len(), 30);
     assert_valid(ir);
 }
 
@@ -539,7 +544,7 @@ fn body_colours_come_from_the_body_materials() {
 }
 
 #[test]
-fn a_definition_holds_the_bodies_of_one_body_set_and_sets_are_shared() {
+fn a_definition_holds_its_own_copy_of_a_body_another_definition_lists() {
     let result = decode_solidworks(&solidworks_assembly());
     let ir = result.ir();
     let parts: Vec<_> = ir
@@ -552,21 +557,60 @@ fn a_definition_holds_the_bodies_of_one_body_set_and_sets_are_shared() {
         parts.iter().map(|d| d.bodies.len()).collect::<Vec<_>>(),
         [1, 1, 2, 1]
     );
-    let body = |name: &str| {
+    let listed: Vec<_> = ir
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|d| &d.bodies)
+        .collect();
+    assert_eq!(listed.len(), ir.geometry.bodies.len());
+    assert!(listed
+        .iter()
+        .enumerate()
+        .all(|(index, body)| !listed[..index].contains(body)));
+    let body = |id: &BodyId| ir.geometry.bodies.iter().find(|b| &b.id == id).unwrap();
+    let faces = |id: &BodyId| {
         ir.geometry
+            .faces
+            .iter()
+            .filter(|face| {
+                ir.geometry
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == face.shell)
+                    .and_then(|shell| ir.geometry.regions.iter().find(|r| r.id == shell.region))
+                    .is_some_and(|region| &region.body == id)
+            })
+            .count()
+    };
+    let names = |definition: &ProductDefinition| {
+        definition
             .bodies
             .iter()
-            .find(|b| b.name.as_deref() == Some(name))
-            .unwrap()
-            .id
-            .clone()
+            .map(|id| body(id).name.clone())
+            .collect::<Vec<_>>()
     };
+    let single = parts.first().unwrap();
     let pair = parts.get(2).unwrap();
-    assert_eq!(pair.bodies, [body("body0"), body("body2")]);
+    let cube = parts.get(3).unwrap();
+    assert_eq!(names(single), [Some("body0".to_owned())]);
+    assert_eq!(
+        names(pair),
+        [Some("body0".to_owned()), Some("body2".to_owned())]
+    );
+    assert_eq!(names(cube), [Some("body2".to_owned())]);
+    for (copy, original) in [
+        (&pair.bodies[0], &single.bodies[0]),
+        (&cube.bodies[0], &pair.bodies[1]),
+    ] {
+        assert_ne!(copy, original);
+        assert_eq!(body(copy).color, body(original).color);
+        assert_eq!(body(copy).kind, body(original).kind);
+        assert_eq!(faces(copy), 6);
+        assert_eq!(faces(copy), faces(original));
+    }
     assert!(pair.source_name.is_none());
     assert_eq!(pair.label.as_deref(), Some("Pair-1"));
-    let single = parts.first().unwrap();
-    assert_eq!(single.bodies, [body("body0")]);
     assert_eq!(single.source_name.as_deref(), Some("body0"));
 
     let prototype = |name: &str| occurrence_named(ir, name).prototype.clone();

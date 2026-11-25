@@ -16,8 +16,8 @@ use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vert
 
 use super::{
     admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, close_point,
-    generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
-    EPS_WRITE_DEGENERATE,
+    generated_projected_brep_c2_curve, singular_trim_iso, stated_write_tolerance,
+    validate_nurbs_trim, validate_singular_trim, EPS_WRITE_DEGENERATE,
 };
 
 pub(super) struct WritableModel<'a> {
@@ -82,9 +82,19 @@ impl WritableEdgeCurve<'_> {
     }
 }
 
+/// The edge a trim runs along.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TrimEdge {
+    /// The edge at this position of [`WritableModel::edges`].
+    Edge(usize),
+    /// A singular edge, which a 3DM Brep holds as no edge: the trim's ends
+    /// meet at the vertex at this position.
+    Singular(usize),
+}
+
 pub(super) struct WritableCoedge<'a> {
     pub(super) source: &'a Coedge,
-    pub(super) edge: usize,
+    pub(super) edge: TrimEdge,
     pub(super) owner_loop: usize,
     radial_next: usize,
     pub(super) c2: ([u8; 16], Vec<u8>),
@@ -92,6 +102,8 @@ pub(super) struct WritableCoedge<'a> {
     /// trim is the edge's projection.
     pub(super) domain: [f64; 2],
     pub(super) fit_tolerance: f64,
+    /// The 3DM iso value of the trim.
+    pub(super) iso: i32,
 }
 
 pub(super) struct WritablePcurve<'a> {
@@ -386,6 +398,11 @@ impl<'a> WritableModel<'a> {
             ));
         };
         let edge_count = geometry.coedges.len();
+        let singular_count = geometry
+            .edges
+            .iter()
+            .filter(|edge| super::is_singular_edge(edge))
+            .count();
         let layout = if body.kind != BodyKind::Solid
             && geometry.faces.len() == 1
             && !geometry.loops.is_empty()
@@ -405,7 +422,7 @@ impl<'a> WritableModel<'a> {
                 || geometry.edges.is_empty()
                 || geometry.vertices.is_empty()
                 || geometry.points.len() != geometry.vertices.len()
-                || geometry.curves.len() != geometry.edges.len()
+                || geometry.curves.len() != geometry.edges.len() - singular_count
                 || geometry.surfaces.len() != geometry.faces.len());
         if geometry.bodies.len() != 1
             || geometry.regions.len() != 1
@@ -499,6 +516,14 @@ impl<'a> WritableModel<'a> {
             }
         }
         let vertex_positions = positions(ordered_vertices.iter().map(|vertex| vertex.id.as_str()))?;
+        let (singular_edges, ordered_edges): (Vec<&Edge>, Vec<&Edge>) = ordered_edges
+            .into_iter()
+            .partition(|edge| super::is_singular_edge(edge));
+        let mut singular = BTreeMap::new();
+        for edge in singular_edges {
+            let vertex = resolve(&vertex_positions, super::edge_ends(edge)?.start.as_str())?;
+            singular.insert(edge.id.as_str(), (vertex, edge));
+        }
         let edge_positions = positions(ordered_edges.iter().map(|edge| edge.id.as_str()))?;
         let coedge_positions = positions(ordered_coedges.iter().map(|coedge| coedge.id.as_str()))?;
         let loop_positions = positions(geometry.loops.iter().map(|loop_| loop_.id.as_str()))?;
@@ -763,7 +788,14 @@ impl<'a> WritableModel<'a> {
         let coedges = ordered_coedges
             .into_iter()
             .map(|coedge| {
-                let edge = resolve(&edge_positions, coedge.edge.as_str())?;
+                let edge = match singular.get(coedge.edge.as_str()) {
+                    Some((vertex, _)) => TrimEdge::Singular(*vertex),
+                    None => TrimEdge::Edge(resolve(&edge_positions, coedge.edge.as_str())?),
+                };
+                let edge_domain = match edge {
+                    TrimEdge::Edge(position) => Some(FiniteReal::raw_array(edges[position].domain)),
+                    TrimEdge::Singular(_) => None,
+                };
                 let owner_loop = resolve(&loop_positions, coedge.owner_loop.as_str())?;
                 if !loops[owner_loop].source.coedges().contains(&coedge.id) {
                     return Err(CodecError::malformed(format_args!(
@@ -791,7 +823,7 @@ impl<'a> WritableModel<'a> {
                                     id.as_str()
                                 ))
                             })?;
-                        Some(admit_pcurve(&edges[edge], pcurve)?)
+                        Some(admit_pcurve(edge_domain, pcurve)?)
                     }
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
@@ -805,6 +837,42 @@ impl<'a> WritableModel<'a> {
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
                     .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
+                let face_tolerance = stated_write_tolerance(face.source.tolerance, ir);
+                let edge = match edge {
+                    TrimEdge::Singular(vertex) => {
+                        let pcurve = pcurve.ok_or_else(|| {
+                            CodecError::NotImplemented(format!(
+                                "coedge {} runs along singular edge {} and has no pcurve",
+                                coedge.id.as_str(),
+                                coedge.edge.as_str(),
+                            ))
+                        })?;
+                        let edge_tolerance = singular
+                            .get(coedge.edge.as_str())
+                            .and_then(|(_, edge)| edge.tolerance)
+                            .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
+                        if let Some(finding) = validate_singular_trim(
+                            surfaces[face.surface],
+                            face_tolerance.max(edge_tolerance),
+                            vertices[vertex].point,
+                            &pcurve,
+                        )? {
+                            findings.push(record_invalid(EntityKind::Pcurve, finding));
+                        }
+                        let iso = singular_trim_iso(surfaces[face.surface], &pcurve);
+                        return Ok(WritableCoedge {
+                            source: coedge,
+                            edge: TrimEdge::Singular(vertex),
+                            owner_loop,
+                            radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
+                            c2: pcurve.payload,
+                            domain: pcurve.domain,
+                            fit_tolerance,
+                            iso,
+                        });
+                    }
+                    TrimEdge::Edge(position) => position,
+                };
                 let (c2, domain) = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {
                         let generated = generated_projected_brep_c2_curve(
@@ -833,7 +901,6 @@ impl<'a> WritableModel<'a> {
                                 "coedge {} has no explicit pcurve", coedge.id.as_str(),
                             ))
                         })?;
-                        let face_tolerance = stated_write_tolerance(face.source.tolerance, ir);
                         let (from, to) = if coedge.sense == Sense::Forward {
                             (edges[edge].start, edges[edge].end)
                         } else {
@@ -850,12 +917,13 @@ impl<'a> WritableModel<'a> {
                 };
                 Ok(WritableCoedge {
                     source: coedge,
-                    edge,
+                    edge: TrimEdge::Edge(edge),
                     owner_loop,
                     radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
                     c2,
                     domain,
                     fit_tolerance,
+                    iso: 0,
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
@@ -891,7 +959,7 @@ impl<'a> WritableModel<'a> {
                 .coedges
                 .iter()
                 .enumerate()
-                .filter(|(_, coedge)| coedge.edge == position)
+                .filter(|(_, coedge)| coedge.edge == TrimEdge::Edge(position))
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
             if uses.is_empty() || uses.len() > 2 || layout == Layout::SingleFace && uses.len() != 1
@@ -935,6 +1003,18 @@ impl<'a> WritableModel<'a> {
             }
             edge.uses = ordered;
         }
+        for id in singular.keys() {
+            let uses = result
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.source.edge.as_str() == *id)
+                .count();
+            if uses != 1 {
+                return Err(CodecError::NotImplemented(format!(
+                    "singular edge {id} has {uses} uses, and a 3DM singular trim is one use"
+                )));
+            }
+        }
         if layout == Layout::MultiFace {
             let mut reached = BTreeSet::from([0_usize]);
             loop {
@@ -973,14 +1053,16 @@ impl<'a> WritableModel<'a> {
                     let mut boundary = Vec::new();
                     for position in &loop_.coedges {
                         let coedge = &result.coedges[*position];
-                        let edge = &result.edges[coedge.edge];
-                        if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
-                            for point in nurbs.control_points() {
-                                let distance = (point.x - origin.x) * normal.x
-                                    + (point.y - origin.y) * normal.y
-                                    + (point.z - origin.z) * normal.z;
-                                if distance.abs() > tolerance {
-                                    plane_findings.push(record_invalid(
+                        let (start, end) = result.endpoints(*position);
+                        if let TrimEdge::Edge(edge) = coedge.edge {
+                            let edge = &result.edges[edge];
+                            if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
+                                for point in nurbs.control_points() {
+                                    let distance = (point.x - origin.x) * normal.x
+                                        + (point.y - origin.y) * normal.y
+                                        + (point.z - origin.z) * normal.z;
+                                    if distance.abs() > tolerance {
+                                        plane_findings.push(record_invalid(
                                         EntityKind::Curve,
                                         format!(
                                             "edge curve {} is outside the plane tolerance of face {}",
@@ -988,18 +1070,18 @@ impl<'a> WritableModel<'a> {
                                             face.source.id.as_str()
                                         ),
                                     ));
-                                    break;
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        let (start, _) = result.endpoints(*position);
                         boundary.push(super::plane_uv(
                             result.vertices[start].point,
                             origin,
                             u_axis,
                             normal.cross(u_axis),
                         ));
-                        for vertex in [edge.start, edge.end] {
+                        for vertex in [start, end] {
                             let point = result.vertices[vertex].point;
                             let distance = (point.x - origin.x) * normal.x
                                 + (point.y - origin.y) * normal.y
@@ -1016,12 +1098,16 @@ impl<'a> WritableModel<'a> {
                             }
                         }
                     }
-                    let polygonal = loop_.coedges.iter().all(|position| {
-                        matches!(
-                            result.edges[result.coedges[*position].edge].curve,
-                            WritableEdgeCurve::Line(_)
-                        )
-                    });
+                    let polygonal =
+                        loop_
+                            .coedges
+                            .iter()
+                            .all(|position| match result.coedges[*position].edge {
+                                TrimEdge::Edge(edge) => {
+                                    matches!(result.edges[edge].curve, WritableEdgeCurve::Line(_))
+                                }
+                                TrimEdge::Singular(_) => true,
+                            });
                     if layout == Layout::MultiFace && polygonal {
                         let twice_area = boundary
                             .iter()
@@ -1067,7 +1153,10 @@ impl<'a> WritableModel<'a> {
 
     pub(super) fn endpoints(&self, coedge: usize) -> (usize, usize) {
         let coedge = &self.coedges[coedge];
-        let edge = &self.edges[coedge.edge];
+        let edge = match coedge.edge {
+            TrimEdge::Edge(edge) => &self.edges[edge],
+            TrimEdge::Singular(vertex) => return (vertex, vertex),
+        };
         if coedge.source.sense == Sense::Forward {
             (edge.start, edge.end)
         } else {

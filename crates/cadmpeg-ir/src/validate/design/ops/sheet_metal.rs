@@ -5,12 +5,11 @@ use std::collections::BTreeSet;
 
 use super::picks::{self, Class};
 use super::{assembly, error, warning, Site};
-use crate::design::ids::SheetMetalRuleId;
 use crate::design::names::NameKind;
 use crate::design::ops::shared::{Limit, Span};
 use crate::design::ops::sheet_metal::{
     BendAllowance, BendEquations, BendSet, BendTable, ConnectBetween, ConvertBend, ConvertFrom,
-    Flange, FlangeHeight, FlangeWidth, HeightDatum, Hem, KFactorTable, Rip, RipPath, SheetMetal,
+    Flange, FlangeHeight, FlangeWidth, HeightDatum, KFactorTable, Rip, RipPath, SheetMetal,
     SheetMetalKind, StampForm, StampOutline,
 };
 use crate::design::options::{Thickness, WallSide};
@@ -18,6 +17,7 @@ use crate::design::selection::{PickContext, SetSelection};
 use crate::report::check::Finding;
 
 use super::super::records::DesignRecords;
+use super::super::sheets::named_rule;
 use super::options;
 
 /// Rule ids are unique, and each rule's tables and equations are ordered.
@@ -139,23 +139,6 @@ fn check_equations(id: &str, equations: &BendEquations, findings: &mut Vec<Findi
                 ),
             );
         }
-    }
-}
-
-/// The rule a sheet-metal kind names.
-const fn named_rule(kind: &SheetMetalKind) -> Option<&SheetMetalRuleId> {
-    match kind {
-        SheetMetalKind::ApplyRule { rule, .. } => Some(rule),
-        SheetMetalKind::Wall { rule, .. }
-        | SheetMetalKind::ContourFlange { rule, .. }
-        | SheetMetalKind::ExtrudedHole { rule, .. }
-        | SheetMetalKind::Stamp { rule, .. }
-        | SheetMetalKind::ToolForm { rule, .. } => rule.as_ref(),
-        SheetMetalKind::Flange(Flange { rule, .. }) | SheetMetalKind::Hem(Hem { rule, .. }) => {
-            rule.as_ref()
-        }
-        SheetMetalKind::Convert(convert) => convert.rule.as_ref(),
-        _ => None,
     }
 }
 
