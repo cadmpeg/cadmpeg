@@ -194,7 +194,7 @@ pub(crate) fn unoriented_start_losses(
         })
         .map(|feature| {
             F3dLossCode::FeatureExtrudeStartOffsetDirectionAssumed.note(format!(
-                "Extrude {} reads its start-face offset along the travel direction because the start face normal is not proven parallel to the travel.",
+                "Extrude {} reads its start-face offset along the travel direction because the start face normal is not proven parallel to the travel (DR-1064).",
                 feature.id
             ))
         })
