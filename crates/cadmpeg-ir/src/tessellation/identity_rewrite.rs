@@ -23,7 +23,7 @@ rewrite_record!(ShadedTriangle<N>, [N]; {corners, normals});
 rewrite_record!(ShadedVertex<P, N>, [P, N]; {position, normal});
 rewrite_record!(Strip<V>, [V]; (field0));
 rewrite_record!(Strips<V>, [V]; (field0));
-rewrite_record!(Tessellation, []; {id, of, state, chordal_deflection, source_object, mesh, feature_edges, triangle_groups, texture_assignments, texture_coordinates, colors, channels});
+rewrite_record!(Tessellation, []; {id, of, state, chordal_deflection, source_object, mesh, feature_edges, triangle_groups, texture_assignments, texture_coordinates, colors, channels, native_ref});
 rewrite_record!(TessellationChannel, []; {addressing, item_size, kind, flags, data, count});
 rewrite_enum!(TessellationMesh<P, N>, [P, N]; {
     List {vertices, triangles},
