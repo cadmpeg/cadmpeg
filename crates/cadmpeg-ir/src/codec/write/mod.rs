@@ -732,7 +732,7 @@ impl EncoderBackend for CadirEncoder {
                 "the written CADIR document holds no record: each record of the document is \
                  dropped or needs one that is",
             ));
-            empty = CadIr::empty();
+            empty = without_records(ir);
             bytes = crate::hash::finite_json::to_canonical_json_string(&empty)
                 .map_err(malformed)?
                 .into_bytes();
@@ -822,6 +822,18 @@ fn within_the_bounds(
 }
 
 /// Whether `ir` holds a record of a home or native arena.
+/// The empty CADIR document with the document-level fields of `ir`: its
+/// `fragment` flag, `repro` metadata, scope, source metadata and tolerances.
+fn without_records(ir: &CadIr) -> CadIr {
+    let mut empty = CadIr::empty();
+    empty.fragment = ir.fragment;
+    empty.repro.clone_from(&ir.repro);
+    empty.source.clone_from(&ir.source);
+    empty.tolerances = ir.tolerances;
+    empty.set_scope(ir.scope());
+    empty
+}
+
 fn holds_records(ir: &CadIr) -> bool {
     ir.entity_count() > 0 || holds_native_records(ir)
 }

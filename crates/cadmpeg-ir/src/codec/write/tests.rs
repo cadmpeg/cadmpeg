@@ -1785,15 +1785,62 @@ fn the_cadir_writer_drops_a_record_whose_expression_does_not_print() {
     assert_eq!(kept, ["test:design:parameter#kept"]);
 }
 
-/// An output from which every record was dropped is the empty CADIR
-/// document, with `export:output.empty` (§3.4): here the one record is
-/// refused.
+/// Sets each document-level field of `ir` to a value other than its default:
+/// `fragment`, `repro`, source metadata and tolerances.
+fn state_document_fields(ir: &mut CadIr) {
+    ir.fragment = true;
+    ir.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "identity": {"kind": "unclassified", "format": "test"},
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
+    ir.tolerances.linear =
+        crate::scalar::PositiveLength::new(ir.tolerances.linear.get() * 2.0).unwrap();
+    let finding = Finding {
+        rule: crate::rule_name!("test.unresolved-link"),
+        check: Check::NativeLinks,
+        severity: Severity::Error,
+        entity: None,
+        related: Vec::new(),
+        message: "unresolved link".into(),
+    };
+    ir.repro = Some(Box::new(crate::repro::BundleMetadata {
+        signature: crate::repro::Signature::new(
+            &finding,
+            crate::codec_id!("cadir"),
+            crate::repro::Stage::Check,
+        ),
+        roots: Vec::new(),
+        context: crate::attributes::AttributeJson::Null,
+        manifest: Vec::new(),
+        incomplete_reason: None,
+    }));
+}
+
+/// `written` holds no record and states each document-level field as `ir`
+/// states it.
+fn assert_document_fields_without_records(ir: &CadIr, written: &CadIr) {
+    assert_eq!(written.entity_count(), 0);
+    assert!(written.native.0.is_empty());
+    assert_eq!(written.fragment, ir.fragment);
+    assert_eq!(written.repro, ir.repro);
+    assert_eq!(written.scope(), ir.scope());
+    assert_eq!(written.source, ir.source);
+    assert_eq!(written.tolerances, ir.tolerances);
+}
+
+/// An output from which every record was dropped is the CADIR document with
+/// its document-level fields and no records, with `export:output.empty`
+/// (§3.4): here the one record is refused.
 #[test]
 fn the_cadir_writer_writes_the_empty_document_where_it_drops_every_record() {
     use crate::design::expr::{Expression, Neutral, Node};
     use crate::design::parameter::ParameterDefinition;
 
     let mut ir = CadIr::empty();
+    state_document_fields(&mut ir);
     let mut empty = negated_parameter("empty", 1);
     empty.definition =
         ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Any(Vec::new()))));
@@ -1801,15 +1848,17 @@ fn the_cadir_writer_writes_the_empty_document_where_it_drops_every_record() {
 
     let (losses, read) = written_with_losses(&ir, "output.empty");
     assert_eq!(losses.len(), 1, "{losses:?}");
-    assert_eq!(read, CadIr::empty());
+    assert_document_fields_without_records(&ir, &read);
 }
 
 /// A scope that excludes every record the document holds leaves an output
-/// from which every record was dropped: the empty CADIR document, with
+/// from which every record was dropped: the CADIR document with its
+/// document-level fields, its scope among them, and no records, with
 /// `export:output.empty` (§3.4).
 #[test]
 fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_record() {
     let mut ir = CadIr::empty();
+    state_document_fields(&mut ir);
     ir.design.parameters.push(negated_parameter("kept", 1));
     let mut value = serde_json::to_value(&ir).unwrap();
     value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
@@ -1819,14 +1868,20 @@ fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_rec
     )
     .expect("the read keeps the scope as written");
 
+    assert_ne!(
+        read.document.scope(),
+        cadmpeg_core::decode::ContentScope::full()
+    );
+
     let (losses, written) = written_with_losses(&read.document, "output.empty");
     assert_eq!(losses.len(), 1, "{losses:?}");
-    assert_eq!(written, CadIr::empty());
+    assert_document_fields_without_records(&read.document, &written);
 }
 
 /// The CADIR wire leaves out the legacy model arenas (§3.4): a document whose
-/// records all lie in them writes no record, so its output is the empty
-/// CADIR document, with `export:output.empty`.
+/// records all lie in them writes no record, so its output is the CADIR
+/// document with its document-level fields and no records, with
+/// `export:output.empty`.
 #[test]
 fn the_cadir_writer_writes_the_empty_document_for_records_the_wire_omits() {
     use crate::features::{
@@ -1834,6 +1889,7 @@ fn the_cadir_writer_writes_the_empty_document_for_records_the_wire_omits() {
     };
 
     let mut ir = CadIr::empty();
+    state_document_fields(&mut ir);
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("test:writer:feature#legacy").unwrap(),
@@ -1853,5 +1909,5 @@ fn the_cadir_writer_writes_the_empty_document_for_records_the_wire_omits() {
 
     let (losses, written) = written_with_losses(&ir, "output.empty");
     assert_eq!(losses.len(), 1, "{losses:?}");
-    assert_eq!(written, CadIr::empty());
+    assert_document_fields_without_records(&ir, &written);
 }
