@@ -593,6 +593,10 @@ impl AsmHistoricalTransition {
                     &old_topology.vertex_points,
                     &new.vertex_points,
                 )?,
+                face_senses: AsmHistoricalRowDelta::between(
+                    &old_topology.face_senses,
+                    &new.face_senses,
+                )?,
                 edge_curves: AsmHistoricalRowDelta::between(
                     &old_topology.edge_curves,
                     &new.edge_curves,
@@ -761,6 +765,9 @@ impl AsmHistoricalTransition {
         self.rows
             .face_surfaces
             .apply_inner(&mut topology.face_surfaces, trusted_sorted)?;
+        self.rows
+            .face_senses
+            .apply_inner(&mut topology.face_senses, trusted_sorted)?;
         self.rows
             .vertex_points
             .apply_inner(&mut topology.vertex_points, trusted_sorted)?;
@@ -1051,6 +1058,7 @@ impl AsmHistoricalRowsDelta {
         self.vertex_points = AsmHistoricalRowDelta::default();
         self.point_positions = AsmHistoricalRowDelta::default();
         self.edge_samples = AsmHistoricalRowDelta::default();
+        self.face_senses = AsmHistoricalRowDelta::default();
     }
 }
 
@@ -1159,6 +1167,7 @@ fn reserve_topology_prefix(
     reserve_rows!(coedge_topology);
     reserve_rows!(edge_vertices);
     reserve_rows!(face_surfaces);
+    reserve_rows!(face_senses);
     reserve_rows!(vertex_points);
     reserve_rows!(edge_curves);
     reserve_rows!(coedge_pcurves);

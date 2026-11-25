@@ -2089,19 +2089,28 @@ pub(crate) struct ExtrudeFaceResolution<'a> {
     pub(crate) angular_tolerance: f64,
 }
 
+/// Resolve native selected-face Extrude starts by sketch-plane coincidence.
+/// Each resolved start whose offset this rewrites along the travel direction
+/// joins `oriented`.
 pub(crate) fn bind_extrude_start_planes(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
+    oriented: &mut std::collections::BTreeSet<String>,
 ) {
     use cadmpeg_ir::features::extents::ExtrudeStart;
     use cadmpeg_ir::features::selections::FaceSelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
+        let mut rewritten = false;
         feature.evaluation.edit(|definition, _| 'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, start, .. }) =
-                definition
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile,
+                direction,
+                start,
+                ..
+            }) = definition
             else {
                 break 'feature_edit;
             };
@@ -2176,17 +2185,54 @@ pub(crate) fn bind_extrude_start_planes(
                 let selected = face.clone();
                 let native = native.to_owned();
                 if retain_face_operand_resolution(group, resolution.operands, face) {
+                    let along = retained_offset.and_then(|stored| {
+                        let outward =
+                            model_face_outward(face, resolution.faces, resolution.surfaces)?;
+                        let travel = crate::history::extrude_start_offset::travel(
+                            profile, direction, sketches,
+                        )?;
+                        crate::history::extrude_start_offset::along_travel(
+                            stored,
+                            outward,
+                            travel,
+                            resolution.angular_tolerance,
+                        )
+                    });
+                    rewritten = along.is_some();
                     *start = ExtrudeStart::FromFace {
                         face: FaceSelection::Resolved {
                             faces: vec![selected],
                             native,
                         },
-                        offset: retained_offset,
+                        offset: along.or(retained_offset),
                     };
                 }
             }
         });
+        if rewritten {
+            oriented.insert(feature.id.as_str().to_owned());
+        }
     }
+}
+
+/// The outward normal of a planar model face.
+fn model_face_outward(
+    candidate: &cadmpeg_ir::ids::FaceId,
+    faces: &[cadmpeg_ir::topology::Face],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) -> Option<Vector3> {
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
+    let face = faces.iter().find(|face| face.id == *candidate)?;
+    let surface = surfaces.iter().find(|surface| surface.id == face.surface)?;
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
+        return None;
+    };
+    let normal = *plane_surface.frame().axis().as_raw();
+    Some(match face.sense {
+        cadmpeg_ir::topology::Sense::Forward => normal,
+        cadmpeg_ir::topology::Sense::Reversed => normal.scale(-1.0),
+    })
 }
 
 /// Resolve a legacy Extrude target face from a unique forward planar face.

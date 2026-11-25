@@ -155,6 +155,7 @@ fn assert_start_binder_binds_face(nested: bool) {
             &mut features,
             std::slice::from_ref(&sketch),
             &mut resolution,
+            &mut std::collections::BTreeSet::new(),
         );
         features
     };
@@ -169,6 +170,58 @@ fn assert_start_binder_binds_face(nested: bool) {
             ..
         })
     ));
+}
+
+#[test]
+fn extrude_start_offset_runs_along_the_travel_by_the_start_face_sense() {
+    use cadmpeg_ir::features::extents::ExtrudeStart;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
+
+    for (sense, expected) in [(Sense::Forward, -5.0), (Sense::Reversed, 5.0)] {
+        let (mut feature, sketch, group, operand, mut faces, surfaces) =
+            start_binder_fixture(false);
+        faces[0].sense = sense;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                start: ExtrudeStart::FromFace { offset, .. },
+                ..
+            }) = definition
+            {
+                *offset = Length::new(-5.0);
+            }
+        });
+        let mut features = [feature];
+        let mut operands = [operand];
+        let mut resolution = ExtrudeFaceResolution {
+            faces: &faces,
+            surfaces: &surfaces,
+            groups: std::slice::from_ref(&group),
+            operands: &mut operands,
+            linear_tolerance: EPS_FACE_TEST_TARGET_LINEAR_E9,
+            angular_tolerance: EPS_FACE_TEST_TARGET_ANGULAR_E9,
+        };
+        let mut oriented = std::collections::BTreeSet::new();
+        crate::design::face_resolve::bind_extrude_start_planes(
+            &mut features,
+            std::slice::from_ref(&sketch),
+            &mut resolution,
+            &mut oriented,
+        );
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            start:
+                ExtrudeStart::FromFace {
+                    offset: Some(offset),
+                    ..
+                },
+            ..
+        }) = features[0].evaluation.definition()
+        else {
+            panic!("the start stays a selected-face start with its offset");
+        };
+        assert_eq!(offset.get(), expected, "{sense:?}");
+        assert!(oriented.contains(features[0].id.as_str()));
+    }
 }
 
 #[test]

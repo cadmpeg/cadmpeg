@@ -317,6 +317,9 @@ pub(crate) struct AsmHistoricalTopology {
     pub(crate) edge_vertices: Vec<AsmHistoricalEdge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) face_surfaces: Vec<AsmHistoricalCarrierBinding>,
+    /// Whether each face's normal agrees with its surface carrier's normal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) face_senses: Vec<AsmHistoricalFaceSense>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) edge_curves: Vec<AsmHistoricalOptionalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -514,6 +517,14 @@ pub(crate) struct AsmHistoricalEdge {
 pub(crate) struct AsmHistoricalCarrierBinding {
     pub(crate) entity: i64,
     pub(crate) carrier: i64,
+}
+
+/// Orientation of one face relative to its surface carrier.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalFaceSense {
+    pub(crate) face: i64,
+    /// The face normal agrees with the carrier normal.
+    pub(crate) forward: bool,
 }
 
 /// Stable binding from a topology entity to its optional geometry carrier.
@@ -1319,6 +1330,8 @@ pub(crate) struct AsmHistoricalRowsDelta {
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) face_surfaces: AsmHistoricalRowDelta<AsmHistoricalCarrierBinding>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) face_senses: AsmHistoricalRowDelta<AsmHistoricalFaceSense>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) vertex_points: AsmHistoricalRowDelta<AsmHistoricalCarrierBinding>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) edge_curves: AsmHistoricalRowDelta<AsmHistoricalOptionalCarrierBinding>,
@@ -1339,6 +1352,12 @@ impl AsmHistoricalRow for AsmHistoricalEntityTags {
 impl AsmHistoricalRow for AsmHistoricalCarrierBinding {
     fn key(&self) -> i64 {
         self.entity
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalFaceSense {
+    fn key(&self) -> i64 {
+        self.face
     }
 }
 
