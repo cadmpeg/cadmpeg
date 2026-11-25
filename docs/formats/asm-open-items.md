@@ -425,9 +425,9 @@ projection.
 
 **Question.** What does the fourth preamble field, `history_entry_count`, count?
 
-**Known.** `asm.md` §3.1 "The history-container record" gives the preamble. The field takes values that differ from the number of `delta_state` records of the chain, from the number of active records, and from the number of records of the history snapshot. A chain of two states stores the value `2` and values above `100`; longer chains store values from `34` to above `5000`.
+**Known.** `asm.md` §3.1 "The history-container record" gives the preamble. The field stores a positive value, and the least value is `1`. A chain of two states stores values from `1` to above `2000`. Longer chains store values from `1` to above `40000`. Two histories with the same states, the same records and the same bulletin-board changes store different values. Thus the stored history does not set the value.
 
-**Need.** A history stream saved after each of a series of edits of one design, each edit adding one feature and some edits undoing one: the field compared across the saves with the number of states, the number of undone states, and the largest entity identity of the history.
+**Need.** A history stream saved after each edit of a series of edits of one design, in one session and over more than one session, with edits that add a feature and edits that undo one: the field compared across the saves with the edits and the sessions.
 
 ## 7. External kernel layers
 

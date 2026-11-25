@@ -39,9 +39,13 @@ pub(super) enum Decision<'a> {
     /// The geometry features, each written as an item with its state, in
     /// timeline order. Each item after the first makes a new body.
     Items(Vec<Item<'a>>),
-    /// The feature stays in the Base Feature, for `reason`.
+    /// The first typed feature stays in the Base Feature, with every
+    /// geometry feature of the run. `reason` concerns `cause`, the feature
+    /// the writer cannot write with its state, where that is a later
+    /// feature, and `feature` otherwise.
     BaseFeature {
         feature: &'a FeatureId,
+        cause: Option<&'a FeatureId>,
         reason: String,
     },
 }
@@ -52,15 +56,25 @@ impl<'a> Decision<'a> {
         self.items().iter().any(|item| item.feature() == feature)
     }
 
-    /// The reason the Base Feature holds `feature`, where the decided
-    /// feature is it.
-    pub(super) fn reason(&self, feature: &FeatureId) -> Option<&str> {
-        match self {
-            Self::BaseFeature {
-                feature: decided,
-                reason,
-            } if *decided == feature => Some(reason),
-            Self::None | Self::Items(_) | Self::BaseFeature { .. } => None,
+    /// The reason the Base Feature holds `feature`, where the decision
+    /// names it: the decided feature, or the later feature that causes the
+    /// decision.
+    pub(super) fn reason(&self, feature: &FeatureId) -> Option<String> {
+        let Self::BaseFeature {
+            feature: decided,
+            cause,
+            reason,
+        } = self
+        else {
+            return None;
+        };
+        match cause {
+            Some(cause) if *cause == feature => Some(reason.clone()),
+            Some(cause) if *decided == feature => {
+                Some(format!("the writer cannot write {cause} with its state"))
+            }
+            None if *decided == feature => Some(reason.clone()),
+            Some(_) | None => None,
         }
     }
 
@@ -151,10 +165,23 @@ fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
 /// Whether the writer can write `feature` with its state as a geometry
 /// item of a run: a family it writes as an item that makes a new body, or
 /// any such family where the feature is the run's `first` stateful feature.
-pub(super) fn carries(target: &CadIr, feature: &FeatureId, first: bool) -> bool {
-    typed(target, feature).is_some_and(|operation| first || operation.makes_new_body())
+/// `Err` names why it cannot.
+pub(super) fn carries(
+    target: &CadIr,
+    feature: &FeatureId,
+    first: bool,
+) -> Result<(), &'static str> {
+    let operation = typed(target, feature).ok_or(OTHER_FAMILY)?;
+    if first || operation.makes_new_body() {
+        Ok(())
+    } else {
+        Err(CHANGES_AN_EARLIER_BODY)
+    }
 }
 
+/// Why a geometry feature is not written with its state where the writer
+/// writes no item of its family.
+const OTHER_FAMILY: &str = "the writer writes no item of its family with its state";
 /// Why a geometry feature after the first is not written with its state
 /// where it changes a body of the state before it.
 const CHANGES_AN_EARLIER_BODY: &str = "it changes a body of the state before it, and f3d-open-items.md DR-1054 leaves open the record changes of such a state";
@@ -176,7 +203,8 @@ pub(super) struct Run<'a, 'p> {
 /// of an earlier attempt to write the items. A written item whose parameter
 /// binds a user parameter takes that parameter out of `parameters`; the
 /// items' parameters take the source ordinals from `ordinal`. The
-/// `BaseFeature` decision names the first typed feature.
+/// `BaseFeature` decision names the first typed feature, and the later
+/// feature its reason concerns.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
     scope: &'a DesignScope,
@@ -199,19 +227,27 @@ pub(super) fn plan<'a>(
     else {
         return Decision::None;
     };
-    let base = |reason: String| Decision::BaseFeature { feature, reason };
+    let base = |cause: Option<&'a FeatureId>, reason: String| Decision::BaseFeature {
+        feature,
+        cause: cause.filter(|cause| *cause != feature),
+        reason,
+    };
     if let Some(failure) = failure {
-        return base(format!("the writer cannot write its records ({failure})"));
+        return base(
+            None,
+            format!("the writer cannot write its records ({failure})"),
+        );
     }
     let mut chain = Vec::with_capacity(stateful.len());
     for &(position, feature) in &stateful {
         let Some(operation) = typed(target, feature) else {
-            return base("the timeline holds other geometry features".to_owned());
+            return base(
+                None,
+                "the timeline holds other geometry features".to_owned(),
+            );
         };
         if !chain.is_empty() && !operation.makes_new_body() {
-            return base(format!(
-                "the writer cannot write {feature} with its state: {CHANGES_AN_EARLIER_BODY}"
-            ));
+            return base(Some(feature), CHANGES_AN_EARLIER_BODY.to_owned());
         }
         chain.push((position, feature, operation));
     }
@@ -232,21 +268,18 @@ pub(super) fn plan<'a>(
     };
     let state = match rows(last_position, last, None, 0).state(chain.len()) {
         Ok(state) => state,
-        Err(reason) => return base(reason.to_owned()),
+        Err(reason) => return base(None, reason.to_owned()),
     };
     let mut trial = parameters.clone();
     let mut next = Some(ordinal);
     let mut items = Vec::<Item<'a>>::with_capacity(chain.len());
-    for (items_before, &(position, feature, operation)) in chain.iter().enumerate() {
-        let later = |reason: &str| {
-            if items_before == 0 {
-                reason.to_owned()
-            } else {
-                format!("the writer cannot write {feature} with its state: {reason}")
-            }
-        };
+    for &(position, feature, operation) in &chain {
+        let items_before = items.len();
         let Some(item_ordinal) = next else {
-            return base(later("its parameters exceed the source ordinals"));
+            return base(
+                Some(feature),
+                "its parameters exceed the source ordinals".to_owned(),
+            );
         };
         let mut first_error = None;
         let mut planned = None;
@@ -270,9 +303,12 @@ pub(super) fn plan<'a>(
             }
         }
         let Some(item) = planned else {
-            return base(later(
-                first_error.unwrap_or("its faces do not match its profile"),
-            ));
+            return base(
+                Some(feature),
+                first_error
+                    .unwrap_or("its faces do not match its profile")
+                    .to_owned(),
+            );
         };
         next = item.next_ordinal(item_ordinal);
         items.push(item);
@@ -419,8 +455,15 @@ impl<'a, 'p> Rows<'a, 'p> {
     /// design's body order, where the feature is the last of them; the
     /// first row that fails names the reason: the design holds one body
     /// for each item, the timeline is rolled to its end, and the current
-    /// state is the result of the feature.
+    /// state is the result of the feature. A current state after the
+    /// timeline marker fails first.
     fn state(&self, items: usize) -> Result<Vec<&'a BodyId>, &'static str> {
+        const AFTER_THE_MARKER: &str = "the current state stands after the timeline marker, and the writer writes no evaluation of the document as the state at the marker";
+        if let [state] = self.scope.current.as_slice() {
+            if self.ends && after_the_run(&state.at, self.features) {
+                return Err(AFTER_THE_MARKER);
+            }
+        }
         let bodies = &self.target.geometry.bodies;
         if bodies.len() != items {
             return Err(if items == 1 {
@@ -544,6 +587,16 @@ impl<'a, 'p> Rows<'a, 'p> {
             .filter(|item| position_of(item.feature).is_some_and(|at| at < self.position))
             .count();
         Ok((index, after))
+    }
+}
+
+/// Whether the state at `at` stands after every feature of `run`: after a
+/// feature outside the run, or after a timeline.
+pub(super) fn after_the_run(at: &Position, run: &[&FeatureId]) -> bool {
+    match at {
+        Position::After(Member::Feature(at)) => !run.contains(&at),
+        Position::After(Member::Container(_)) => true,
+        Position::Start(_) => false,
     }
 }
 

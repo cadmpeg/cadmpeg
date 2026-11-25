@@ -254,7 +254,7 @@ fn a_run_whose_feature_has_no_state_stands_after_the_marker_with_no_body() {
     let missing = loss(&report, EVALUATION_MISSING).join("\n");
     assert!(
         missing.contains(&format!(
-            "{EXTRUDE} (the writer writes it without its state: the current state is not its result)"
+            "{EXTRUDE} (the writer writes it without its state: the current state stands after the timeline marker, and the writer writes no evaluation of the document as the state at the marker)"
         )),
         "{missing}"
     );
@@ -654,6 +654,29 @@ type State = (i64, i64, i64, i64, Vec<(i64, i64, bool)>);
 /// The `delta_state` records of the history stream in `archive`, in stream
 /// order.
 fn history_chain(archive: &[u8]) -> Vec<State> {
+    history_boards(archive)
+        .into_iter()
+        .map(|(state, boards)| {
+            let boards = boards
+                .into_iter()
+                .map(|(owner, number, inserted)| (owner, number, inserted.is_some()))
+                .collect();
+            (state.0, state.1, state.2, state.3, boards)
+        })
+        .collect()
+}
+
+/// A board of a `delta_state` record: its owner, its number, and the slots
+/// it inserts where every change inserts.
+type Board = (i64, i64, Option<Vec<i64>>);
+
+/// The header of a `delta_state` record: identity, previous, next and node
+/// references.
+type Header = (i64, i64, i64, i64);
+
+/// The `delta_state` records of the history stream in `archive`, in stream
+/// order: each header and its boards.
+fn history_boards(archive: &[u8]) -> Vec<(Header, Vec<Board>)> {
     use cadmpeg_asm::history::{
         delta_state_offsets, read_delta_state_header, walk_bulletin_boards, BulletinBoardItem,
         DeltaStateHeaderRead, EntityChange,
@@ -680,7 +703,7 @@ fn history_chain(archive: &[u8]) -> Vec<State> {
             else {
                 panic!("a framed delta_state at {offset}");
             };
-            let mut boards = Vec::<(i64, i64, bool)>::new();
+            let mut boards = Vec::<Board>::new();
             walk_bulletin_boards(
                 &stream,
                 header.body_start,
@@ -688,19 +711,24 @@ fn history_chain(archive: &[u8]) -> Vec<State> {
                 |item| match item {
                     BulletinBoardItem::Board {
                         owner_ref, number, ..
-                    } => boards.push((owner_ref, number, true)),
+                    } => boards.push((owner_ref, number, Some(Vec::new()))),
                     BulletinBoardItem::Change { kind, .. } => {
                         let board = boards.last_mut().expect("a board");
-                        board.2 &= matches!(kind, EntityChange::Insert { .. });
+                        match (kind, board.2.as_mut()) {
+                            (EntityChange::Insert { new }, Some(inserted)) => inserted.push(new),
+                            _ => board.2 = None,
+                        }
                     }
                 },
             )
             .expect("the bulletin boards walk");
             (
-                header.state_id,
-                header.previous,
-                header.next,
-                header.node_index,
+                (
+                    header.state_id,
+                    header.previous,
+                    header.next,
+                    header.node_index,
+                ),
                 boards,
             )
         })
@@ -778,7 +806,89 @@ fn each_extrude_that_makes_a_new_body_commits_its_own_state() {
         );
         let missing = loss(&report, EVALUATION_MISSING).join("\n");
         assert!(!missing.contains(second.as_str()), "{missing}");
+        let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+        assert!(
+            residual.contains("history_entry_count") && residual.contains("HS-02"),
+            "{residual}"
+        );
+        assert!(!residual.contains("ASM record"), "{residual}");
+        each_board_inserts_the_records_of_its_body(&decoded, &bytes);
     }
+}
+
+/// The boards of the two states after the root state insert every slot
+/// but `0` once each, and the decoded state that the first commits holds
+/// the first body and the slots of its board alone; the head state adds
+/// the second body from the slots of its own board.
+fn each_board_inserts_the_records_of_its_body(decoded: &CadIr, bytes: &[u8]) {
+    use std::collections::BTreeSet;
+    let boards = history_boards(bytes);
+    let inserted = |state: i64| -> BTreeSet<i64> {
+        let (_, boards) = boards
+            .iter()
+            .find(|(header, _)| header.0 == state)
+            .unwrap_or_else(|| panic!("state {state}"));
+        let [(_, _, Some(slots))] = boards.as_slice() else {
+            panic!("one insertion board in state {state}: {boards:?}");
+        };
+        slots.iter().copied().collect()
+    };
+    let (first, head) = (inserted(3), inserted(4));
+    assert!(first.is_disjoint(&head), "{first:?} {head:?}");
+    let native = f3d_native(decoded);
+    let [history] = native.asm_histories.as_slice() else {
+        panic!("one decoded history");
+    };
+    let topology = |state: i64| {
+        let state = history
+            .states()
+            .iter()
+            .find(|candidate| candidate.state_id == state)
+            .unwrap_or_else(|| panic!("decoded state {state}"));
+        history
+            .topology(state)
+            .expect("the state materializes")
+            .clone()
+    };
+    let slots = |topology: &crate::history_records::AsmHistoricalTopology| {
+        [
+            &topology.bodies,
+            &topology.regions,
+            &topology.shells,
+            &topology.faces,
+            &topology.loops,
+            &topology.coedges,
+            &topology.edges,
+            &topology.vertices,
+            &topology.points,
+            &topology.surfaces,
+            &topology.curves,
+            &topology.pcurves,
+        ]
+        .into_iter()
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>()
+    };
+    let (after_first, after_head) = (topology(3), topology(4));
+    assert_eq!(after_first.bodies.len(), 1);
+    assert_eq!(after_first.faces.len(), 6);
+    assert_eq!(after_head.bodies.len(), 2);
+    assert_eq!(after_head.faces.len(), 12);
+    let (first_slots, head_slots) = (slots(&after_first), slots(&after_head));
+    assert!(first_slots.is_subset(&first), "{first_slots:?} {first:?}");
+    let added = head_slots
+        .difference(&first_slots)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    assert!(added.is_subset(&head), "{added:?} {head:?}");
+    assert!(head_slots.is_superset(&first_slots));
+    let every = first.union(&head).copied().collect::<BTreeSet<_>>();
+    assert_eq!(every.first(), Some(&1));
+    assert_eq!(
+        every.last().and_then(|last| usize::try_from(*last).ok()),
+        Some(every.len())
+    );
 }
 
 #[test]
@@ -797,8 +907,116 @@ fn an_extrude_that_changes_an_earlier_body_stays_in_the_base_feature() {
     let missing = loss(&report, EVALUATION_MISSING).join("\n");
     assert!(
         missing.contains(&format!(
-            "the writer cannot write {second} with its state: it changes a body of the state before it"
+            "{second} (the Base Feature holds it: it changes a body of the state before it"
         )) && missing.contains("DR-1054"),
         "{missing}"
+    );
+    assert!(
+        missing.contains(&format!(
+            "{EXTRUDE} (the Base Feature holds it: the writer cannot write {second} with its state;"
+        )),
+        "{missing}"
+    );
+}
+
+/// [`with_a_second_extrude`] whose second extrude joins the cube, with the
+/// state after the first extrude, the cube alone, held by an evaluation
+/// where `held`.
+fn joined_after_the_cube(held: bool) -> (CadIr, FeatureId) {
+    use cadmpeg_ir::design::evaluation::{
+        Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+    };
+    use cadmpeg_ir::design::ids::EvaluationId;
+    use cadmpeg_ir::design::refs::Evaluated;
+    let (mut ir, second) = with_a_second_extrude(Boolean::Apply {
+        op: BooleanOp::Join,
+        targets: None,
+    });
+    if held {
+        let cube = sketch_and_extrude(blind(), false).geometry;
+        ir.design.evaluations.push(Evaluation {
+            id: EvaluationId::mint("test:design:evaluation#cube").expect("identity grammar"),
+            scope: ir.design.scopes[0].definition.clone(),
+            configuration: None,
+            of: Evaluated::State(Position::After(Member::Feature(
+                FeatureId::mint(EXTRUDE).expect("identity grammar"),
+            ))),
+            status: EvaluationStatus::Current,
+            content: Some(StateContent {
+                base: StateBase::Empty,
+                delta: StateDelta {
+                    records: cube,
+                    ..StateDelta::default()
+                },
+            }),
+            native_ref: None,
+        });
+    }
+    (ir, second)
+}
+
+#[test]
+fn a_history_true_join_names_its_reason_on_its_own_entry_with_no_held_state() {
+    let (ir, second) = joined_after_the_cube(false);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(decoded.geometry.bodies.is_empty(), "{:#?}", report.losses);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(
+        missing.contains(&format!(
+            "{EXTRUDE} (the writer writes it without its state: the current state stands after the timeline marker"
+        )),
+        "{missing}"
+    );
+    assert!(
+        missing.contains(&format!(
+            "{second} (the writer writes it without its state: it changes a body of the state before it"
+        )) && missing.contains("DR-1054"),
+        "{missing}"
+    );
+}
+
+#[test]
+fn a_history_true_join_after_a_held_state_writes_that_state_and_its_body() {
+    let (ir, second) = joined_after_the_cube(true);
+    let (report, decoded, bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude", "sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(rollback, Some(Rollback::Before(members[3].clone())));
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert_eq!(decoded.geometry.faces.len(), 6);
+    let extrudes = tails(&decoded)
+        .into_iter()
+        .filter(|tail| tail.0 == "Extrude")
+        .map(|tail| (tail.2, tail.3, tail.4, tail.5))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        extrudes,
+        [(false, false, Some(3), Some(2)), (true, true, None, None)]
+    );
+    assert_eq!(
+        history_chain(&bytes),
+        [(3, -1, 1, 0, vec![(0, 2, true)]), (2, 0, -1, 1, Vec::new()),]
+    );
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(!missing.contains(EXTRUDE), "{missing}");
+    assert!(
+        missing.contains(&format!(
+            "{second} (the writer writes it without its state: it changes a body of the state before it"
+        )) && missing.contains("DR-1054"),
+        "{missing}"
+    );
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterGeometryOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(
+        omitted.contains("test:design:evaluation#cube") && omitted.contains("#second-"),
+        "{omitted}"
     );
 }

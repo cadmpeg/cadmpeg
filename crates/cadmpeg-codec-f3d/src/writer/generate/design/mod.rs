@@ -39,12 +39,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
+use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_ir::codec::write::{
     evaluation_missing, evaluation_stale, ArenaDisposition, DesignArenaDispositions,
     MissingStateForm,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
-use cadmpeg_ir::design::evaluation::EvaluationStatus;
+use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
@@ -290,6 +291,9 @@ pub(super) fn plan<'a>(
     }
     let mut rolled = features.len();
     let mut body_less = None;
+    // The feature the timeline marker stands before where the writer cannot
+    // write it with its state, and why.
+    let mut cause = None;
     let item = if target.geometry.bodies.is_empty() {
         Decision::None
     } else {
@@ -297,6 +301,8 @@ pub(super) fn plan<'a>(
             MissingStateForm::GeometryTrue => None,
             MissingStateForm::HistoryTrue => run_end(target, scope, &features),
         };
+        cause = marker.and_then(|(end, reason)| Some((features[end], reason?)));
+        let marker = marker.map(|(end, _)| end);
         let first_stateful = match missing_states {
             MissingStateForm::GeometryTrue => None,
             MissingStateForm::HistoryTrue => features
@@ -332,10 +338,7 @@ pub(super) fn plan<'a>(
             }
             (run, Some(first)) => {
                 rolled = marker.map_or(first, |end| end.min(first));
-                body_less = Some(match run {
-                    Decision::BaseFeature { feature, reason } => Some((feature, reason)),
-                    Decision::None | Decision::Items(_) => None,
-                });
+                body_less = Some(run);
                 Decision::None
             }
             (run, None) => run,
@@ -373,9 +376,16 @@ pub(super) fn plan<'a>(
                     && !sketches.planes.iter().any(|plane| plane.first == marker)
             }),
     });
-    let unstated = |feature: &FeatureId| match &body_less {
-        Some(Some((decided, reason))) if *decided == feature => Some(reason.as_str()),
-        _ => None,
+    // Why the writer writes `feature` without its state: the reason the run
+    // holds no body, or the reason the marker stands before it.
+    let unstated = |feature: &FeatureId| {
+        body_less
+            .as_ref()
+            .and_then(|run| run.reason(feature))
+            .or_else(|| match cause {
+                Some((before, reason)) if before == feature => Some(reason.to_owned()),
+                _ => None,
+            })
     };
     let written = parameters.written().collect::<BTreeSet<_>>();
     let mut owned = BTreeMap::<&FeatureId, Vec<String>>::new();
@@ -526,25 +536,121 @@ struct Marker<'a> {
 /// rolls back: the first feature that can change a state and that the
 /// writer cannot write with its state as a geometry item of the run
 /// ([`item::carries`]), which the form leaves without its state
-/// (cadir-v11.md §3.4, Features without their state), or the feature the
-/// timeline's stated rollback stands before (§5.2), whichever comes first.
-/// `None` where the run is the whole timeline.
-fn run_end(target: &CadIr, root: &DesignScope, features: &[&FeatureId]) -> Option<usize> {
+/// (cadir-v11.md §3.4, Features without their state), with the reason the
+/// writer cannot, or the feature the timeline's stated rollback stands
+/// before (§5.2) with no reason, whichever comes first. `None` where the run
+/// is the whole timeline.
+fn run_end(
+    target: &CadIr,
+    root: &DesignScope,
+    features: &[&FeatureId],
+) -> Option<(usize, Option<&'static str>)> {
     let second = features
         .iter()
         .enumerate()
         .filter(|(_, feature)| !target.is_stateless(feature, None).unwrap_or(false))
         .enumerate()
-        .find(|(earlier, (_, feature))| !item::carries(target, feature, *earlier == 0))
-        .map(|(_, (at, _))| at);
+        .find_map(|(earlier, (at, feature))| {
+            item::carries(target, feature, earlier == 0)
+                .err()
+                .map(|reason| (at, Some(reason)))
+        });
     let rollback = match written_timeline(target, root) {
         Some(Container::Ordered {
             rollback: Some(Rollback::Before(Member::Feature(before))),
             ..
-        }) => features.iter().position(|feature| *feature == before),
+        }) => features
+            .iter()
+            .position(|feature| *feature == before)
+            .map(|at| (at, None)),
         _ => None,
     };
-    second.into_iter().chain(rollback).min()
+    match (second, rollback) {
+        (Some(second), Some(rollback)) if rollback.0 <= second.0 => Some(rollback),
+        (Some(end), _) | (None, Some(end)) => Some(end),
+        (None, None) => None,
+    }
+}
+
+/// The document the history-true form writes in place of `target`, where
+/// the root scope's one current state stands after the timeline marker and
+/// an evaluation holds the state at the marker (cadir-v11.md §3.4, Features
+/// without their state; §5.4): `target` with that state as its current
+/// state, and the loss of the records of the current state the document then
+/// does not hold. `None` where the form writes `target` itself.
+pub(in crate::writer::generate) fn state_at_marker(
+    target: &CadIr,
+) -> Option<(CadIr, Option<LossNote>)> {
+    // A native Design names the records of the current state.
+    if target.native.namespace("f3d").is_some() {
+        return None;
+    }
+    let scope = root_scope(target)?;
+    let features = scope_features(target, scope);
+    let (end, _) = run_end(target, scope, &features)?;
+    let run = &features[..end];
+    let [current] = scope.current.as_slice() else {
+        return None;
+    };
+    if !current.poses.is_empty() || !item::after_the_run(&current.at, run) {
+        return None;
+    }
+    let last = run
+        .iter()
+        .rposition(|feature| !target.is_stateless(feature, None).unwrap_or(false))?;
+    let evaluation = target.design.evaluations.iter().find(|evaluation| {
+        evaluation.scope == scope.definition
+            && evaluation.configuration == scope.active_configuration
+            && evaluation.status == EvaluationStatus::Current
+            && evaluation.content.is_some()
+            && matches!(
+                &evaluation.of,
+                Evaluated::State(Position::After(Member::Feature(at))) if run[last..].contains(&at)
+            )
+    })?;
+    let Evaluated::State(at) = &evaluation.of else {
+        return None;
+    };
+    let state = target
+        .resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
+        .ok()?;
+    if state.records().bodies.is_empty() {
+        return None;
+    }
+    let mut staged = target.clone();
+    staged.geometry = state.records().clone();
+    let root = staged
+        .design
+        .scopes
+        .iter_mut()
+        .find(|candidate| candidate.definition == scope.definition)?;
+    root.current = vec![CurrentState {
+        at: at.clone(),
+        bodies: state
+            .records()
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect(),
+        poses: state.poses().clone(),
+        status: EvaluationStatus::Current,
+        native_ref: None,
+    }];
+    staged
+        .design
+        .evaluations
+        .retain(|other| other.id != evaluation.id);
+    staged.finalize();
+    let unwritten = super::reduce::geometry_records_outside(&target.geometry, &staged.geometry);
+    let loss = (!unwritten.is_empty()).then(|| {
+        F3dLossCode::WriterGeometryOmitted.note(format!(
+            "the history-true design holds the state at its timeline marker, which evaluation {} holds, in place of the current state {}, so these records of the current state were not written: {}",
+            evaluation.id,
+            position(&current.at),
+            unwritten.join("; ")
+        ))
+    });
+    Some((staged, loss))
 }
 
 impl NeutralDesign<'_> {
