@@ -7,24 +7,32 @@ use std::collections::BTreeMap;
 
 use super::records::DesignRecords;
 use crate::design::feature::{FeatureOperation, StoredOrigin};
-use crate::document::CadIr;
+use crate::document::{CadIr, ScopeViolation};
 use crate::index::ModelIndex;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::schema::ArenaRecord;
 
+/// Part 10's scope rules (§2.1): one Error per [`ScopeViolation`].
 pub(super) fn check_scope(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if let Err(violation) = ir.check_scope() {
-        crate::validate::record_finding(
-            findings,
-            Check::Design,
-            Severity::Error,
-            None,
-            crate::rule!(
-                "design.document-breaks-scope-invariants",
-                "the document breaks the scope invariants: {violation}"
-            ),
-        );
+    let mut error = |message: crate::report::check::Ruled<'_>| {
+        crate::validate::record_finding(findings, Check::Design, Severity::Error, None, message);
+    };
+    for violation in ir.scope_violations() {
+        match violation {
+            ScopeViolation::Unmet { .. } => error(crate::rule!(
+                "design.scope-holds-class-without-required-class",
+                "{violation}"
+            )),
+            ScopeViolation::Populated { .. } => error(crate::rule!(
+                "design.scope-excluded-arena-holds-records",
+                "{violation}"
+            )),
+            ScopeViolation::Referenced { .. } => error(crate::rule!(
+                "design.scope-excluded-class-referenced-another-arena",
+                "{violation}"
+            )),
+        }
     }
 }
 
@@ -156,7 +164,7 @@ fn check_native_refs(index: &DesignRecords<'_>, ids: &ModelIndex<'_>, findings: 
     for feature in &design.features {
         check(feature.id.as_str(), feature.native_ref.as_ref());
     }
-    for (holder, definition) in index.feature_definitions() {
+    for (holder, _, definition) in index.feature_definitions() {
         let link = match &definition.operation {
             FeatureOperation::Stored {
                 origin: StoredOrigin::Linked(link),

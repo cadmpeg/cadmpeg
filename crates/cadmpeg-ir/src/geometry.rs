@@ -1150,6 +1150,11 @@ pub(crate) struct ProceduralCurveRow {
 }
 
 impl ProceduralSurfaceRow {
+    /// The construction's identity.
+    pub(crate) fn id_str(&self) -> &str {
+        self.id.as_str()
+    }
+
     /// The row a construction and its carrier state.
     pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
         Self {
@@ -1174,6 +1179,11 @@ impl ProceduralSurfaceRow {
 }
 
 impl ProceduralCurveRow {
+    /// The construction's identity.
+    pub(crate) fn id_str(&self) -> &str {
+        self.id.as_str()
+    }
+
     /// The row a construction and its carrier state.
     pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
         Self {

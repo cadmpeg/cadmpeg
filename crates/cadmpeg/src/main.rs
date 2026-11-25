@@ -95,7 +95,9 @@ enum MissingStates {
     /// The current geometry is written exactly.
     GeometryTrue,
     /// The stated run is written with its states; later features follow the
-    /// timeline marker rolled back.
+    /// timeline marker rolled back. Where the writer cannot write the state
+    /// of the first feature that changes one, the marker stands before that
+    /// feature and the file holds no body.
     HistoryTrue,
 }
 
@@ -213,8 +215,8 @@ enum Command {
         #[arg(long, conflicts_with = "container_only")]
         full_decode: bool,
         /// Do not write if a loss at or above `--reject-lossy-floor` was
-        /// reported. `--reject-lossy=decode` judges this decode's report,
-        /// `=export` the write's, and the bare flag both. Every scope decodes
+        /// reported. `--reject-lossy=decode` judges this decode's report or
+        /// the CADIR read's, `=export` the write's, and the bare flag both. Every scope decodes
         /// the whole source, as `--full-decode` does, so a loss in its design
         /// intent counts.
         #[arg(

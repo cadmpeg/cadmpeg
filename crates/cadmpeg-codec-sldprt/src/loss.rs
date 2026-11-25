@@ -505,25 +505,10 @@ pub(crate) enum SldprtLossCode {
     /// synthesized from the model is not written; the written configuration
     /// states the model's state.
     WriterConfigurationSnapshotEditUnwritten,
-    /// An edit of a parameter that the writer has no carrier for is not
-    /// written; the output keeps the stored native value.
-    WriterParameterEditUnwritten,
-    /// An edit of a feature's definition or selection that the native record
-    /// cannot encode is not written; the output keeps the stored record.
-    WriterFeatureEditUnwritten,
-    /// An edit of a design record other than a parameter or a feature, in a
-    /// part read from CADIR JSON, that the feature history restored from its
-    /// retained source part cannot state is not written; the output keeps the
-    /// stored state.
-    WriterDesignEditUnwritten,
     /// A variant edit of a feature is written in the record shape of the
     /// edited variant, which adds or drops a parameter or drops a source
     /// property of the feature.
     WriterFeatureRecordReshaped,
-    /// A compound-file part edited since decode is written as its stored
-    /// part, as its write into a native envelope refuses or lands on another
-    /// dialect: no edit of the document is written.
-    WriterCompoundFileEditUnwritten,
     /// The written part, decoded again, differs from the document as the
     /// write of the unedited source does: a writer defect no edit causes.
     WriterReadBackDiffers,
@@ -536,7 +521,6 @@ pub(crate) enum SldprtLossCode {
     /// An edit cleared a decoded extrusion reversal, and the writer cleared
     /// the flag in a lane outside the active configuration.
     WriterExtrudeReversalConfigurationCleared,
-    SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
     SourcePropertyKeyBlank,
@@ -833,16 +817,11 @@ impl SldprtLossCode {
         Self::WriterHistoryRegenerationRefused,
         Self::WriterSolidStaleAfterEdit,
         Self::WriterConfigurationSnapshotEditUnwritten,
-        Self::WriterParameterEditUnwritten,
-        Self::WriterFeatureEditUnwritten,
-        Self::WriterDesignEditUnwritten,
         Self::WriterFeatureRecordReshaped,
-        Self::WriterCompoundFileEditUnwritten,
         Self::WriterReadBackDiffers,
         Self::WriterReadBackUnread,
         Self::WriterExtrudeReversalUnwritten,
         Self::WriterExtrudeReversalConfigurationCleared,
-        Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
         Self::AssemblyMatesNotTransferred,
@@ -1079,18 +1058,13 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => {
                 "writer.configuration-snapshot-edit-unwritten"
             }
-            Self::WriterParameterEditUnwritten => "writer.parameter-edit-unwritten",
-            Self::WriterFeatureEditUnwritten => "writer.feature-edit-unwritten",
-            Self::WriterDesignEditUnwritten => "writer.design-edit-unwritten",
             Self::WriterFeatureRecordReshaped => "writer.feature-record-reshaped",
-            Self::WriterCompoundFileEditUnwritten => "writer.compound-file-edit-unwritten",
             Self::WriterReadBackDiffers => "writer.read-back-differs",
             Self::WriterReadBackUnread => "writer.read-back-unread",
             Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
             Self::WriterExtrudeReversalConfigurationCleared => {
                 "writer.extrude-reversal-configuration-cleared"
             }
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
             Self::MetadataConfigurationManagerOpaque => "metadata.configuration-manager-opaque",
@@ -1185,11 +1159,7 @@ impl SldprtLossCode {
             Self::WriterHistoryRegenerationRefused => Severity::Error,
             Self::WriterSolidStaleAfterEdit => Severity::Warning,
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
-            Self::WriterParameterEditUnwritten => Severity::Warning,
-            Self::WriterFeatureEditUnwritten => Severity::Warning,
-            Self::WriterDesignEditUnwritten => Severity::Warning,
             Self::WriterFeatureRecordReshaped => Severity::Warning,
-            Self::WriterCompoundFileEditUnwritten => Severity::Error,
             Self::WriterReadBackDiffers => Severity::Warning,
             Self::WriterReadBackUnread => Severity::Error,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
@@ -1335,7 +1305,6 @@ impl SldprtLossCode {
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
             | Self::DialectLayerCollision
-            | Self::SourceDialectDisplaced
             | Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -1425,11 +1394,7 @@ impl SldprtLossCode {
                 LossTaxonomy::FeatureHistoryRetained
             }
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
-            Self::WriterParameterEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
-            Self::WriterFeatureEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
-            Self::WriterDesignEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterFeatureRecordReshaped => LossTaxonomy::FeatureHistoryRetained,
-            Self::WriterCompoundFileEditUnwritten => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterReadBackDiffers => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterReadBackUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
@@ -1446,7 +1411,6 @@ impl SldprtLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -1996,16 +1960,11 @@ mod tests {
                 "writer.history-regeneration-refused",
                 "writer.solid-stale-after-edit",
                 "writer.configuration-snapshot-edit-unwritten",
-                "writer.parameter-edit-unwritten",
-                "writer.feature-edit-unwritten",
-                "writer.design-edit-unwritten",
                 "writer.feature-record-reshaped",
-                "writer.compound-file-edit-unwritten",
                 "writer.read-back-differs",
                 "writer.read-back-unread",
                 "writer.extrude-reversal-unwritten",
                 "writer.extrude-reversal-configuration-cleared",
-                "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
                 "assembly.mates-not-transferred",

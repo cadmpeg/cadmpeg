@@ -349,12 +349,7 @@ impl ContainerScan<'_> {
     }
 }
 
-const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
-
-/// Whether `image` is a compound-file part rather than a block container.
-pub(crate) fn is_compound_file(image: &[u8]) -> bool {
-    image.starts_with(&COMPOUND_FILE_MAGIC)
-}
+pub(crate) const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 
 pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
@@ -1453,6 +1448,23 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
     }
+}
+
+/// `text` stored in the encoding of `original`, a section that
+/// [`xml_text`] reads: its lead byte, then UTF-16LE after a byte-order mark
+/// or UTF-8.
+pub(crate) fn xml_bytes(original: &[u8], text: &str) -> Vec<u8> {
+    let (mut output, body) = match original.split_first() {
+        Some((lead, rest)) if XML_LEAD_MARKERS.contains(lead) => (vec![*lead], rest),
+        _ => (Vec::new(), original),
+    };
+    if body.starts_with(&[0xff, 0xfe]) {
+        output.extend_from_slice(&[0xff, 0xfe]);
+        output.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    } else {
+        output.extend_from_slice(text.as_bytes());
+    }
+    output
 }
 
 /// Metadata from the first parsed `swSolidWorks` envelope.

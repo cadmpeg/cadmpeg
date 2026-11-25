@@ -146,9 +146,11 @@ pub(crate) fn derived_base_snapshots(
         };
         let slot = *slot;
         let Some(facts) = container::history_breps(scan).find(|facts| {
-            history
-                .id
-                .starts_with(&format!("f3d:{}:asm-history#", facts.name))
+            history.id.starts_with(&crate::ids::native_scoped_id(
+                &facts.name,
+                "asm-history",
+                "",
+            ))
         }) else {
             continue;
         };
@@ -557,9 +559,11 @@ fn fill_requests(
     for (&index, wants) in requests {
         let history = &histories[index];
         let Some(facts) = container::history_breps(scan).find(|facts| {
-            history
-                .id
-                .starts_with(&format!("f3d:{}:asm-history#", facts.name))
+            history.id.starts_with(&crate::ids::native_scoped_id(
+                &facts.name,
+                "asm-history",
+                "",
+            ))
         }) else {
             continue;
         };

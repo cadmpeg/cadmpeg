@@ -1593,13 +1593,11 @@ fn semantic_writer_retains_partial_native_flex_construction() {
     for index in 0..4 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
             &detached,
             decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("unresolved flex construction"));
+        );
+        assert!(error.contains("unresolved flex construction"));
     }
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {

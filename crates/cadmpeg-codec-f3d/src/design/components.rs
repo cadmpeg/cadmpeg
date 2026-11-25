@@ -4266,7 +4266,7 @@ mod tests {
             .occurrences
             .remove(0);
         let mut foreign = table.references[0].clone();
-        foreign.id = "f3d:xref/foreign/xref:reference#0-occurrence-0".to_owned();
+        foreign.id = "f3d:foreign@xref:reference#0-occurrence-0".to_owned();
         foreign.placement_source.as_mut().unwrap().stream =
             "f3d:OtherDesign/BulkStream.dat".to_owned();
         let references = [foreign, table.references[0].clone()];

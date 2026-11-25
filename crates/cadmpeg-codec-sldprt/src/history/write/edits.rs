@@ -6,10 +6,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::edit_dropped_note;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::schema::EntityKind;
 
 use serde_json::Value;
 
@@ -148,12 +150,16 @@ impl ConstructionEdit {
         let mut applied = original.clone();
         match &self.leaf {
             ConstructionLeaf::Definition(pointer) => {
-                let mut wire = serde_json::to_value(original.evaluation.definition()).ok()?;
-                let edited = serde_json::to_value(current.evaluation.definition()).ok()?;
+                let mut wire =
+                    cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition())
+                        .ok()?;
+                let edited =
+                    cadmpeg_core::serde_erase::to_json_value(current.evaluation.definition())
+                        .ok()?;
                 *wire.pointer_mut(pointer)? = edited.pointer(pointer)?.clone();
                 applied
                     .evaluation
-                    .set_definition(serde_json::from_value(wire).ok()?);
+                    .set_definition(cadmpeg_core::serde_erase::from_json_value(&wire).ok()?);
             }
             ConstructionLeaf::Dependencies => {
                 applied.dependencies.clone_from(&current.dependencies);
@@ -176,7 +182,7 @@ impl ConstructionEdit {
         let (source, edited) = match &self.leaf {
             ConstructionLeaf::Definition(pointer) => {
                 let at = |feature: &Feature| {
-                    serde_json::to_value(feature.evaluation.definition())
+                    cadmpeg_core::serde_erase::to_json_value(feature.evaluation.definition())
                         .ok()
                         .and_then(|wire| wire.pointer(pointer).cloned())
                         .unwrap_or(Value::Null)
@@ -232,8 +238,8 @@ pub(crate) fn construction_edits(original: &Feature, current: &Feature) -> Vec<C
     let mut edits = Vec::new();
     if original.evaluation.definition() != current.evaluation.definition() {
         match (
-            serde_json::to_value(original.evaluation.definition()),
-            serde_json::to_value(current.evaluation.definition()),
+            cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition()),
+            cadmpeg_core::serde_erase::to_json_value(current.evaluation.definition()),
         ) {
             (Ok(original), Ok(current)) => {
                 differing_leaves(Some(&original), Some(&current), "", "", &mut edits);
@@ -389,7 +395,7 @@ impl UnwrittenLosses {
                         message.push_str(&listed(&dropped));
                     }
                     message.push('.');
-                    Some(SldprtLossCode::WriterFeatureEditUnwritten.note(message))
+                    Some(edit_dropped_note(EntityKind::Feature, message))
                 }
                 PendingLoss::Construction { id, labels, whole } => {
                     let labels = unread(&id, labels);
@@ -401,7 +407,7 @@ impl UnwrittenLosses {
                     } else {
                         "they read back as stored, and the rest of its edit is written"
                     };
-                    Some(SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
+                    Some(edit_dropped_note(EntityKind::Feature, format!(
                         "SLDPRT feature {id} changes {}, which its written records do not state; {rest}.",
                         listed(&labels)
                     )))
@@ -409,15 +415,16 @@ impl UnwrittenLosses {
             })
             .collect::<Vec<_>>();
         notes.extend(read_back.neither.iter().map(|(id, labels)| {
-            SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
+            edit_dropped_note(EntityKind::Feature, format!(
                 "SLDPRT feature {id} changes {}, and its written part reads them back as neither the source nor the edit states.",
                 listed(labels)
             ))
         }));
         notes.extend(
-            read_back.unkept.iter().map(|reason| {
-                SldprtLossCode::WriterFeatureEditUnwritten.note(format!("{reason}."))
-            }),
+            read_back
+                .unkept
+                .iter()
+                .map(|reason| edit_dropped_note(EntityKind::Feature, format!("{reason}."))),
         );
         notes.extend(read_back.reshaped.iter().map(|(id, changes)| {
             let mut parts = changes
@@ -442,7 +449,7 @@ impl UnwrittenLosses {
             ))
         }));
         if !read_back.changed.is_empty() {
-            notes.push(SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
+            notes.push(edit_dropped_note(EntityKind::Feature, format!(
                 "SLDPRT written part reads back {} other than the document states, and no edit of the write is left to keep as stored.",
                 super::read_back::by_arena(&read_back.changed).join("; ")
             )));
@@ -721,17 +728,19 @@ impl<'source> SourceEdits<'source> {
         if *recorded != part {
             *recorded = UnwrittenPart::Whole;
         }
-        self.unwritten.push(PendingLoss::Note(
-            SldprtLossCode::WriterParameterEditUnwritten.note(message),
-        ));
+        self.unwritten.push(PendingLoss::Note(edit_dropped_note(
+            EntityKind::Parameter,
+            message,
+        )));
     }
 
     /// Reports a detail of a parameter edit the output does not carry; the
     /// value and the expression are written.
     pub(crate) fn parameter_detail_unwritten(&mut self, message: String) {
-        self.unwritten.push(PendingLoss::Note(
-            SldprtLossCode::WriterParameterEditUnwritten.note(message),
-        ));
+        self.unwritten.push(PendingLoss::Note(edit_dropped_note(
+            EntityKind::Parameter,
+            message,
+        )));
     }
 
     /// Reports an edit of the value of parameter `parameter` in configuration
@@ -745,9 +754,10 @@ impl<'source> SourceEdits<'source> {
         self.written
             .configuration_values
             .insert((configuration.to_owned(), parameter.clone()));
-        self.unwritten.push(PendingLoss::Note(
-            SldprtLossCode::WriterParameterEditUnwritten.note(message),
-        ));
+        self.unwritten.push(PendingLoss::Note(edit_dropped_note(
+            EntityKind::Parameter,
+            message,
+        )));
     }
 
     /// Reports a feature edit the output does not carry: the feature keeps
@@ -842,7 +852,9 @@ impl<'source> SourceEdits<'source> {
                 edit.claim(original, current, written)
             })
             .collect::<Vec<_>>();
-        let Ok(source_definition) = serde_json::to_value(original.evaluation.definition()) else {
+        let Ok(source_definition) =
+            cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition())
+        else {
             return;
         };
         if edits.is_empty() && !withhold && original.dependencies == current.dependencies {

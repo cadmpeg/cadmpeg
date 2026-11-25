@@ -141,7 +141,13 @@ impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
     /// Reads a list of members that are distinct by identity. An `Unordered`
     /// list states its members in identity-key order, its one spelling.
     fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
-        if O::SORTED && items.windows(2).any(|pair| pair[0].key() > pair[1].key()) {
+        if O::SORTED
+            && items.windows(2).any(|pair| pair[0].key() > pair[1].key())
+            && !cadmpeg_core::read_session::repair(
+                cadmpeg_core::read_session::Repair::Spelling,
+                || "an unordered member list states its members out of identity-key order".into(),
+            )
+        {
             return Err("an unordered member list states its members out of identity-key order");
         }
         Self::new(items)
@@ -330,9 +336,7 @@ impl Ord for WitnessKey<'_> {
     }
 }
 
-/// The reading form of [`Picked`]. Each pick nested in its domain has
-/// passed the pick ceiling; the conversion admits this one level above the
-/// deepest of them.
+/// The reading form of [`Picked`].
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]

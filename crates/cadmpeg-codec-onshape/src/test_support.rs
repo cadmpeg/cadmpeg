@@ -92,4 +92,5 @@ pub(crate) fn read_bytes(
         source_step,
     })
 }
+pub(crate) mod assembly;
 pub(crate) mod review;

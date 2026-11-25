@@ -13,8 +13,9 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses, edit_dropped, edit_unverified, target::ResolvedWrite, ArenaCoverage,
-    Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    carried_source_losses, edit_dropped, edit_unverified,
+    target::{ResolvedWrite, WrittenRow},
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -30,7 +31,8 @@ use crate::persistence::Vocabulary;
 ///
 /// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
-/// the one the retained document declares. Only [`resolve`] and
+/// the one the retained document declares, and a request for another row is
+/// written as that dialect (§3.4, Refusals). Only [`resolve`] and
 /// [`retained_baseline`] build one: its fields are private, so a `Resolution`
 /// in hand proves that the retained archive entries hold a `Document.xml` that
 /// reads as the dialect it carries. [`write_seekable`] takes that proof instead
@@ -99,26 +101,23 @@ impl<'a> Resolution<'a> {
 const BASELINE_UNAVAILABLE: &str =
     "the document holds no FCStd archive entry with a readable Document.xml, and this writer \
      regenerates no Document.xml, so the target cannot be written";
-const TRANSCODE_UNAVAILABLE: &str =
-    "the resolved target displaces the retained FCStd source dialect, and this writer \
-     regenerates no Document.xml, so the target cannot be written";
-const DIALECT_UNAVAILABLE: &str =
-    "the retained Document.xml declares another schema than the resolved target, and this \
-     writer regenerates no Document.xml, so the target cannot be written";
+const PATCH_ONLY: &str =
+    "this writer patches the retained FCStd Document.xml and regenerates none, so it writes \
+     the dialect the retained document declares";
 
 /// Resolve the request against the source, then plan the export it names.
 ///
-/// `Explicit(id)` refuses an id outside the synthesis catalog. It is otherwise
-/// the replay law's compare: the retained document is written back exactly when
-/// its `Document.xml` declares `id`, and an id that displaces the recorded
-/// source dialect is a transcode this writer cannot perform, refused by name
-/// with the catalog.
+/// `Explicit(id)` refuses an id outside the synthesis catalog. Otherwise the
+/// retained document is written back as the dialect its `Document.xml`
+/// declares: `id` when it declares `id`, and the declared dialect, with
+/// `target.request-displaced` naming both, when it declares another.
 ///
 /// `Inherit` asks for preservation instead. This writer repacks the retained
 /// entry set and patches `Document.xml` inside it, which reproduces whatever
 /// schema the source declared — schema 2 and schema 3 included, neither of which
-/// is a synthesis target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is.
+/// is a synthesis target. With no recorded source dialect, the resolution
+/// names the newest catalog row and the file is the dialect the retained
+/// `Document.xml` declares.
 ///
 /// The source bytes are the archive entries the document's `fcstd` records
 /// hold (§3.4, Paths), whatever format `ir.source` names. A document that holds
@@ -128,9 +127,11 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let resolution = resolve(input.ir, resolved)?;
+    let (resolution, written_row) = resolve(input.ir, resolved)?;
     let baseline = admit_unedited(input.ir, input.fidelity)?;
-    finish(&resolution, input.fidelity, baseline)
+    let mut body = finish(&resolution, input.fidelity, baseline)?;
+    body.written_row = written_row;
+    Ok(body)
 }
 
 /// Native `fcstd` arenas this writer handles itself: property values patch
@@ -245,21 +246,30 @@ fn finish(
         write_path,
         coverage: ArenaCoverage::Complete,
         notes: outcome.notes,
+        written_row: None,
     })
 }
 
-/// Decide what to write, from the request and the source.
-fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution<'a>, CodecError> {
-    if resolved.displaced_source().is_some() {
-        return Err(resolved.unavailable(TRANSCODE_UNAVAILABLE));
-    }
-    let resolution = retained_baseline(ir, resolved.target_id())?
+/// Decide what to write, from the request and the source: the retained
+/// document, and the row it is where the resolution names another.
+fn resolve<'a>(
+    ir: &'a CadIr,
+    resolved: &ResolvedWrite<'_>,
+) -> Result<(Resolution<'a>, Option<WrittenRow>), CodecError> {
+    let mut resolution = retained_baseline(ir, resolved.target_id())?
         .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))?;
-    if FcstdDialect::from_schema_version(resolution.schema_version()).id() != *resolved.target_id()
-    {
-        return Err(resolved.unavailable(DIALECT_UNAVAILABLE));
+    let declared = FcstdDialect::from_schema_version(resolution.schema_version()).id();
+    if declared == *resolved.target_id() {
+        return Ok((resolution, None));
     }
-    Ok(resolution)
+    resolution.target = declared.clone();
+    Ok((
+        resolution,
+        Some(WrittenRow {
+            target: declared,
+            reason: PATCH_ONLY.to_owned(),
+        }),
+    ))
 }
 
 /// The retained archive the write repacks, witnessed by its own

@@ -1224,6 +1224,7 @@ pub(super) fn decode(
     }
     let mut deferred_queue = VecDeque::from(deferred_ids);
     let mut waiting_on = HashMap::<u64, Vec<u64>>::new();
+    let mut past_nesting = HashSet::<u64>::new();
     while let Some(id) = deferred_queue.pop_front() {
         if carrier_index.curves.contains_key(&id) {
             continue;
@@ -1265,6 +1266,7 @@ pub(super) fn decode(
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "CURVE_REPLICA #{id} nests past the admitted inline basis depth"
                 )));
+                past_nesting.insert(id);
                 continue;
             };
             let geometry = SolvedCurveGeometry::Transformed(placed);
@@ -1549,9 +1551,11 @@ pub(super) fn decode(
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.curves.entry(id) {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
-            )));
+            if !past_nesting.contains(&id) {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
+                )));
+            }
             let curve_index = CurveIndex(ir.geometry.curves.len());
             ir.geometry.curves.push(Curve {
                 parameter_range: None,
@@ -2184,6 +2188,7 @@ pub(super) fn decode(
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "SURFACE_REPLICA #{id} nests past the admitted inline basis depth"
                 )));
+                past_nesting.insert(id);
                 continue;
             };
             let geometry = SolvedSurfaceGeometry::Transformed(placed);
@@ -2220,9 +2225,11 @@ pub(super) fn decode(
     }
     for (id, _) in exchange.entities("SURFACE_REPLICA") {
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.surfaces.entry(id) {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
-            )));
+            if !past_nesting.contains(&id) {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
+                )));
+            }
             let surface_index = SurfaceIndex(ir.geometry.surfaces.len());
             ir.geometry.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
