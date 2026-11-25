@@ -372,7 +372,7 @@ pub(crate) fn decode(
         boundaries,
         direction,
         cap_origins,
-        cap_normals: [cap_frames[0].2, cap_frames[1].2],
+        cap_normals: [cap_frames[0].1, cap_frames[1].1],
         cap_u_axes: [cap_frames[0].0, cap_frames[1].0],
         caps,
         meshes,
@@ -651,32 +651,23 @@ fn cap_frame(
     zaxis: Vector3,
     miter: Option<UnitVector3>,
     offset: usize,
-) -> Result<(UnitVector3, UnitVector3, UnitVector3), GeometryError> {
+) -> Result<(UnitVector3, UnitVector3), GeometryError> {
     let local_x = mitered_local(Vector3::new(1.0, 0.0, 0.0), miter, offset)?;
     let local_y = mitered_local(Vector3::new(0.0, 1.0, 0.0), miter, offset)?;
     let world_x = local_to_world_vector(local_x, xaxis, yaxis, zaxis);
     let world_y = local_to_world_vector(local_y, xaxis, yaxis, zaxis);
     let u = normalize(world_x, offset, "extrusion cap U axis")?;
     let normal = normalize(world_x.cross(world_y), offset, "extrusion cap normal")?;
-    let v = normalize(
-        Vector3::from(normal).cross(u.into()),
-        offset,
-        "extrusion cap V axis",
-    )?;
-    Ok((u, v, normal))
+    Ok((u, normal))
 }
 
 fn cap_pcurve(
     curve: &NurbsCurve,
     origin: Point3,
-    frame: (UnitVector3, UnitVector3, UnitVector3),
+    frame: (UnitVector3, UnitVector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
-    let frame = (
-        Vector3::from(frame.0),
-        Vector3::from(frame.1),
-        Vector3::from(frame.2),
-    );
+    let (u_axis, normal) = (Vector3::from(frame.0), Vector3::from(frame.1));
     let mut points = Vec::new();
     for index in 0..curve.pole_count() {
         let point = curve
@@ -684,12 +675,11 @@ fn cap_pcurve(
             .point_at(index)
             .ok_or_else(|| GeometryError::malformed(offset, "extrusion cap boundary has no pole"))?
             .get();
-        let delta = point.vector_from(origin);
-        let distance = delta.dot(frame.2);
-        if distance.abs() > EPS_EXTRUSION_POSITION {
+        if point.vector_from(origin).dot(normal).abs() > EPS_EXTRUSION_POSITION {
             return Err(error(offset, "extrusion cap boundary is not planar"));
         }
-        points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
+        let [u, v] = crate::surfaces::plane_parameters(point, origin, normal, u_axis);
+        points.push(Point2::new(u, v));
     }
     let mut knots = Vec::new();
     knots.extend_from_slice(curve.knots());
@@ -1170,6 +1160,22 @@ pub(crate) mod tests {
         cache: Option<Vec<u8>>,
         profile: Vec<u8>,
     ) -> Vec<u8> {
+        payload_with_up(minor, caps, cache, profile, [0.0, 1.0, 0.0])
+    }
+
+    /// A minor-3 extrusion of the rectangle profile, capped at both ends,
+    /// whose up direction is `up`.
+    pub(crate) fn capped_payload_with_up(up: [f64; 3]) -> Vec<u8> {
+        payload_with_up(3, [true, true], None, polyline_wrapper(false, true), up)
+    }
+
+    fn payload_with_up(
+        minor: i32,
+        caps: [bool; 2],
+        cache: Option<Vec<u8>>,
+        profile: Vec<u8>,
+        up: [f64; 3],
+    ) -> Vec<u8> {
         let mut body = Vec::new();
         push_i32(&mut body, 1);
         push_i32(&mut body, minor);
@@ -1181,7 +1187,7 @@ pub(crate) mod tests {
         for value in [0.25, 0.75] {
             push_f64(&mut body, value);
         }
-        for value in [0.0, 1.0, 0.0] {
+        for value in up {
             push_f64(&mut body, value);
         }
         body.extend([0, 0]);
@@ -1717,8 +1723,8 @@ pub(crate) mod tests {
             0,
         )
         .expect("required invariant");
-        assert_eq!(Vector3::from(plain.2), Vector3::new(0.0, 0.0, 1.0));
-        let mitered_normal: Vector3 = mitered.2.into();
+        assert_eq!(Vector3::from(plain.1), Vector3::new(0.0, 0.0, 1.0));
+        let mitered_normal: Vector3 = mitered.1.into();
         assert!((mitered_normal.y - 0.6).abs() < EPS_MITER_DIRECTION);
         assert!((mitered_normal.z - 0.8).abs() < EPS_MITER_DIRECTION);
     }

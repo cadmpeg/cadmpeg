@@ -2045,8 +2045,8 @@ fn generated_projected_brep_c2_curve(
     edge: &WritableEdge<'_>,
     reversed: bool,
     origin: cadmpeg_ir::math::Point3,
+    normal: cadmpeg_ir::math::Vector3,
     u_axis: cadmpeg_ir::math::Vector3,
-    v_axis: cadmpeg_ir::math::Vector3,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
@@ -2060,8 +2060,8 @@ fn generated_projected_brep_c2_curve(
             (
                 LINE_CLASS,
                 bounded_line_payload(
-                    plane_uv(from, origin, u_axis, v_axis),
-                    plane_uv(to, origin, u_axis, v_axis),
+                    plane_uv(from, origin, normal, u_axis),
+                    plane_uv(to, origin, normal, u_axis),
                     FiniteReal::raw_array(edge.domain),
                     2,
                 )?,
@@ -2072,7 +2072,7 @@ fn generated_projected_brep_c2_curve(
             projected
                 .try_map_control_points(|_, point| {
                     let mut point = point.get();
-                    let uv = plane_uv(point, origin, u_axis, v_axis);
+                    let uv = plane_uv(point, origin, normal, u_axis);
                     point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
                     cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
@@ -2581,15 +2581,11 @@ fn closest_edge_distance(
 fn plane_uv(
     point: cadmpeg_ir::math::Point3,
     origin: cadmpeg_ir::math::Point3,
-    u: cadmpeg_ir::math::Vector3,
-    v: cadmpeg_ir::math::Vector3,
+    normal: cadmpeg_ir::math::Vector3,
+    u_axis: cadmpeg_ir::math::Vector3,
 ) -> [f64; 3] {
-    let delta = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
-    [
-        delta[0] * u.x + delta[1] * u.y + delta[2] * u.z,
-        delta[0] * v.x + delta[1] * v.y + delta[2] * v.z,
-        0.0,
-    ]
+    let [u, v] = crate::surfaces::plane_parameters(point, origin, normal, u_axis);
+    [u, v, 0.0]
 }
 
 /// A bounded line from its endpoints, which callers compute, and its domain.

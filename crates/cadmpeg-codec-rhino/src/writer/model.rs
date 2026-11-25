@@ -897,8 +897,7 @@ impl<'a> WritableModel<'a> {
                 let (c2, domain) = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {
                         let generated = generated_projected_brep_c2_curve(
-                            &vertices, &edges[edge], reversed, origin, u_axis,
-                            normal.cross(u_axis),
+                            &vertices, &edges[edge], reversed, origin, normal, u_axis,
                         )?;
                         match pcurve {
                             None => (generated, FiniteReal::raw_array(edges[edge].domain)),
@@ -1100,8 +1099,8 @@ impl<'a> WritableModel<'a> {
                         boundary.push(super::plane_uv(
                             result.vertices[start].point,
                             origin,
+                            normal,
                             u_axis,
-                            normal.cross(u_axis),
                         ));
                         for vertex in [start, end] {
                             let point = result.vertices[vertex].point;
