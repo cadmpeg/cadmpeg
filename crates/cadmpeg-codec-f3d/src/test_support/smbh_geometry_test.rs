@@ -12,6 +12,12 @@ use crate::test_support::tokens_test::{
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
 /// `RecordTable` indices are the order below, starting at 0 (`asmheader`).
 pub(crate) fn synthetic_geometry_smbh() -> Vec<u8> {
+    synthetic_geometry_smbh_with_points([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+}
+
+/// The geometry of [`synthetic_geometry_smbh`] with the three vertex points
+/// (records 16, 17, 18) at `points`, in cm.
+pub(crate) fn synthetic_geometry_smbh_with_points(points: [[f64; 3]; 3]) -> Vec<u8> {
     // Indices: 0 asmheader, 1 body, 2 region, 3 shell, 4 face, 5 loop,
     // 6 plane, 7/8/9 coedges, 10/11/12 edges, 13/14/15 vertices,
     // 16/17/18 points.
@@ -140,7 +146,6 @@ pub(crate) fn synthetic_geometry_smbh() -> Vec<u8> {
     }
 
     // 16/17/18: points  (coordinates in cm; ×10 = mm)
-    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     for p in points {
         t_ident(&mut r, "point");
         t_ref(&mut r, -1); // attrib
