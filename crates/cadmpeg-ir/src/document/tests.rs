@@ -1188,6 +1188,34 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
 }
 
 #[test]
+fn a_solver_setting_of_a_joint_reads_the_design() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.set_scope(ContentScope::geometry()).unwrap();
+    ir.model
+        .solver_settings
+        .push(crate::physics::solver::SolverSettings {
+            id: crate::ids::SolverSettingsId::mint("synthetic:test:solver#joint").unwrap(),
+            solver: "physx".to_owned(),
+            schema: "PhysxJointAPI".to_owned(),
+            target: crate::physics::solver::SolverTarget::Joint {
+                joint: crate::features::FeatureId::mint("synthetic:test:feature#hinge").unwrap(),
+            }
+            .into(),
+            values: std::collections::BTreeMap::new(),
+            native_ref: None,
+        });
+    assert_eq!(
+        ir.check_scope(),
+        Err(ScopeViolation {
+            class: ArenaClass::Design,
+            arena: ArenaName::parse("solver_settings"),
+        })
+    );
+    ir.set_scope(ContentScope::design()).unwrap();
+    assert_eq!(ir.check_scope(), Ok(()));
+}
+
+#[test]
 fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let sorted = serde_json::to_value(&ir).expect("a sorted document writes");
