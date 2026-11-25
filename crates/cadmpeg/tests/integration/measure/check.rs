@@ -291,7 +291,7 @@ fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
         (1001.0, false, 1, Some("error")),
         (1000.0, true, 0, Some("warning")),
     ] {
-        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut ir = crate::support::rooted_cube();
         let target = if unresolved {
             DeclaredTarget::Unresolved
         } else {

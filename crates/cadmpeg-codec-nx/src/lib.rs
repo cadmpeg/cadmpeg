@@ -163,6 +163,7 @@ impl CodecBackend for NxCodec {
                 vec![cadmpeg_ir::report::check::Finding {
                     related: Vec::new(),
                     check: cadmpeg_ir::report::check::Check::NativeLinks,
+                    rule: cadmpeg_ir::rule_name!("nx/lib.native-namespace"),
                     severity: cadmpeg_ir::report::Severity::Error,
                     message,
                     entity: None,

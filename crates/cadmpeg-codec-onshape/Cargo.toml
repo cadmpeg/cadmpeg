@@ -20,7 +20,6 @@ flate2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 cadmpeg-codec-step.workspace = true
 cadmpeg-test-support.workspace = true
 zip.workspace = true

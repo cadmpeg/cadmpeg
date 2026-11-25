@@ -6,6 +6,7 @@
 //! checked against nothing. Where an input's reference is a rule selection
 //! or an unread one, its pick count is not stated and is not checked.
 
+use crate::report::check::Ruled;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::construction::{
@@ -72,7 +73,7 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
                 && placement.after.iter().all(literal_step)
                 && placement.resolved.as_ref().is_some_and(is_identity)
             {
-                super::error(findings, at, format_args!("a placement with no inputs and no bound step resolves to the identity; it is absent"),
+                super::error(findings, at, crate::rule!("design.placement-no-inputs-no-bound-step", "a placement with no inputs and no bound step resolves to the identity; it is absent"),
                 );
             }
         }
@@ -98,32 +99,37 @@ fn check_construction(
     findings: &mut Vec<Finding>,
 ) {
     let kind = construction.kind();
-    let mut built_centroid = false;
-    let mut error = |message: std::fmt::Arguments<'_>| super::error(findings, at, message);
+    let mut error = |message: Ruled<'_>| super::error(findings, at, message);
     let inputs = construction.inputs();
     let after = construction.after();
     if inputs.is_empty() && after.is_empty() && !construction.has_resolved() {
-        error(format_args!(
+        error(crate::rule!(
+            "design.construction-no-input-no-step-no",
             "a {} construction has no input, no step, and no resolved value",
             kind.name()
         ));
     }
     if construction.solution() == Some(0) {
-        error(format_args!(
+        error(crate::rule!(
+            "design.construction-solution-0-counts-1",
             "a construction's solution is 0; it counts from 1"
         ));
     }
     for step in after {
         match step {
             PostStep::Flip(Dimension::Literal(false)) => {
-                error(format_args!("a Flip step with a literal false is absent"));
+                error(crate::rule!(
+                    "design.flip-step-literal-false-absent",
+                    "a Flip step with a literal false is absent"
+                ));
             }
             PostStep::AxisRotate { axis, .. }
                 if axis
                     .iter()
                     .all(|component| matches!(component, Dimension::Literal(_))) =>
             {
-                error(format_args!(
+                error(crate::rule!(
+                    "design.axisrotate-step-binds-no-axis-component",
                     "an AxisRotate step binds no axis component; it is a Fixed and a Rotate"
                 ));
             }
@@ -132,7 +138,8 @@ fn check_construction(
     }
     let resolved_in = construction.resolved_in();
     if inputs.is_empty() && after.is_empty() && !resolved_in.is_empty() {
-        error(format_args!(
+        error(crate::rule!(
+            "design.construction-no-inputs-no-steps-resolved",
             "a construction with no inputs and no steps has resolved_in values"
         ));
     }
@@ -151,7 +158,7 @@ fn check_construction(
                 .iter()
                 .any(|record| record.id == *configuration && record.scope.as_str() == scope);
             if !other || active == Some(configuration) {
-                error(format_args!(
+                error(crate::rule!("design.resolved-names-not-configuration-construction-scope", 
                         "resolved_in names {}, which is not a configuration of the construction's scope other than its active one",
                         configuration.as_str()
                     ),
@@ -161,7 +168,8 @@ fn check_construction(
     }
     for input in inputs {
         if input.reference.is_none() && input.value.is_none() {
-            error(format_args!(
+            error(crate::rule!(
+                "design.construction-input-neither-reference-nor-value",
                 "a {} construction has an input with neither a reference nor a value",
                 kind.name()
             ));
@@ -171,7 +179,8 @@ fn check_construction(
         };
         let (subject, relation) = (role.subject, &role.relation);
         if !subject_admitted(kind, subject) {
-            error(format_args!(
+            error(crate::rule!(
+                "design.construction-subject",
                 "a {} construction has a {subject:?} subject",
                 kind.name()
             ));
@@ -182,7 +191,8 @@ fn check_construction(
                 Relation::Parallel | Relation::Perpendicular | Relation::Tangent
             )
         {
-            error(format_args!(
+            error(crate::rule!(
+                "design.zaxis-subject-carries-relation-whole-carries",
                 "a ZAxis subject carries a {relation:?} relation; the whole carries it"
             ));
         }
@@ -193,7 +203,8 @@ fn check_construction(
             input.value.as_ref(),
             input.reference.is_some(),
         ) {
-            error(format_args!(
+            error(crate::rule!(
+                "design.input-construction-value-does-not-take",
                 "a {relation:?} input of a {} construction has a value it does not take",
                 kind.name()
             ));
@@ -201,13 +212,15 @@ fn check_construction(
         if let Some(ScalarDimension::PlaneEquation { a, b, c, .. }) = &input.value {
             let zero = |value: &Dimension<crate::scalar::FiniteReal>| matches!(value, Dimension::Literal(value) if value.get() == 0.0);
             if zero(a) && zero(b) && zero(c) {
-                error(format_args!(
+                error(crate::rule!(
+                    "design.planeequation-literal-b-c-all-zero",
                     "a PlaneEquation's literal a, b, and c are all zero"
                 ));
             }
         }
         if matches!(relation, Relation::Radius | Relation::Limit) && kind != Kind::Curve {
-            error(format_args!(
+            error(crate::rule!(
+                "design.input-occurs-construction",
                 "a {relation:?} input occurs on a {} construction",
                 kind.name()
             ));
@@ -215,26 +228,37 @@ fn check_construction(
         if matches!(relation, Relation::Fold)
             && (!matches!(kind, Kind::Plane | Kind::Frame) || subject != Subject::Whole)
         {
-            error(format_args!(
+            error(crate::rule!(
+                "design.fold-input-not-whole-plane-frame",
                 "a Fold input is not the Whole of a plane or frame"
             ));
         }
         if input.reversed.is_some() && !reversible(construction, subject, relation) {
-            error(format_args!("a {relation:?} input states reversed"));
+            error(crate::rule!(
+                "design.input-states-reversed",
+                "a {relation:?} input states reversed"
+            ));
         }
         super::fit::check_input(index, relation, input.reference.as_ref(), &mut error);
         if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
             && !parameter_ratio_admitted(index, relation, input.reference.as_ref())
         {
-            error(format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
+            error(crate::rule!("design.parameterratio-value-not-atparameter-input-picks", "a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
             );
         }
+        check_ratio_spelling(
+            index,
+            input.value.as_ref(),
+            input.reference.as_ref(),
+            &mut error,
+        );
         match &input.reference {
             Some(InputReference::Picks(selection)) => {
                 if let Picks::Named(picks) = &selection.picks {
                     let picks = picks.as_slice();
                     if !pick_count_admitted(relation, picks.len()) {
-                        error(format_args!(
+                        error(crate::rule!(
+                            "design.input-reference-holds-picks",
                             "a {relation:?} input's reference holds {} picks",
                             picks.len()
                         ));
@@ -244,7 +268,8 @@ fn check_construction(
                             .first()
                             .is_some_and(|first| !picks_frame(index, first))
                     {
-                        error(format_args!(
+                        error(crate::rule!(
+                            "design.coordinates-reference-does-not-pick-frame",
                             "a Coordinates reference does not pick a frame first"
                         ));
                     }
@@ -253,7 +278,8 @@ fn check_construction(
                         && kind != Kind::Frame
                         && matches!(picks, [one] if picks_whole_frame(index, one))
                     {
-                        error(format_args!(
+                        error(crate::rule!(
+                            "design.whole-coincident-input-whole-frame-construction",
                             "a Whole Coincident input on a whole frame is on a {} construction",
                             kind.name()
                         ));
@@ -262,17 +288,18 @@ fn check_construction(
             }
             Some(InputReference::Built(built)) => {
                 if matches!(relation, Relation::Fold) {
-                    error(format_args!(
+                    error(crate::rule!(
+                        "design.nested-construction-reference-input",
                         "a nested construction is the reference of a {relation:?} input"
                     ));
                 }
-                built_centroid |= matches!(relation, Relation::Centroid);
                 if subject == Subject::Whole
                     && matches!(relation, Relation::Coincident)
                     && kind != Kind::Frame
                 {
                     if let crate::design::construction::AnyConstruction::Frame(_) = built.as_ref() {
-                        error(format_args!(
+                        error(crate::rule!(
+                            "design.whole-coincident-input-whole-frame-construction",
                             "a Whole Coincident input on a whole frame is on a {} construction",
                             kind.name()
                         ));
@@ -283,14 +310,7 @@ fn check_construction(
         }
     }
     if matches!(kind, Kind::Plane | Kind::Frame) && leading_offset(index, construction) {
-        error(format_args!("a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
-        );
-    }
-    if built_centroid {
-        super::warning(
-            findings,
-            at,
-            format_args!("a nested construction is the reference of a Centroid input"),
+        error(crate::rule!("design.plane-frame-coincident-one-planar-reference", "a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
         );
     }
     check_values(construction, geometry, at, findings);
@@ -400,12 +420,125 @@ fn parameter_ratio_admitted(
                 Picks::Unread => true,
                 Picks::Rule { .. } => false,
             },
-            Some(InputReference::Built(built)) => matches!(
-                built.as_ref(),
-                crate::design::construction::AnyConstruction::Curve(_)
-            ),
-            None => false,
+            Some(InputReference::Built(_)) | None => false,
         }
+}
+
+/// A `ParameterRatio` value is no literal 0 or 1, and picks no curve the
+/// document states as a line, a circle, or a circular arc, whose spelling is
+/// `Ratio`; a datum axis, a principal axis, and an `InfiniteLine` have no
+/// ends and take neither a `Ratio` nor a `ParameterRatio` (§5.9).
+fn check_ratio_spelling(
+    index: &DesignIndex<'_>,
+    value: Option<&ScalarDimension>,
+    reference: Option<&InputReference>,
+    error: &mut impl FnMut(Ruled<'_>),
+) {
+    let parameter_ratio = match value {
+        Some(ScalarDimension::ParameterRatio(ratio)) => Some(ratio),
+        Some(ScalarDimension::Ratio(_)) => None,
+        _ => return,
+    };
+    if let Some(Dimension::Literal(ratio)) = parameter_ratio {
+        if ratio.get() == 0.0 || ratio.get() == 1.0 {
+            error(crate::rule!(
+                "design.parameterratio-value-literal-end-curve",
+                "a ParameterRatio value is a literal {}, an end of the curve",
+                ratio.get()
+            ));
+        }
+    }
+    let Some(InputReference::Picks(selection)) = reference else {
+        return;
+    };
+    let Picks::Named(picks) = &selection.picks else {
+        return;
+    };
+    for pick in picks.as_slice() {
+        match stated_curve(index, pick) {
+            StatedCurve::Endless => error(crate::rule!("design.ratio-parameterratio-value-picks-datum-axis", 
+                "a Ratio or ParameterRatio value picks a datum axis, a principal axis, or an infinite line, which has no ends"
+            )),
+            StatedCurve::Conic if parameter_ratio.is_some() => error(crate::rule!("design.parameterratio-value-picks-curve-document-states", 
+                "a ParameterRatio value picks a curve the document states as a line, a circle, or an arc; it is a Ratio"
+            )),
+            StatedCurve::Conic | StatedCurve::Other => {}
+        }
+    }
+}
+
+/// What the document states a picked curve to be, where a ratio along it
+/// reads that.
+enum StatedCurve {
+    /// A line with no ends: a datum axis, a principal axis, or an
+    /// `InfiniteLine` sketch entity.
+    Endless,
+    /// A sketch entity stated as a bounded line, a circle, or a circular arc.
+    Conic,
+    /// Any other pick, or one whose curve is not stated.
+    Other,
+}
+
+fn stated_curve(index: &DesignIndex<'_>, pick: &Picked) -> StatedCurve {
+    match &pick.target {
+        PickTarget::Principal { entity, .. }
+        | PickTarget::Datum {
+            part: Some(DatumPart::Principal(entity)),
+            ..
+        } if matches!(
+            entity,
+            PrincipalEntity::XAxis | PrincipalEntity::YAxis | PrincipalEntity::ZAxis
+        ) =>
+        {
+            StatedCurve::Endless
+        }
+        PickTarget::Datum {
+            feature,
+            part: None,
+        } => match datum_element(index, feature.as_str()) {
+            DatumFeature::Datum(DatumElement::Axis(_)) => StatedCurve::Endless,
+            _ => StatedCurve::Other,
+        },
+        PickTarget::SketchEntity(entity) => {
+            match index
+                .sketch_entities
+                .get(entity.as_str())
+                .and_then(|entity| solved_curve(&entity.definition))
+            {
+                Some(PlanarCurve::InfiniteLine { .. }) => StatedCurve::Endless,
+                Some(
+                    PlanarCurve::Line { .. } | PlanarCurve::Circle { .. } | PlanarCurve::Arc { .. },
+                ) => StatedCurve::Conic,
+                _ => StatedCurve::Other,
+            }
+        }
+        PickTarget::SpatialSketchEntity(entity) => {
+            match index
+                .spatial_sketch_entities
+                .get(entity.as_str())
+                .and_then(|entity| solved_curve(&entity.definition))
+            {
+                Some(SpatialCurve::Bounded(bounded)) => match &bounded.carrier {
+                    crate::geometry::InlineCurve::Circle(_) => StatedCurve::Conic,
+                    crate::geometry::InlineCurve::Line(_) if bounded.range.is_some() => {
+                        StatedCurve::Conic
+                    }
+                    _ => StatedCurve::Other,
+                },
+                _ => StatedCurve::Other,
+            }
+        }
+        _ => StatedCurve::Other,
+    }
+}
+
+/// A sketch entity's curve: a free entity's own, a defined one's solved
+/// cache.
+fn solved_curve<S: SketchSpace>(definition: &EntityDefinition<S>) -> Option<&S::Curve> {
+    match definition {
+        EntityDefinition::Free(curve) => Some(curve),
+        EntityDefinition::Defined { solved, .. } => solved.as_ref(),
+    }
 }
 
 /// The number of picks each relation's reference holds.
@@ -654,21 +787,24 @@ fn check_datum_link(datum: &Datum, at: &str, findings: &mut Vec<Finding>) {
         DatumElement::Plane(plane) => coincident(&plane.inputs),
         DatumElement::Frame(frame) => coincident(&frame.inputs),
     };
-    let mut error = |message: std::fmt::Arguments<'_>| {
+    let mut error = |message: Ruled<'_>| {
         super::error(findings, at, message);
     };
     if !shapes {
-        error(format_args!(
+        error(crate::rule!(
+            "design.linked-datum-construction-input-other-one",
             "a linked datum's construction has an input other than one Coincident input"
         ));
     }
     if link.source.is_some() {
-        error(format_args!(
+        error(crate::rule!(
+            "design.linked-datum-link-states-source-construction",
             "a linked datum's link states a source; its construction's input picks it"
         ));
     }
     if link.document.is_some() && inputs.iter().any(|count| *count > 0) {
-        error(format_args!(
+        error(crate::rule!(
+            "design.linked-datum-link-states-document-while",
             "a linked datum's link states a document while its construction has an input"
         ));
     }
@@ -697,7 +833,7 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
     for ((_, entity, _), features) in &restating {
         if let [first, others @ ..] = features.as_slice() {
             for other in others {
-                super::error(findings, other, format_args!("datum feature restates principal {entity:?}, which datum feature {first} already restates"),
+                super::error(findings, other, crate::rule!("design.datum-feature-restates-principal-datum-feature", "datum feature restates principal {entity:?}, which datum feature {first} already restates"),
                 );
             }
         }
@@ -738,7 +874,7 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
                         .map(crate::design::ids::ContainerId::as_str),
                 );
                 if restated.contains(&key) {
-                    super::error(findings, record.holder.record(), format_args!("a pick names principal {entity:?}, which a datum feature restates; it picks that feature as Datum"),
+                    super::error(findings, record.holder.record(), crate::rule!("design.pick-names-principal-datum-feature-restates", "a pick names principal {entity:?}, which a datum feature restates; it picks that feature as Datum"),
                     );
                 }
             }
@@ -825,7 +961,11 @@ fn check_values(
         }
     }
     for message in bad {
-        super::error(findings, at, format_args!("{message}"));
+        super::error(
+            findings,
+            at,
+            crate::rule!("design.construction-resolved-values", "{message}"),
+        );
     }
 }
 

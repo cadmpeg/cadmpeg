@@ -212,6 +212,7 @@ impl SldprtCodec {
                     annotations,
                     digests,
                     records,
+                    Some(image),
                     SemanticFidelity::ReplaySkipped(reason),
                     &mut bytes,
                 ) {
@@ -236,6 +237,7 @@ impl SldprtCodec {
                 annotations,
                 digests,
                 records,
+                image,
                 SemanticFidelity::ReplaySkipped(reason),
                 writer,
             );
@@ -246,6 +248,7 @@ impl SldprtCodec {
                 annotations,
                 digests,
                 records,
+                None,
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
                 writer,
             );
@@ -263,19 +266,28 @@ impl SldprtCodec {
         annotations: &Annotations,
         digests: &CodecDigests,
         records: &[SourceRecord<'_>],
+        saved: Option<&[u8]>,
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        if !ir.model.omitted_arenas_held()
-            && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
-        {
-            return Err(CodecError::NotImplemented(
-                "the document was read from CADIR, which does not carry the feature, sketch, \
-                 parameter, and configuration arenas the SLDPRT writer applies native history \
-                 edits from; write it from the decoded source file"
-                    .into(),
-            ));
-        }
+        let restored;
+        let ir = match saved {
+            _ if ir.model.omitted_arenas_held() => ir,
+            Some(image) => {
+                restored = writer::saved::restore(ir, image)?;
+                &restored
+            }
+            None if records.is_empty() && ir.native.namespace("sldprt").is_none() => ir,
+            None => {
+                return Err(CodecError::NotImplemented(
+                    "the document was read from CADIR, which does not carry the feature, sketch, \
+                     parameter, and configuration arenas the SLDPRT writer applies native \
+                     history edits from, and no retained source part restores them; write it \
+                     from the decoded source file"
+                        .into(),
+                ));
+            }
+        };
         // An edit the full decoder does not read back from the written part,
         // or that changes what no edit touches, is written again with its
         // feature's stored record.

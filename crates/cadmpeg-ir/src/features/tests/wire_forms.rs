@@ -516,6 +516,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
             native_ref: None,
         });
         ir.finalize();
+        crate::examples::add_document_root(&mut ir);
         validate_neutral(&ir, Vec::new()).expect("validate the neutral model")
     };
     let report = validate_definition(definition.clone());

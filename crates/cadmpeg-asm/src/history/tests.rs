@@ -215,6 +215,23 @@ fn walk_closes_a_chain_that_removes_every_slot_but_zero() {
 }
 
 #[test]
+fn walk_until_stops_at_the_first_refused_visit() {
+    let states = chain_of(&[
+        &[EntityChange::Insert { new: 2 }],
+        &[EntityChange::Insert { new: 1 }],
+    ]);
+    let mut seen = Vec::new();
+    let end = walk_entity_versions_until(&states, 3, &[], |ordinal, _| {
+        seen.push(ordinal);
+        false
+    });
+    assert_eq!(end, std::ops::ControlFlow::Break(()));
+    assert_eq!(seen, [0]);
+    let end = walk_entity_versions_until(&states, 3, &[], |_, _| true);
+    assert_eq!(end, std::ops::ControlFlow::Continue(true));
+}
+
+#[test]
 fn walk_visits_a_state_before_its_changes_apply() {
     let states = chain_of(&[&[EntityChange::Insert { new: 1 }]]);
     let (closed, seen) = walk_states(&states, 2, &[]);

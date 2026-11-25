@@ -38,7 +38,6 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
         .unwrap();
     let model = &decoded.ir().model;
     assert_eq!(model.sketches.len(), 2);
-    let geometry = &decoded.ir().geometry;
     let sketch = |name: &str| {
         model
             .sketches
@@ -146,9 +145,6 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             "{name}"
         );
     }
-    let measures =
-        cadmpeg_measure::test_support::round_trip::measured("design_history", decoded.ir())
-            .unwrap();
     for (name, expected_volume, expected_area, bounds) in [
         (
             "Pad",
@@ -170,21 +166,22 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             [0.0, 0.0, 0.0, 24.0, 16.0, 10.0],
         ),
     ] {
-        let feature = model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap();
-        let [body] = feature.evaluation.outputs().as_slice() else {
+        // The state after each feature: an evaluation, or the Body's current
+        // state at its `Tip` (§5.4).
+        let state = crate::test_support::state_of(decoded.ir(), name, false)
+            .unwrap_or_else(|| panic!("{name}: no state"));
+        let [body] = state.geometry.bodies.as_slice() else {
             panic!(
                 "{name}: expected one result body, got {:?}",
-                feature.evaluation.outputs()
+                state.geometry.bodies
             )
         };
+        let measures =
+            cadmpeg_measure::test_support::round_trip::measured("design_history", &state).unwrap();
         let body = measures
             .bodies()
             .iter()
-            .find(|row| row.body() == body.as_str())
+            .find(|row| row.body() == body.id.as_str())
             .unwrap();
         let volume = body
             .volume()
@@ -256,18 +253,15 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
     let [group] = groups.as_slice() else {
         panic!("Fillet group")
     };
-    let EdgeSelection::Resolved { edges, native } = &group.edges else {
-        panic!("Fillet.Edge1 selection is unresolved")
+    // The Pocket is a member of the Fillet's Body: its edges are records of
+    // the state after it, an evaluation, so the selection keeps its source
+    // token, and the state holds the edge the source names (§5.4).
+    let EdgeSelection::Native(native) = &group.edges else {
+        panic!("Fillet.Edge1 names an edge of a Body state")
     };
     assert_eq!(native, &base.id);
-    let [selected] = edges.as_slice() else {
-        panic!("Fillet.Edge1 selection count")
-    };
-    let edge = geometry
-        .edges
-        .iter()
-        .find(|edge| &edge.id == selected)
-        .unwrap();
+    let pocket = crate::test_support::state_of(decoded.ir(), "Pocket", false).unwrap();
+    let geometry = &pocket.geometry;
     let vertex_position = |id: &cadmpeg_ir::ids::VertexId| {
         let vertex = geometry
             .vertices
@@ -282,8 +276,6 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             .position()
             .get()
     };
-    let start = vertex_position(&edge.ends.as_ref().unwrap().start);
-    let end = vertex_position(&edge.ends.as_ref().unwrap().end);
     let at_bottom = |point: cadmpeg_ir::math::Point3| {
         point.x.abs() < LENGTH_TOLERANCE
             && point.y.abs() < LENGTH_TOLERANCE
@@ -294,10 +286,16 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             && point.y.abs() < LENGTH_TOLERANCE
             && (point.z - 10.0).abs() < LENGTH_TOLERANCE
     };
-    assert!(
-        (at_bottom(start) && at_top(end)) || (at_top(start) && at_bottom(end)),
-        "Fillet.Edge1 endpoints: {start:?}, {end:?}"
-    );
+    let edge = geometry
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.ends.as_ref().is_some_and(|ends| {
+                let (start, end) = (vertex_position(&ends.start), vertex_position(&ends.end));
+                (at_bottom(start) && at_top(end)) || (at_top(start) && at_bottom(end))
+            })
+        })
+        .expect("the Pocket state holds the edge Fillet.Edge1 names");
     let curve_id = edge.curve().unwrap();
     let curve = geometry
         .curves

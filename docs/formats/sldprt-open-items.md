@@ -1418,6 +1418,14 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** A part with a boss extrusion and a boss revolution that overlaps it, saved once with the revolution's merge-result option set and once with it clear, and the bytes of the two `moRevolution_c` objects compared.
 
+### DI-93. Use-default state of an edge flange's radius and K-factor
+
+**Question.** Which bytes of a `moEdgeFlange_c` feature state that its bend radius and K-factor are the sheet-metal feature's (the "use default" choice) in place of its own `D1` and `D2`?
+
+**Known.** An edge flange stores its own `D1` (radius) and `D2` (K-factor) scalar and `PMISemanticDataDB` records after its `moOneBend_c` child (`sldprt.md` §2, sheet-metal dimensions). Where the sheet-metal feature states a radius and K-factor other than the edge flange's own `D1` and `D2` and the bend uses the sheet-metal feature's, the child's `D1` equals the sheet-metal feature's `D1` and is the inner radius of the bend's cylindrical faces. No byte of the edge flange is known to differ between the two choices.
+
+**Need.** An edge flange that applies its own radius and K-factor in a part whose sheet-metal feature states others, beside the same part with the default chosen, compared byte for byte.
+
 ### DI-95. Operands and measured direction of a point-point distance relation
 
 **Question.** Which marker roster do the two operand addresses of an `sgPntPntDist` relation index when their tag is a lane-local class token, and which field states whether the dimension measures the Euclidean, the horizontal, or the vertical separation of its two points?
