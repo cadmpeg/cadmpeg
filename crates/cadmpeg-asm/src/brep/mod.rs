@@ -133,10 +133,26 @@ pub struct AsmBrep {
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
+    /// Faces whose record states no loop on a plane, cylinder, or cone. The
+    /// IR states each partial; the embedding codec charges
+    /// `topology.face-boundary-unstated` for each.
+    #[serde(skip)]
+    pub unbounded_faces: Vec<UnboundedFace>,
     /// Source order of the region and face chains, which the neutral
     /// arenas derive from parent pointers instead of storing.
     #[serde(skip)]
     pub chain_order: ChainOrder,
+}
+
+/// A face record that states no loop on a surface whose domain is unbounded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnboundedFace {
+    /// The emitted face, stated partial with no loop.
+    pub face: FaceId,
+    /// Source record index of the face.
+    pub record_index: u32,
+    /// The surface kind: `plane`, `cylinder`, or `cone`.
+    pub surface_kind: &'static str,
 }
 
 /// The children of each body and shell record in their source chain order,
@@ -222,6 +238,7 @@ impl<'de> Deserialize<'de> for AsmBrep {
             unknowns: wire.unknowns,
             stats: wire.stats,
             annotation_records: Vec::new(),
+            unbounded_faces: Vec::new(),
             chain_order: ChainOrder::default(),
         })
     }
@@ -267,6 +284,7 @@ impl AsmBrep {
             attributes,
             unknowns,
             annotation_records,
+            unbounded_faces,
         );
         self.stats.merge(other.stats);
     }

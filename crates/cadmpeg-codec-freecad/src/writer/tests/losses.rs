@@ -1,0 +1,261 @@
+// SPDX-License-Identifier: Apache-2.0
+//! What a write leaves out, how the written file still reads back, and the
+//! one report line that names each omission.
+
+use super::patching::{
+    archive_payloads, assert_unheld_entry_reported, export_messages, native_arena,
+    properties_naming, replace_arena, write_and_read_back,
+};
+use crate::native::{ArchiveSpan, ArchiveSpanRole, EntryRecord, PropertyRecord, RetainedXml};
+use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
+use crate::FcstdCodec;
+use cadmpeg_ir::{Codec, DecodeOptions};
+use std::io::Cursor;
+
+fn decode(bytes: &[u8]) -> cadmpeg_ir::CadIr {
+    FcstdCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .expect("decode source")
+        .ir()
+        .clone()
+}
+
+/// Removes the entry record of the payload of the first stored shape, and
+/// returns the entry name and the properties that name it.
+fn remove_shape_entry(ir: &mut cadmpeg_ir::CadIr) -> (String, Vec<PropertyRecord>) {
+    let name = native_arena::<PropertyRecord>(ir, "properties")
+        .into_iter()
+        .find(|property| property.type_name == "Part::PropertyPartShape")
+        .and_then(|property| property.side_entries().first().cloned())
+        .expect("a stored shape names its payload entry");
+    let mut entries = native_arena::<EntryRecord>(ir, "entries");
+    entries.retain(|entry| entry.name() != name);
+    replace_arena(ir, "entries", &entries);
+    let naming = properties_naming(ir, &name);
+    (name, naming)
+}
+
+/// The retained span of each property in `ids` moved one byte later, so the
+/// span no longer holds the property's stored text.
+fn displace_spans(ir: &mut cadmpeg_ir::CadIr, ids: &[String]) {
+    let mut properties = native_arena::<PropertyRecord>(ir, "properties");
+    for property in properties
+        .iter_mut()
+        .filter(|property| ids.contains(&property.id))
+    {
+        property.xml =
+            RetainedXml::from_text(property.xml.text().to_owned(), property.xml.start() + 1)
+                .expect("displaced span");
+    }
+    replace_arena(ir, "properties", &properties);
+}
+
+/// A removed payload entry whose property the patch cannot write, because
+/// its span no longer holds its stored text, sends the write to the stored
+/// `Document.xml`. The property is written there with an empty file name, so
+/// the file reads back, and no edit is reported dropped.
+#[test]
+fn the_stored_document_empties_the_file_name_of_a_removed_entry() {
+    let mut ir = decode(CORE_DESIGN_PRODUCT);
+    let (name, naming) = remove_shape_entry(&mut ir);
+    let ids = naming
+        .iter()
+        .map(|property| property.id.clone())
+        .collect::<Vec<_>>();
+    displace_spans(&mut ir, &ids);
+
+    let (report, bytes, round_trip) = write_and_read_back(&ir);
+    assert!(!archive_payloads(&bytes).contains_key(&name));
+    assert_unheld_entry_reported(&report, round_trip.ir(), &naming, &name);
+    assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
+}
+
+/// A `Document.xml` entry edited so that no property span holds its stored
+/// text, beside a removed payload entry, is written as stored. Only the
+/// property whose edit the stored document does not hold is reported
+/// dropped.
+#[test]
+fn the_stored_document_names_only_the_dropped_property_edits() {
+    let mut ir = decode(CORE_DESIGN_PRODUCT);
+    let mut entries = native_arena::<EntryRecord>(&ir, "entries");
+    let document = entries
+        .iter_mut()
+        .find(|entry| entry.name() == "Document.xml")
+        .expect("Document.xml entry");
+    let text = std::str::from_utf8(document.data()).expect("UTF-8 Document.xml");
+    let shifted = text.replacen("<Document ", "<Document  ", 1);
+    assert_ne!(shifted, text);
+    *document = crate::test_support::entry_record(
+        document.id().to_owned(),
+        document.name().to_owned(),
+        document.role,
+        document.referenced_by().to_vec(),
+        shifted.into_bytes(),
+    );
+    replace_arena(&mut ir, "entries", &entries);
+    let (name, _) = remove_shape_entry(&mut ir);
+    let object = native_arena::<crate::native::ObjectRecord>(&ir, "objects")
+        .into_iter()
+        .find(|object| {
+            native_arena::<PropertyRecord>(&ir, "properties")
+                .iter()
+                .any(|property| property.owner == *object.id() && property.name == "Label")
+        })
+        .expect("an object with a Label");
+    FcstdCodec
+        .set_property_value_attribute(
+            &mut ir,
+            crate::FcstdPropertyOwner::Object(object.name()),
+            "Label",
+            0,
+            "value",
+            "Renamed",
+        )
+        .expect("edit Label");
+    let label = native_arena::<PropertyRecord>(&ir, "properties")
+        .into_iter()
+        .find(|property| property.owner == *object.id() && property.name == "Label")
+        .expect("Label");
+
+    let (report, bytes, round_trip) = write_and_read_back(&ir);
+    assert!(!archive_payloads(&bytes).contains_key(&name));
+    let written = native_arena::<PropertyRecord>(round_trip.ir(), "properties")
+        .into_iter()
+        .find(|property| property.id == label.id)
+        .expect("Label written");
+    assert_ne!(
+        written.values()[0]
+            .attributes
+            .get("value")
+            .map(String::as_str),
+        Some("Renamed")
+    );
+    let dropped = export_messages(&report, "edit.dropped");
+    assert_eq!(dropped.len(), 1, "{dropped:?}");
+    assert!(
+        dropped[0].ends_with(&format!("(1): {}", label.id)),
+        "{dropped:?}"
+    );
+}
+
+/// An entry record that does not read leaves its ZIP member out. The report
+/// names the record once and none of the member's ledger spans.
+#[test]
+fn an_unreadable_entry_is_named_once() {
+    let mut ir = decode(CORE_DESIGN_PRODUCT);
+    let mut entries = native_arena::<serde_json::Value>(&ir, "entries");
+    let entry = entries
+        .iter_mut()
+        .find(|entry| entry["name"] != "Document.xml")
+        .expect("side entry");
+    let (stale_id, stale_name) = (
+        entry["id"].as_str().expect("entry id").to_owned(),
+        entry["name"].as_str().expect("entry name").to_owned(),
+    );
+    let data = entry["data"].as_str().expect("entry hex bytes");
+    entry["data"] = serde_json::json!(format!("{data}00"));
+    replace_arena(&mut ir, "entries", &entries);
+    let spans = native_arena::<ArchiveSpan>(&ir, "physical_ledger")
+        .into_iter()
+        .filter(|span| matches!(&span.role, ArchiveSpanRole::CompressedPayload(name) if *name == stale_name))
+        .map(|span| span.id)
+        .collect::<Vec<_>>();
+    assert!(!spans.is_empty());
+
+    let (report, bytes, _) = write_and_read_back(&ir);
+    assert!(!archive_payloads(&bytes).contains_key(&stale_name));
+    let omitted = export_messages(&report, "native.records-omitted");
+    assert_eq!(
+        omitted
+            .iter()
+            .filter(|message| message.contains(stale_id.as_str()))
+            .count(),
+        1,
+        "{omitted:?}"
+    );
+    for span in &spans {
+        assert!(
+            omitted
+                .iter()
+                .all(|message| !message.contains(span.as_str())),
+            "{span}: {omitted:?}"
+        );
+    }
+}
+
+/// A physical ledger span that does not read orders no member. Every entry
+/// is still written, and the report names the span.
+#[test]
+fn an_unreadable_ledger_span_is_named() {
+    let mut ir = decode(CORE_DESIGN_PRODUCT);
+    let mut ledger = native_arena::<serde_json::Value>(&ir, "physical_ledger");
+    let span = ledger
+        .iter_mut()
+        .find(|span| span["role"] == "local-signature")
+        .expect("local signature span");
+    span["end"] = span["start"].clone();
+    let span_id = span["id"].as_str().expect("span id").to_owned();
+    replace_arena(&mut ir, "physical_ledger", &ledger);
+
+    let (report, bytes, _) = write_and_read_back(&ir);
+    let payloads = archive_payloads(&bytes);
+    for entry in native_arena::<EntryRecord>(&ir, "entries")
+        .iter()
+        .filter(|entry| entry.name() != "Document.xml")
+    {
+        assert_eq!(payloads[entry.name()], entry.data(), "{}", entry.name());
+    }
+    let omitted = export_messages(&report, "native.records-omitted");
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains(span_id.as_str())),
+        "{omitted:?}"
+    );
+}
+
+/// Schema 2 declares no recompute mark. A property whose payload entry the
+/// archive does not hold is written with an empty file name, and the report
+/// names its object stale beside the omitted property.
+#[test]
+fn a_schema_two_object_with_an_emptied_file_name_is_reported_stale() {
+    let xml = r#"<Document SchemaVersion="2" FileVersion="1"><Features Count="1"><Feature type="App::FeaturePython" name="Holder"/></Features><FeatureData Count="1"><Feature name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><File file="Payload.bin"/></Property></Properties></Feature></FeatureData></Document>"#;
+    let mut ir = decode(&archive_entries(&[
+        ("Document.xml", xml.as_bytes()),
+        ("Payload.bin", b"payload"),
+    ]));
+    let mut entries = native_arena::<EntryRecord>(&ir, "entries");
+    entries.retain(|entry| entry.name() != "Payload.bin");
+    replace_arena(&mut ir, "entries", &entries);
+    let payload = properties_naming(&ir, "Payload.bin")
+        .pop()
+        .expect("Payload names its entry");
+
+    let (report, bytes, round_trip) = write_and_read_back(&ir);
+    let written = native_arena::<PropertyRecord>(round_trip.ir(), "properties")
+        .into_iter()
+        .find(|property| property.id == payload.id)
+        .expect("Payload written");
+    assert!(written.side_entries().is_empty());
+    assert_eq!(
+        written.values()[0]
+            .attributes
+            .get("file")
+            .map(String::as_str),
+        Some("")
+    );
+    let document = String::from_utf8(archive_payloads(&bytes)["Document.xml"].clone())
+        .expect("UTF-8 Document.xml");
+    assert!(!document.contains("Touched"), "{document}");
+    let holder = crate::native::native_id("object", "Holder");
+    let stale = export_messages(&report, "evaluation.stale");
+    assert_eq!(stale.len(), 1, "{stale:?}");
+    assert!(stale[0].contains(holder.as_str()), "{stale:?}");
+    let omitted = export_messages(&report, "native.records-omitted");
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains(payload.id.as_str())),
+        "{omitted:?}"
+    );
+}
