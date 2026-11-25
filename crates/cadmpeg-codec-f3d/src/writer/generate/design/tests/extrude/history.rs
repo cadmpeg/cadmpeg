@@ -7,12 +7,13 @@
 use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::evaluation::{Evaluation, EvaluationStatus, StateBase, StateDelta};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::sketch::PlanarCurve;
 use cadmpeg_ir::design::options::{Boolean, BooleanOp};
 use cadmpeg_ir::design::parameter::ParameterOwner;
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef};
 use cadmpeg_ir::design::selection::{Members, PickTarget, Picked, Picks, PrincipalEntity};
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
@@ -891,6 +892,114 @@ fn each_board_inserts_the_records_of_its_body(decoded: &CadIr, bytes: &[u8]) {
     );
 }
 
+/// The extrudes of the decoded timeline before the member at the root
+/// scope's current position, latest first.
+fn built_extrudes(decoded: &CadIr) -> Vec<FeatureId> {
+    let (_, members) = decoded_rollback(decoded);
+    let Position::After(last) = &decoded.design.scopes[0].current[0].at else {
+        panic!("a current state after a member");
+    };
+    let at = members
+        .iter()
+        .position(|member| member == last)
+        .expect("the member at the current position");
+    members[..at]
+        .iter()
+        .rev()
+        .filter_map(|member| {
+            let Member::Feature(id) = member else {
+                return None;
+            };
+            let feature = decoded
+                .design
+                .features
+                .iter()
+                .find(|found| &found.id == id)?;
+            matches!(
+                feature.definition.operation,
+                FeatureOperation::Extrude(_)
+                    | FeatureOperation::Unresolved {
+                        family: OperationFamily::Extrude
+                    }
+            )
+            .then(|| id.clone())
+        })
+        .collect()
+}
+
+#[test]
+fn a_history_true_write_decodes_the_state_after_each_extrude_from_its_stored_state() {
+    use cadmpeg_core::decode::ResourceLimits;
+    let (ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    let extrudes = built_extrudes(&decoded);
+    let evaluations = &decoded.design.evaluations;
+    assert_eq!(
+        evaluations
+            .iter()
+            .map(|evaluation| evaluation.of.clone())
+            .collect::<Vec<_>>(),
+        extrudes
+            .iter()
+            .map(|id| Evaluated::State(Position::After(Member::Feature(id.clone()))))
+            .collect::<Vec<_>>(),
+        "{:#?}",
+        report.losses
+    );
+    let mut base = StateBase::Current(decoded.design.scopes[0].current[0].at.clone());
+    for evaluation in evaluations {
+        assert_eq!(evaluation.status, EvaluationStatus::Current);
+        assert_eq!(evaluation.scope, decoded.design.scopes[0].definition);
+        assert!(evaluation.native_ref.is_some());
+        let content = evaluation.content.as_ref().expect("the state's content");
+        assert_eq!(content.base, base);
+        base = StateBase::Evaluation(evaluation.id.clone());
+    }
+
+    let first = evaluations
+        .last()
+        .expect("the state after the first extrude");
+    let state = decoded
+        .resolved_evaluation_state(&first.id, &ResourceLimits::default())
+        .expect("the state after the first extrude resolves");
+    let records = state.records();
+    assert_eq!(records.bodies.len(), 1);
+    assert_eq!(records.faces.len(), 6);
+    assert!(records
+        .faces
+        .iter()
+        .all(|face| decoded.geometry.faces.contains(face)));
+    let removed = decoded
+        .geometry
+        .bodies
+        .iter()
+        .filter(|body| !records.bodies.contains(body))
+        .map(|body| RecordRef::Body(body.id.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(removed.len(), 1);
+    let content = first.content.as_ref().expect("the state's content");
+    assert!(removed
+        .iter()
+        .all(|body| content.delta.removed.contains(body)));
+
+    let (again, _, _) = write_bytes_as(&decoded, MissingStateForm::HistoryTrue);
+    assert!(
+        again
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(first.id.as_str())),
+        "{:#?}",
+        again
+            .losses
+            .iter()
+            .map(|loss| (
+                loss.code.to_string(),
+                loss.message.chars().take(160).collect::<String>()
+            ))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn an_extrude_that_changes_an_earlier_body_stays_in_the_base_feature() {
     let (ir, second) = with_a_second_extrude(Boolean::Apply {
@@ -923,11 +1032,8 @@ fn an_extrude_that_changes_an_earlier_body_stays_in_the_base_feature() {
 /// state after the first extrude, the cube alone, held by an evaluation
 /// where `held`.
 fn joined_after_the_cube(held: bool) -> (CadIr, FeatureId) {
-    use cadmpeg_ir::design::evaluation::{
-        Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
-    };
+    use cadmpeg_ir::design::evaluation::StateContent;
     use cadmpeg_ir::design::ids::EvaluationId;
-    use cadmpeg_ir::design::refs::Evaluated;
     let (mut ir, second) = with_a_second_extrude(Boolean::Apply {
         op: BooleanOp::Join,
         targets: None,

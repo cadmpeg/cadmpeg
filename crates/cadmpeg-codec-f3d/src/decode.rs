@@ -4287,7 +4287,7 @@ fn cuts_design_intent(
         })
 }
 
-fn brep_identity_namespace(entry: &str) -> Option<&str> {
+pub(crate) fn brep_identity_namespace(entry: &str) -> Option<&str> {
     entry.rsplit('/').next()?.strip_prefix("BREP.")
 }
 
@@ -4342,7 +4342,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 "f3d",
                 &mut decoded.ir,
                 &mut decoded.body.losses,
-                |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
+                |ir, losses| crate::design_v11::project(ctx, ir, depth, Some(&scan), losses),
             )?;
             decoded.ir.finalize();
             Ok(decoded.into_decoded())
@@ -6047,6 +6047,16 @@ fn try_decode_brep(
         crate::ids::ID_FORMAT,
     )
     .map(Some)
+}
+
+/// Admit the transferred geometry of a stored history state as the model
+/// geometry is admitted, without its notes.
+pub(crate) fn admit_state_geometry(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
+) -> Result<(), CodecError> {
+    geometry_admission::admit(ctx, ir, &mut Vec::new(), annotations)
 }
 
 /// Assemble the IR document from the decoded B-rep graph.

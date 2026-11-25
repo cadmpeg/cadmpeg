@@ -58,6 +58,8 @@ pub(super) struct Projected {
     pub(super) containers: Vec<Container>,
     /// The features of the items, in member order.
     pub(super) features: Vec<Feature>,
+    /// The stream and scope record of the item of each feature.
+    pub(super) items: BTreeMap<FeatureId, (String, u64)>,
 }
 
 /// The timeline containers and item features of every document of the
@@ -140,6 +142,9 @@ pub(super) fn project(
                     ),
                 };
                 members.push(Member::Feature(feature.id.clone()));
+                projected
+                    .items
+                    .insert(feature.id.clone(), (stream.to_owned(), item.value));
                 projected.features.push(feature);
                 ordinal = ordinal
                     .checked_add(1)

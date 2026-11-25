@@ -28,6 +28,7 @@ pub(crate) mod parameters;
 mod pattern;
 mod sheet_metal;
 mod split;
+mod states;
 #[cfg(test)]
 mod tests;
 mod thread;
@@ -47,6 +48,8 @@ use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
+use crate::container::ContainerScan;
+use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 use crate::records::feature::scope::DesignScopeTailFlags;
 
@@ -56,6 +59,8 @@ const TIMELINES: &str = "design_feature_timelines";
 const TYPES: &str = "design_types";
 /// The native arena that holds the parameter scopes.
 const SCOPES: &str = "design_parameter_scopes";
+/// The native arena that holds the ASM histories.
+const HISTORIES: &str = "asm_histories";
 
 /// The tail flags of one parameter scope.
 #[derive(serde::Deserialize)]
@@ -67,11 +72,13 @@ struct ScopeTail {
 
 /// Project the design of a decoded Fusion document into `ir.design`, beside
 /// its v10 records, and push what it leaves unstated to `losses`. The root
-/// definition is already stated.
+/// definition is already stated. The stored states of the root scope's
+/// timeline are read from `scan`, the archive of a single Fusion document.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     depth: DecodeDepth,
+    scan: Option<&ContainerScan<'_>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if depth < DecodeDepth::Design {
@@ -88,6 +95,10 @@ pub(crate) fn project(
         return Ok(());
     }
     let types = namespace.arena_as_for_decode::<SegmentType>(ctx, TYPES)?;
+    let stored_histories = namespace
+        .arenas()
+        .iter()
+        .any(|(name, records)| name.as_str() == HISTORIES && !records.is_empty());
     let scope_tails = namespace.arena_as_for_decode::<ScopeTail>(ctx, SCOPES)?;
     let tail_flags: timeline::TailFlags<'_> = scope_tails
         .iter()
@@ -124,6 +135,22 @@ pub(crate) fn project(
         &current,
         losses,
     )?;
+    let tails: states::Tails<'_> = scopes
+        .iter()
+        .filter_map(|scope| {
+            let key = (
+                crate::ids::native_stream(&scope.id)?,
+                u64::from(scope.record_index),
+            );
+            Some((
+                key,
+                states::Tail {
+                    state: scope.history_state_id(),
+                    flags: tail_flags.get(&key).copied(),
+                },
+            ))
+        })
+        .collect();
     let mut scopes = BTreeMap::new();
     let mut hosted = Vec::new();
     for (prefix, projected) in documents {
@@ -150,6 +177,7 @@ pub(crate) fn project(
         definitions.insert(prefix, definition.clone());
         into.containers.extend(projected.containers);
         into.features.extend(projected.features);
+        into.items.extend(projected.items);
     }
     definitions.extend(
         scopes
@@ -187,6 +215,7 @@ pub(crate) fn project(
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
         .collect::<HashMap<_, _>>();
+    let mut root = None;
     for (prefix, (definition, mut projected)) in scopes {
         let Span {
             definitions: spanned,
@@ -210,6 +239,15 @@ pub(crate) fn project(
             continue;
         };
         let at = rollback_position(id, members, rollback.as_ref());
+        if prefix.is_empty() && !bodies.is_empty() {
+            root = Some(states::Scope {
+                definition: definition.clone(),
+                at: at.clone(),
+                bodies: bodies.clone(),
+                members: members.clone(),
+                items: std::mem::take(&mut projected.items),
+            });
+        }
         let current = (!bodies.is_empty())
             .then(|| CurrentState {
                 at,
@@ -248,6 +286,25 @@ pub(crate) fn project(
         .extend(scoped_configurations.records);
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
+    match (root, scan) {
+        (Some(root), Some(scan)) => {
+            if let Err(error) =
+                ctx.run_part(|| states::project(ctx, ir, scan, &root, &tails, losses))?
+            {
+                losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+                    "scope {}: the states after its timeline items are not stated: {error}.",
+                    root.definition
+                )));
+            }
+        }
+        (Some(root), None) if stored_histories => {
+            losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+                "scope {}: the states after its timeline items are not stated: the ASM histories of an archive member are not read.",
+                root.definition
+            )));
+        }
+        _ => {}
+    }
     Ok(())
 }
 
