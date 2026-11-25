@@ -127,6 +127,11 @@ impl Emitter {
         r
     }
 
+    /// The number of instances emitted so far.
+    pub(crate) fn instance_count(&self) -> usize {
+        self.lines.len()
+    }
+
     pub(crate) fn counts(&self) -> BTreeMap<String, usize> {
         self.counts
             .iter()
