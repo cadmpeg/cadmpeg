@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -1560,7 +1561,7 @@ fn parse_legacy_major2(
                 vertex.point[1] - expected[1],
                 vertex.point[2] - expected[2],
             ];
-            tolerance = tolerance.max(delta[0].hypot(delta[1]).hypot(delta[2]));
+            tolerance = tolerance.max(delta[0].portable_hypot(delta[1]).portable_hypot(delta[2]));
         }
         vertex.tolerance = tolerance;
     }

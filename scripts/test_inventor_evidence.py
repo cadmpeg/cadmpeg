@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 import struct
+import subprocess
 import unittest
 import zlib
 
@@ -395,6 +396,11 @@ class EvidenceTest(unittest.TestCase):
         cadmpeg = Path("target/debug/cadmpeg")
         if not cadmpeg.is_file():
             self.skipTest("the cadmpeg binary is not built")
+        formats = subprocess.run(
+            [str(cadmpeg), "formats"], capture_output=True, text=True, check=True
+        ).stdout.split("\n")
+        if not any(line.startswith("sat ") for line in formats):
+            self.skipTest("the cadmpeg binary is built without the sat codec")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "synthetic.ipt"
             path.write_bytes(synthetic_primary())
