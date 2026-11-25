@@ -362,7 +362,7 @@ impl FeatureOperation {
             return Some(*family);
         }
         let wire = crate::hash::finite_json::to_json_value(self).ok()?;
-        serde_json::from_value(wire.get("kind")?.clone()).ok()
+        cadmpeg_core::serde_erase::from_json_value::<OperationFamily>(wire.get("kind")?).ok()
     }
 }
 

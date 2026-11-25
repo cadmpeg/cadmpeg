@@ -211,7 +211,7 @@ pub fn restore_history(
         }
     }
     let json = |design: &crate::document::Design| {
-        serde_json::to_value(design).map_err(|error| {
+        cadmpeg_core::serde_erase::to_json_value(design).map_err(|error| {
             CodecError::malformed(format!("the design records have no JSON form: {error}"))
         })
     };

@@ -163,7 +163,7 @@ fn a_given_up_point_leaves_its_part_and_drops_each_record_that_needs_it() {
         .expect("the retained record");
     assert_eq!(retained.stream(), outcome.path);
     assert_eq!(retained.offset(), 0);
-    let text = crate::hash::finite_json::to_canonical_json_string(&point).unwrap();
+    let text = crate::hash::finite_json::to_compact_canonical_json_string(&point).unwrap();
     assert_eq!(retained.data(), Some(text.as_bytes()));
     let classes: BTreeSet<_> = Arena::home("geometry", "points")
         .unwrap()

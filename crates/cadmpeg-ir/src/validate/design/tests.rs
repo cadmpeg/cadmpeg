@@ -997,9 +997,17 @@ fn nested_plane(depth: usize) -> Value {
 #[test]
 fn the_walk_of_the_deepest_construction_runs_on_the_smallest_default_stack() {
     // A nested construction is four levels of JSON: inputs, input, reference
-    // and construction, so no document holds a deeper nesting.
-    let deepest = crate::bounds::MAX_DOCUMENT_DEPTH / 4;
-    let ir = timeline(vec![feature("a", plane_datum(nested_plane(deepest)))]);
+    // and construction. The deepest nesting a document holds is the last
+    // whose document is within the document bound.
+    let (depth, ir) = (1..)
+        .map(|depth| timeline(vec![feature("a", plane_datum(nested_plane(depth)))]))
+        .map_while(|ir| {
+            let depth = crate::bounds::text_depth(&serde_json::to_string(&ir).unwrap());
+            (depth <= crate::bounds::MAX_DOCUMENT_DEPTH).then_some((depth, ir))
+        })
+        .last()
+        .unwrap();
+    assert!(depth > crate::bounds::MAX_DOCUMENT_DEPTH - 4, "{depth}");
     let findings = super::fixture::on_the_smallest_default_stack(move || findings(&ir));
     assert!(
         !findings

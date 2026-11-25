@@ -115,3 +115,32 @@ Question: Does the sign of the `sketchMatrix` normal of a face sketch follow the
 Known: The `sketchMatrix` normal sign and the face `orientation` value are both stored.
 
 Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
+
+## ONSHAPE-011 — Assembly mate frames and parameter quantities
+
+Question: Which coordinate frame owns `matedCS` for a path through a
+subassembly, and which feature parameters establish enabled mate limits,
+offsets, and their signs relative to the evaluated connector frames?
+
+Known: An assembly definition stores mate types and pairs of evaluated
+connectors in `featureData.matedEntities`. `matedOccurrence` is an ordered
+instance-ID path and can traverse a subassembly. Each `matedCS` stores
+three-component `origin`, `xAxis`, `yAxis`, and `zAxis` arrays. Occurrence
+transforms hold 16 row-major coefficients in the root assembly frame.
+The feature response stores native mate parameters by `parameterId`.
+
+Need: Save two instances of a subassembly with distinct rotations and a mate
+to a child with an offset connector. Change the child's placement and compare
+`matedCS` with the child and subassembly occurrence transforms. Save a two-part
+revolute assembly with a lower angular limit, then an upper angular limit,
+then an angular offset. Repeat with a slider's lower and upper travel limits.
+Compare feature parameters and evaluated connector frames after each change.
+
+Note: Nested frames use the part-local reading and charge
+`assembly.mate-frame-assumed`. Unresolved solved sense charges
+`assembly.mate-frame-unresolved`; a planar mate then retains its native
+response. Enabled or unclassified parameters beyond the plain mate set charge
+`assembly.mate-limits-unresolved` with their IDs. A boolean `enable` switch is
+not charged. A switch set to `false` silences the limit or offset parameters
+whose names carry its own qualifying words, and a switch with more qualifying
+words than a parameter silences that parameter. Source responses remain assets.

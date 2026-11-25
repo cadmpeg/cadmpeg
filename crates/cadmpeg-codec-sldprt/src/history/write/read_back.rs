@@ -1362,7 +1362,7 @@ impl ReadBack {
             let read = claim.read(written, pairing).and_then(|read| {
                 Some((
                     read,
-                    serde_json::to_value(read.evaluation.definition()).ok()?,
+                    cadmpeg_core::serde_erase::to_json_value(read.evaluation.definition()).ok()?,
                 ))
             });
             let Some((read, read_definition)) = read else {

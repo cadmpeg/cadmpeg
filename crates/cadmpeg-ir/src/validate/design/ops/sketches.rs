@@ -1061,7 +1061,9 @@ fn check_bound_scope<T: serde::Serialize>(
     let Some(scope) = sketches.owner_scope(index, sketch) else {
         return;
     };
-    let Ok(wire) = serde_json::to_value(value) else {
+    let Ok(wire) =
+        cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| value.serialize(adapter))
+    else {
         return;
     };
     let bound = super::tagged(&wire, "parameter")
@@ -1634,7 +1636,7 @@ fn check_regions(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Fin
         .collect();
     for found in super::tagged(wire, "sketch_region") {
         let Ok(PickTarget::SketchRegion { sketch, region }) =
-            serde_json::from_value::<PickTarget>(found.clone())
+            cadmpeg_core::serde_erase::from_json_value::<PickTarget>(found)
         else {
             continue;
         };
