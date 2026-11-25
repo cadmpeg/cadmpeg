@@ -1163,6 +1163,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             );
         }
         let mut loops = Vec::new();
+        let mut unbounding_wires = Vec::new();
         for (loop_index, wire_use) in shape
             .children
             .iter()
@@ -1199,6 +1200,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 edge_uses.reverse();
             }
             if edge_uses.is_empty() {
+                unbounding_wires.push(wire_use.shape.to_string());
                 continue;
             }
             let loop_key = format!("{}:{}", face_key, loop_index + 1);
@@ -1288,8 +1290,16 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         let (face_loops, unstated_on) =
             cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, support_geometry);
         if let Some(kind) = unstated_on {
+            let wires = if unbounding_wires.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " (wire shape {} holds no boundary edge use)",
+                    unbounding_wires.join(", ")
+                )
+            };
             self.losses.push(FreecadLossCode::TopologyFaceBoundaryUnstated.note(format!(
-                "payload {} face shape {} states no boundary wire on a {kind}, which no face covers whole: face {face_id} is stated partial",
+                "payload {} face shape {} states no boundary wire{wires} on a {kind}, which no face covers whole: face {face_id} is stated partial",
                 self.payload.id, face_use.shape,
             )));
         }

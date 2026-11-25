@@ -1359,6 +1359,62 @@ Sh 1001000 +2 0 *
 }
 
 #[test]
+fn names_the_wire_of_a_planar_face_that_bounds_nothing() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    // The face's one wire holds its edge as an internal use.
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 6
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +6 0 -5 0 *
+Wi 1001000 i4 0 *
+Fa 0 0.001 1 0 1001000 +3 0 *
+Sh 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("planar face with an internal wire");
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    assert!(matches!(
+        &faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops } if loops.is_empty()
+    ));
+    let code = crate::loss::FreecadLossCode::TopologyFaceBoundaryUnstated
+        .note("")
+        .code;
+    let messages: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert!(
+        messages[0].contains(
+            "states no boundary wire (wire shape 4 holds no boundary edge use) on a plane"
+        ),
+        "{}",
+        messages[0]
+    );
+    assert!(messages[0].contains(faces[0].id.as_str()));
+}
+
+#[test]
 fn accepts_equivalent_repeated_exact_curve_records() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
