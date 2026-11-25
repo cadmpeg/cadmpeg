@@ -92,7 +92,9 @@ fn an_archive_70_cage_reports_its_end_sharpness() {
     let (report, decoded) = write(&ir, RhinoArchiveVersion::V7);
     assert!(
         report.losses.iter().any(|loss| {
-            loss.message.contains(cage.subd.as_str()) && loss.message.contains("start sharpness")
+            loss.code.local_code() == crate::loss::RhinoLossCode::WriterSubdContentOmitted.code()
+                && loss.message.contains(cage.subd.as_str())
+                && loss.message.contains("start sharpness")
         }),
         "{:#?}",
         report.losses

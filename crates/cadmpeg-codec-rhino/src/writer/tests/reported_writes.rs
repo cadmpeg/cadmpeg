@@ -243,7 +243,11 @@ fn a_face_name_is_written_without_and_named() {
     let (decoded, losses) = written(&ir);
     assert_eq!(decoded.geometry.faces.len(), 1);
     assert!(
-        has_loss(&losses, "rhino/writer.attributes-omitted", &face),
+        has_loss(
+            &losses,
+            &RhinoLossCode::WriterAttributesOmitted.kind().to_string(),
+            &face
+        ),
         "{losses:?}"
     );
 }
@@ -365,7 +369,7 @@ fn a_free_polyline_is_written_as_a_degree_one_nurbs_and_its_deflection_named() {
     assert!(
         has_loss(
             &losses,
-            "rhino/writer.value-omitted",
+            &RhinoLossCode::WriterValueOmitted.kind().to_string(),
             "cadir:model:curve#polyline"
         ),
         "{losses:?}"
