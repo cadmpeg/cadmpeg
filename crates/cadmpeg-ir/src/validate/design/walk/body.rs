@@ -4,10 +4,10 @@
 use cadmpeg_core::CodecError;
 
 use crate::design::ops::body::{
-    BodyMate, Combine, DeleteBodies, DeleteFaces, Extract, Flex, Graft, InstanceChange,
-    InstanceOverride, Kept, MoveFaces, Pattern, PatternInstances, PatternSeeds, ReplaceFaces,
-    ScaleFactors, Split, SplitMethod, SplitMode, SplitTool, TemplateInput, TemplateInstance,
-    TransformBodies, TransformStep, Transformation,
+    BodyMate, Combine, DeleteBodies, DeleteFaces, Extract, Flex, FlexKind, Graft, Heal,
+    InstanceChange, InstanceOverride, Kept, MoveFaces, Pattern, PatternInstances, PatternSeeds,
+    ReplaceFaces, ScaleFactors, Split, SplitMethod, SplitMode, SplitTool, TemplateInput,
+    TemplateInstance, TransformBodies, TransformMode, TransformStep, Transformation,
 };
 
 use super::{Collect, Walk};
@@ -63,10 +63,11 @@ impl Walk for DeleteFaces {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             faces,
-            heal: _,
+            heal,
             native_options,
             source_settings,
         } = self;
+        heal.walk(into)?;
         faces.walk(into)?;
         native_options.walk(into)?;
         source_settings.walk(into)?;
@@ -94,11 +95,13 @@ impl Walk for Flex {
         let Self {
             bodies,
             frame,
-            trims: _,
-            kind: _,
+            trims,
+            kind,
             native_options,
             source_settings,
         } = self;
+        trims.walk(into)?;
+        kind.walk(into)?;
         bodies.walk(into)?;
         frame.walk(into)?;
         native_options.walk(into)?;
@@ -107,21 +110,48 @@ impl Walk for Flex {
     }
 }
 
+impl Walk for FlexKind {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Bend { angle, radius } => {
+                angle.walk(into)?;
+                radius.walk(into)?;
+                Ok(())
+            }
+            Self::Twist { angle } => angle.walk(into),
+            Self::Taper { factor } => factor.walk(into),
+            Self::Stretch { distance } => distance.walk(into),
+            Self::Native(_) => Ok(()),
+        }
+    }
+}
+
 impl Walk for Graft {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             body,
             sheet,
-            flip: _,
-            simplify: _,
+            flip,
+            simplify,
             native_options,
             source_settings,
         } = self;
+        flip.walk(into)?;
+        simplify.walk(into)?;
         body.walk(into)?;
         sheet.walk(into)?;
         native_options.walk(into)?;
         source_settings.walk(into)?;
         Ok(())
+    }
+}
+
+impl Walk for Heal {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Fill { tangent } => tangent.walk(into),
+            Self::Open | Self::Extend | Self::Native(_) => Ok(()),
+        }
     }
 }
 
@@ -239,8 +269,11 @@ impl Walk for ReplaceFaces {
 impl Walk for ScaleFactors {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
-            Self::PerAxis { factors: _, frame } => frame.walk(into),
-            Self::Uniform(_) => Ok(()),
+            Self::PerAxis { factors, frame } => {
+                factors.walk(into)?;
+                frame.walk(into)
+            }
+            Self::Uniform(f0) => f0.walk(into),
         }
     }
 }
@@ -332,10 +365,11 @@ impl Walk for TransformBodies {
         let Self {
             bodies,
             transformation,
-            mode: _,
+            mode,
             native_options,
             source_settings,
         } = self;
+        mode.walk(into)?;
         bodies.walk(into)?;
         transformation.walk(into)?;
         native_options.walk(into)?;
@@ -344,20 +378,42 @@ impl Walk for TransformBodies {
     }
 }
 
+impl Walk for TransformMode {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Copy { count, divisions } => {
+                count.walk(into)?;
+                divisions.walk(into)?;
+                Ok(())
+            }
+            Self::Move => Ok(()),
+        }
+    }
+}
+
 impl Walk for TransformStep {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Translate {
                 direction,
-                distance: _,
-            } => direction.walk(into),
-            Self::Components { frame, delta: _ } => frame.walk(into),
+                distance,
+            } => {
+                distance.walk(into)?;
+                direction.walk(into)
+            }
+            Self::Components { frame, delta } => {
+                delta.walk(into)?;
+                frame.walk(into)
+            }
             Self::PointToPoint { from, to } => {
                 from.walk(into)?;
                 to.walk(into)?;
                 Ok(())
             }
-            Self::Rotate { axis, angle: _ } => axis.walk(into),
+            Self::Rotate { axis, angle } => {
+                angle.walk(into)?;
+                axis.walk(into)
+            }
             Self::FrameToFrame { from, to } => {
                 from.walk(into)?;
                 to.walk(into)?;

@@ -90,7 +90,7 @@ fn owner_work_capped_loss(skipped: usize, work_limit: usize) -> LossNote {
 }
 
 fn needs_surface_owner(mesh: &cadmpeg_ir::tessellation::Tessellation) -> bool {
-    mesh.body.is_none() && mesh.faces.is_empty() && mesh.vertex_count() != 0
+    matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) && mesh.vertex_count() != 0
 }
 
 #[cfg(test)]
@@ -513,10 +513,7 @@ pub(crate) struct ClassInterval {
 
 pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let mut declarations = Vec::new();
-    for (offset, marker) in payload.windows(CLASS_MARKER.len()).enumerate() {
-        if marker != CLASS_MARKER {
-            continue;
-        }
+    for offset in memchr::memmem::find_iter(payload, CLASS_MARKER) {
         let Some(length) = View::u16_le_at(payload, offset + 4).map(usize::from) else {
             continue;
         };
@@ -538,6 +535,7 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
         let name = name_text.to_owned();
         declarations.push((offset, name));
     }
+    let scene_finder = memchr::memmem::Finder::new(SCENE_SOURCE_MARKER);
     let mut declarations = declarations.into_iter().peekable();
     let mut intervals = Vec::new();
     while let Some((offset, name)) = declarations.next() {
@@ -550,12 +548,15 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
             continue;
         };
         let mut source_ids = Vec::new();
-        for window in records.windows(scene_src::LEN) {
-            let Some(source) = window
-                .starts_with(SCENE_SOURCE_MARKER)
-                .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
-                .flatten()
-                .filter(|source| *source != 0)
+        let mut cursor = 0;
+        while let Some(rel) = scene_finder.find(&records[cursor..]) {
+            let at = cursor + rel;
+            cursor = at + 1;
+            let Some(window) = records.get(at..at + scene_src::LEN) else {
+                break;
+            };
+            let Some(source) =
+                View::u32_le_at(window, scene_src::SOURCE_ID).filter(|source| *source != 0)
             else {
                 continue;
             };
@@ -858,11 +859,7 @@ pub(crate) fn section_display_faces(
     #[cfg(test)]
     DISPLAY_PARSE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let payload = section.payload();
-    let mut markers = payload
-        .windows(FACE_TESSELLATION_CLASS.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == FACE_TESSELLATION_CLASS).then_some(offset))
-        .peekable();
+    let mut markers = memchr::memmem::find_iter(payload, FACE_TESSELLATION_CLASS).peekable();
     let mut faces = Vec::new();
     while let Some(marker) = markers.next() {
         let header = marker + FACE_TESSELLATION_CLASS.len();
@@ -1504,8 +1501,10 @@ fn assign_unique_surface_owners_within(
             }
         };
         let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push(face.clone());
-        mesh.body = Some(body.clone());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![face.clone()],
+        };
         if let Some(deflection) = chordal_deflection {
             mesh.set_chordal_deflection(Some(deflection))
                 .map_err(|error| {
@@ -1736,7 +1735,7 @@ pub(crate) fn assign_persistent_owners(
 
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
@@ -1749,8 +1748,10 @@ pub(crate) fn assign_persistent_owners(
             continue;
         };
         let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push((*face).clone());
-        mesh.body = Some(body.clone());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![(*face).clone()],
+        };
         assigned.push(assigned_id);
     }
     assigned
@@ -1790,14 +1791,16 @@ pub(crate) fn assign_face_key_owners(
     }
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some((face, body)) = owners.get(mesh.id.as_str()) else {
             continue;
         };
-        mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: (*body).clone(),
+            faces: vec![(*face).clone()],
+        };
         assigned.push(mesh.id.as_str().to_owned());
     }
     assigned

@@ -1393,12 +1393,6 @@ pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     let object_id = format!("D{}", entry.sequence);
-    let name = std::str::from_utf8(&entry.label)
-        .ok()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    let layer = entry.level.map(|level| level.to_string());
     Ok(SourceObjectAssociation {
         geometry_role: Some(if entry.status.is_physically_dependent() {
             cadmpeg_ir::SourceGeometryRole::Support
@@ -1409,10 +1403,6 @@ pub(super) fn source_object(
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name,
-        color: None,
-        visible: Some(entry.status.is_visible()),
-        layer,
         instance_path: Vec::new(),
     })
 }
@@ -2671,6 +2661,17 @@ pub(crate) fn project_geometry(
         free_geometry::retain_independent(ir, &shell, &entries, &mut sequences);
     }
 
+    let mut vertex_points = BTreeSet::new();
+    for vertex in &ir.geometry.vertices {
+        vertex_points.insert(&vertex.point);
+    }
+    ir.geometry.points.retain(|point| {
+        !sequences
+            .point(&point.id)
+            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
+            || vertex_points.contains(&point.id)
+    });
+
     super::presentation::project(
         ir,
         directory,
@@ -2695,16 +2696,6 @@ pub(crate) fn project_geometry(
     super::annotation::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
 
-    let mut vertex_points = BTreeSet::new();
-    for vertex in &ir.geometry.vertices {
-        vertex_points.insert(&vertex.point);
-    }
-    ir.geometry.points.retain(|point| {
-        !sequences
-            .point(&point.id)
-            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
-            || vertex_points.contains(&point.id)
-    });
     Ok(Projection {
         placement_rejections,
         decoded,

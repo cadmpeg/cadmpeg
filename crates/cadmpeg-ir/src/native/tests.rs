@@ -12,6 +12,40 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
+fn a_native_namespace_is_named_by_a_codec_id() {
+    let read = |key: &str| {
+        serde_json::from_value::<crate::Native>(serde_json::json!({ key: {"records": []} }))
+    };
+    let native = read("fcstd").unwrap();
+    assert!(native.namespace("fcstd").is_some());
+    for key in ["", "FCStd", "my-codec", "f3d:design"] {
+        assert!(read(key).is_err(), "{key:?}");
+    }
+}
+
+#[test]
+fn a_native_arena_is_named_by_a_non_blank_string() {
+    let read =
+        serde_json::from_str::<crate::native::NativeNamespace>(r#"{"records": []}"#).unwrap();
+    assert_eq!(read.arenas()["records"].len(), 0);
+    for blank in ["", " ", "\u{3000}"] {
+        let text = serde_json::json!({ blank: [] }).to_string();
+        assert!(serde_json::from_str::<crate::native::NativeNamespace>(&text).is_err());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let mut namespace = crate::native::NativeNamespace::default();
+        assert!(matches!(
+            namespace.set_arena::<NativeRecord>(&ctx, blank, &[]),
+            Err(crate::native::NativeConvertError::BlankArena(_))
+        ));
+        assert!(matches!(
+            namespace.set_arena_records(blank, Vec::new()),
+            Err(crate::native::NativeConvertError::BlankArena(_))
+        ));
+        assert!(namespace.arenas().is_empty());
+    }
+}
+
+#[test]
 fn native_record_text_refuses_the_retained_limit() {
     use std::cell::Cell;
 
@@ -154,7 +188,7 @@ fn typed_native_read_errors_identify_the_arena_and_stored_record() {
     let mut document = crate::CadIr::empty();
     document
         .native
-        .namespace_mut("future")
+        .namespace_mut(crate::codec_id!("future"))
         .set_arena(
             &crate::native::test_ctx(),
             "records",
@@ -237,17 +271,20 @@ fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena(
 fn native_loss_counts_carry_a_nonempty_arena_population() {
     let mut native = crate::native::Native::default();
     native
-        .namespace_mut("future")
+        .namespace_mut(crate::codec_id!("future"))
         .arenas_mut()
-        .insert("empty".into(), Vec::new());
-    native.namespace_mut("future").arenas_mut().insert(
-        "records".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("test:native:record#counted").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .unwrap()],
-    );
+        .insert(cadmpeg_core::nonblank_literal!("empty"), Vec::new());
+    native
+        .namespace_mut(crate::codec_id!("future"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("test:native:record#counted").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .unwrap()],
+        );
     let counts = native.loss_counts();
     assert_eq!(counts.len(), 1);
     assert_eq!(counts[0].format, "future");
@@ -268,7 +305,7 @@ fn complete_document_refuses_duplicate_native_keys_at_every_depth() {
     let empty = serde_json::to_string(&crate::CadIr::empty()).unwrap();
     assert_eq!(empty.matches("\"native\":{}").count(), 1);
     let document = |native: &str| empty.replace("\"native\":{}", &format!("\"native\":{native}"));
-    let control = r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":"value"}}]},"another_future":{"different_records":[]}}"#;
+    let control = r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":"value"}}]},"anotherfuture":{"different_records":[]}}"#;
     let wire = document(control);
     let admitted = crate::CadIr::from_json(&wire).unwrap();
     assert_eq!(
@@ -344,9 +381,12 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     let mut document = crate::CadIr::empty();
     document
         .native
-        .namespace_mut("future")
+        .namespace_mut(crate::codec_id!("future"))
         .arenas_mut()
-        .insert("records".into(), vec![constructed]);
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![constructed],
+        );
     let wire = serde_json::to_value(&document).unwrap();
     let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
     let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
@@ -569,22 +609,30 @@ fn rejected_typed_identity_does_not_replace_an_existing_arena() {
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube().expect("valid unit cube fixture");
     let mut right = left.clone();
-    right.native.namespace_mut("f3d").arenas_mut().insert(
-        "act_guids".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .expect("valid native identity")],
-    );
-    right.native.namespace_mut("sldprt").arenas_mut().insert(
-        "configurations".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .expect("valid native identity")],
-    );
+    right
+        .native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("act_guids"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity")],
+        );
+    right
+        .native
+        .namespace_mut(crate::codec_id!("sldprt"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("configurations"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity")],
+        );
     right.native.finalize();
 
     let result = diff(&left, &right);
@@ -606,6 +654,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
             .added,
         ["sldprt:test:configuration#0"]
     );
+    crate::examples::add_document_root(&mut right);
     let report = validate_neutral(&right, Vec::new()).expect("validate the neutral model");
     assert_eq!(report.entity_counts["native.f3d.act_guids"], 1);
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);
@@ -613,7 +662,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
 
     right
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut(crate::codec_id!("sldprt"))
         .arenas_mut()
         .get_mut("configurations")
         .unwrap()[0] = NativeRecord::new(
@@ -867,9 +916,9 @@ fn native_finalization_sorts_changed_arenas_and_preserves_identity_ties() {
         })
         .to_vec();
     let mut native = super::Native(BTreeMap::from([(
-        "test".into(),
+        crate::codec_id!("test"),
         super::NativeNamespace {
-            arenas: BTreeMap::from([("records".into(), records)]),
+            arenas: BTreeMap::from([(cadmpeg_core::nonblank_literal!("records"), records)]),
         },
     )]));
     native.finalize();
@@ -915,10 +964,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
 
     struct FieldOwner;
     impl RewriteIdentities for FieldOwner {
-        fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_native_value(
             ctx: &DecodeContext<'_>,
             value: &mut serde_json::Value,
-            map: &mut IdentityMap<'_, F>,
+            map: &mut IdentityMap<'_>,
         ) -> Result<(), CodecError> {
             Face::rewrite_native_value(ctx, value, map)
         }
@@ -929,10 +978,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         ) -> Result<(), CodecError> {
             Ok(())
         }
-        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_identities(
             self,
             _ctx: &DecodeContext<'_>,
-            _map: &mut IdentityMap<'_, F>,
+            _map: &mut IdentityMap<'_>,
         ) -> Result<Self, CodecError> {
             Ok(self)
         }

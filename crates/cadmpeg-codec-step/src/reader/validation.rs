@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
@@ -169,7 +170,7 @@ pub(super) fn decode(
                 IdentityKey::from(property_id).dash(item_id),
             ));
             let mut measure = DeclaredMeasure::new(id.clone(), target.clone(), quantity)
-                .with_provenance(DeclaredMeasureProvenance::ValidationProperty)
+                .with_basis(MeasureBasis::Validation)
                 .with_native_ref(format!("#{item_id}"));
             if let Some(description) = description {
                 measure = measure.with_label(description.clone());
@@ -201,6 +202,7 @@ pub(super) fn decode(
             }
         }
     }
+    let mut removed_points = BTreeSet::new();
     ir.geometry.points.retain(|point| {
         let Some(id) = point
             .id
@@ -211,7 +213,15 @@ pub(super) fn decode(
         else {
             return true;
         };
-        !validation_points.contains(&id) || referenced_validation_points.contains(&id)
+        let retained =
+            !validation_points.contains(&id) || referenced_validation_points.contains(&id);
+        if !retained {
+            removed_points.insert(point.id.as_str().to_owned());
+        }
+        retained
+    });
+    ir.model.attributes.retain(|attribute| {
+        !matches!(&attribute.target.entity, AttributeTarget::Point(point) if removed_points.contains(point.as_str()))
     });
     Ok(StageOutcome {
         value: (),

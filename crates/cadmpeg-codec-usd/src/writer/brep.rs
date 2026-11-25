@@ -169,7 +169,13 @@ pub(super) fn mesh(
         });
     match tessellation {
         Ok(tessellation) => (
-            Some((tessellation.with_body(Some(body.id.clone())), ranges)),
+            Some((
+                tessellation.with_of(cadmpeg_ir::tessellation::Meshed::Body {
+                    body: body.id.clone(),
+                    faces: Vec::new(),
+                }),
+                ranges,
+            )),
             unmeshed,
         ),
         Err(reason) => {

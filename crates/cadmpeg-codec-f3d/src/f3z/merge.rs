@@ -528,8 +528,8 @@ impl MergeSession<'_, '_> {
             // Each instance's occurrences sit in the definitions that hold
             // the first instance's, the member definition holding its top
             // level, which the placing occurrence places.
-            let first = format!("f3d:xref/{}/", member.scope);
-            let this = format!("f3d:xref/{occurrence}/");
+            let first = format!("f3d:{}@", member.scope);
+            let this = format!("f3d:{occurrence}@");
             for root in &instance.occurrences {
                 let counterpart = match root.id.as_str().strip_prefix(&this) {
                     Some(tail) if first != this => {
@@ -564,7 +564,7 @@ impl MergeSession<'_, '_> {
                 .ok_or_else(|| CodecError::malformed("missing F3Z placing occurrence"))?;
             placing.prototype = member.definition;
             self.instance_scopes
-                .insert(placement.parent.clone(), format!("f3d:xref/{occurrence}"));
+                .insert(placement.parent.clone(), format!("f3d:{occurrence}"));
             self.stack.push(reference.relative_path.as_str().to_owned());
             let descendants = self.merge_placements(
                 parent_ir,
@@ -1545,7 +1545,7 @@ fn place_contained_poses_in_members(
                 occurrence
                     .id
                     .as_str()
-                    .split_once("/model:")
+                    .split_once("@model:")
                     .map(|(scope, _)| scope)
             })
     });
@@ -1555,7 +1555,7 @@ fn place_contained_poses_in_members(
             children.entry(parent).or_default().push(position);
         }
     }
-    let local_root = |id: &str| !id.starts_with("f3d:xref/");
+    let local_root = |id: &str| crate::ids::member_key(id).is_none();
     let owners_of = |instance: usize| {
         let mut owners = Vec::new();
         let mut at = parent_of(instance);
@@ -1574,7 +1574,7 @@ fn place_contained_poses_in_members(
                                 ir.model.occurrences[position]
                                     .id
                                     .as_str()
-                                    .split_once("/model:")
+                                    .split_once("@model:")
                                     .is_some_and(|(owner_scope, _)| owner_scope == scope)
                             },
                         )
@@ -1656,7 +1656,7 @@ fn place_contained_poses_in_members(
                         .get(child)?
                         .id
                         .as_str()
-                        .split_once("/model:")
+                        .split_once("@model:")
                         .map(|(scope, _)| scope)
                 })
                 .collect::<BTreeSet<_>>();
@@ -1688,12 +1688,11 @@ fn place_contained_poses_in_members(
                                 && occurrence
                                     .id
                                     .as_str()
-                                    .split_once("/model:")
+                                    .split_once("@model:")
                                     .map(|(scope, _)| scope)
                                     == member_scope
                         } else {
-                            !id.strip_prefix("f3d:xref/")
-                                .is_some_and(|scoped| scoped.contains("/xref/"))
+                            !crate::ids::member_key(id).is_some_and(|key| key.contains("/xref/"))
                         }
                     });
                     if let Some(record) = own.and_then(|id| records.get(id)) {
@@ -1980,18 +1979,28 @@ impl MemberDefinition {
         scope: &str,
         parent: &cadmpeg_ir::ids::OccurrenceId,
     ) -> Result<Model, CodecError> {
-        let prefix = format!("f3d:xref/{}/", self.scope);
-        let ids = self
-            .occurrences
-            .iter()
-            .map(|occurrence| occurrence.id.as_str())
-            .chain(self.joints.iter().map(|joint| joint.id.as_str()))
-            .map(|id| {
-                let tail = id
-                    .strip_prefix(&prefix)
-                    .ok_or_else(|| CodecError::malformed("invalid F3Z member instance scope"))?;
-                Ok((id, format!("f3d:xref/{scope}/{tail}")))
-            })
+        let prefix = format!("f3d:{}@", self.scope);
+        let occurrences = self.occurrences.iter().map(|occurrence| {
+            let id = occurrence.id.as_str();
+            let tail = id
+                .strip_prefix(&prefix)
+                .ok_or_else(|| CodecError::malformed("invalid F3Z member instance scope"))?;
+            Ok((id, format!("f3d:{scope}@{tail}")))
+        });
+        // A joint outlives the folding of the instance's occurrences onto the
+        // first instance's, so its copy stays a record of the member's file
+        // and states the placement in its key.
+        let joints = self.joints.iter().map(|joint| {
+            let id = joint.id.as_str();
+            let copy = if scope == self.scope {
+                id.to_owned()
+            } else {
+                format!("{id}@{scope}")
+            };
+            Ok((id, copy))
+        });
+        let ids = occurrences
+            .chain(joints)
             .collect::<Result<std::collections::BTreeMap<_, _>, CodecError>>()?;
         let rewrite =
             |id: &str| Ok::<_, CodecError>(ids.get(id).cloned().unwrap_or_else(|| id.to_owned()));
@@ -2050,7 +2059,7 @@ fn define_member(
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
-    let (top_level, tessellations, mut identity) = ir
+    let (top_level, mut identity) = ir
         .model
         .product_definitions
         .iter()
@@ -2061,7 +2070,7 @@ fn define_member(
                 Storage::File { document, .. } => document,
                 _ => ExternalDocument::default(),
             };
-            (root.occurrences, root.tessellations, document)
+            (root.occurrences, document)
         })
         .unwrap_or_default();
     let owned = ir
@@ -2109,8 +2118,8 @@ fn define_member(
         definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         definition.occurrences.extend(top_level);
-        definition.tessellations.extend(tessellations);
         definition.storage = storage;
+        crate::tree::retarget_meshes(&mut ir.model, &crate::tree::file_root_id(), &id);
         return Ok(id);
     }
     ctx.charge_entities(1, "F3Z member product definition")?;
@@ -2119,8 +2128,8 @@ fn define_member(
     definition.bodies = bodies;
     definition.sketches = sketches;
     definition.occurrences = top_level;
-    definition.tessellations = tessellations;
     ir.model.product_definitions.push(definition);
+    crate::tree::retarget_meshes(&mut ir.model, &crate::tree::file_root_id(), &id);
     Ok(id)
 }
 
@@ -2237,13 +2246,8 @@ fn rescope_fidelity(
             None => Ok(id.to_string()),
         })?
         .map_err(CodecError::from)?;
-    // The occurrence is one owner component. Escape its separators so two
-    // different occurrences cannot share an owner by shifting a path boundary.
-    let owner = cadmpeg_ir::StreamName::try_from(format!(
-        "f3d:xref/{}/",
-        EscapedOccurrenceComponent(occurrence)
-    ))
-    .map_err(CodecError::malformed)?;
+    let owner = cadmpeg_ir::StreamName::try_from(format!("f3d:{occurrence}@"))
+        .map_err(CodecError::malformed)?;
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
     for (id, provenance) in provenance {
@@ -2289,7 +2293,7 @@ struct EscapedOccurrenceComponent<'a>(&'a str);
 impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for character in self.0.chars() {
-            if matches!(character, ':' | '#' | '%' | '/') || character.is_whitespace() {
+            if character == '/' || cadmpeg_ir::ids::IdentityKeyTail::escapes(character) {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
                     write!(formatter, "%{byte:02X}")?;
@@ -2302,9 +2306,17 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
     }
 }
 
+/// `text` read from the member merged at `occurrence`, whose definition key
+/// it is. The member's own root definition becomes its `File` definition, a
+/// record of the file that places it.
 fn rescope(text: &str, occurrence: &str) -> Option<String> {
-    text.strip_prefix("f3d:")
-        .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
+    if text == crate::ids::ARCHIVE_PRODUCT_DEFINITION_ID {
+        let placing = occurrence.rsplit_once("/xref/").map(|(placing, _)| placing);
+        return crate::ids::member_definition_id(placing, occurrence)
+            .ok()
+            .map(|id| id.as_str().to_owned());
+    }
+    crate::ids::qualify(text, occurrence)
 }
 
 fn native_record_targets(
@@ -2388,19 +2400,19 @@ fn extend_native(
     let Some(mut source) = component.0.remove("f3d") else {
         return Ok(());
     };
-    let target = root.namespace_mut("f3d");
+    let target = root.namespace_mut(cadmpeg_ir::codec_id!("f3d"));
     for name in crate::native::F3D_ARENA_NAMES
         .iter()
         .copied()
         .chain(std::iter::once("unknowns"))
     {
-        let Some(records) = source.arenas_mut().remove(name) else {
+        let Some((key, records)) = source.arenas_mut().remove_entry(name) else {
             continue;
         };
         if records.is_empty() {
             continue;
         }
-        let arena = target.arenas_mut().entry(name.to_string()).or_default();
+        let arena = target.arenas_mut().entry(key).or_default();
 
         for record in records {
             arena.push(rescope_record(ctx, &record, name, occurrence)?);
@@ -2688,7 +2700,6 @@ mod tests {
                 bom_properties: std::collections::BTreeMap::new(),
                 bodies: vec![body.clone()],
                 sketches: Vec::new(),
-                tessellations: Vec::new(),
                 native_ref: None,
                 generated_from: None,
                 storage: cadmpeg_ir::products::Storage::Embedded,
@@ -2707,32 +2718,13 @@ mod tests {
     }
 
     #[test]
-    fn member_definition_takes_the_scopeless_meshes_of_the_member_root() {
-        let mesh =
-            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
+    fn member_definition_owns_the_mesh_bodies_of_the_member_root() {
+        use cadmpeg_ir::tessellation::Meshed;
         let mut ir = cadmpeg_ir::CadIr::empty();
-        crate::tree::file_root(&mut ir.model)
-            .tessellations
-            .push(mesh.clone());
-        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-        let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
-        let [definition] = ir.model.product_definitions.as_slice() else {
-            panic!("one member definition");
-        };
-        assert_eq!(definition.id, id);
-        assert_eq!(definition.tessellations, [mesh]);
-    }
-
-    #[test]
-    fn scoped_member_mesh_keeps_the_stated_root_as_owner() {
-        let scoped =
-            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scoped").unwrap();
-        let scopeless =
-            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
-        let mut ir = cadmpeg_ir::CadIr::empty();
+        crate::tree::file_root(&mut ir.model);
         ir.model.tessellations.push(
             cadmpeg_ir::tessellation::Tessellation::new(
-                scoped.clone(),
+                cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#0").unwrap(),
                 cadmpeg_ir::tessellation::TessellationMesh::List {
                     vertices: vec![
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -2743,29 +2735,16 @@ mod tests {
                 },
                 Vec::new(),
             )
-            .unwrap(),
+            .unwrap()
+            .with_of(Meshed::definition(crate::tree::file_root_id())),
         );
-        crate::tree::file_root(&mut ir.model)
-            .tessellations
-            .push(scopeless.clone());
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-        let member = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
-        ir.state_root_definition(
-            &ctx,
-            crate::tree::file_root_id(),
-            cadmpeg_ir::products::ExternalDocument::default(),
-        )
-        .unwrap();
-        let owners = |mesh: &cadmpeg_ir::tessellation::TessellationId| {
-            ir.model
-                .product_definitions
-                .iter()
-                .filter(|definition| definition.tessellations.contains(mesh))
-                .map(|definition| definition.id.clone())
-                .collect::<Vec<_>>()
+        let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
+        let [definition] = ir.model.product_definitions.as_slice() else {
+            panic!("one member definition");
         };
-        assert_eq!(owners(&scopeless), [member]);
-        assert_eq!(owners(&scoped), [crate::tree::file_root_id()]);
+        assert_eq!(definition.id, id);
+        assert_eq!(ir.model.tessellations[0].of, Meshed::definition(id));
     }
 
     #[test]

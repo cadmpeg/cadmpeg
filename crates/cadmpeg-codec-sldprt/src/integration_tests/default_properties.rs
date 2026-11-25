@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 use super::{decode, make_block, sldprt_with_body_and_envelope, triangle_body};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_test_support::EditableDecodeResult;
@@ -42,7 +41,7 @@ fn block_appended_after_completed_native_directory_remains_malformed() {
 fn is_property(row: &&mut SourceAttribute) -> bool {
     crate::metadata::default_properties::is_attribute(row)
 }
-fn write(decoded: &EditableDecodeResult) -> Result<Vec<u8>, CodecError> {
+fn write(decoded: &EditableDecodeResult) -> Result<Vec<u8>, cadmpeg_ir::codec::write::EncodeError> {
     let mut out = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut out)?;
     Ok(out)
@@ -60,15 +59,7 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
             .count(),
         2
     );
-    let before = decoded
-        .ir()
-        .source
-        .as_ref()
-        .unwrap()
-        .attributes
-        .get("sldprt_swobjects_local_sha256")
-        .unwrap()
-        .clone();
+    let before = decoded.source_fidelity().codec_digests["sldprt_swobjects_local_sha256"].clone();
     let mut ir = decoded.ir_mut();
     let bbox = ir
         .model
@@ -108,15 +99,8 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
         vec![Some(AttributeValue::String(String::new()))]
     );
     assert_ne!(
-        readback
-            .ir()
-            .source
-            .as_ref()
-            .unwrap()
-            .attributes
-            .get("sldprt_swobjects_local_sha256")
-            .unwrap(),
-        &before
+        readback.source_fidelity().codec_digests["sldprt_swobjects_local_sha256"],
+        before
     );
 }
 /// The one saved-property carrier in `bytes`.

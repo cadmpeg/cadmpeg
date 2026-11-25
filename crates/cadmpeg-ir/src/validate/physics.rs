@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! References of the physical records.
 
+use crate::design::feature::{FeatureOperation, OperationFamily};
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
 use crate::physics::solver::SolverTarget;
@@ -19,6 +20,7 @@ struct Arenas<'ir> {
     colliders: BorrowedIdentities<'ir, ()>,
     articulations: BorrowedIdentities<'ir, ()>,
     scenes: BorrowedIdentities<'ir, ()>,
+    /// The design features whose operation is a joint.
     joints: BorrowedIdentities<'ir, ()>,
 }
 
@@ -62,8 +64,16 @@ impl<'ir> Arenas<'ir> {
                 }
             }),
             joints: BorrowedIdentities::build(|add| {
-                for joint in &model.assembly_joints {
-                    add(joint.id.as_str(), ());
+                for feature in &ir.design.features {
+                    if matches!(
+                        feature.definition.operation,
+                        FeatureOperation::Joint(_)
+                            | FeatureOperation::Unresolved {
+                                family: OperationFamily::Joint
+                            }
+                    ) {
+                        add(feature.id.as_str(), ());
+                    }
                 }
             }),
         }
@@ -94,7 +104,7 @@ impl<'ir> Arenas<'ir> {
             }
             SolverTarget::Body { body } => ("body", body.as_str(), &self.bodies),
             SolverTarget::Collider { collider } => ("collider", collider.as_str(), &self.colliders),
-            SolverTarget::Joint { joint } => ("assembly joint", joint.as_str(), &self.joints),
+            SolverTarget::Joint { joint } => ("joint feature", joint.as_str(), &self.joints),
             SolverTarget::PhysicalMaterial { material } => {
                 ("physical material", material.as_str(), &self.materials)
             }
@@ -112,7 +122,10 @@ fn missing(findings: &mut Vec<Finding>, owner: &str, (kind, target): (&'static s
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(owner),
-        format_args!("references missing {kind} `{target}`"),
+        crate::rule!(
+            "physics.references-missing",
+            "references missing {kind} `{target}`"
+        ),
     );
 }
 

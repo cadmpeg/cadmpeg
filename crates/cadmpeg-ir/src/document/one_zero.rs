@@ -15,10 +15,17 @@ use serde::de::{
 
 /// Reads `text` as one JSON value of `T`, every float zero as 0.
 pub(super) fn from_str<T: de::DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> {
-    let mut deserializer = serde_json::Deserializer::from_str(text);
+    let mut deserializer = crate::bounds::deserializer(text)?;
     let value = T::deserialize(Zeroed(&mut deserializer))?;
     deserializer.end()?;
     Ok(value)
+}
+
+/// Reads `value` as one value of `T`, every float zero as 0.
+pub(super) fn from_value<T: de::DeserializeOwned>(
+    value: &serde_json::Value,
+) -> Result<T, serde_json::Error> {
+    T::deserialize(Zeroed(value))
 }
 
 /// A deserializer whose floats read negative zero as zero.

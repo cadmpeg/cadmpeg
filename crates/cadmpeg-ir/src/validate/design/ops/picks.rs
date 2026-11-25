@@ -11,7 +11,7 @@ use crate::design::selection::{
 
 /// The kind of entity a pick targets, where its target states one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Class {
+pub(in crate::validate) enum Class {
     /// A topological entity or carrier, by its name's derived kind.
     Name(NameKind),
     /// A whole sketch.
@@ -80,7 +80,7 @@ fn kind_of(name: &TopoName) -> Option<NameKind> {
 }
 
 /// The class of a pick's target.
-pub(super) fn class(pick: &Picked) -> Class {
+pub(in crate::validate) fn class(pick: &Picked) -> Class {
     match &pick.target {
         PickTarget::Entity(name) => kind_of(name).map_or(Class::Unknown, Class::Name),
         PickTarget::Sketch(_) => Class::Sketch,
@@ -125,7 +125,7 @@ pub(super) fn is_empty<O: MemberOrder>(selection: &Selection<O>) -> bool {
 /// The classes a selection states: each `Named` pick's, the kind an `All` or
 /// `Of` term selects, and each seed of an `Explicit` term. Other terms
 /// select entities whose kind the rule's operands decide, and are skipped.
-pub(super) fn classes<O: MemberOrder>(selection: &Selection<O>) -> Vec<Class> {
+pub(in crate::validate) fn classes<O: MemberOrder>(selection: &Selection<O>) -> Vec<Class> {
     match &selection.picks {
         Picks::Unread => Vec::new(),
         Picks::Named(members) => members.as_slice().iter().map(class).collect(),
@@ -144,7 +144,7 @@ pub(super) fn classes<O: MemberOrder>(selection: &Selection<O>) -> Vec<Class> {
 
 /// The first stated class of `selection` that `allowed` refuses. An
 /// `Unknown` class is never refused.
-pub(super) fn refused<O: MemberOrder>(
+pub(in crate::validate) fn refused<O: MemberOrder>(
     selection: &Selection<O>,
     allowed: impl Fn(Class) -> bool,
 ) -> Option<Class> {
@@ -153,9 +153,8 @@ pub(super) fn refused<O: MemberOrder>(
         .find(|&class| class != Class::Unknown && !allowed(class))
 }
 
-/// Whether two selections name one pick: equal target, context, native
-/// name, and domain.
-pub(super) fn share_pick<A: MemberOrder, B: MemberOrder>(
+/// Whether two selections name one pick: equal identity keys.
+pub(in crate::validate::design) fn share_pick<A: MemberOrder, B: MemberOrder>(
     first: &Selection<A>,
     second: &Selection<B>,
 ) -> bool {
@@ -186,7 +185,7 @@ pub(super) const fn is_vertex(class: Class) -> bool {
 
 /// A plane: a face or surface, a datum, a principal plane, or a sketch's
 /// plane.
-pub(super) const fn is_plane(class: Class) -> bool {
+pub(in crate::validate) const fn is_plane(class: Class) -> bool {
     matches!(
         class,
         Class::Name(NameKind::Face | NameKind::Surface)

@@ -53,7 +53,7 @@ pub(crate) trait TestEncode {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError>;
+    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError>;
 }
 
 impl TestEncode for F3dCodec {
@@ -61,7 +61,8 @@ impl TestEncode for F3dCodec {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError> {
+    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError>
+    {
         self.plan(
             cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
             TargetRequest::Inherit,
@@ -99,7 +100,7 @@ impl Drop for F3dNativeMut<'_> {
         self.native
             .store(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
-                self.ir.native.namespace_mut("f3d"),
+                self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
             )
             .unwrap();
     }

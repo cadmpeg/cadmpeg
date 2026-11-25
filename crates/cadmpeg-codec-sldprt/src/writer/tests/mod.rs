@@ -31,6 +31,7 @@ mod swobjects;
 mod targets;
 mod thicken_reference;
 mod transformed_surface;
+mod unbakeable_placements;
 mod vertex_records;
 mod wide_pointers;
 

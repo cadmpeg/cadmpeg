@@ -4,13 +4,14 @@
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
+use crate::geometry::SurfaceGeometry;
 use crate::index::identities::BorrowedIdentities;
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
 use crate::topology::RegionUnstated;
-use crate::validate::record_finding;
+use crate::validate::{record_finding, record_related_finding};
 
 #[derive(Clone, Copy)]
 enum RadialStatus {
@@ -96,14 +97,20 @@ pub(in crate::validate) fn check_coedge_pairing(
                     Check::CoedgePairing,
                     Severity::Error,
                     owner,
-                    format_args!("radial ring crosses edges"),
+                    crate::rule!(
+                        "topology.radial-ring-crosses-edges",
+                        "radial ring crosses edges"
+                    ),
                 );
                 record_finding(
                     findings,
                     Check::CoedgePairing,
                     Severity::Error,
                     owner,
-                    format_args!("radial ring does not close"),
+                    crate::rule!(
+                        "topology.radial-ring-does-not-close",
+                        "radial ring does not close"
+                    ),
                 );
             }
             RadialStatus::DoesNotClose => {
@@ -112,7 +119,10 @@ pub(in crate::validate) fn check_coedge_pairing(
                     Check::CoedgePairing,
                     Severity::Error,
                     owner,
-                    format_args!("radial ring does not close"),
+                    crate::rule!(
+                        "topology.radial-ring-does-not-close",
+                        "radial ring does not close"
+                    ),
                 );
             }
             RadialStatus::Closed(2) => {
@@ -123,7 +133,10 @@ pub(in crate::validate) fn check_coedge_pairing(
                             Check::CoedgePairing,
                             Severity::Warning,
                             owner,
-                            format_args!("two-member radial ring has equal coedge senses"),
+                            crate::rule!(
+                                "topology.two-member-radial-ring-equal-coedge",
+                                "two-member radial ring has equal coedge senses"
+                            ),
                         );
                     }
                 }
@@ -176,7 +189,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                     Check::WireTopology,
                     Severity::Error,
                     Some(shell.id.as_str()),
-                    format_args!("wire edge is also referenced by a coedge"),
+                    crate::rule!(
+                        "topology.wire-edge-also-referenced-coedge",
+                        "wire edge is also referenced by a coedge"
+                    ),
                 );
             }
         }
@@ -187,7 +203,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                     Check::WireTopology,
                     Severity::Error,
                     Some(shell.id.as_str()),
-                    format_args!("free vertex is also referenced by an edge"),
+                    crate::rule!(
+                        "topology.free-vertex-also-referenced-edge",
+                        "free vertex is also referenced by an edge"
+                    ),
                 );
             }
         }
@@ -201,7 +220,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                 Check::WireTopology,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!("wire edge must belong to exactly one shell"),
+                crate::rule!(
+                    "topology.wire-edge-must-belong-exactly-one",
+                    "wire edge must belong to exactly one shell"
+                ),
             );
         }
     }
@@ -217,7 +239,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                 Check::WireTopology,
                 Severity::Error,
                 Some(vertex.id.as_str()),
-                format_args!("free vertex must belong to exactly one shell"),
+                crate::rule!(
+                    "topology.free-vertex-must-belong-exactly-one",
+                    "free vertex must belong to exactly one shell"
+                ),
             );
         }
     }
@@ -247,9 +272,105 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
             record_finding(
                 findings,
                 Check::WireTopology,
-                Severity::Error,
+                Severity::Warning,
                 Some(body.id.as_str()),
-                format_args!("wire body contains faces"),
+                crate::rule!(
+                    "topology.wire-body-contains-faces",
+                    "wire body contains faces"
+                ),
+            );
+        }
+    }
+    check_cage_shells(ir, findings);
+}
+
+/// A subdivision cage belongs to exactly one shell, and a shell whose
+/// `members` name a cage names nothing else, holds no face, and is the only
+/// shell of its body's only region (§5.6).
+fn check_cage_shells(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let cage_owners = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            for cage in shell.subds() {
+                add(cage.as_str(), ());
+            }
+        }
+    });
+    for cage in &ir.geometry.subds {
+        if cage_owners.match_count(cage.id.as_str()) != 1 {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                Some(cage.id.as_str()),
+                crate::rule!(
+                    "topology.cage-must-belong-exactly-one",
+                    "subdivision cage must belong to exactly one shell"
+                ),
+            );
+        }
+    }
+    let face_shells = BorrowedIdentities::build(|add| {
+        for face in &ir.geometry.faces {
+            add(face.shell.as_str(), ());
+        }
+    });
+    let region_shells = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            add(shell.region.as_str(), ());
+        }
+    });
+    let region_bodies = BorrowedIdentities::build(|add| {
+        for region in &ir.geometry.regions {
+            add(region.id.as_str(), region.body.as_str());
+        }
+    });
+    let body_regions = BorrowedIdentities::build(|add| {
+        for region in &ir.geometry.regions {
+            add(region.body.as_str(), ());
+        }
+    });
+    for shell in &ir.geometry.shells {
+        if shell.subds().next().is_none() {
+            continue;
+        }
+        let owner = Some(shell.id.as_str());
+        if shell.members.len() > 1 {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-holds-other-members",
+                    "shell holding a subdivision cage holds other members"
+                ),
+            );
+        }
+        if face_shells.contains(shell.id.as_str()) {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-holds-faces",
+                    "shell holding a subdivision cage holds faces"
+                ),
+            );
+        }
+        let only_region = region_bodies
+            .get(shell.region.as_str())
+            .is_none_or(|body| body_regions.match_count(body) == 1);
+        if region_shells.match_count(shell.region.as_str()) > 1 || !only_region {
+            record_finding(
+                findings,
+                Check::WireTopology,
+                Severity::Error,
+                owner,
+                crate::rule!(
+                    "topology.cage-shell-not-only-shell-body",
+                    "shell holding a subdivision cage is not the only shell of its body's only region"
+                ),
             );
         }
     }
@@ -258,7 +379,7 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
 /// Each stored child list names children whose parent pointer names its
 /// owner, and each child is listed by the owner its parent pointer names: a
 /// region's `shells`, a face's `loops`, and a loop ring's `coedges` (D29). A
-/// shell's `members` name each wire edge and free vertex once.
+/// shell's `members` name each wire edge, free vertex, and cage once.
 pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &mut Vec<Finding>) {
     let shell_regions = BorrowedIdentities::build(|add| {
         for shell in &ir.geometry.shells {
@@ -289,7 +410,8 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
                     Check::ReferentialIntegrity,
                     Severity::Error,
                     Some(region.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "topology.region-mark-names-shell-twice-one",
                         "region's mark names shell `{}` twice, or one its `shells` names",
                         shell.as_str()
                     ),
@@ -315,7 +437,11 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
                     Check::ReferentialIntegrity,
                     Severity::Error,
                     Some(face.id.as_str()),
-                    format_args!("face lists loop `{}` more than once", loop_.as_str()),
+                    crate::rule!(
+                        "topology.face-lists-loop-more-once",
+                        "face lists loop `{}` more than once",
+                        loop_.as_str()
+                    ),
                 );
             }
             if loop_faces
@@ -344,9 +470,9 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
         }
         let mut seen = BorrowedIdentities::new();
         for member in shell
-            .wire_edges()
-            .map(crate::ids::EdgeId::as_str)
-            .chain(shell.free_vertices().map(crate::ids::VertexId::as_str))
+            .members
+            .iter()
+            .map(crate::topology::ShellMember::as_str)
         {
             if seen.insert(member, ()).is_some() {
                 record_finding(
@@ -354,7 +480,10 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
                     Check::WireTopology,
                     Severity::Error,
                     Some(shell.id.as_str()),
-                    format_args!("shell lists member `{member}` more than once"),
+                    crate::rule!(
+                        "topology.shell-lists-member-more-once",
+                        "shell lists member `{member}` more than once"
+                    ),
                 );
             }
         }
@@ -382,7 +511,10 @@ fn reciprocity_error(findings: &mut Vec<Finding>, owner: &str, kind: &str, child
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(owner),
-        format_args!("lists {kind} `{child}`, whose parent is another record"),
+        crate::rule!(
+            "topology.lists-parent-another-record",
+            "lists {kind} `{child}`, whose parent is another record"
+        ),
     );
 }
 
@@ -392,7 +524,10 @@ fn unlisted_error(findings: &mut Vec<Finding>, child: &str, kind: &str, parent: 
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(child),
-        format_args!("is not listed by its {kind} `{parent}`"),
+        crate::rule!(
+            "topology.not-listed",
+            "is not listed by its {kind} `{parent}`"
+        ),
     );
 }
 
@@ -417,7 +552,8 @@ pub(in crate::validate) fn check_closed_edges(ir: &CadIr, findings: &mut Vec<Fin
                 Check::GeometricConsistency,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "topology.edge-no-vertex-must-carrier-curve",
                     "edge with no vertex must have a carrier curve and no parameter range"
                 ),
             );
@@ -439,7 +575,8 @@ pub(in crate::validate) fn check_closed_edges(ir: &CadIr, findings: &mut Vec<Fin
                 Check::RingOrder,
                 Severity::Error,
                 Some(coedge.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "topology.coedge-edge-no-vertex-must-only",
                     "coedge of an edge with no vertex must be the only coedge of its loop"
                 ),
             );
@@ -564,8 +701,158 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
                 Check::ShellTopology,
                 Severity::Error,
                 Some(shell.id.as_str()),
-                format_args!("shell faces are disconnected through shared edges or vertices"),
+                crate::rule!(
+                    "topology.shell-faces-disconnected-through-shared-edges",
+                    "shell faces are disconnected through shared edges or vertices"
+                ),
             );
+        }
+    }
+}
+
+/// Every edge that a face of a `Solid` body uses is used at least twice by
+/// the faces of that body, unless the edge has no curve or a degenerate one
+/// (Warning; part 10, Topology and model records). A body that holds a
+/// partial face or a marked region or shell, or is marked itself, is not
+/// read.
+pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<Finding>) {
+    use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use crate::topology::{BodyKind, EdgeCarrier};
+    let geometry = &ir.geometry;
+    let child_lists = geometry.child_lists();
+    let loop_faces: std::collections::HashMap<&str, &str> = geometry
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.as_str(), loop_.face.as_str()))
+        .collect();
+    let edges: std::collections::HashMap<&str, &crate::topology::Edge> = geometry
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect();
+    let degenerate: std::collections::HashSet<&str> = geometry
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+            )
+        })
+        .map(|curve| curve.id.as_str())
+        .collect();
+    for body in geometry
+        .bodies
+        .iter()
+        .filter(|body| body.kind == BodyKind::Solid)
+    {
+        let Some(regions) = child_lists.complete_body_regions(&body.id) else {
+            continue;
+        };
+        let mut faces = std::collections::HashSet::new();
+        let complete = regions.iter().all(|region| {
+            child_lists.complete_shells(region).is_some_and(|shells| {
+                shells.iter().all(|shell| {
+                    child_lists
+                        .complete_shell_faces(shell)
+                        .is_some_and(|shell_faces| {
+                            shell_faces.iter().all(|face| {
+                                faces.insert(face.id.as_str());
+                                !face.loops.is_partial()
+                            })
+                        })
+                })
+            })
+        });
+        if !complete {
+            continue;
+        }
+        let mut uses: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for coedge in &geometry.coedges {
+            if loop_faces
+                .get(coedge.owner_loop.as_str())
+                .is_some_and(|face| faces.contains(face))
+            {
+                *uses.entry(coedge.edge.as_str()).or_default() += 1;
+            }
+        }
+        for (edge, count) in uses {
+            let curved = edges.get(edge).is_some_and(|record| match &record.carrier {
+                EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _) => {
+                    !degenerate.contains(curve.as_str())
+                }
+                EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => false,
+            });
+            if count == 1 && curved {
+                super::super::record_related_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Warning,
+                    edge,
+                    &[body.id.as_str()],
+                    crate::rule!("topology.edge-used-once-faces-solid-body", "edge is used once by the faces of solid body {}; a solid's faces use each of its edges at least twice", body.id.as_str()),
+                );
+            }
+        }
+    }
+}
+
+/// A face `Unspecified` with no loops is the only face of its shell, and its surface is no
+/// plane, cylinder, or cone, and no placed surface whose basis, through every
+/// placement, is one (part 10, Topology and model records; §5.6). Each face
+/// is checked by itself: a partial face states no boundary and is not one,
+/// and a marked shell does not state how many faces it holds, so only the
+/// surface is checked there. A procedural surface is read through its
+/// construction, which this rule does not evaluate.
+pub(in crate::validate) fn check_loopless_faces(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let geometry = &ir.geometry;
+    let child_lists = geometry.child_lists();
+    let surfaces = BorrowedIdentities::build(|add| {
+        for surface in &geometry.surfaces {
+            add(surface.id.as_str(), surface);
+        }
+    });
+    for shell in &geometry.shells {
+        let faces = child_lists.stated_shell_faces(&shell.id);
+        let complete = child_lists.complete_shell_faces(&shell.id).is_some();
+        for face in faces.iter().filter(|face| {
+            face.loops
+                .boundary()
+                .is_some_and(crate::topology::FaceBoundary::is_empty)
+        }) {
+            if complete && faces.len() > 1 {
+                record_related_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    face.id.as_str(),
+                    &[shell.id.as_str()],
+                    crate::rule!(
+                        "topology.loopless-face-shares-shell",
+                        "a face with no loops shares its shell with {} other face(s); it is the only face of its shell",
+                        faces.len() - 1
+                    ),
+                );
+            }
+            let kind =
+                surfaces
+                    .get(face.surface.as_str())
+                    .and_then(|surface| match &surface.geometry {
+                        SurfaceGeometry::Solved(solved) => solved.plane_cylinder_or_cone(),
+                        SurfaceGeometry::Procedural { .. } => None,
+                    });
+            if let Some(kind) = kind {
+                record_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    Some(face.id.as_str()),
+                    crate::rule!(
+                        "topology.loopless-face-bounded-surface",
+                        "a face with no loops lies on a {kind}, which a face bounds with a loop"
+                    ),
+                );
+            }
         }
     }
 }
@@ -598,7 +885,7 @@ pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec
                 .faces
                 .iter()
                 .filter(|face| face.loops.is_partial())
-                .map(|face| (face.id.as_str(), "face does not state every loop")),
+                .map(|face| (face.id.as_str(), "face does not state its boundary in full")),
         );
     for (id, message) in partial {
         record_finding(
@@ -606,7 +893,7 @@ pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec
             Check::TopologyPartial,
             Severity::Warning,
             Some(id),
-            format_args!("{message}"),
+            crate::rule!("topology.unstated-children", "{message}"),
         );
     }
 }

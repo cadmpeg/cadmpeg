@@ -17,7 +17,7 @@ fn revolve_construction(bytes: &[u8]) -> serde_json::Value {
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = cadmpeg_test_support::wire::in_memory_json(result.ir());
     let mut revolves = ir["model"]["features"]
         .as_array()
         .expect("feature list")

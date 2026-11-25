@@ -84,10 +84,11 @@ enum Preservation {
 }
 
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
-    let Some(record) = input
-        .fidelity
-        .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-    else {
+    let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
+        sidecar
+            .retained_record(ids::FILE_SOURCE_IMAGE_ID)
+            .map(|record| (sidecar, record))
+    }) else {
         return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
@@ -95,7 +96,8 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(input.ir, data, &mut bytes, &mut notes)?;
+    let write_path =
+        F3dCodec::write_preserved_bytes(input.ir, fidelity, data, &mut bytes, &mut notes)?;
     Ok(Preservation::Written {
         bytes,
         write_path,
@@ -170,7 +172,8 @@ fn synthesized_body(
     displaced: Option<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let generated = super::generate::write_new(input.ir, &mut bytes)?;
+    let generated = super::generate::write_new(input.ir, input.missing_states, &mut bytes)?;
+    let geometry_true = generated.geometry_true;
     let (consumption, loss) = cause.into_fidelity();
     let mut losses: Vec<_> = loss.into_iter().chain(displaced).collect();
     losses.extend(generated.losses);
@@ -199,13 +202,23 @@ fn synthesized_body(
                 )));
         }
     }
-    Ok(body(
-        input.ir,
+    // The generator writes no cage, so the census counts no cage body (§5.6).
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let mut body = body(
+        cageless.as_ref().unwrap_or(input.ir),
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(generated.coverage),
         losses,
         bytes,
-    ))
+    );
+    if geometry_true {
+        body.notes.push(
+            "the F3D writer writes no design timeline, so the file holds the current geometry \
+             in the geometry-true form and not the history-true form the request names"
+                .to_owned(),
+        );
+    }
+    Ok(body)
 }
 
 fn body(

@@ -66,11 +66,11 @@
 //!   with geometry compared numerically — is the only real remedy.
 //! - A **digest over decoded geometry** is a bitwise fingerprint of tolerantly
 //!   compared values, so it cannot agree across platforms either. See
-//!   [`elide_local_digests`].
+//!   [`fidelity_snapshot`].
 
 use std::path::{Path, PathBuf};
 
-use cadmpeg_ir::compare::{is_local_digest_attribute, values_agree};
+use cadmpeg_ir::compare::values_agree;
 
 /// One snapshot branch: a subdirectory of `tests/golden` and the function that
 /// produces the text pinned there.
@@ -501,28 +501,50 @@ pub const NATIVE_ELISION_KEY: &str = "__elided";
 pub const NATIVE_ELISION_MARKER: &str =
     "native arena values are omitted; the records are pinned by a digest over their canonical JSON";
 
-/// Replaces every machine-local digest attribute with [`ELIDED_DIGEST`].
+/// Serializes decode-time source fidelity for a snapshot, with
+/// [`ELIDED_DIGEST`] in place of the content digest and of each codec digest
+/// whose key ends in `_local_sha256`: they digest decoded content, so they
+/// differ across platforms. Digests over source bytes stay pinned.
 ///
-/// `_local_sha256` digests cover decoded content and are machine-local. Digests
-/// over retained source bytes omit the suffix and stay pinned.
-pub fn elide_local_digests(
-    attributes: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
-    for (key, value) in attributes.iter_mut() {
-        if is_local_digest_attribute(key.as_str()) {
-            ELIDED_DIGEST.clone_into(value);
+/// # Panics
+///
+/// The fidelity does not serialize.
+#[must_use]
+pub fn fidelity_snapshot(fidelity: &cadmpeg_ir::SourceFidelity) -> serde_json::Value {
+    let mut value = serde_json::to_value(fidelity).expect("serialize source_fidelity");
+    if let Some(digest) = value.get_mut("content_digest") {
+        *digest = ELIDED_DIGEST.into();
+    }
+    if let Some(digests) = value
+        .get_mut("codec_digests")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        for (key, digest) in digests.iter_mut() {
+            if key.ends_with("_local_sha256") {
+                *digest = ELIDED_DIGEST.into();
+            }
         }
     }
+    value
 }
 
 /// Serializes a value as the stable pretty JSON with trailing newline that the
 /// goldens hold.
 ///
 /// Snapshots serialize through [`serde_json::Value`], whose maps order by key,
-/// so reordering a struct field does not rewrite every golden.
+/// so reordering a struct field does not rewrite every golden. The value is
+/// written with the CADIR writer's float form, so a golden holds 0 where the
+/// value holds negative zero (§2.5).
+///
+/// # Panics
+///
+/// Panics when the writer refuses the value, which a `serde_json::Value`
+/// never gives it cause to.
 #[must_use]
 pub fn snapshot_text(value: &serde_json::Value) -> String {
-    format!("{value:#}\n")
+    let written = cadmpeg_ir::hash::finite_json::to_json_value(value)
+        .expect("the writer writes every JSON value");
+    format!("{written:#}\n")
 }
 
 #[cfg(test)]
@@ -657,6 +679,15 @@ mod tests {
     /// codec drift, so the comparison must accept it.
     const LINUX_CONE_V: f64 = 1.802_581_857_082_682;
     const WINDOWS_CONE_V: f64 = 1.802_581_857_082_681_5;
+
+    #[test]
+    fn snapshot_text_writes_negative_zero_as_the_writer_does() {
+        let value = serde_json::json!({"x": -0.0, "y": [-0.0, -1.5], "n": -0});
+        assert_eq!(
+            snapshot_text(&value),
+            "{\n  \"n\": 0,\n  \"x\": 0.0,\n  \"y\": [\n    0.0,\n    -1.5\n  ]\n}\n"
+        );
+    }
 
     #[test]
     fn byte_identical_text_agrees_without_parsing() {

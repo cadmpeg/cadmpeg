@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::assets::AssetId;
 use crate::design::refs::StateRef;
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
-use crate::ids::{BodyId, FaceId};
+use crate::ids::{BodyId, FaceId, PmiId, ProductDefinitionId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::NonNegativeReal;
@@ -843,16 +843,9 @@ impl ChannelAddressing {
 struct TessellationWire {
     /// Stable source-derived identifier.
     id: TessellationId,
-    /// Body represented by this mesh, when known.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_body"
-    )]
-    body: Option<BodyId>,
-    /// Faces represented by this mesh, empty when face-level ownership is unknown.
-    faces: Vec<FaceId>,
-    /// The state whose geometry holds `body` and `faces`.
+    /// What the mesh is.
+    of: Meshed,
+    /// The state whose geometry the mesh displays or is.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -892,6 +885,13 @@ struct TessellationWire {
     colors: Option<MeshColors>,
     /// Additional per-vertex or per-facet data channels.
     channels: Vec<TessellationChannel>,
+    /// The source's record of the mesh.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -912,17 +912,107 @@ struct TessellationChannelWire {
     data: Vec<u8>,
 }
 
+/// What a tessellation is: the display of one body, of a definition, or of a
+/// PMI annotation, a mesh body of a definition, or a mesh whose role the
+/// decoder did not establish.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Meshed {
+    /// A mesh that displays one body, in the coordinates of the definition
+    /// that owns the body.
+    Body {
+        /// The body.
+        body: BodyId,
+        /// The faces the mesh covers, empty where the source states no face
+        /// ownership.
+        faces: Vec<FaceId>,
+    },
+    /// A mesh that displays the geometry of a definition, tied to no one
+    /// body, in the definition's coordinates.
+    Display {
+        /// The definition.
+        definition: ProductDefinitionId,
+    },
+    /// A mesh that is itself geometry of a definition, in the definition's
+    /// coordinates.
+    Definition {
+        /// The definition that owns the mesh.
+        definition: ProductDefinitionId,
+        /// The source's display name of the mesh body.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_name"
+        )]
+        name: Option<NonBlankString>,
+        /// The mesh body's own display colour.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_color"
+        )]
+        color: Option<Color>,
+        /// Whether the source displays the mesh body.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_visible"
+        )]
+        visible: Option<bool>,
+    },
+    /// A mesh that draws a presentation PMI annotation.
+    Pmi {
+        /// The annotation.
+        pmi: PmiId,
+    },
+    /// A mesh whose role the decoder did not establish, in the coordinates of
+    /// the source record that holds it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Unresolved,
+}
+
+impl Meshed {
+    /// A mesh body of `definition` that states no name, colour, or
+    /// visibility.
+    #[must_use]
+    pub const fn definition(definition: ProductDefinitionId) -> Self {
+        Self::Definition {
+            definition,
+            name: None,
+            color: None,
+            visible: None,
+        }
+    }
+
+    /// The body a `Body` mesh displays.
+    #[must_use]
+    pub const fn body(&self) -> Option<&BodyId> {
+        match self {
+            Self::Body { body, .. } => Some(body),
+            _ => None,
+        }
+    }
+
+    /// The faces a `Body` mesh covers; empty for every other arm.
+    #[must_use]
+    pub fn faces(&self) -> &[FaceId] {
+        match self {
+            Self::Body { faces, .. } => faces,
+            _ => &[],
+        }
+    }
+}
+
 /// One indexed triangle mesh decoded from a source display or facet stream.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "TessellationWire", into = "TessellationWire")]
 pub struct Tessellation {
     /// Stable source-derived identifier.
     pub id: TessellationId,
-    /// Body represented by this mesh, when known.
-    pub body: Option<BodyId>,
-    /// Faces represented by this mesh, empty when face-level ownership is unknown.
-    pub faces: Vec<FaceId>,
-    /// The state whose geometry holds `body` and `faces`. `None` is the
+    /// What the mesh is.
+    pub of: Meshed,
+    /// The state whose geometry the mesh displays or is. `None` is the
     /// current geometry.
     pub state: Option<StateRef>,
     /// Source chordal deflection tolerance, when carried.
@@ -941,6 +1031,8 @@ pub struct Tessellation {
     /// Colours the source stores per vertex, corner, or triangle.
     colors: Option<MeshColors>,
     channels: Vec<TessellationChannel>,
+    /// The source's record of the mesh.
+    pub native_ref: Option<String>,
 }
 
 /// One source-defined group in a tessellation triangle partition.
@@ -1293,8 +1385,7 @@ impl Tessellation {
         require_channel_indices(triangle_count, &channels)?;
         Ok(Self {
             id,
-            body: None,
-            faces: Vec::new(),
+            of: Meshed::Unresolved,
             state: None,
             chordal_deflection: None,
             source_object: None,
@@ -1305,6 +1396,7 @@ impl Tessellation {
             texture_coordinates: Vec::new(),
             colors: None,
             channels,
+            native_ref: None,
         })
     }
 
@@ -1445,17 +1537,10 @@ impl Tessellation {
         &self.texture_assignments
     }
 
-    /// Set the owning body.
+    /// Set what the mesh is.
     #[must_use]
-    pub fn with_body(mut self, body: Option<BodyId>) -> Self {
-        self.body = body;
-        self
-    }
-
-    /// Set the represented faces.
-    #[must_use]
-    pub fn with_faces(mut self, faces: Vec<FaceId>) -> Self {
-        self.faces = faces;
+    pub fn with_of(mut self, of: Meshed) -> Self {
+        self.of = of;
         self
     }
 
@@ -1684,8 +1769,7 @@ impl From<Tessellation> for TessellationWire {
     fn from(tessellation: Tessellation) -> Self {
         Self {
             id: tessellation.id,
-            body: tessellation.body,
-            faces: tessellation.faces,
+            of: tessellation.of,
             state: tessellation.state,
             chordal_deflection: tessellation.chordal_deflection.map(NonNegativeReal::get),
             source_object: tessellation.source_object,
@@ -1696,6 +1780,7 @@ impl From<Tessellation> for TessellationWire {
             texture_coordinates: tessellation.texture_coordinates,
             colors: tessellation.colors,
             channels: tessellation.channels,
+            native_ref: tessellation.native_ref,
         }
     }
 }
@@ -1705,10 +1790,10 @@ impl TryFrom<TessellationWire> for Tessellation {
 
     fn try_from(wire: TessellationWire) -> Result<Self, Self::Error> {
         let mut mesh = Self {
-            body: wire.body,
-            faces: wire.faces,
+            of: wire.of,
             state: wire.state,
             source_object: wire.source_object,
+            native_ref: wire.native_ref,
             ..Self::new(wire.id, wire.mesh, wire.channels)?
         };
         mesh.set_chordal_deflection(wire.chordal_deflection)?;
@@ -1768,7 +1853,9 @@ impl JsonSchema for TessellationChannel {
 mod tests;
 
 // Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
+cadmpeg_core::named_optional_field!(deserialize_name, NonBlankString, "name");
+cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_state, StateRef, "state");
 cadmpeg_core::named_optional_field!(deserialize_chordal_deflection, f64, "chordal_deflection");
 cadmpeg_core::named_optional_field!(
@@ -1779,6 +1866,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
 cadmpeg_core::named_optional_field!(deserialize_face, FaceId, "face");
 cadmpeg_core::named_optional_field!(deserialize_colors, MeshColors, "colors");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;
 

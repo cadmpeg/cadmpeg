@@ -15,8 +15,8 @@
 //! without embedding validation. Start a hand-built document with [`CadIr::empty`], populate its
 //! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
 //! call [`validate_neutral()`]. Use [`CadIr::to_canonical_json`] (sorted view)
-//! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
-//! identity-based structural comparison.
+//! to write the versioned JSON form and [`CadIr::read`] to read it, and
+//! [`diff()`] for identity-based structural comparison.
 //!
 //! Format crates implement [`CodecBackend`]; callers use the sealed [`Codec`]
 //! entry points. Detection selects a codec from a byte prefix, inspection
@@ -35,6 +35,8 @@
 //! Product prototypes and occurrence trees retain assembly identity and
 //! placement. Joint and mate constraints are reserved.
 
+extern crate self as cadmpeg_ir;
+
 #[macro_use]
 mod identity_rewrite;
 
@@ -42,6 +44,7 @@ pub mod annotations;
 pub mod appearance;
 pub mod assets;
 pub mod attributes;
+pub mod bounds;
 pub mod bytes;
 pub mod codec;
 pub mod compare;
@@ -54,9 +57,6 @@ pub mod document;
 pub mod draft;
 pub mod drawings;
 pub mod eval;
-// `test` keeps fixtures available for this crate's unit tests; dependents that
-// need them in their test graphs still enable the `examples` feature explicitly.
-#[cfg(any(feature = "examples", test))]
 pub mod examples;
 pub mod features;
 pub mod geometry;
@@ -82,6 +82,7 @@ pub mod semantic_annotations;
 pub mod sketches;
 pub mod source_fidelity;
 pub mod spreadsheets;
+pub mod structural_order;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
@@ -90,12 +91,14 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
+pub use cadmpeg_core::codec_id;
 pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
 pub use container::{ContainerKind, ContainerSummary};
 pub use diff::{
     diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
     NonEmptyFields, SourceDiff,
 };
+pub use document::read::{CadirRead, ReadFailure, ReadOptions};
 pub use document::{
     ArenaHome, ArenaName, CadIr, CensusKey, ScopeViolation, SourceMeta, IR_VERSION,
 };
@@ -153,9 +156,8 @@ pub use subd::{
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{
-    admit, admit_with_additional_native_identities, admit_with_annotations, filter_checks,
-    CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS, RHINO_DRAFT_CHECKS, RHINO_INSTANCE_CHECKS,
-    SLDPRT_EXPORT_PRECONDITION_CHECKS,
+    admit, admit_with_additional_native_identities, admit_with_annotations, Admission,
+    CATIA_ADMISSION, DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE,
 };
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
@@ -186,17 +188,22 @@ pub fn decode_sidecar_json_schema() -> schemars::Schema {
     wire_schema::<source_fidelity::DecodeSidecar>()
 }
 
-/// The schema of `T`'s JSON form. A member that its object does not require
-/// is omitted for `None` and is never `null` (§2.5); a list element, an array
-/// element, and a map value keep their `null`.
+/// The schema of `T`'s JSON form, its definitions sorted by name. A member
+/// that its object does not require is omitted for `None` and is never `null`
+/// (§2.5); a list element, an array element, and a map value keep their
+/// `null`.
 #[cfg(feature = "schema")]
 fn wire_schema<T: schemars::JsonSchema>() -> schemars::Schema {
-    schemars::generate::SchemaSettings::draft2020_12()
+    let mut schema = schemars::generate::SchemaSettings::draft2020_12()
         .with_transform(schemars::transform::RecursiveTransform(
             omit_null_from_optional_members,
         ))
         .into_generator()
-        .into_root_schema_for::<T>()
+        .into_root_schema_for::<T>();
+    if let Some(serde_json::Value::Object(defs)) = schema.get_mut("$defs") {
+        defs.sort_keys();
+    }
+    schema
 }
 
 #[cfg(feature = "schema")]
@@ -240,7 +247,7 @@ fn omit_null(member: &mut serde_json::Map<String, serde_json::Value>) {
         values.retain(|value| !value.is_null());
         if let [value] = values.as_slice() {
             let value = value.clone();
-            member.remove("enum");
+            member.retain(|key, _| key != "enum");
             member.insert("const".into(), value);
         }
     }
@@ -258,7 +265,7 @@ fn omit_null(member: &mut serde_json::Map<String, serde_json::Value>) {
             .keys()
             .all(|key| key == "anyOf" || !member.contains_key(key))
         {
-            member.remove("anyOf");
+            member.retain(|key, _| key != "anyOf");
             member.extend(arm);
         }
     }

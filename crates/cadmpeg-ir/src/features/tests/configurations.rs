@@ -5,7 +5,6 @@ use crate::features::selections::DistinctMembers;
 use crate::features::FeatureContent;
 use crate::math::Point3;
 use crate::validate::validate_neutral;
-use crate::CadIr;
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
@@ -57,18 +56,17 @@ fn configuration_body_membership_round_trips_and_validates() {
         native_ref: None,
     });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    let round_trip: crate::features::parameters::DesignConfiguration =
+        serde_json::from_value(serde_json::to_value(&ir.model.configurations[0]).unwrap()).unwrap();
     assert_eq!(
-        round_trip.model.configurations[0].bodies.as_deref(),
+        round_trip.bodies.as_deref(),
         Some([body.clone()].as_slice())
     );
-    assert_eq!(
-        round_trip.model.configurations[0].parameter_overrides[&parameter_id],
-        "25 mm"
-    );
+    assert_eq!(round_trip.parameter_overrides[&parameter_id], "25 mm");
 
     ir.model.configurations[0].parameter_overrides = BTreeMap::from([(
         ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
@@ -431,26 +429,23 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
         native_ref: None,
     });
 
-    let wire = serde_json::to_value(&ir).unwrap();
-    let configuration = &wire["model"]["configurations"][0];
-    assert!(configuration.get("suppressed_features").is_none());
-    let round_trip = serde_json::from_value::<CadIr>(wire.clone()).unwrap();
+    let wire = serde_json::to_value(&ir.model.configurations[0]).unwrap();
+    assert!(wire.get("suppressed_features").is_none());
+    let round_trip: crate::features::parameters::DesignConfiguration =
+        serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
-        round_trip.model.configurations[0]
-            .suppressed_features()
-            .collect::<Vec<_>>(),
+        round_trip.suppressed_features().collect::<Vec<_>>(),
         vec![&feature.id]
     );
 
     let mut restated = wire;
-    restated["model"]["configurations"][0]
-        .as_object_mut()
-        .unwrap()
-        .insert(
-            "suppressed_features".into(),
-            serde_json::json!([feature.id.0.clone()]),
-        );
-    let error = serde_json::from_value::<CadIr>(restated).unwrap_err();
+    restated.as_object_mut().unwrap().insert(
+        "suppressed_features".into(),
+        serde_json::json!([feature.id.0.clone()]),
+    );
+    let error =
+        serde_json::from_value::<crate::features::parameters::DesignConfiguration>(restated)
+            .unwrap_err();
     assert!(
         error
             .to_string()

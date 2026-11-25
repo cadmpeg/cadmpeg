@@ -490,6 +490,8 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
         crate::writer::RetainedBlockPatches {
             active_configuration: false,
             edited_parameters: &HashSet::new(),
+            native: None,
+            stale: &std::collections::BTreeSet::new(),
         },
     )
     .unwrap();
@@ -829,7 +831,7 @@ fn metadata_edits_preserve_unedited_f64_bits_and_complete_display_member() {
     {
         assert_eq!(original.mesh(), actual.mesh());
         assert_eq!(original.channels(), actual.channels());
-        assert_eq!(original.faces, actual.faces);
+        assert_eq!(original.of.faces(), actual.of.faces());
     }
 }
 
@@ -863,13 +865,10 @@ fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
     let scan = crate::container::scan(&ctx, root).unwrap();
     let retained =
         crate::writer::retained_display_sections(decoded.ir(), Some(&baseline), Some(&scan))
-            .unwrap()
             .unwrap();
     assert_eq!(retained, vec![("Contents/DisplayLists".into(), display)]);
     assert!(
-        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan))
-            .unwrap()
-            .is_none()
+        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan)).is_none()
     );
 }
 

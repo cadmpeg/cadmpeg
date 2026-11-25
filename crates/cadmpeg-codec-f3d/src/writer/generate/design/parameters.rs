@@ -9,17 +9,25 @@
 //! its cached value otherwise (`export:parameter.flattened`). A parameter
 //! owned by a container or an attribute is written without that binding
 //! (`export:value.unwritable`), and an integer parameter as a real
-//! (`f3d:writer.integer-as-real`).
+//! (`f3d:writer.integer-as-real`). A parameter that closes a cycle of
+//! references is written as its cached value
+//! (`export:dependency.cycle-broken`). A Fusion user parameter holds no
+//! tolerance, so a fit is written as none (`export:fit.dropped`), and so is
+//! the general tolerance of a `General` parameter
+//! (`export:general_tolerance.dropped`).
 
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{parameter_flattened, parameter_renamed, value_unwritable};
+use cadmpeg_ir::codec::write::{
+    dependency_cycle_broken, fit_dropped, general_tolerance_dropped, parameter_flattened,
+    parameter_renamed, value_unwritable,
+};
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef};
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::{
-    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
 };
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
@@ -45,6 +53,7 @@ const NATIVE_PARAMETER_COLLECTION: u32 = 19;
 const OWNED_STEM: &str = "d";
 
 /// The parameters written as Fusion user parameters, and the losses taken.
+#[derive(Clone)]
 pub(in crate::writer::generate) struct ParameterPlan {
     written: Vec<PlannedParameter>,
     /// The parameters taken out of the user parameters by the feature that
@@ -59,6 +68,7 @@ pub(in crate::writer::generate) struct ParameterPlan {
 }
 
 /// A `Driven` parameter (the parameter of a driven dimension).
+#[derive(Clone)]
 struct DrivenParameter {
     source: ParameterId,
     name: String,
@@ -115,6 +125,7 @@ pub(super) struct Driven {
 /// What the record of a written parameter does not hold of its source, each
 /// an entry of its loss: a source name other than the written one, a
 /// container or attribute owner, and a display presentation.
+#[derive(Clone)]
 struct Unheld {
     renamed: Option<String>,
     unbound: Option<String>,
@@ -169,6 +180,7 @@ pub(super) struct OwnedParameter {
 }
 
 /// One user parameter as the record holds it.
+#[derive(Clone)]
 struct PlannedParameter {
     source: ParameterId,
     name: String,
@@ -315,11 +327,15 @@ pub(in crate::writer::generate) fn plan(
     let mut unbound = Vec::new();
     let mut displayed = Vec::new();
     let mut integers = Vec::new();
+    let mut broken = Vec::new();
+    let mut fits = Vec::new();
+    let mut general = false;
     for index in order {
         let (parameter, form) = candidates[index];
         let unit = form.unit(parameter.unit.as_ref());
         let name_of = |id: &ParameterId| written_names.get(id).copied();
         let printed = if forced.contains(&index) {
+            broken.push(parameter.id.to_string());
             None
         } else {
             printed_expression(&parameter.definition, &name_of)
@@ -353,6 +369,11 @@ pub(in crate::writer::generate) fn plan(
         displayed.extend(unheld.displayed);
         if matches!(parameter.kind, ValueKind::Integer) {
             integers.push(parameter.id.to_string());
+        }
+        match parameter.tolerance {
+            Some(Tolerance::Fit { .. }) => fits.push(parameter.id.to_string()),
+            Some(Tolerance::General) => general = true,
+            _ => {}
         }
         let references = references(&parameter.definition)
             .into_iter()
@@ -406,6 +427,21 @@ pub(in crate::writer::generate) fn plan(
         "F3D",
         "writes these parameters without their diameter or radius display presentation: a Fusion user parameter holds no display flag",
         displayed,
+    ));
+    losses.extend(dependency_cycle_broken(
+        "F3D",
+        "writes these parameters as their cached values, each the edge that closes a cycle of parameter references, which Fusion cannot hold",
+        broken,
+    ));
+    losses.extend(fit_dropped(
+        "F3D",
+        "writes these parameters without their fits: a Fusion user parameter holds no tolerance",
+        fits,
+    ));
+    losses.extend(general_tolerance_dropped(
+        "F3D",
+        "writes no general tolerance for the General parameters of this definition: a Fusion user parameter holds no tolerance",
+        general.then(|| definition.to_string()),
     ));
     if !integers.is_empty() {
         integers.sort_unstable();

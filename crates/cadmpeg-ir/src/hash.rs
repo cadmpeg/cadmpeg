@@ -18,12 +18,7 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 pub mod digest;
 pub mod finite_json;
 
-use finite_json::admission::CanonicalAdmission;
-use finite_json::{write_canonical_json, CanonicalJsonError};
-
-/// Bytes gathered before the hasher sees them; the pretty JSON writer emits one
-/// short write per token.
-const DIGEST_BUFFER_BYTES: usize = 64 * 1024;
+use finite_json::CanonicalJsonError;
 
 /// Borrowed unique owners. Repeated construction references have no owner.
 pub(crate) struct ProceduralOwners<'a, T>(HashMap<&'a str, Option<&'a T>>);
@@ -64,17 +59,96 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
 ) -> Result<String, DigestError> {
-    let mut buffered =
-        std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(
-        CanonicalAdmission::limited(ctx, "walk document digest"),
-        &mut buffered,
-        value,
-    )?;
+    canonical_json_digest(ctx, value).map(Into::into)
+}
+
+/// Returns the SHA-256 of the canonical JSON of `ir` (§2.5): the digest
+/// `SourceFidelity::content_digest` records (§3.1, Rule B). `ir` is hashed in
+/// the arena order it holds, so a document whose arenas are not sorted by id
+/// hashes as one whose canonical JSON differs.
+///
+/// # Errors
+///
+/// `ir` has no canonical JSON: it holds a non-finite number, or it nests past
+/// the depth `ctx` admits.
+pub fn content_digest(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<digest::Sha256Digest, DigestError> {
+    let bytes = cadmpeg_core::finite_json::canonical_json_sha256_erased(
+        Some((ctx, "walk document digest")),
+        &|serializer| ir.serialize_erased(serializer),
+    )
+    .map_err(digest_error_from_finite)?;
+    Ok(digest::Sha256Digest::from_bytes(bytes))
+}
+
+/// Returns [`content_digest`], and the records of `ir` past a bound of §2.5,
+/// found in the same walk. A refused walk returns what it found before the
+/// refusal.
+pub(crate) fn measured_content_digest(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> (
+    Result<digest::Sha256Digest, DigestError>,
+    crate::bounds::Measured,
+) {
+    let mut buffered = std::io::BufWriter::with_capacity(
+        cadmpeg_core::finite_json::DIGEST_BUFFER_BYTES,
+        DigestWriter(Sha256::new()),
+    );
+    let mut measure = crate::bounds::Measure::new(&mut buffered);
+    let written = finite_json::write_canonical_json_erased(
+        finite_json::admission::CanonicalAdmission::limited(ctx, "walk document digest"),
+        &mut measure,
+        &|serializer| ir.serialize_erased(serializer),
+    );
+    let measured = measure.finish();
+    let digest = written
+        .map_err(DigestError::from)
+        .and_then(|()| finish_digest(buffered));
+    (digest, measured)
+}
+
+fn canonical_json_digest<T: Serialize + ?Sized>(
+    ctx: &DecodeContext<'_>,
+    value: &T,
+) -> Result<digest::Sha256Digest, DigestError> {
+    let bytes = cadmpeg_core::finite_json::canonical_json_sha256_erased(
+        Some((ctx, "walk document digest")),
+        &|serializer| value.serialize(serializer),
+    )
+    .map_err(digest_error_from_finite)?;
+    Ok(digest::Sha256Digest::from_bytes(bytes))
+}
+
+struct DigestWriter(Sha256);
+
+impl std::io::Write for DigestWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn finish_digest(
+    buffered: std::io::BufWriter<DigestWriter>,
+) -> Result<digest::Sha256Digest, DigestError> {
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
-    Ok(digest::Sha256Digest::from_bytes(writer.0.finalize().into()).into())
+    Ok(digest::Sha256Digest::from_bytes(writer.0.finalize().into()))
+}
+
+fn digest_error_from_finite(error: cadmpeg_core::finite_json::FiniteJsonError) -> DigestError {
+    match error {
+        cadmpeg_core::finite_json::FiniteJsonError::Write(error) => DigestError::Write(error),
+        other => DigestError::CanonicalJson(CanonicalJsonError::from(other)),
+    }
 }
 
 /// A digest could not be computed.
@@ -105,32 +179,21 @@ impl From<DigestError> for cadmpeg_core::CodecError {
     }
 }
 
-/// The source-attribute key under which a codec records
-/// [`document_local_sha256`].
-///
-/// This one key gates the whole-document write decision: an encoder that finds
-/// the recorded value still equal to a freshly computed one replays its retained
-/// bytes, and otherwise runs its writer. Other `_local_sha256` attributes answer
-/// narrower questions — which lane changed, and how — so they are not
-/// interchangeable with this one and removing them does not move the same
-/// branch.
-pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
-
 /// Returns the machine-local content digest of `ir` as seen by the `format`
-/// codec, for recording as the `document_local_sha256` source attribute.
+/// codec: the digest a codec compares between two documents it holds, or
+/// records among its codec digests (§3.1, Rule B) before the decode wrapper
+/// sets `scope`.
 ///
-/// Covers the document in canonical arena order with two normalizations: the
-/// recorded `document_local_sha256` attribute is dropped, and the `format`
-/// unknown arena is reduced to identities and links with `source_image_id`
-/// excluded. Retained source bytes never reach the digest. `source` states
-/// the metadata to include, including metadata not assigned to `ir` yet.
-/// Normalization, ordering, serialization and hashing use `ctx`.
+/// Covers the document in canonical arena order, without `scope` and `repro`,
+/// with the `format` unknown arena reduced to identities and links and
+/// `source_image_id` excluded. Retained source bytes never reach the digest.
+/// The arenas the CADIR wire omits count only where they differ from the
+/// baseline the decode wrapper recorded ([`omitted_arenas_local_sha256`]).
+/// `source` states the metadata to include, including metadata not assigned
+/// to `ir` yet. Normalization, ordering, serialization and hashing use `ctx`.
 ///
-/// Bitwise SHA-256 for the write path's edit oracle. Not portable across
-/// platforms (libm last-place drift) and not tolerance-aware (tolerant equality
-/// is not transitive). Attributes with these properties use
-/// [`crate::compare::LOCAL_DIGEST_SUFFIX`]; see
-/// [`crate::document::SourceMeta`].
+/// Bitwise SHA-256: not portable across platforms (libm last-place drift) and
+/// not tolerance-aware (tolerant equality is not transitive).
 pub fn document_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -156,11 +219,12 @@ pub fn document_local_sha256_without_carried(
     carried: &[&str],
 ) -> Result<String, CodecError> {
     let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
+    let omitted_arenas = edited_omitted_arenas(ctx, ir)?;
     let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
             ir_version: ir.ir_version(),
             fragment: ir.fragment,
-            source: source.map(SourceMeta::normalized_digest_copy),
+            source: source.cloned(),
             units: CanonicalUnitsWire::default(),
             tolerances: &ir.tolerances,
             geometry: ir.geometry.sorted(),
@@ -168,6 +232,7 @@ pub fn document_local_sha256_without_carried(
             design: ir.design.sorted(),
             process: ir.process.sorted(),
             native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
+            omitted_arenas,
         })
     })()?;
     match canonical_json_sha256(ctx, &document) {
@@ -180,6 +245,50 @@ pub fn document_local_sha256_without_carried(
             }
         }
     }
+}
+
+/// Returns the machine-local digest of the arenas the CADIR wire omits
+/// ([`crate::document::ArenaName::WIRE_OMITTED`]) and the feature-parent
+/// relations of their features, as `ir` holds them in memory.
+///
+/// [`content_digest`] covers the wire form of a document. The decode wrapper
+/// records this digest beside it in memory, so an edit of these arenas still
+/// makes the document edited ([`omitted_arenas_edited`]) and changes
+/// [`document_local_sha256`]. Same bitwise, machine-local properties as
+/// [`document_local_sha256`].
+pub fn omitted_arenas_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    canonical_json_sha256(ctx, &ir.model.sorted_omitted()).map_err(|error| {
+        ctx.resource_refusal()
+            .map_or_else(|| error.into(), Into::into)
+    })
+}
+
+/// The digest of the arenas the wire omits, where they differ from the
+/// baseline the decode wrapper recorded. A document read from CADIR JSON
+/// holds no baseline, so its digest is that of its wire form.
+fn edited_omitted_arenas(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<String>, CodecError> {
+    let Some(baseline) = ir.model.omitted_arenas_baseline() else {
+        return Ok(None);
+    };
+    let digest = omitted_arenas_local_sha256(ctx, ir)?;
+    Ok((baseline != digest).then_some(digest))
+}
+
+/// Whether the arenas the CADIR wire omits differ from the baseline the
+/// decode wrapper recorded. A document with no baseline, such as one read
+/// from CADIR JSON, has no such edit.
+///
+/// # Errors
+///
+/// The arenas have no canonical JSON under `ctx`.
+pub fn omitted_arenas_edited(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<bool, CodecError> {
+    edited_omitted_arenas(ctx, ir).map(|digest| digest.is_some())
 }
 
 fn reduced_unknowns(
@@ -223,6 +332,8 @@ struct NormalizedDocument<'a, 'input> {
     design: SortedDesign<'a>,
     process: SortedProcess<'a>,
     native: BTreeMap<&'a str, BTreeMap<&'a str, DigestNativeArena<'a, 'input>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    omitted_arenas: Option<String>,
 }
 
 /// Serializes one native arena in `NormalizedDocument.native.<format>.<arena>`.
@@ -595,19 +706,6 @@ fn sorted_records(records: &[NativeRecord]) -> Vec<&NativeRecord> {
     refs
 }
 
-/// A byte sink that feeds a SHA-256 hasher.
-struct DigestWriter(Sha256);
-
-impl std::io::Write for DigestWriter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 /// Borrowed bytes displayed and serialized as two lowercase hexadecimal digits per byte.
 pub struct LowerHex<'a>(pub &'a [u8]);
 
@@ -631,10 +729,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::finite_json::CanonicalJsonError;
-    use super::{
-        canonical_json_sha256, document_local_sha256, sha256_hex, DigestError,
-        DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
-    };
+    use super::{canonical_json_sha256, document_local_sha256, sha256_hex, DigestError};
     use crate::document::CadIr;
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
@@ -642,11 +737,47 @@ mod tests {
     use crate::unknown::UnknownRecord;
     use cadmpeg_core::CodecError;
 
+    /// The document digest counts the arenas the wire omits where they differ
+    /// from the baseline the decode wrapper recorded, so an edit of them in
+    /// memory is seen, and a document read back from CADIR JSON digests as its
+    /// stamp.
+    #[test]
+    fn omitted_arenas_count_in_memory_and_not_after_a_cadir_read() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let digest = |ir: &CadIr| {
+            document_local_sha256(&ctx, ir, None, "test", "test:file:source#0").unwrap()
+        };
+        let mut decoded = crate::examples::unit_cube_with_history_body().unwrap();
+        decoded.finalize();
+        assert!(!decoded.model.history_bodies.is_empty());
+        let baseline = super::omitted_arenas_local_sha256(&ctx, &decoded).unwrap();
+        decoded.model.record_omitted_arenas_baseline(baseline);
+        let stamp = digest(&decoded);
+
+        let read = CadIr::from_json(&decoded.to_canonical_json().unwrap()).unwrap();
+        assert!(decoded.model.omitted_arenas_held());
+        assert!(!read.model.omitted_arenas_held());
+        assert!(read.model.history_bodies.is_empty());
+        assert_eq!(digest(&read), stamp);
+
+        let mut edited = decoded.clone();
+        edited.model.history_bodies.clear();
+        assert_ne!(digest(&edited), stamp);
+
+        let mut unrecorded = edited.clone();
+        unrecorded.model.omitted = crate::document::OmittedArenas::default();
+        assert_eq!(digest(&unrecorded), stamp);
+        ctx.finish_session().unwrap();
+    }
+
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
         let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
-        assert!(json.len() > super::DIGEST_BUFFER_BYTES);
+        assert!(json.len() > cadmpeg_core::finite_json::DIGEST_BUFFER_BYTES);
         assert_eq!(
             canonical_json_sha256(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -755,10 +886,11 @@ mod tests {
 
     fn pinned_native() -> Native {
         let mut native = Native::default();
-        let namespace = native.namespace_mut("pin");
-        namespace
-            .arenas_mut()
-            .insert("records".into(), vec![pinned_record()]);
+        let namespace = native.namespace_mut(crate::codec_id!("pin"));
+        namespace.arenas_mut().insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![pinned_record()],
+        );
         native
     }
 
@@ -864,9 +996,9 @@ mod tests {
     fn pinned_document() -> CadIr {
         let mut ir = CadIr::empty();
         ir.native = pinned_native();
-        let namespace = ir.native.namespace_mut("pin");
+        let namespace = ir.native.namespace_mut(crate::codec_id!("pin"));
         namespace.arenas_mut().insert(
-            "unknowns".into(),
+            cadmpeg_core::nonblank_literal!("unknowns"),
             vec![
                 pinned_unknown("pin:test:source-image#0", &[]),
                 pinned_unknown(
@@ -882,14 +1014,17 @@ mod tests {
     /// A document carrying one `pin` unknown record with the given fields.
     fn pinned_document_with_unknown(fields: serde_json::Map<String, serde_json::Value>) -> CadIr {
         let mut ir = pinned_document();
-        ir.native.namespace_mut("pin").arenas_mut().insert(
-            "unknowns".into(),
-            vec![NativeRecord::new(
-                crate::ids::Identity::new("pin:model:record#0").expect("valid identity"),
-                fields,
-            )
-            .expect("valid native identity")],
-        );
+        ir.native
+            .namespace_mut(crate::codec_id!("pin"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::nonblank_literal!("unknowns"),
+                vec![NativeRecord::new(
+                    crate::ids::Identity::new("pin:model:record#0").expect("valid identity"),
+                    fields,
+                )
+                .expect("valid native identity")],
+            );
         ir.finalize();
         ir
     }
@@ -973,7 +1108,7 @@ mod tests {
                 &ir
             )
             .unwrap(),
-            "ed973e3fccbfe465c1ce26ee06372ac3151356fcdaeba850c5bd028009a61e02"
+            "010be63272d49ca6d7cd8efd051e25a9c70dc96891e497140fe0a8e83002ce2e"
         );
         assert_eq!(
             document_local_sha256(
@@ -984,7 +1119,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "b05cf37e11d812511ae3830a8f0d138eb69e7d0fbf87b00534f39a79a30722de"
+            "06d03ae1af4c5675976ddf2ae73c2b789071c225a5e52405d4347c4026d3b219"
         );
     }
 
@@ -1010,8 +1145,7 @@ mod tests {
     }
 
     /// The pinned document with the source metadata a decoded document carries:
-    /// one recorded baseline the digest must drop, and one ordinary attribute it
-    /// must keep.
+    /// one ordinary attribute the digest keeps.
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
         ir.source = Some(crate::document::SourceMeta::classified(
@@ -1020,24 +1154,17 @@ mod tests {
                     "pin:test"
                 )),
             ),
-            [
-                (
-                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                    "stale".to_owned(),
-                ),
-                (
-                    cadmpeg_core::nonblank_literal!("file_size"),
-                    "4096".to_owned(),
-                ),
-            ]
+            [(
+                cadmpeg_core::nonblank_literal!("file_size"),
+                "4096".to_owned(),
+            )]
             .into_iter()
             .collect(),
         ));
         ir
     }
 
-    /// Pins normalization over source metadata: the recorded baseline attribute
-    /// is dropped before hashing and every other attribute is kept.
+    /// Pins normalization over source metadata: every attribute is kept.
     ///
     /// The pin covers the canonical JSON of the normalized document, in which
     /// the source block reads
@@ -1071,7 +1198,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "93ec763bbb89f3a4269601f6ba4102cd6c0bb47cc670fa2fbec1999ebee25888"
+            "85c289406639a42ce038ec504207462a80f5fb5a645a4ef5c78d126e1282f0ff"
         );
         assert_eq!(
             document_local_sha256(
@@ -1135,16 +1262,11 @@ mod tests {
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }
 
-    /// Copy the document, finalize order, drop the recorded digest and retained
-    /// source image, and hash the serialized string.
+    /// Copy the document, finalize order, drop the retained source image, and
+    /// hash the serialized string.
     fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
         let mut normalized = ir.clone();
         normalized.finalize();
-        normalized.source = ir.source.as_ref().map(|source| {
-            let mut source = source.clone();
-            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-            source
-        });
         let unknowns = ir
             .native_unknowns(format)
             .expect("the normalization fixture has admitted product unknowns")
@@ -1184,16 +1306,10 @@ mod tests {
                     "synthetic:test"
                 )),
             ),
-            [
-                (
-                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                    "stale".to_owned(),
-                ),
-                (
-                    cadmpeg_core::nonblank_literal!("active_brep"),
-                    "body#0".to_owned(),
-                ),
-            ]
+            [(
+                cadmpeg_core::nonblank_literal!("active_brep"),
+                "body#0".to_owned(),
+            )]
             .into_iter()
             .collect(),
         ));
@@ -1221,9 +1337,9 @@ mod tests {
                 &ctx,
             )
             .unwrap();
-        let namespace = ir.native.namespace_mut("other");
+        let namespace = ir.native.namespace_mut(crate::codec_id!("other"));
         namespace.arenas_mut().insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("other:test:record#0").expect("valid identity"),
                 serde_json::Map::new(),
@@ -1271,7 +1387,7 @@ mod tests {
     }
 
     #[test]
-    fn document_local_sha256_ignores_the_recorded_digest_and_retained_bytes() {
+    fn document_local_sha256_ignores_retained_bytes() {
         let source_image = "synthetic:file:source-image#0";
         let (ir, _source_fidelity) = local_digest_fixture();
         let hash = document_local_sha256(
@@ -1282,23 +1398,6 @@ mod tests {
             source_image,
         )
         .unwrap();
-
-        let (mut recorded, _source_fidelity) = local_digest_fixture();
-        recorded.source.as_mut().unwrap().attributes.insert(
-            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            hash.clone(),
-        );
-        assert_eq!(
-            document_local_sha256(
-                &cadmpeg_core::decode::test_support::service_decode_context(),
-                &recorded,
-                recorded.source.as_ref(),
-                "synthetic",
-                source_image
-            )
-            .unwrap(),
-            hash
-        );
 
         let (repacked, _source_fidelity) =
             local_digest_fixture_with_source_image(UnknownRecord::retained(
@@ -1461,8 +1560,9 @@ mod tests {
             records.push(NativeRecord::from_canonical_flat(&ctx, &id, json, 1).unwrap());
         }
         ir.native
-            .namespace_mut("test")
-            .set_arena_records("items", records);
+            .namespace_mut(crate::codec_id!("test"))
+            .set_arena_records("items", records)
+            .unwrap();
         ir.set_native_unknowns(&ctx, "test", &[]).unwrap();
         ir.finalize();
         let digest_fast =

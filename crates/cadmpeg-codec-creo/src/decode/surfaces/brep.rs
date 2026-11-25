@@ -2160,7 +2160,8 @@ struct BrepFaceReferences {
     face: FaceId,
     shell_id: ShellId,
     loop_ids: Vec<LoopId>,
-    face_loops: cadmpeg_ir::topology::FaceLoops,
+    /// The classified loops, or `None` when the face has no loop.
+    face_loops: Option<cadmpeg_ir::topology::FaceLoops>,
 }
 
 impl BrepFaceReferences {
@@ -2190,9 +2191,11 @@ impl BrepFaceReferences {
                 for id in inner {
                     inner_ids.push(crate::identity::copy_checked_id(id.as_str())?);
                 }
-                cadmpeg_ir::topology::FaceLoops::classified(outer, inner_ids)
+                Some(cadmpeg_ir::topology::FaceLoops::classified(
+                    outer, inner_ids,
+                ))
             }
-            None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+            None => None,
         };
         Ok(Self {
             face,
@@ -2201,6 +2204,35 @@ impl BrepFaceReferences {
             face_loops,
         })
     }
+}
+
+/// The loops of a face on `surface`. A face with no loop on a plane,
+/// cylinder, or cone has no extent to state, so it is stated partial and the
+/// loss names it. The caller admits the face next, so the loss is charged only
+/// for a face that stays in the document.
+fn state_face_loops(
+    classified: Option<cadmpeg_ir::topology::FaceLoops>,
+    face: &FaceId,
+    source_face: (&str, u32),
+    surface: Option<&SurfaceGeometry>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> cadmpeg_ir::topology::FaceLoops {
+    if let Some(loops) = classified {
+        return loops;
+    }
+    let (loops, unstated) = cadmpeg_ir::topology::FaceLoops::unspecified_on(Vec::new(), surface);
+    if let Some(kind) = unstated {
+        losses.push(
+            crate::loss::CreoLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                "{} face {} states no loop on a {kind}, which no face covers whole: face {} is \
+                 stated partial",
+                source_face.0,
+                source_face.1,
+                face.as_str()
+            )),
+        );
+    }
+    loops
 }
 
 fn topology_boundary_sense(
@@ -2541,10 +2573,6 @@ pub(in super::super) fn transfer_native_brep(
                                     object_id: crate::identity::source_object_id_checked(
                                         format_args!("VisibGeom:{}", row.id),
                                     )?,
-                                    name: None,
-                                    color: None,
-                                    visible: None,
-                                    layer: None,
                                     instance_path: Vec::new(),
                                 }),
                                 native_ref: None,
@@ -2633,10 +2661,6 @@ pub(in super::super) fn transfer_native_brep(
                                     object_id: crate::identity::source_object_id_checked(
                                         format_args!("VisibGeom:{}", row.id),
                                     )?,
-                                    name: None,
-                                    color: None,
-                                    visible: None,
-                                    layer: None,
                                     instance_path: Vec::new(),
                                 }),
                                 native_ref: None,
@@ -2999,10 +3023,6 @@ pub(in super::super) fn transfer_native_brep(
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         };
         let position = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(*position))
@@ -3276,10 +3296,6 @@ pub(in super::super) fn transfer_native_brep(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -3467,10 +3483,6 @@ pub(in super::super) fn transfer_native_brep(
                                     "source object_id must not be empty",
                                 )
                             })?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                         native_ref: None,
@@ -3530,6 +3542,18 @@ pub(in super::super) fn transfer_native_brep(
                 )?;
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
+            let face_surface = surface_positions
+                .named(surface_prefix, *face_id)
+                .and_then(NamedSurfaces::unique);
+            let face_loops = state_face_loops(
+                face_loops,
+                &face,
+                (face_source_namespace, *face_id),
+                face_surface.map(|position| {
+                    source_carriers.surface_geometry(&ir.geometry.surfaces[position])
+                }),
+                losses,
+            );
             source_carriers.admit_face(
                 ir,
                 Face {
@@ -3544,9 +3568,6 @@ pub(in super::super) fn transfer_native_brep(
                     native_ref: None,
                 },
             )?;
-            let face_surface = surface_positions
-                .named(surface_prefix, *face_id)
-                .and_then(NamedSurfaces::unique);
             for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
                 let ring = native_loop_ring(native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
@@ -3895,10 +3916,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                         "VisibGeom:{}",
                         pair.surface_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -3974,10 +3991,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{curve_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,

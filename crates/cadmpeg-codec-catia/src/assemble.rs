@@ -50,10 +50,6 @@ pub(crate) fn cgm_source_key(
         geometry_role: None,
         format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
         object_id,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -80,7 +76,7 @@ pub(crate) fn annotate(
 ///
 /// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
 /// sorts arenas by entity id before a document leaves the codec. Admission uses
-/// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
+/// [`cadmpeg_ir::CATIA_ADMISSION`], not full final-document validation.
 pub(crate) fn neutral_model_is_admissible(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
@@ -91,7 +87,7 @@ pub(crate) fn neutral_model_is_admissible(
         ctx,
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
-        cadmpeg_ir::CATIA_ADMISSION_CHECKS,
+        cadmpeg_ir::CATIA_ADMISSION,
         Vec::new(),
     )?
     .is_ok())
@@ -374,6 +370,59 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     let note = CatiaLossCode::GeometryUnresolvedCarriers.note(statement);
 
     losses.insert(0, note);
+}
+
+/// A face's unclassified loops on `surface`: a face with no loop on a plane,
+/// cylinder, or cone has no extent to state, so it is stated partial.
+pub(crate) fn unspecified_loops_on(
+    ir: &CadIr,
+    surface: &cadmpeg_ir::ids::SurfaceId,
+    loops: Vec<cadmpeg_ir::ids::LoopId>,
+) -> cadmpeg_ir::topology::FaceLoops {
+    let geometry = if loops.is_empty() {
+        ir.geometry
+            .surfaces
+            .iter()
+            .find(|candidate| &candidate.id == surface)
+            .map(|candidate| &candidate.geometry)
+    } else {
+        None
+    };
+    cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, geometry).0
+}
+
+/// Charges `topology.face-boundary-unstated` for each face of the decoded
+/// model that states no loop on a plane, cylinder, or cone, and states such a
+/// face partial where a family has not already. Runs once, on the model a
+/// route returns, so every family's faces are covered and no face a family
+/// discards is charged.
+pub(crate) fn state_loopless_faces(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+    let unbounded: HashMap<_, _> = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            cadmpeg_ir::topology::FaceLoops::unspecified_on(Vec::new(), Some(&surface.geometry))
+                .1
+                .map(|kind| (surface.id.clone(), kind))
+        })
+        .collect();
+    for face in &mut ir.geometry.faces {
+        let loopless = matches!(
+            &face.loops,
+            cadmpeg_ir::topology::FaceLoops::Unspecified { loops }
+                | cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+                if loops.is_empty()
+        );
+        let Some(kind) = loopless.then(|| unbounded.get(&face.surface)).flatten() else {
+            continue;
+        };
+        face.loops = cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() };
+        losses.push(CatiaLossCode::TopologyFaceBoundaryUnstated.note(format!(
+            "face {} states no loop on a {kind}, which no face covers whole, and is stated partial",
+            face.id.as_str()
+        )));
+    }
 }
 
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
@@ -1208,6 +1257,20 @@ mod route_tests {
         assert!(!neutral_model_is_admissible(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut invalid,
+            &[]
+        )
+        .expect("check that the neutral model is admissible"));
+    }
+
+    /// A finding of a check outside the admission set does not drop a
+    /// candidate.
+    #[test]
+    fn neutral_model_admissibility_ignores_findings_outside_its_checks() {
+        let mut ir = cadmpeg_test_support::admissibility::rejected_outside_admission("catia:test")
+            .expect("fixture identities are valid");
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut ir,
             &[]
         )
         .expect("check that the neutral model is admissible"));

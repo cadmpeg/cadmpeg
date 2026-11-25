@@ -96,11 +96,62 @@ Loop closure follows stored curve endpoints and parameter intervals. Analytic
 intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
 
-A sketch's optional `plane` object stores its attachment frame. `origin` uses
+A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
+`query = qSketchRegion(id + "<featureId>", <filterInnerLoops>);` selects
+the regions of that sketch named by the query string; its
+`deterministicIds` do not restrict that selection. With `filterInnerLoops`
+equal to `false` the selection is every region of the sketch. With `true`
+it excludes each region fully contained in another region. A selected region retains the loops directly inside it as hole
+boundaries.
+
+A sketch's optional `plane` object stores its attachment frame and is the
+frame of that sketch whenever it is present. `origin` uses
 metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.
 A referenced planar face and the stored attachment frame are coplanar. The
 stored origin retains tangential translation. The stored x axis retains
 in-plane rotation. The normal carries the attachment sense.
+A sketch without a `plane` object on a created datum plane takes its frame
+from its `sketchMatrix` row, which is coplanar with that datum plane.
+The top-level `sketches` array in `sketches.json` contains sketch rows.
+Each row identifies its sketch through `featureId`.
+Its `sketchMatrix` stores a row-major homogeneous 4 by 4 transform.
+The first three columns are the sketch x axis, y axis and normal.
+The fourth column stores the origin in metres; the last row is `[0, 0, 0, 1]`.
+The rotation is right-handed and orthonormal.
+A sketch placed on a planar face stores its attachment frame in the same
+`sketchMatrix` when the feature has no `plane` object. The matrix origin lies
+on the face surface plane and the matrix normal is collinear with the surface
+normal; the matrix stores the sign of the normal. The origin retains
+tangential translation, the x axis retains in-plane rotation and the normal
+carries the attachment sense.
+
+A `cPlane` feature with `cplaneType` equal to `OFFSET` selects its support
+through `entities`. A single default plane or created datum plane defines
+the resolved support. `offset` is a length quantity. With
+`oppositeDirection`, `flipNormal` and `flipAlignment` equal to `false`,
+for support origin `o`, unit normal `n`
+and offset `d`, the constructed plane contains `o + d * n` and retains
+normal `n`.
+The support frame and signed distance define the datum offset plane.
+A sketch-plane creation query with operation suffix `.planeOp` selects the
+created datum plane. The sketch's stored attachment frame remains coplanar
+with that datum plane.
+
+A `sweep` feature stores solid cross-section selections in `profiles` and
+trajectory selections in `path`. `bodyType: "SOLID"` selects a solid result.
+`operationType: "NEW"` creates a body; `ADD` joins the swept volume to the
+merge scope. `profileControl` has values `NONE`, `KEEP_ORIENTATION`,
+`LOCK_FACES`, and `LOCK_DIRECTION`. `lockFaces` and `lockDirectionQuery`
+store query lists. `hasTwist` and `hasScale` enable twist and scale controls.
+`turns`, `angle`, and `pitch` store twist quantities; `scaleFactor` stores
+the scale quantity. `trimEnds` stores a Boolean end-trim control.
+`pathOppositeDirection` reverses path travel; `extendToFullPath` extends
+travel to the full path.
+A sketch-edge path query has `queryType: "SKETCH_ENTITY"`,
+`historyType: "CREATION"`, `entityType: "EDGE"`, one `operationId` with the
+suffix `.wireOp`, and a `sketchEntityId`. The operation prefix identifies
+the source sketch. A `UNION` query stores its ordered operands in
+`subqueries`; nested unions preserve operand order.
 
 Thin extrusions select curves through `wallShape` in the `MODEL` domain.
 Explicit `midplane`, `flipWall` and `oppositeDirection` fields establish wall
@@ -152,7 +203,7 @@ For a string fragment, a nonnegative size counts literal UTF-8 bytes after
 absolute value. Two sizes select two fragments, joined with `.`. Each
 literal fragment enters the string dictionary. A dotted result also enters
 that dictionary. Type names share the string dictionary. Admitted type
-names are `Query`, `EntityType` and `Id`.
+names are `Query`, `QueryType`, `EntityType` and `Id`.
 
 Each completed scalar, array or map enters the value dictionary after its
 children. A reference reuses that stored value and charges its expanded

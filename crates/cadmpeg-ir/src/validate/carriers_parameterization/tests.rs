@@ -40,6 +40,7 @@ fn face_on_unknown_surface_validates_clean() {
     .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),
@@ -534,6 +535,7 @@ fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() 
     super::check_carrier_reachability(
         &ctx,
         crate::native::view::NativeView::new(&ir, None),
+        &ir.geometry,
         &mut findings,
     )
     .unwrap();
@@ -566,6 +568,7 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     super::check_carrier_reachability(
         &ctx,
         crate::native::view::NativeView::new(&ir, None),
+        &ir.geometry,
         &mut findings,
     )
     .unwrap();

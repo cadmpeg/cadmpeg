@@ -66,7 +66,7 @@ fn aggregate_admission_preserves_native_json() {
     assert_eq!(namespace.admit::<DisplayJtGraph>().unwrap(), graph);
     assert_eq!(serde_json::to_value(&namespace).unwrap(), wire);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.native.0.insert("nx".into(), namespace);
+    ir.native.0.insert(cadmpeg_ir::codec_id!("nx"), namespace);
     assert!(validate_native(&ir).is_empty());
 }
 
@@ -208,7 +208,7 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
             "{path}"
         );
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.native.0.insert("nx".into(), namespace);
+        ir.native.0.insert(cadmpeg_ir::codec_id!("nx"), namespace);
         let findings = validate_native(&ir);
         assert_eq!(findings.len(), 1, "{path}");
         assert!(findings[0].message.contains(field), "{path}");

@@ -10,7 +10,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{
     decode::{TransferLedger, TransferOutcome},
     loss::LossNote,
@@ -728,7 +727,7 @@ fn decode_with_occurrence_limits(
                 table,
             );
         }
-        reject_invalid_semantic_ir(ctx, &ir)?;
+        losses.extend(invalid_semantic_ir(ctx, &ir)?);
     }
     let attributed = if ctx.container_only() {
         BTreeSet::new()
@@ -795,15 +794,7 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let document_digest =
-        document_local_sha256(ctx, &ir, ir.source.as_ref(), "iges", crate::SOURCE_IMAGE_ID)?;
     drop(verification_index);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            document_digest,
-        );
-    }
     let mut body = DecodeBody::new(if ctx.container_only() {
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
     } else {
@@ -819,34 +810,32 @@ fn decode_with_occurrence_limits(
     })
 }
 
-/// Fail the decode when the projected IR has any error-severity finding.
-///
-/// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
-/// outcomes match full validation on every IGES golden fixture, so the route
-/// stays on the full validator.
-fn reject_invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
+/// One `projection.invalid` loss for each error-severity finding of the
+/// projected IR. The decode keeps the document; each loss names the record
+/// the finding is about.
+fn invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let validation = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())?;
-    let Some(finding) = validation
+    Ok(validation
         .findings
         .iter()
-        .find(|finding| finding.severity >= Severity::Error)
-    else {
-        return Ok(());
-    };
-    let entity = finding
-        .entity
-        .as_deref()
-        .map_or(String::new(), |entity| format!(" for {entity}"));
-    Err(CodecError::malformed(format_args!(
-        "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
-        finding.check, finding.message
-    )))
+        .filter(|finding| finding.severity >= Severity::Error)
+        .map(|finding| {
+            let entity = finding
+                .entity
+                .as_deref()
+                .map_or(String::new(), |entity| format!(" for {entity}"));
+            IgesLossCode::ProjectionInvalid.note(format!(
+                "IGES semantic projection holds an error-severity finding: {}{entity}: {}",
+                finding.check, finding.message
+            ))
+        })
+        .collect())
 }
 
 #[cfg(test)]
 pub(crate) fn decode_with_test_occurrence_limits(
     bytes: &[u8],
-    options: DecodeOptions,
+    options: &DecodeOptions,
     output_limit: usize,
     depth_limit: usize,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
@@ -898,7 +887,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
             depth_limit,
         },
         &mut std::io::Cursor::new(bytes),
-        &options,
+        options,
     )
 }
 

@@ -10,9 +10,10 @@
 
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NonEmptyMembers;
+use crate::geometry::SurfaceGeometry;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
-    PointId, RegionId, ShellId, SurfaceId, VertexId,
+    PointId, RegionId, ShellId, SubdId, SurfaceId, VertexId,
 };
 use crate::math::Point3;
 use crate::scalar::{Fraction, UnitBinary32};
@@ -23,7 +24,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// RGBA color, components in `[0, 1]`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Color {
@@ -104,7 +105,9 @@ impl Color {
 ///
 /// For a coedge this compares traversal with its edge curve. For a face it
 /// compares the face normal with its surface normal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -116,7 +119,18 @@ pub enum Sense {
 }
 
 /// A top-level solid, sheet, wire, or general body.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, DeserializeName)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    DeserializeName,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -133,7 +147,7 @@ pub enum BodyKind {
 }
 
 /// A top-level solid, sheet, wire, or general body.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Body {
@@ -192,7 +206,7 @@ pub struct Body {
 /// Its shell list is read through [`Region::stated_shells`] or
 /// [`crate::document::Topology::complete_shells`], so every reader states
 /// whether it accepts a region whose shells are not all stated.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Region {
@@ -310,7 +324,9 @@ impl crate::schema::EntitySchema for Region {
 }
 
 /// The child kind a record does not state in full (§5.6, Unstated children).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -321,7 +337,15 @@ pub enum Unstated {
 
 /// Which shells of a region the document does not state (§5.6, Unstated
 /// children).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -343,7 +367,15 @@ pub enum RegionUnstated {
 
 /// One member of a shell that names no parent of its own: a wire edge or a
 /// free vertex. A shell's faces name it through [`Face::shell`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -358,13 +390,31 @@ pub enum ShellMember {
         /// Arena id of the vertex.
         id: VertexId,
     },
+    /// The subdivision cage that is the shell's only member (§5.6).
+    Subd {
+        /// Arena id of the cage.
+        id: SubdId,
+    },
+}
+
+impl ShellMember {
+    /// The member's arena id.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::WireEdge { id } => id.as_str(),
+            Self::FreeVertex { id } => id.as_str(),
+            Self::Subd { id } => id.as_str(),
+        }
+    }
 }
 
 /// An oriented boundary of a region.
 ///
 /// Its faces are the faces whose [`Face::shell`] names it; `members` lists
-/// only the wire edges and free vertices, which name no parent.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// only the wire edges, free vertices, and subdivision cages, which name no
+/// parent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Shell {
@@ -372,7 +422,8 @@ pub struct Shell {
     pub id: ShellId,
     /// Owning region.
     pub region: RegionId,
-    /// Wire edges and free vertices owned by the shell.
+    /// Wire edges, free vertices, and the subdivision cage owned by the
+    /// shell.
     pub members: Vec<ShellMember>,
     /// Marks a shell a face, wire edge, free vertex, or cage of which the
     /// document does not state (§5.6, Unstated children).
@@ -442,7 +493,7 @@ impl Shell {
     pub fn wire_edges(&self) -> impl Iterator<Item = &EdgeId> {
         self.members.iter().filter_map(|member| match member {
             ShellMember::WireEdge { id } => Some(id),
-            ShellMember::FreeVertex { .. } => None,
+            ShellMember::FreeVertex { .. } | ShellMember::Subd { .. } => None,
         })
     }
 
@@ -450,7 +501,15 @@ impl Shell {
     pub fn free_vertices(&self) -> impl Iterator<Item = &VertexId> {
         self.members.iter().filter_map(|member| match member {
             ShellMember::FreeVertex { id } => Some(id),
-            ShellMember::WireEdge { .. } => None,
+            ShellMember::WireEdge { .. } | ShellMember::Subd { .. } => None,
+        })
+    }
+
+    /// Subdivision cages belonging directly to the shell.
+    pub fn subds(&self) -> impl Iterator<Item = &SubdId> {
+        self.members.iter().filter_map(|member| match member {
+            ShellMember::Subd { id } => Some(id),
+            ShellMember::WireEdge { .. } | ShellMember::FreeVertex { .. } => None,
         })
     }
 
@@ -617,7 +676,7 @@ impl<'a> ChildLists<'a> {
 }
 
 /// A face: a bounded region of a surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Face {
@@ -683,7 +742,15 @@ impl Face {
 ///
 /// A reader takes the loops through [`Self::stated`], for a reference walk, or
 /// through [`Self::boundary`], which answers only for a complete face.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -700,12 +767,15 @@ pub enum FaceLoops {
         /// Inner loops in source order.
         inner: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source does not classify the loops.
+    /// The boundary is not stated in full, and the source does not classify
+    /// the loops: a loop is not stated, or the source states none on a
+    /// surface whose domain is unbounded and the face lists none (§5.6).
     PartialUnspecified {
         /// The loops stated, in source order.
         loops: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source classifies the loops.
+    /// The boundary is not stated in full, and the source classifies the
+    /// loops: a loop is not stated.
     PartialClassified {
         /// The outer loop, where it is stated.
         #[serde(
@@ -788,6 +858,30 @@ impl FaceLoops {
         Self::Unspecified { loops: ids }
     }
 
+    /// The loops a source states for a face, in source order, where it does
+    /// not classify them, on `surface`. A face whose source states no loop on
+    /// a solved surface whose domain is unbounded (a plane, a cylinder, or a
+    /// cone, through every placement) has no extent to state, so it is stated
+    /// in its partial form with no loop (§5.6, Faces and loops), and the
+    /// second value names that surface for the
+    /// `topology.face-boundary-unstated` loss the decoder charges naming the
+    /// face. A procedural surface has the domain its construction gives it,
+    /// so a face on one keeps its unclassified form.
+    #[must_use]
+    pub fn unspecified_on(
+        loops: Vec<LoopId>,
+        surface: Option<&SurfaceGeometry>,
+    ) -> (Self, Option<&'static str>) {
+        let unbounded = match surface {
+            Some(SurfaceGeometry::Solved(solved)) => solved.plane_cylinder_or_cone(),
+            Some(SurfaceGeometry::Procedural { .. }) | None => None,
+        };
+        match unbounded {
+            Some(kind) if loops.is_empty() => (Self::PartialUnspecified { loops }, Some(kind)),
+            _ => (Self::unspecified(loops), None),
+        }
+    }
+
     /// Classified loops. Loop order is outer then inner.
     #[must_use]
     pub const fn classified(outer: LoopId, inner: Vec<LoopId>) -> Self {
@@ -816,7 +910,9 @@ impl FaceLoops {
         }
     }
 
-    /// Whether a loop of the face is not stated.
+    /// Whether the face's boundary is not stated in full: a loop of it is not
+    /// stated, or its source states none on a surface whose domain is
+    /// unbounded (§5.6).
     #[must_use]
     pub const fn is_partial(&self) -> bool {
         matches!(
@@ -872,7 +968,7 @@ pub enum LoopBoundaryRole {
 
 /// A closed boundary of a face, expressed as an ordered ring of coedges or one
 /// vertex use at a surface singularity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Loop {
@@ -892,7 +988,7 @@ pub struct Loop {
 }
 
 /// One ordered parameter-space representation of a coedge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PcurveUse {
@@ -915,7 +1011,14 @@ pub struct PcurveUse {
 }
 
 /// The mutually exclusive forms of a loop boundary.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoopBoundary {
@@ -943,7 +1046,7 @@ impl std::fmt::Display for LoopRingError {
 impl std::error::Error for LoopRingError {}
 
 /// A checked, ordered coedge ring and its anchored pole occurrences.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LoopRingWire")]
 pub struct LoopRing {
@@ -1195,7 +1298,7 @@ impl Loop {
 }
 
 /// One pole-vertex occurrence anchored after a coedge in a ring traversal.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct AnchoredVertexUse {
@@ -1211,7 +1314,7 @@ pub struct AnchoredVertexUse {
 ///
 /// Coedges form a loop ring through the owning [`Loop`] coedge order, and a
 /// radial ring around their shared edge through `radial_next`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Coedge {
@@ -1252,7 +1355,7 @@ pub fn coedge_ring_neighbors(loops: &[Loop], coedge: &Coedge) -> Option<(CoedgeI
 }
 
 /// A coedge-local curve and its loop-traversal interval.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CoedgeUseCurve {
@@ -1263,7 +1366,7 @@ pub struct CoedgeUseCurve {
 }
 
 /// A finite ordered parameter interval.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub struct ParameterInterval([f64; 2]);
@@ -1383,7 +1486,7 @@ impl From<IncreasingParameterInterval> for ParameterInterval {
 
 /// A finite parameter interval whose first endpoint is strictly below its
 /// second.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub struct IncreasingParameterInterval([f64; 2]);
@@ -1562,8 +1665,18 @@ impl TryFrom<EdgeCarrierWire> for EdgeCarrier {
     }
 }
 
+impl crate::structural_order::StructuralOrd for EdgeCarrier {
+    /// The order of the wire form, `curve` and then `param_range`.
+    fn structural_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let range = |carrier: &Self| carrier.param_range().map(crate::units::FiniteVector::get);
+        self.curve()
+            .structural_cmp(&other.curve())
+            .then_with(|| range(self).structural_cmp(&range(other)))
+    }
+}
+
 /// An edge with an optional curve carrier and the vertices that bound it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Edge {
@@ -1593,7 +1706,7 @@ pub struct Edge {
 }
 
 /// The start and end vertices of an edge.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct EdgeEnds {
@@ -1663,7 +1776,7 @@ impl Edge {
 }
 
 /// A vertex: a topological point referencing a position carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Vertex {
@@ -1685,7 +1798,7 @@ pub struct Vertex {
 }
 
 /// A position carrier for a vertex.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PointWire")]
 pub struct Point {

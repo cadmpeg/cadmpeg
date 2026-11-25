@@ -5,14 +5,15 @@ use crate::test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
-    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeError,
+    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::check::{Check, Finding, ValidationReport};
 use crate::report::export::FidelityResolution;
+use crate::report::strictness::{code_name, Strictness};
 use crate::report::Severity;
 use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
@@ -104,7 +105,7 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let error = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
         .unwrap_err();
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
     };
     assert_eq!(
@@ -377,6 +378,23 @@ fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
     .unwrap()
 }
 
+/// A CADIR write charges a record of an arena the wire omits only where no
+/// `design` record it writes restates the record under its id; a write that
+/// omits the design record too charges the omitted record.
+#[test]
+fn a_cadir_write_charges_only_omitted_records_no_written_design_record_restates() {
+    let mut ir = CadIr::empty();
+    ir.model.spreadsheets.push(v10_sheet());
+    let cadir = super::coverage::cadir_dispositions();
+    assert_eq!(cadir.omitted(&ir), ["spreadsheets"]);
+    ir.design.spreadsheets.push(design_sheet("v10"));
+    assert!(cadir.omitted(&ir).is_empty());
+    assert_eq!(
+        uniform_dispositions(ArenaDisposition::Omitted).omitted(&ir),
+        ["spreadsheets"]
+    );
+}
+
 /// `omitted` names the arenas the `arena.omitted` losses name: an omitted
 /// design arena that a v10 record restates is not among them.
 #[test]
@@ -560,6 +578,36 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     );
 }
 
+/// An `arena.omitted` loss lists every omitted id, sorted, after the count
+/// (§3.2).
+#[test]
+fn an_arena_omitted_loss_lists_the_sorted_ids_after_the_count() {
+    let mut ir = CadIr::empty();
+    for ordinal in [2, 10, 1] {
+        ir.process
+            .groups
+            .push(crate::process::groups::ProcessGroup {
+                id: crate::design::ids::ProcessGroupId::try_from(format!(
+                    "test:process:group#{ordinal}"
+                ))
+                .unwrap(),
+                kind: crate::process::groups::GroupKind::Method,
+                name: None,
+                parent: None,
+                native_ref: None,
+            });
+    }
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.process.groups = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(
+        losses[0].message,
+        "the cadir write does not represent model arena `process.groups`: 3 record(s) omitted: \
+         test:process:group#1, test:process:group#10, test:process:group#2"
+    );
+}
+
 #[test]
 fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
     assert!(super::edit_dropped(
@@ -662,6 +710,7 @@ fn finding(entity: Option<&str>, message: &str, severity: Severity) -> Finding {
     Finding {
         related: Vec::new(),
         check: Check::ReferentialIntegrity,
+        rule: crate::rule_name!("test.fixture-reference"),
         severity,
         entity: entity.map(str::to_owned),
         message: message.into(),
@@ -739,33 +788,222 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
 #[test]
 fn carried_errors_follow_native_format_and_complete_coverage() {
     let mut ir = CadIr::empty();
-    let id = "f3d:test:asm-history#0";
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
+    let f3d_id = "f3d:test:asm-history#0";
+    let nx_id = "nx:test:record#0";
+    let record = |id: &str| {
         vec![crate::NativeRecord::new(
             crate::ids::Identity::new(id).expect("valid native identity"),
             serde_json::Map::default(),
         )
-        .expect("valid native record")],
-    );
+        .expect("valid native record")]
+    };
+    ir.native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            record(f3d_id),
+        );
+    ir.native
+        .namespace_mut(crate::codec_id!("nx"))
+        .arenas_mut()
+        .insert(cadmpeg_core::nonblank_literal!("records"), record(nx_id));
     ir.finalize();
-    let report = validation_report(vec![finding(
-        Some(id),
-        "invalid native record",
-        Severity::Error,
-    )]);
+    let report = validation_report(vec![
+        finding(Some(f3d_id), "invalid native record", Severity::Error),
+        finding(Some(nx_id), "invalid native record", Severity::Error),
+    ]);
     let declared = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written));
-    let cadir = CoverageEncoder(declared)
+    let f3d = F3dCoverageEncoder(declared)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert!(cadir.carried_errors(&ir, &report).is_empty());
-    let f3d = F3dCoverageEncoder(declared)
+    assert_eq!(f3d.carried_errors(&ir, &report), vec![&report.findings[0]]);
+    let cadir = CoverageEncoder(declared)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
     let complete = CoverageEncoder(ArenaCoverage::Complete)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    for plan in [f3d, complete] {
-        assert_eq!(plan.carried_errors(&ir, &report), vec![&report.findings[0]]);
+    for plan in [cadir, complete] {
+        assert_eq!(
+            plan.carried_errors(&ir, &report),
+            report.findings.iter().collect::<Vec<_>>()
+        );
     }
+}
+
+struct LossyEncoder(Vec<crate::report::loss::LossNote>);
+
+impl EncoderBackend for LossyEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        body.losses.clone_from(&self.0);
+        Ok(body)
+    }
+}
+
+fn empty_output() -> LossyEncoder {
+    LossyEncoder(vec![super::output_empty("the test output holds nothing")])
+}
+
+fn refused_write(error: EncodeError) -> super::StrictWriteRejection {
+    match error {
+        EncodeError::StrictRejected(rejection) => rejection,
+        other => panic!("expected a strict refusal, got {other}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_writes_a_report_with_losses() {
+    let ir = CadIr::empty();
+    let plan = empty_output()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| code_name(&loss.code) == "export:output.empty"));
+    plan.write_to(&mut Vec::new()).unwrap();
+}
+
+#[test]
+fn a_severity_floor_refuses_the_write_before_any_byte() {
+    let ir = CadIr::empty();
+    let strictness = Strictness {
+        floor: Some(Severity::Info),
+        ..Strictness::default()
+    };
+    let rejection = refused_write(
+        empty_output()
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&strictness),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
+    assert_eq!(
+        rejection.report().losses[rejection.entry()],
+        *rejection.loss()
+    );
+}
+
+#[test]
+fn a_severity_floor_above_every_loss_admits_the_write() {
+    let ir = CadIr::empty();
+    let encoder = empty_output();
+    assert!(encoder.0[0].severity < Severity::Blocking);
+    let strictness = Strictness {
+        floor: Some(Severity::Blocking),
+        ..Strictness::default()
+    };
+    encoder
+        .plan(
+            EncodeInput::new(&ir, None).with_strictness(&strictness),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_refused_code_refuses_the_write_and_another_code_admits_it() {
+    let ir = CadIr::empty();
+    let refusing = Strictness::default().with_code("export:output.empty");
+    let rejection = refused_write(
+        empty_output()
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&refusing),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
+
+    let other = Strictness::default().with_code("export:record.invalid");
+    empty_output()
+        .plan(
+            EncodeInput::new(&ir, None).with_strictness(&other),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
+    let ir = CadIr::empty();
+    let kind = crate::report::loss::LossKind::shared(
+        crate::report::loss::LossTaxonomy::TopologyNotTransferred,
+    );
+    let encoder = LossyEncoder(vec![crate::report::loss::LossNote::new(
+        kind.clone(),
+        "synthetic reject floor",
+    )]);
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    let rejection = refused_write(
+        encoder
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&pinned),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(rejection.loss().code, kind);
+
+    let unpinned = crate::report::loss::LossKind::shared(
+        crate::report::loss::LossTaxonomy::ParametricRecordOmitted,
+    );
+    assert_eq!(unpinned.strict_floor(), None);
+    LossyEncoder(vec![crate::report::loss::LossNote::new(
+        unpinned,
+        "a loss with no strict floor",
+    )])
+    .plan(
+        EncodeInput::new(&ir, None).with_strictness(&pinned),
+        TargetRequest::Inherit,
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_wrapper_charges_each_carried_error_of_the_validation() {
+    let ir = CadIr::empty();
+    let validation = validation_report(vec![
+        finding(None, "warning", Severity::Warning),
+        finding(None, "error", Severity::Error),
+    ]);
+    let plan = LossyEncoder(Vec::new())
+        .plan(
+            EncodeInput::new(&ir, None).with_validation(&validation),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let charged = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| code_name(&loss.code) == "export:record.invalid")
+        .count();
+    assert_eq!(charged, 1);
+
+    let refusing = Strictness::default().with_code("export:record.invalid");
+    let rejection = refused_write(
+        LossyEncoder(Vec::new())
+            .plan(
+                EncodeInput::new(&ir, None)
+                    .with_validation(&validation)
+                    .with_strictness(&refusing),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert!(rejection.loss().message.contains("error"));
 }

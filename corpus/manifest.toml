@@ -1640,6 +1640,30 @@ sha256 = "d5d5eaabf6d7c0d28957356fbdcd3a53410a5cc42f6ca68d41dd2d42cd852d57"
 notes = "CC0 Fusion API save. Join Combine of a plate target and the two copies of a three-element rectangular body pattern; the pattern seed stays a separate body."
 
 [[file]]
+filename = "f3d/combine_join_then_fillet.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "ZorbaTHut"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "2706.1.17"
+acquisition_date = "2026-11-25"
+license = "CC0-1.0"
+sha256 = "69e15cf6c7a1c48c9aff4892b297d640ba5ad75e24277994370f2f1d61d4895e"
+notes = "CC0 Fusion API save. Join Combine of a 40 x 40 x 10 mm box target with a 20 x 20 x 20 mm box tool, tools not kept, then a 2 mm Fillet on one top edge of the combined body."
+
+[[file]]
+filename = "f3d/combine_join_control.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "ZorbaTHut"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "2706.1.17"
+acquisition_date = "2026-11-25"
+license = "CC0-1.0"
+sha256 = "fe1991f724eee69788edd3eb963254e0952aaf6f4987c30bf12cc22e355a0580"
+notes = "CC0 Fusion API save. As combine_join_then_fillet without the Fillet."
+
+[[file]]
 filename = "f3d/combine_pattern_seed_repeated.f3d"
 format = "f3d"
 dialect = "f3d:manifest-3-2-0-0"

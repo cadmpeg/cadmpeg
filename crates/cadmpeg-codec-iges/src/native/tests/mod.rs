@@ -5,7 +5,6 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::decode::DecodeReport;
 
@@ -152,7 +151,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     }
 
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = DecodeMode::Strict;
+    strict.strictness.pinned = true;
     match IgesCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &strict)
         .unwrap_err()
@@ -265,10 +264,7 @@ fn decode_preserves_native_entities_and_graph() {
     );
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
-    assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
-        crate::document_digest(result.ir()).unwrap()
-    );
+    assert!(!result.source_fidelity().edited(result.ir()).unwrap());
     assert_eq!(
         result
             .source_fidelity()

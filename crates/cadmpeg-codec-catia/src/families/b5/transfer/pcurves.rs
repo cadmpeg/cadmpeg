@@ -964,7 +964,7 @@ pub(super) fn emit_pcurves(
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                annotations.derived(id.as_str(), "parameter_range")?;
+                annotations.derived(id.as_str(), "metadata.form.parameter_range")?;
             }
             for occurrence in occurrences {
                 let use_id = id.clone();

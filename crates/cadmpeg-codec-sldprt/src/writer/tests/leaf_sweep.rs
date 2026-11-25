@@ -6,18 +6,18 @@
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
-use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_test_support::EditableDecodeResult;
 use serde_json::Value;
 
 use crate::loss::SldprtLossCode;
 use crate::test_support::nist::{ftc_06, ftc_08};
+use crate::test_support::readback::{self, Entry};
 use crate::SldprtCodec;
 
 /// One edit: the feature, by its unique name, and the JSON pointer of the
@@ -140,9 +140,15 @@ enum Outcome {
 }
 
 /// Edits one leaf, writes, and reads the output back with the full decoder.
-/// `Err` describes a save that is refused, carries a false note, or changes
-/// what it did not edit.
-fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
+/// `baseline` is [`readback::baseline`] of `part`, and `part_doc` is the
+/// precomputed read-back document of `part`. `Err` describes a save that is
+/// refused, carries a false note, or changes what it did not edit.
+fn run(
+    part: &DecodeResult,
+    part_doc: &crate::history::write::read_back::document::Document,
+    baseline: &[Entry],
+    job: &Job,
+) -> Result<Outcome, String> {
     let label = format!("{} {}", job.feature, job.pointer);
     let mut decoded = EditableDecodeResult::from(part.clone());
     let (source_wire, edited_wire, feature_id) = {
@@ -181,7 +187,7 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
     let unwritten = report
         .losses
         .iter()
-        .filter(|loss| loss.code == SldprtLossCode::WriterFeatureEditUnwritten.kind())
+        .filter(|loss| crate::test_support::is_edit_dropped(&loss.code))
         .filter(|loss| loss.message.contains(feature_id.as_str()))
         .count();
     let stale = report
@@ -190,8 +196,7 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
         .filter(|loss| loss.code == SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .filter(|loss| loss.message.contains(&format!("\"{}\"", job.feature)))
         .count();
-    let written = SldprtCodec
-        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+    let written = crate::decode::decode_for_read_back(&output)
         .map_err(|error| format!("{label}: output does not decode: {error}"))?;
     let read = named(&written.ir().model.features, &job.feature);
     let [read] = read.as_slice() else {
@@ -210,17 +215,12 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
         .filter(|loss| loss.code != SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
-    let baseline = crate::test_support::readback::baseline(part);
-    let baseline = baseline.as_slice();
     let (differences, outcome) = if unwritten == 0 {
-        let entries = crate::test_support::readback::unnamed(
-            crate::test_support::readback::beyond(
-                crate::test_support::readback::diff(decoded.ir(), written.ir()),
-                baseline,
-            ),
+        let entries = readback::unnamed(
+            readback::beyond(readback::diff(decoded.ir(), written.ir()), baseline),
             &messages,
         );
-        let mut differences = crate::test_support::readback::unaccounted(
+        let mut differences = readback::unaccounted(
             decoded.ir(),
             &[feature_id.as_str()],
             &["source_properties", "source_content"],
@@ -240,9 +240,9 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
                 "{label}: a loss names the edit, and a stale note calls it written"
             ));
         }
-        let differences = crate::test_support::readback::unnamed(
-            crate::test_support::readback::beyond(
-                crate::test_support::readback::diff(part.ir(), written.ir()),
+        let differences = readback::unnamed(
+            readback::beyond(
+                readback::diff_with_left(part.ir(), part_doc, written.ir()),
                 baseline,
             ),
             &messages,
@@ -271,6 +271,9 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
 /// the count of each outcome.
 fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
     let jobs = jobs(part);
+    let part_doc =
+        crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
+    let baseline = readback::baseline(part);
     let next = AtomicUsize::new(0);
     let results = Mutex::new((Vec::new(), [0_usize; 3]));
     let workers = std::thread::available_parallelism().map_or(4, |count| count.get().min(6));
@@ -281,7 +284,7 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
                 let Some(job) = jobs.get(index) else {
                     break;
                 };
-                let result = run(part, job);
+                let result = run(part, &part_doc, &baseline, job);
                 let mut results = results.lock().unwrap();
                 match result {
                     Ok(Outcome::Invalid) => results.1[0] += 1,
@@ -345,10 +348,13 @@ fn job(part: &DecodeResult, feature: &str, selected: impl Fn(&str) -> bool) -> J
 /// no `Depth` parameter is added beside it.
 #[test]
 fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
-    let job = job(ftc_06(), "Boss-Extrude1", |pointer| {
+    let part = ftc_06();
+    let part_doc =
+        crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
+    let job = job(part, "Boss-Extrude1", |pointer| {
         pointer.ends_with("/length") && !pointer.contains("second")
     });
-    let outcome = run(ftc_06(), &job);
+    let outcome = run(part, &part_doc, &readback::baseline(part), &job);
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",
@@ -362,10 +368,13 @@ fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
 /// the source.
 #[test]
 fn a_linear_pattern_first_direction_edit_is_carried() {
-    let job = job(ftc_08(), "LPattern1", |pointer| {
+    let part = ftc_08();
+    let part_doc =
+        crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
+    let job = job(part, "LPattern1", |pointer| {
         pointer.ends_with("/pattern/direction/y")
     });
-    let outcome = run(ftc_08(), &job);
+    let outcome = run(part, &part_doc, &readback::baseline(part), &job);
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",

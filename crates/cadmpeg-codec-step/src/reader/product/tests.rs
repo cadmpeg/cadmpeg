@@ -80,32 +80,29 @@ fn product_descriptions_transfer_from_product_and_definition() {
     );
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
+    ir.model.product_definitions = vec![cadmpeg_ir::products::ProductDefinition {
+        sketches: Vec::default(),
 
-            tessellations: Vec::new(),
-            id: "test:model:product#described"
-                .try_into()
-                .expect("valid identity"),
-            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
-            source_name: Some("Described part".into()),
-            label: Some("Described part".into()),
-            description: Some("Round-tripped description".into()),
-            part_number: Some("DESCRIBED".into()),
-            bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![ir.geometry.bodies[0].id.clone()],
-            native_ref: None,
-            generated_from: None,
-            storage: cadmpeg_ir::products::Storage::Embedded,
-            occurrences: Vec::new(),
-            instance_bodies: Vec::new(),
-            representations: Vec::new(),
-            units: None,
-            general_tolerance: None,
-            active: None,
-        });
+        id: "test:model:product#described"
+            .try_into()
+            .expect("valid identity"),
+        kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
+        source_name: Some("Described part".into()),
+        label: Some("Described part".into()),
+        description: Some("Round-tripped description".into()),
+        part_number: Some("DESCRIBED".into()),
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies: vec![ir.geometry.bodies[0].id.clone()],
+        native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
+    }];
     let mut output = Vec::new();
     write_step(
         &ir,

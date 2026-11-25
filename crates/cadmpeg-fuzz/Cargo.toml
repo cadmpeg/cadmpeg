@@ -61,7 +61,7 @@ cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat", optional = true }
 cadmpeg-codec-pvz = { path = "../cadmpeg-codec-pvz", optional = true }
 cadmpeg-codec-edrawings = { path = "../cadmpeg-codec-edrawings", optional = true }
 cadmpeg-codec-usd = { path = "../cadmpeg-codec-usd", optional = true }
-cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
+cadmpeg-ir = { path = "../cadmpeg-ir" }
 cadmpeg-codec-step = { path = "../cadmpeg-codec-step", optional = true }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 flate2 = "1"

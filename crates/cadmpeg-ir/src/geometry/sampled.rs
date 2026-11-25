@@ -57,7 +57,7 @@ fn admit_finite_vertices(vertices: Vec<Point3>) -> Result<Vec<FinitePoint3>, Geo
 }
 
 /// Source-native polygonal surface with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PolygonalSurface {
     #[cfg_attr(feature = "schema", schemars(with = "Vec<Point3>"))]
@@ -212,7 +212,7 @@ impl<'de> Deserialize<'de> for PolygonalSurface {
 // A source states a raw parameter and point; a `PolylineCurve` holds the
 // admitted sample, whose parameter is a `FiniteReal` and whose point is a
 // `FinitePoint3`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PolylineVertex<R = f64, P = Point3> {
@@ -227,7 +227,7 @@ pub struct PolylineVertex<R = f64, P = Point3> {
 /// A parameterized polyline carries one parameter per sample in the sample
 /// row, so a parameter list that does not match the sample count has no
 /// spelling.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -245,7 +245,7 @@ pub enum PolylineSamples<R = f64, P = Point3> {
 }
 
 /// Source-native polyline with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "PolylineCurveWire"))]
 #[serde(try_from = "PolylineCurveWire")]

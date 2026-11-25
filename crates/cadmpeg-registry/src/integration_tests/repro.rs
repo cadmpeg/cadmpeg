@@ -96,6 +96,9 @@ fn repro_shrink_elapsed_budget_stops_search() {
 fn repro_nonreproducing_cut_retains_rows_and_reason() {
     let document = cadmpeg_ir::examples::unit_cube().unwrap();
     let finding = cadmpeg_ir::report::check::Finding {
+        rule: cadmpeg_ir::rule_name!(
+            "registry/test.synthetic-finding-requiring-additional-context"
+        ),
         check: Check::GeometricConsistency,
         severity: cadmpeg_ir::report::Severity::Error,
         entity: Some(document.geometry.bodies[0].id.to_string()),

@@ -20,11 +20,12 @@ use cadmpeg_core::CodecError;
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
+use crate::design::evaluation::Cycles;
 use crate::drawings::Drawing;
 use crate::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
 use crate::features::parameters::{DesignConfiguration, DesignParameter};
 use crate::features::serialization::FeatureWriteWire;
-use crate::features::{Feature, FeatureRowWire};
+use crate::features::Feature;
 use crate::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
     ProceduralSurfaceRow, Surface, SurfaceGeometry,
@@ -54,6 +55,7 @@ pub(crate) mod feature_parents;
 mod legacy;
 mod one_zero;
 pub mod procedural;
+pub mod read;
 
 struct UnknownProjection<T>(T);
 
@@ -68,6 +70,36 @@ pub(crate) struct FeatureRegenerationParents(
     BTreeMap<crate::features::FeatureId, crate::features::FeatureId>,
 );
 
+/// Whether a [`Model`] holds the arenas the CADIR wire leaves out
+/// ([`ArenaName::WIRE_OMITTED`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OmittedArenas {
+    /// The model holds them: an empty arena holds no records. `baseline` is
+    /// their digest as the decode wrapper returned the document.
+    Held { baseline: Option<String> },
+    /// The model was read from CADIR JSON, which does not carry them, so
+    /// their content is unknown.
+    NotRead,
+}
+
+impl Default for OmittedArenas {
+    fn default() -> Self {
+        Self::Held { baseline: None }
+    }
+}
+
+impl OmittedArenas {
+    /// The state of a model that takes the records of `other`.
+    fn merged(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::NotRead, _) | (_, Self::NotRead) => Self::NotRead,
+            (Self::Held { baseline }, Self::Held { .. }) => Self::Held {
+                baseline: baseline.clone(),
+            },
+        }
+    }
+}
+
 /// Every neutral arena with its [`ArenaClass`] token (`model`, `design`, or
 /// `process`) and its home token, the [`CadIr`] field that holds it
 /// (`geometry`, `model`, `design`, or `process`).
@@ -77,7 +109,9 @@ pub(crate) struct FeatureRegenerationParents(
 /// [`every_arena_registry!`], which drop the class token. A consumer reaches
 /// an arena of a document as `ir.$home.$field`. The arenas of the `design`
 /// and `process` homes follow every other, so the canonical index of every
-/// other arena does not depend on them.
+/// other arena does not depend on them. A `model` arena whose attributes are
+/// `serde(skip)` is held in memory and left out of the CADIR wire
+/// ([`ArenaName::WIRE_OMITTED`]).
 macro_rules! classified_arena_registry {
     ($macro:ident) => {
         $crate::document::classified_arena_registry! { @entries [$macro] }
@@ -101,21 +135,21 @@ macro_rules! classified_arena_registry {
             procedural_surfaces: ProceduralSurface, model, geometry, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
             procedural_curves: ProceduralCurve, model, geometry, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
             assets: crate::assets::Asset, model, model, "Embedded and externally referenced document resources.", [];
-            features: Feature, design, model, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
-            feature_input_topologies: FeatureInputTopology, design, model, "Feature input-topology arena.", [];
-            feature_result_topologies: FeatureResultTopology, design, model, "Feature result-topology arena.", [];
-            configurations: DesignConfiguration, design, model, "Design configuration arena.", [];
-            parameters: DesignParameter, design, model, "Design parameter arena.", [];
-            sketches: Sketch, design, model, "Planar sketch arena.", [];
-            sketch_entities: SketchEntity, design, model, "Solved sketch entity arena.", [];
-            sketch_constraints: SketchConstraint, design, model, "Sketch constraint arena.", [];
-            spatial_sketches: SpatialSketch, design, model, "Spatial sketch arena.", [];
-            spatial_sketch_entities: SpatialSketchEntity, design, model, "Solved spatial sketch entity arena.", [];
-            spatial_sketch_constraints: SpatialSketchConstraint, design, model, "Spatial sketch constraint arena.", [];
-            spreadsheets: Spreadsheet, design, model, "Spreadsheet arena.", [];
+            features: Feature, design, model, "Feature arena.", [serde(skip)];
+            feature_input_topologies: FeatureInputTopology, design, model, "Feature input-topology arena.", [serde(skip)];
+            feature_result_topologies: FeatureResultTopology, design, model, "Feature result-topology arena.", [serde(skip)];
+            configurations: DesignConfiguration, design, model, "Design configuration arena.", [serde(skip)];
+            parameters: DesignParameter, design, model, "Design parameter arena.", [serde(skip)];
+            sketches: Sketch, design, model, "Planar sketch arena.", [serde(skip)];
+            sketch_entities: SketchEntity, design, model, "Solved sketch entity arena.", [serde(skip)];
+            sketch_constraints: SketchConstraint, design, model, "Sketch constraint arena.", [serde(skip)];
+            spatial_sketches: SpatialSketch, design, model, "Spatial sketch arena.", [serde(skip)];
+            spatial_sketch_entities: SpatialSketchEntity, design, model, "Solved spatial sketch entity arena.", [serde(skip)];
+            spatial_sketch_constraints: SpatialSketchConstraint, design, model, "Spatial sketch constraint arena.", [serde(skip)];
+            spreadsheets: Spreadsheet, design, model, "Spreadsheet arena.", [serde(skip)];
             product_definitions: ProductDefinition, model, model, "Product definition arena.", [];
             occurrences: Occurrence, model, model, "Product occurrence arena.", [];
-            assembly_joints: AssemblyJoint, model, model, "Assembly joint arena.", [];
+            assembly_joints: AssemblyJoint, model, model, "Assembly joint arena.", [serde(skip)];
             drawings: Drawing, model, model, "Drawing page, resource, view, and annotation arena.", [];
             semantic_annotations: SemanticAnnotation, model, model, "Semantic dimension, note, symbol, and callout arena.", [];
             presentation_documents: PresentationDocument, model, model, "Document presentation arena.", [];
@@ -135,7 +169,7 @@ macro_rules! classified_arena_registry {
             solver_settings: crate::physics::solver::SolverSettings, model, model, "Solver settings arena.", [];
             declared_measures: crate::declared_measures::DeclaredMeasure, model, model, "Declared measure arena.", [];
             point_clouds: crate::point_cloud::PointCloud, model, model, "Point cloud arena.", [];
-            history_bodies: crate::history_body::HistoryBody, design, model, "History body arena: bodies that only an earlier history state holds, each with a nest of its own.", [];
+            history_bodies: crate::history_body::HistoryBody, design, model, "History body arena: bodies that only an earlier history state holds, each with a nest of its own.", [serde(skip)];
             scopes: crate::design::scope::DesignScope, design, design, "The design scopes, one per product definition that has a design.", [];
             containers: crate::design::container::Container, design, design, "The ordered and unordered containers of the scopes' histories.", [];
             features: crate::design::feature::Feature, design, design, "The features of the scopes' histories.", [];
@@ -194,6 +228,34 @@ macro_rules! every_arena_registry {
     };
 }
 pub(crate) use every_arena_registry;
+
+/// The `field: Type, class, home;` entry of every arena whose registry
+/// attributes are exactly `serde(skip)`: the arenas a [`Model`] holds in
+/// memory and the CADIR wire leaves out ([`ArenaName::WIRE_OMITTED`]).
+macro_rules! wire_omitted_arenas {
+    ($macro:ident) => {
+        $crate::document::classified_arena_registry! {
+            @entries [$crate::document::keep_wire_omitted] $macro
+        }
+    };
+}
+pub(crate) use wire_omitted_arenas;
+
+macro_rules! keep_wire_omitted {
+    (@munch $target:ident [$($kept:tt)*]) => {
+        $target! { $($kept)* }
+    };
+    (@munch $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [serde(skip)] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        $crate::document::keep_wire_omitted! { @munch $target [$($kept)* $field: $ty, $class, $home;] $($rest)* }
+    };
+    (@munch $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        $crate::document::keep_wire_omitted! { @munch $target [$($kept)*] $($rest)* }
+    };
+    ($target:ident; $($entries:tt)*) => {
+        $crate::document::keep_wire_omitted! { @munch $target [] $($entries)* }
+    };
+}
+pub(crate) use keep_wire_omitted;
 
 macro_rules! strip_arena_class {
     ($target:ident; $($field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
@@ -435,7 +497,6 @@ macro_rules! model_write_type {
     (curves, $ty:ty, $l:lifetime) => { Vec<CurveWire<$l>> };
     (procedural_surfaces, $ty:ty, $l:lifetime) => { Vec<ProceduralSurfaceWire<$l>> };
     (procedural_curves, $ty:ty, $l:lifetime) => { Vec<ProceduralCurveWire<$l>> };
-    (features, $ty:ty, $l:lifetime) => { Vec<FeatureWriteWire<$l>> };
     ($field:ident, $ty:ty, $l:lifetime) => { &$l Vec<$ty> };
 }
 
@@ -487,15 +548,6 @@ macro_rules! model_write_value {
                 .collect()
         }
     }};
-    ($model:expr, features) => {
-        $model
-            .features
-            .iter()
-            .map(|feature| {
-                FeatureWriteWire::new(feature, $model.feature_regeneration_parent(&feature.id))
-            })
-            .collect()
-    };
     ($model:expr, $field:ident) => {
         &$model.$field
     };
@@ -504,8 +556,19 @@ macro_rules! model_write_value {
 macro_rules! model_read_type {
     (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceRow> };
     (procedural_curves, $ty:ty) => { Vec<ProceduralCurveRow> };
-    (features, $ty:ty) => { Vec<FeatureRowWire> };
     ($field:ident, $ty:ty) => { Vec<$ty> };
+}
+
+macro_rules! model_read_id {
+    (procedural_surfaces, $ty:ty) => {
+        ProceduralSurfaceRow::id_str
+    };
+    (procedural_curves, $ty:ty) => {
+        ProceduralCurveRow::id_str
+    };
+    ($field:ident, $ty:ty) => {
+        <$ty as crate::schema::ArenaRecord>::record_identity
+    };
 }
 
 macro_rules! model_read_value {
@@ -513,9 +576,6 @@ macro_rules! model_read_value {
         Vec::new()
     };
     ($wire:expr, procedural_curves) => {
-        Vec::new()
-    };
-    ($wire:expr, features) => {
         Vec::new()
     };
     ($wire:expr, $field:ident) => {
@@ -635,18 +695,39 @@ macro_rules! declare_home_arenas {
                 true $(&& arena_is_ordered(&self.$field))*
             }
 
-            /// Keeps the first record of each id in each sorted arena and
-            /// drops the later ones, returning each repeated id whose copies
-            /// differ.
+            /// The first arena whose records do not state their ids in
+            /// strictly increasing order.
+            pub(crate) fn unordered_arena(&self) -> Option<&'static str> {
+                $(if !arena_is_strictly_ordered(&self.$field) {
+                    return Some(stringify!($field));
+                })*
+                None
+            }
+
+            /// States one record of each id in each sorted arena whose copies
+            /// hold one value and none of an id whose copies differ,
+            /// returning each such id.
             pub(crate) fn drop_repeated_ids(&mut self, home: &str) -> Vec<RepeatedId> {
                 let mut repeated = Vec::new();
-                $(keep_first_ids(
+                $(drop_repeated_copies(
                     &mut self.$field,
                     crate::schema::ArenaRecord::record_identity,
                     &format!("{home}.{}", stringify!($field)),
                     &mut repeated,
                 );)*
                 repeated
+            }
+
+            /// Removes the record at `index` of the arena whose wire key is
+            /// `arena`, returning its id.
+            pub(crate) fn remove_record(&mut self, arena: &str, index: usize) -> Option<String> {
+                $(if arena == stringify!($field) {
+                    return (index < self.$field.len()).then(|| {
+                        crate::schema::ArenaRecord::record_identity(&self.$field.remove(index))
+                            .to_owned()
+                    });
+                })*
+                None
             }
 
             /// Sort each arena lexicographically by its entity identity.
@@ -696,7 +777,7 @@ macro_rules! declare_topology {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// The current geometry: B-rep topology, its carriers, and
         /// subdivision surfaces, each arena sorted by identity.
-        #[derive(Debug, Clone, Default, PartialEq)]
+        #[derive(Debug, Clone, Default, PartialEq, cadmpeg_derive::StructuralOrd)]
         pub struct Topology {
             $(
                 #[doc = $doc]
@@ -715,7 +796,7 @@ macro_rules! declare_topology {
                 $(self.$field.visit_identity_references(ctx, &mut |id| if local.contains(id) {Ok(())} else {visitor(id)})?;)*
                 Ok(())
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_,F>) -> Result<Self,cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self,cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("nested topology identities")?;
                 Ok(Self {$($field: self.$field.rewrite_identities(ctx,map)?,)*})
             }
@@ -763,29 +844,49 @@ macro_rules! declare_topology {
             )*
         }
 
-        impl Serialize for Topology {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                if !self.is_finalized() {
-                    let mut sorted = self.clone();
-                    sorted.finalize();
-                    return sorted.serialize(serializer);
-                }
-                TopologyWriteWire {
-                    $($field: model_write_value!(self, $field),)*
-                }
-                .serialize(serializer)
+        impl TopologyReadWire {
+            fn deserialize_erased(
+                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
+                Self::deserialize(deserializer)
             }
         }
 
-        impl<'de> Deserialize<'de> for Topology {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        impl Topology {
+            fn deserialize_direct<'de, D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: Deserializer<'de>,
             {
-                let mut wire = TopologyReadWire::deserialize(deserializer)?;
+                let wire = TopologyReadWire::deserialize(deserializer)?;
+                Self::from_read_wire(wire, &mut |_, _, error| Err(error))
+                    .map_err(serde::de::Error::custom)
+            }
+
+            /// The members of the `geometry` home.
+            const READ_FIELDS: &'static [&'static str] = &[$(stringify!($field)),*];
+
+            /// Reads the `geometry` home arena by arena, and gives up each
+            /// procedural construction its carrier refuses.
+            fn read_from(home: &mut read::Home<'_, '_, '_>) -> Self {
+                let wire = TopologyReadWire {
+                    $($field: home.arena_keeping_spans(stringify!($field), model_read_id!($field, $ty)),)*
+                };
+                let read = Self::from_read_wire(wire, &mut |arena, id, error| {
+                    home.give_up_record(arena, id, &error);
+                    Ok::<(), std::convert::Infallible>(())
+                });
+                match read {
+                    Ok(topology) => topology,
+                    Err(never) => match never {},
+                }
+            }
+
+            /// Attaches each procedural construction of `wire` to its
+            /// carrier, and hands each one its carrier refuses to `refused`.
+            fn from_read_wire<E>(
+                mut wire: TopologyReadWire,
+                refused: &mut dyn FnMut(&str, &str, String) -> Result<(), E>,
+            ) -> Result<Self, E> {
                 let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
                 let procedural_curves = std::mem::take(&mut wire.procedural_curves);
                 let mut topology = Self {
@@ -797,11 +898,18 @@ macro_rules! declare_topology {
                     }));
                     for wire in procedural_surfaces {
                         let (owner, procedural) = wire.into_parts();
-                        let slot = admission.owner("surface", owner.as_str(), procedural.id.as_str()).map_err(serde::de::Error::custom)?;
-                        admission.accept(procedural.id.as_str());
-                        topology
-                            .attach_procedural_surface(&owner, slot, procedural)
-                            .map_err(serde::de::Error::custom)?;
+                        let id = procedural.id.as_str().to_owned();
+                        let slot = match admission.owner("surface", owner.as_str(), &id) {
+                            Ok(slot) => slot,
+                            Err(error) => {
+                                refused("procedural_surfaces", &id, error.to_string())?;
+                                continue;
+                            }
+                        };
+                        admission.accept(&id);
+                        if let Err(error) = topology.attach_procedural_surface(&owner, slot, procedural) {
+                            refused("procedural_surfaces", &id, error.to_string())?;
+                        }
                     }
                 }
                 if !procedural_curves.is_empty() {
@@ -810,17 +918,72 @@ macro_rules! declare_topology {
                     }));
                     for wire in procedural_curves {
                         let (owner, procedural) = wire.into_parts();
-                        let slot = admission.owner("curve", owner.as_str(), procedural.id.as_str()).map_err(serde::de::Error::custom)?;
-                        admission.accept(procedural.id.as_str());
-                        topology
-                            .attach_procedural_curve(&owner, slot, procedural)
-                            .map_err(serde::de::Error::custom)?;
+                        let id = procedural.id.as_str().to_owned();
+                        let slot = match admission.owner("curve", owner.as_str(), &id) {
+                            Ok(slot) => slot,
+                            Err(error) => {
+                                refused("procedural_curves", &id, error.to_string())?;
+                                continue;
+                            }
+                        };
+                        admission.accept(&id);
+                        if let Err(error) = topology.attach_procedural_curve(&owner, slot, procedural) {
+                            refused("procedural_curves", &id, error.to_string())?;
+                        }
                     }
                 }
                 Ok(topology)
             }
         }
 
+        impl Topology {
+            fn serialize_direct<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                if !self.is_finalized() {
+                    let mut sorted = self.clone();
+                    sorted.finalize();
+                    return sorted.serialize_direct(serializer);
+                }
+                TopologyWriteWire {
+                    $($field: model_write_value!(self, $field),)*
+                }
+                .serialize(serializer)
+            }
+
+            fn serialize_erased(
+                &self,
+                serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+            ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+                self.serialize_direct(serializer)
+            }
+        }
+
+        impl Serialize for Topology {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+                    self.serialize_erased(adapter)
+                })
+            }
+        }
+
+        impl<'de> Deserialize<'de> for Topology {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let wire = cadmpeg_core::serde_erase::deserialize_with(
+                    deserializer,
+                    TopologyReadWire::deserialize_erased,
+                )?;
+                Topology::from_read_wire(wire, &mut |_, _, error| Err(error))
+                    .map_err(serde::de::Error::custom)
+            }
+        }
         /// Every topology arena borrowed in canonical identity order.
         #[derive(Serialize)]
         pub(crate) struct SortedTopology<'a> {
@@ -862,118 +1025,32 @@ macro_rules! declare_model {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Product structure, presentation, physics, assets, drawings, PMI,
         /// and the design records that build the model, connected by typed IDs.
-        #[derive(Debug, Clone, Default, PartialEq)]
+        #[derive(Debug, Clone, Default)]
         pub struct Model {
             $(
                 #[doc = $doc]
                 pub $field: Vec<$ty>,
             )*
             pub(crate) feature_regeneration_parents: FeatureRegenerationParents,
+            pub(crate) omitted: OmittedArenas,
+        }
+
+        /// Two models are equal when they hold the same records. Whether the
+        /// arenas the wire omits were read is no part of a model's value.
+        impl PartialEq for Model {
+            fn eq(&self, other: &Self) -> bool {
+                $(self.$field == other.$field &&)*
+                    self.feature_regeneration_parents == other.feature_regeneration_parents
+            }
         }
 
         declare_home_arenas!(Model, $($field: $ty;)*);
         declare_home_rewrite!(Model, $($field: $ty;)*);
 
-        #[cfg(feature = "schema")]
-        impl JsonSchema for Model {
-            fn schema_name() -> std::borrow::Cow<'static, str> {
-                "Model".into()
-            }
-
-            fn schema_id() -> std::borrow::Cow<'static, str> {
-                concat!(module_path!(), "::Model").into()
-            }
-
-            fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-                let mut schema = ModelReadWire::json_schema(generator);
-                schema.ensure_object().remove("additionalProperties");
-                schema.ensure_object().insert(
-                    "description".into(),
-                    "Product structure, presentation, physics, assets, drawings, PMI, and the design records that build the model, connected by typed IDs.".into(),
-                );
-                schema
-            }
-        }
-
-        #[derive(Serialize)]
-        struct ModelWriteWire<'a> {
-            $(
-                $(#[$attribute])*
-                $field: model_write_type!($field, $ty, 'a),
-            )*
-        }
-
-        #[derive(Deserialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[cfg_attr(feature = "schema", schemars(rename = "Model"))]
-        #[serde(deny_unknown_fields)]
-        struct ModelReadWire {
-            $(
-                $(#[$attribute])*
-                $($(#[$schema_attr])*)?
-                #[doc = $doc]
-                $field: model_read_type!($field, $ty),
-            )*
-        }
-
-        impl Serialize for Model {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
-                if !self.is_finalized() {
-                    let mut sorted = self.clone();
-                    sorted.finalize();
-                    return sorted.serialize(serializer);
-                }
-                ModelWriteWire {
-                    $($field: model_write_value!(self, $field),)*
-                }
-                .serialize(serializer)
-            }
-        }
-
-        impl<'de> Deserialize<'de> for Model {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                let mut wire = ModelReadWire::deserialize(deserializer)?;
-                let feature_wires = std::mem::take(&mut wire.features);
-                let mut model = Self {
-                    $($field: model_read_value!(wire, $field),)*
-                    feature_regeneration_parents: FeatureRegenerationParents::default(),
-                };
-                for wire in feature_wires {
-                    let (feature, parent) = wire.into_parts();
-                    if let Some(parent) = parent {
-                        model.feature_regeneration_parents.0.insert(feature.id.clone(), parent);
-                    }
-                    model.features.push(feature);
-                }
-                feature_parents::validate(&[&model]).map_err(serde::de::Error::custom)?;
-                Ok(model)
-            }
-        }
-
-        /// Every model arena borrowed in canonical identity order.
-        #[derive(Serialize)]
-        pub(crate) struct SortedModel<'a> {
-            $($(#[$attribute])* $field: sorted_model_type!($field, $ty, 'a),)*
-        }
-
         impl Model {
-            /// Borrow every arena in canonical identity order.
-            pub(crate) fn sorted(&self) -> Result<SortedModel<'_>, CodecError> {
-                if let Err(error) = feature_parents::validate(&[self]) {
-                    return Err(CodecError::malformed(format_args!("{error}")));
-                }
-                Ok(SortedModel { $($field: sorted_model_value!(self, $field),)* })
-            }
-
             /// Moves every arena and feature-parent relation from another model.
             pub(crate) fn append(&mut self, mut other: Self) {
+                self.omitted = self.omitted.merged(&other.omitted);
                 self.append_arenas(&mut other);
                 self.feature_regeneration_parents.0
                     .append(&mut other.feature_regeneration_parents.0);
@@ -983,6 +1060,9 @@ macro_rules! declare_model {
             /// identities `ids` holds.
             pub(crate) fn repro_select(&self, ids: &std::collections::BTreeSet<String>) -> Self {
                 let mut selected = self.repro_select_arenas(ids);
+                if self.omitted == OmittedArenas::NotRead {
+                    selected.omitted = OmittedArenas::NotRead;
+                }
                 selected.feature_regeneration_parents.0 = self.feature_regeneration_parents.0.iter()
                     .filter(|(child, parent)| ids.contains(child.as_str()) && ids.contains(parent.as_str()))
                     .map(|(child, parent)| (child.clone(), parent.clone())).collect();
@@ -1001,6 +1081,7 @@ macro_rules! declare_model {
                 &mut self, mut other: Self, rewrite: &mut R,
             ) -> Result<(), ModelRewriteError<R::Error>> {
                 self.extend_rewritten_arenas(&mut other, rewrite)?;
+                self.omitted = self.omitted.merged(&other.omitted);
                 for (child, parent) in other.feature_regeneration_parents.0 {
                     let edge = rewrite.rewrite(FeatureRegenerationEdge { child, parent }).map_err(ModelRewriteError::Rewrite)?;
                     self.feature_regeneration_parents.0.insert(edge.child, edge.parent);
@@ -1042,6 +1123,17 @@ macro_rules! declare_design {
         }
 
         impl Design {
+            /// The members of the `design` home.
+            const READ_FIELDS: &'static [&'static str] = &[$(stringify!($field),)* "names"];
+
+            /// Reads the `design` home arena by arena.
+            fn read_from(home: &mut read::Home<'_, '_, '_>) -> Self {
+                Self {
+                    $($field: home.arena(stringify!($field), <$ty as crate::schema::ArenaRecord>::record_identity),)*
+                    names: home.value("names"),
+                }
+            }
+
             /// Whether every design arena and the current name table are empty.
             pub(crate) fn is_empty(&self) -> bool {
                 $(self.$field.is_empty() &&)* self.names.entries().is_empty()
@@ -1097,6 +1189,16 @@ macro_rules! declare_process {
         }
 
         impl Process {
+            /// The members of the `process` home.
+            const READ_FIELDS: &'static [&'static str] = &[$(stringify!($field)),*];
+
+            /// Reads the `process` home arena by arena.
+            fn read_from(home: &mut read::Home<'_, '_, '_>) -> Self {
+                Self {
+                    $($field: home.arena(stringify!($field), <$ty as crate::schema::ArenaRecord>::record_identity),)*
+                }
+            }
+
             /// Whether every process arena is empty.
             pub(crate) fn is_empty(&self) -> bool {
                 $(self.$field.is_empty() &&)* true
@@ -1229,54 +1331,72 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
         .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
 }
 
-/// An id a sorted arena held more than once.
+fn arena_is_strictly_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
+    values
+        .windows(2)
+        .all(|pair| pair[0].record_identity() < pair[1].record_identity())
+}
+
+/// An id a sorted arena held more than once, in copies that differ.
 #[derive(Debug)]
 pub(crate) struct RepeatedId {
     /// The arena, as `<home>.<field>` or `native.<codec>.<arena>`.
     pub(crate) arena: String,
     /// The repeated id.
     pub(crate) id: String,
-    /// The number of later records dropped.
-    pub(crate) dropped: usize,
-    /// Whether a dropped record differs from the kept one.
-    pub(crate) differs: bool,
+    /// The number of copies, all of them dropped.
+    pub(crate) copies: usize,
 }
 
-/// Drops each record of a sorted arena whose id equals the one before it, so
-/// the first record of each id stays, and records each repeated id whose
-/// copies differ from the first.
-///
-/// Copies that hold one value are one record, so dropping them loses
-/// nothing; they are not recorded.
-pub(crate) fn keep_first_ids<T: PartialEq>(
+/// States one record for each id of a sorted arena whose copies hold one
+/// value, and none for an id whose copies differ, which it records in
+/// `repeated` (§2.8).
+pub(crate) fn drop_repeated_copies<T: PartialEq>(
     records: &mut Vec<T>,
     id: impl Fn(&T) -> &str,
     arena: &str,
     repeated: &mut Vec<RepeatedId>,
 ) {
-    let mut current: Option<RepeatedId> = None;
+    let first_new = repeated.len();
+    let mut run: Option<(RepeatedId, bool)> = None;
     records.dedup_by(|later, earlier| {
         if id(later) != id(earlier) {
             return false;
         }
-        match current.as_mut() {
-            Some(run) if run.id == id(later) => {
-                run.dropped += 1;
-                run.differs |= later != earlier;
+        match run.as_mut() {
+            Some((current, differs)) if current.id == id(later) => {
+                current.copies += 1;
+                *differs |= later != earlier;
             }
             _ => {
-                repeated.extend(current.take().filter(|run| run.differs));
-                current = Some(RepeatedId {
-                    arena: arena.to_owned(),
-                    id: id(later).to_owned(),
-                    dropped: 1,
-                    differs: later != earlier,
-                });
+                repeated.extend(
+                    run.take()
+                        .filter(|(_, differs)| *differs)
+                        .map(|(repeated_id, _)| repeated_id),
+                );
+                run = Some((
+                    RepeatedId {
+                        arena: arena.to_owned(),
+                        id: id(later).to_owned(),
+                        copies: 2,
+                    },
+                    later != earlier,
+                ));
             }
         }
         true
     });
-    repeated.extend(current.filter(|run| run.differs));
+    repeated.extend(
+        run.filter(|(_, differs)| *differs)
+            .map(|(repeated_id, _)| repeated_id),
+    );
+    if repeated.len() > first_new {
+        let differing: std::collections::HashSet<&str> = repeated[first_new..]
+            .iter()
+            .map(|repeated| repeated.id.as_str())
+            .collect();
+        records.retain(|record| !differing.contains(id(record)));
+    }
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -1399,6 +1519,286 @@ arena_registry!(assert_entity_schemas);
 every_arena_registry!(assert_arena_records);
 every_arena_registry!(declare_document_arenas);
 classified_arena_registry!(declare_arena_name);
+
+/// Declares the CADIR wire form of [`Model`] from the arenas the wire carries:
+/// its serializer, its reader, its schema, and its digest view.
+macro_rules! declare_model_wire {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        #[cfg(feature = "schema")]
+        impl JsonSchema for Model {
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                "Model".into()
+            }
+
+            fn schema_id() -> std::borrow::Cow<'static, str> {
+                concat!(module_path!(), "::Model").into()
+            }
+
+            fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                let mut schema = ModelReadWire::json_schema(generator);
+                schema.ensure_object().remove("additionalProperties");
+                schema.ensure_object().insert(
+                    "description".into(),
+                    "Product structure, presentation, physics, assets, drawings, PMI, and the design records that build the model, connected by typed IDs.".into(),
+                );
+                schema
+            }
+        }
+
+        #[derive(Serialize)]
+        struct ModelWriteWire<'a> {
+            $(
+                $(#[$attribute])*
+                $field: model_write_type!($field, $ty, 'a),
+            )*
+        }
+
+        #[derive(Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[cfg_attr(feature = "schema", schemars(rename = "Model"))]
+        #[serde(deny_unknown_fields)]
+        struct ModelReadWire {
+            $(
+                $(#[$attribute])*
+                $($(#[$schema_attr])*)?
+                #[doc = $doc]
+                $field: model_read_type!($field, $ty),
+            )*
+        }
+
+        impl ModelReadWire {
+            fn deserialize_erased(
+                deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+            ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
+                Self::deserialize(deserializer)
+            }
+
+            fn into_model(mut self) -> Model {
+                Model {
+                    $($field: model_read_value!(self, $field),)*
+                    omitted: OmittedArenas::NotRead,
+                    ..Model::default()
+                }
+            }
+        }
+
+        impl Model {
+            fn deserialize_direct<'de, D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let wire = ModelReadWire::deserialize(deserializer)?;
+                Ok(wire.into_model())
+            }
+
+            fn serialize_direct<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
+                if !self.is_finalized() {
+                    let mut sorted = self.clone();
+                    sorted.finalize();
+                    return sorted.serialize_direct(serializer);
+                }
+                ModelWriteWire {
+                    $($field: model_write_value!(self, $field),)*
+                }
+                .serialize(serializer)
+            }
+
+            fn serialize_erased(
+                &self,
+                serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+            ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+                self.serialize_direct(serializer)
+            }
+        }
+
+        impl Serialize for Model {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+                    self.serialize_erased(adapter)
+                })
+            }
+        }
+
+        impl<'de> Deserialize<'de> for Model {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let wire = cadmpeg_core::serde_erase::deserialize_with(
+                    deserializer,
+                    ModelReadWire::deserialize_erased,
+                )?;
+                Ok(wire.into_model())
+            }
+        }
+
+        impl Model {
+            /// The members of the `model` home.
+            const READ_FIELDS: &'static [&'static str] = &[$(stringify!($field)),*];
+
+            /// Reads the `model` home arena by arena.
+            fn read_from(home: &mut read::Home<'_, '_, '_>) -> Self {
+                Self {
+                    $($field: home.arena(stringify!($field), model_read_id!($field, $ty)),)*
+                    omitted: OmittedArenas::NotRead,
+                    ..Self::default()
+                }
+            }
+        }
+
+        /// Every model arena the wire carries, borrowed in canonical identity
+        /// order.
+        #[derive(Serialize)]
+        pub(crate) struct SortedModel<'a> {
+            $($(#[$attribute])* $field: sorted_model_type!($field, $ty, 'a),)*
+        }
+
+        impl Model {
+            /// Borrow every arena the wire carries in canonical identity order.
+            pub(crate) fn sorted(&self) -> Result<SortedModel<'_>, CodecError> {
+                if let Err(error) = feature_parents::validate(&[self]) {
+                    return Err(CodecError::malformed(format_args!("{error}")));
+                }
+                Ok(SortedModel { $($field: sorted_model_value!(self, $field),)* })
+            }
+        }
+    };
+}
+
+/// The entries of the `model` home that the CADIR wire carries: every entry
+/// whose registry attributes are other than `serde(skip)`.
+macro_rules! keep_model_wire {
+    (@munch $target:ident [$($kept:tt)*]) => {
+        $target! { $($kept)* }
+    };
+    (@munch $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [serde(skip)] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        keep_model_wire! { @munch $target [$($kept)*] $($rest)* }
+    };
+    (@munch $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, model, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        keep_model_wire! { @munch $target [$($kept)* $field: $ty, model, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
+    };
+    (@munch $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        keep_model_wire! { @munch $target [$($kept)*] $($rest)* }
+    };
+    ($target:ident; $($entries:tt)*) => {
+        keep_model_wire! { @munch $target [] $($entries)* }
+    };
+}
+
+classified_arena_registry! { @entries [keep_model_wire] declare_model_wire }
+
+macro_rules! declare_wire_omitted {
+    ($($field:ident: $ty:ty, $class:ident, $home:ident;)*) => {
+        impl ArenaName {
+            /// The arenas of the `model` home that a decoded [`Model`] holds in
+            /// memory and the CADIR wire leaves out. A model read from CADIR JSON
+            /// holds none of their records.
+            pub const WIRE_OMITTED: &'static [Self] = &[$(arena_name!($field, $class, $home)),*];
+        }
+
+        /// The arenas the wire omits, with the feature-parent relations their
+        /// features carry, borrowed in canonical identity order.
+        #[derive(Serialize)]
+        pub(crate) struct SortedOmittedArenas<'a> {
+            $($field: sorted_model_type!($field, $ty, 'a),)*
+        }
+
+        impl Model {
+            /// Drops what the CADIR wire omits: the records of those arenas,
+            /// their feature-parent relations, and `ProductDefinition.sketches`.
+            /// The model then holds what its CADIR JSON reads back as.
+            pub fn drop_omitted_arenas(&mut self) {
+                $(self.$field.clear();)*
+                self.feature_regeneration_parents = FeatureRegenerationParents::default();
+                for definition in &mut self.product_definitions {
+                    definition.sketches.clear();
+                }
+                self.omitted = OmittedArenas::NotRead;
+            }
+
+            /// Takes what the CADIR wire omits from `decoded`, the decode of
+            /// the source this model was saved from: the records of those
+            /// arenas, their feature-parent relations, the sketches of each
+            /// product definition both models hold, and the digest the
+            /// decode wrapper recorded of them. It undoes
+            /// [`Self::drop_omitted_arenas`] for a model whose saved source is
+            /// at hand.
+            pub fn adopt_omitted_arenas(&mut self, decoded: &Self) {
+                $(self.$field.clone_from(&decoded.$field);)*
+                self.feature_regeneration_parents
+                    .clone_from(&decoded.feature_regeneration_parents);
+                for definition in &mut self.product_definitions {
+                    definition.sketches = decoded
+                        .product_definitions
+                        .iter()
+                        .find(|candidate| candidate.id == definition.id)
+                        .map(|candidate| candidate.sketches.clone())
+                        .unwrap_or_default();
+                }
+                self.omitted.clone_from(&decoded.omitted);
+            }
+
+            /// The identities of the records of the arenas the wire omits.
+            #[must_use]
+            pub fn omitted_record_ids(&self) -> std::collections::BTreeSet<&str> {
+                use crate::schema::ArenaRecord;
+                let mut ids = std::collections::BTreeSet::new();
+                $(ids.extend(self.$field.iter().map(|record| record.record_identity()));)*
+                ids
+            }
+
+            /// Borrow the arenas the wire omits in canonical identity order.
+            pub(crate) fn sorted_omitted(&self) -> SortedOmittedArenas<'_> {
+                SortedOmittedArenas { $($field: sorted_model_value!(self, $field),)* }
+            }
+        }
+    };
+}
+
+wire_omitted_arenas!(declare_wire_omitted);
+
+impl Model {
+    /// Whether this model holds the arenas the CADIR wire leaves out
+    /// ([`ArenaName::WIRE_OMITTED`]). A model read from CADIR JSON does not:
+    /// its empty arenas there state no deletion, and a writer that applies
+    /// edits from them has nothing to compare.
+    #[must_use]
+    pub fn omitted_arenas_held(&self) -> bool {
+        matches!(self.omitted, OmittedArenas::Held { .. })
+    }
+
+    /// The digest of the arenas the wire omits that the decode wrapper
+    /// recorded, while the model holds them.
+    pub(crate) fn omitted_arenas_baseline(&self) -> Option<&str> {
+        match &self.omitted {
+            OmittedArenas::Held { baseline } => baseline.as_deref(),
+            OmittedArenas::NotRead => None,
+        }
+    }
+
+    /// The arenas the wire omits as one JSON object keyed by arena, each
+    /// record in its own JSON form and the arenas in canonical identity order,
+    /// for a caller that compares two documents in one process.
+    /// Serialize every arena the CADIR wire omits into a JSON value.
+    pub fn omitted_arenas_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        let sorted = self.sorted_omitted();
+        cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| sorted.serialize(adapter))
+    }
+
+    /// Record `digest` as the baseline of the arenas the wire omits.
+    pub(crate) fn record_omitted_arenas_baseline(&mut self, digest: String) {
+        if let OmittedArenas::Held { baseline } = &mut self.omitted {
+            *baseline = Some(digest);
+        }
+    }
+}
 
 /// Borrowed geometry and topology arenas for an embedded semantic record.
 pub struct GeometrySnapshot<'a> {
@@ -1849,6 +2249,46 @@ impl ProceduralCarrierError {
 }
 
 impl Topology {
+    /// Adds `surface`, a cage that the source holds as an object of its own,
+    /// with the body, region, and shell that hold it (§5.6): the shell's
+    /// `members` list the cage and nothing else, and the body is a solid where
+    /// every edge of the cage borders two of its faces and a sheet otherwise.
+    /// Returns the body, for the caller to state the object's display name,
+    /// colour, and visibility.
+    pub fn push_cage_object(
+        &mut self,
+        surface: SubdSurface,
+        body: crate::ids::BodyId,
+        region: crate::ids::RegionId,
+        shell: crate::ids::ShellId,
+    ) -> &mut Body {
+        let kind = if surface.cage.is_closed() {
+            crate::topology::BodyKind::Solid
+        } else {
+            crate::topology::BodyKind::Sheet
+        };
+        let mut cage_shell = Shell::new(shell.clone(), region.clone());
+        cage_shell.members.push(crate::topology::ShellMember::Subd {
+            id: surface.id.clone(),
+        });
+        self.subds.push(surface);
+        self.shells.push(cage_shell);
+        self.regions
+            .push(Region::new(region, body.clone(), vec![shell]));
+        let index = self.bodies.len();
+        self.bodies.push(Body {
+            id: body,
+            kind,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            unstated: None,
+            native_ref: None,
+        });
+        &mut self.bodies[index]
+    }
+
     /// Returns the unique surface that carries `construction`.
     #[must_use]
     pub fn procedural_surface_owner(
@@ -2052,8 +2492,7 @@ impl Topology {
 /// missing-field or type error. This is the single version gate: both
 /// [`Deserialize`] for [`CadIr`] and [`CadIr::from_json`] call it.
 fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) -> Result<(), E> {
-    let version = version.and_then(serde_json::Value::as_str);
-    if version != Some(IR_VERSION) {
+    if version.and_then(serde_json::Value::as_str) != Some(IR_VERSION) {
         return Err(E::custom(legacy::unsupported_version(version)));
     }
     Ok(())
@@ -2189,7 +2628,9 @@ struct CadIrWriteWire<'a> {
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
+    #[serde(serialize_with = "Topology::serialize_direct")]
     geometry: &'a Topology,
+    #[serde(serialize_with = "Model::serialize_direct")]
     model: &'a Model,
     design: &'a Design,
     process: &'a Process,
@@ -2214,15 +2655,28 @@ struct CadIrReadWire {
     #[serde(rename = "units")]
     _units: CanonicalUnitsWire,
     tolerances: Tolerances,
+    #[serde(deserialize_with = "Topology::deserialize_direct")]
     geometry: Topology,
+    #[serde(deserialize_with = "Model::deserialize_direct")]
     model: Model,
     design: Design,
     process: Process,
     native: Native,
 }
 
-impl Serialize for CadIr {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+impl CadIrReadWire {
+    fn deserialize_erased(
+        deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
+    ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
+        Self::deserialize(deserializer)
+    }
+}
+
+impl CadIr {
+    pub(crate) fn serialize_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
         self.check_scope().map_err(serde::ser::Error::custom)?;
         if !(self.design.is_finalized()
             && self.process.is_finalized()
@@ -2230,7 +2684,7 @@ impl Serialize for CadIr {
         {
             let mut sorted = self.clone();
             sorted.finalize();
-            return sorted.serialize(serializer);
+            return sorted.serialize_erased(serializer);
         }
         CadIrWriteWire {
             ir_version: IrVersion,
@@ -2248,25 +2702,141 @@ impl Serialize for CadIr {
         }
         .serialize(serializer)
     }
+
+    fn serialize_neutral_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        self.check_scope().map_err(serde::ser::Error::custom)?;
+        let sorted_design;
+        let design = if self.design.is_finalized() {
+            &self.design
+        } else {
+            sorted_design = {
+                let mut design = self.design.clone();
+                design.finalize();
+                design
+            };
+            &sorted_design
+        };
+        let sorted_process;
+        let process = if self.process.is_finalized() {
+            &self.process
+        } else {
+            sorted_process = {
+                let mut process = self.process.clone();
+                process.finalize();
+                process
+            };
+            &sorted_process
+        };
+        let empty_native = Native::default();
+        CadIrWriteWire {
+            ir_version: IrVersion,
+            fragment: self.fragment,
+            repro: self.repro.as_deref(),
+            scope: self.scope,
+            source: self.source.as_ref(),
+            units: CanonicalUnitsWire::default(),
+            tolerances: &self.tolerances,
+            geometry: &self.geometry,
+            model: &self.model,
+            design,
+            process,
+            native: &empty_native,
+        }
+        .serialize(serializer)
+    }
+
+    /// Serialize the neutral wire form (`geometry`, `model`, `design`,
+    /// `process`, `units`, `tolerances`, and `source`) into a JSON value
+    /// with an empty `native` namespace, avoiding native serialization work
+    /// for callers that compare neutral records alone.
+    pub fn to_neutral_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+            self.serialize_neutral_erased(adapter)
+        })
+    }
+}
+
+impl Serialize for CadIr {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+            self.serialize_erased(adapter)
+        })
+    }
 }
 
 impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = CadIrReadWire::deserialize(deserializer)?;
+        let wire = cadmpeg_core::serde_erase::deserialize_with(
+            deserializer,
+            CadIrReadWire::deserialize_erased,
+        )?;
         check_ir_version(wire.ir_version.as_ref())?;
-        wire.admit_state_chains()
-            .map_err(serde::de::Error::custom)?;
-        wire.try_into().map_err(serde::de::Error::custom)
+        wire.check_arena_order().map_err(serde::de::Error::custom)?;
+        wire.admit()
+    }
+}
+
+impl CadIr {
+    /// Parses a document that another document was projected into: each
+    /// arena keeps the order and the repeated ids the projection states, so
+    /// a reproduction of an arena-order finding still reproduces it.
+    ///
+    /// # Errors
+    ///
+    /// Where `value` is not a document of this IR version.
+    pub fn from_projection(value: serde_json::Value) -> Result<Self, serde_json::Error> {
+        let wire =
+            cadmpeg_core::serde_erase::deserialize_with(value, CadIrReadWire::deserialize_erased)?;
+        check_ir_version(wire.ir_version.as_ref())?;
+        wire.admit()
     }
 }
 
 impl CadIrReadWire {
+    fn admit<E: serde::de::Error>(self) -> Result<CadIr, E> {
+        self.admit_state_chains().map_err(E::custom)?;
+        self.try_into().map_err(E::custom)
+    }
+
+    /// Refuses an arena whose records do not state their ids in strictly
+    /// increasing order.
+    fn check_arena_order(&self) -> Result<(), String> {
+        let unordered = [
+            (
+                "geometry",
+                self.geometry.unordered_arena().map(str::to_owned),
+            ),
+            ("model", self.model.unordered_arena().map(str::to_owned)),
+            ("design", self.design.unordered_arena().map(str::to_owned)),
+            ("process", self.process.unordered_arena().map(str::to_owned)),
+            ("native", self.native.unordered_arena()),
+        ];
+        match unordered
+            .into_iter()
+            .find_map(|(home, arena)| Some((home, arena?)))
+        {
+            Some((home, arena)) => Err(format!(
+                "`{home}.{arena}` states its records out of id order or states an id twice"
+            )),
+            None => Ok(()),
+        }
+    }
+
     /// Walks every chain of state bases, through the process states and the
     /// evaluations they rest on, under the state chain ceiling.
     fn admit_state_chains(&self) -> Result<(), String> {
-        let evaluations = crate::design::evaluation::admit_state_chains(&self.design.evaluations)?;
-        crate::process::state::admit_state_chains(&self.process.states, &evaluations)
+        admit_state_chains(&self.design, &self.process, Cycles::Refuse)
     }
+}
+
+/// Walks every chain of state bases of `design` and `process` under the
+/// state chain ceiling.
+fn admit_state_chains(design: &Design, process: &Process, cycles: Cycles) -> Result<(), String> {
+    let evaluations = crate::design::evaluation::admit_state_chains(&design.evaluations, cycles)?;
+    crate::process::state::admit_state_chains(&process.states, &evaluations, cycles)
 }
 
 impl TryFrom<CadIrReadWire> for CadIr {
@@ -2444,6 +3014,7 @@ impl CadIr {
         format: &str,
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
+        let codec = crate::native::namespace_codec(format)?;
         let records = crate::native::arena_from(
             ctx,
             records.into_iter().map(|record| {
@@ -2459,14 +3030,10 @@ impl CadIr {
             }
         }
 
-        let key = "unknowns".to_owned();
-        if let Some(namespace) = self.native.0.get_mut(format) {
-            namespace.arenas_mut().insert(key, records);
-        } else {
-            let mut namespace = crate::native::NativeNamespace::default();
-            namespace.arenas_mut().insert(key, records);
-            self.native.0.insert(format.to_owned(), namespace);
-        }
+        self.native
+            .namespace_mut(codec)
+            .arenas_mut()
+            .insert(cadmpeg_core::nonblank_literal!("unknowns"), records);
         Ok(())
     }
 
@@ -2601,12 +3168,16 @@ impl CadIr {
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         canonical.finalize();
-        crate::hash::finite_json::to_canonical_json_string(&canonical)
+        crate::hash::finite_json::to_canonical_json_string_erased(&|serializer| {
+            canonical.serialize_erased(serializer)
+        })
     }
 
-    /// Parse JSON and reject any unsupported `ir_version`, or a document
-    /// whose scope excludes a class it holds records of. Every float zero,
-    /// `-0` and `-0.0` included, reads as 0 (§2.5).
+    /// Parse canonical JSON and reject any unsupported `ir_version`, any
+    /// spelling or value [`CadIr::read`] repairs or gives up, a document whose
+    /// scope excludes a class it holds records of, or one that nests deeper
+    /// than a CADIR document's bound. Every float zero, `-0` and `-0.0`
+    /// included, reads as 0 (§2.5).
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
@@ -2623,17 +3194,20 @@ impl CadIr {
             "ir_version"
         );
 
-        let probe = serde_json::from_str::<VersionProbe>(s)?;
+        let probe = crate::bounds::read_json::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        one_zero::from_str::<Self>(s)
+        one_zero::from_str::<Self>(s).map_err(|error| {
+            match legacy::omitted_arena_refusal(&error.to_string()) {
+                Some(refusal) => serde::de::Error::custom(refusal),
+                None => error,
+            }
+        })
     }
 
     /// Sorts every arena of the document's homes and native namespaces by
-    /// id, keeping records of one id in their present order, then keeps the
-    /// first record of each id and drops the later ones. Returns each
-    /// repeated id whose copies differ; copies that hold one value are one
-    /// record and are not returned. The arenas of a state's delta are left as
-    /// they are.
+    /// id, then states one record of each id whose copies hold one value and
+    /// none of an id whose copies differ. Returns each id whose copies
+    /// differ. The arenas of a state's delta are left as they are.
     pub(crate) fn drop_repeated_ids(&mut self) -> Vec<RepeatedId> {
         self.finalize();
         let mut repeated = self.geometry.drop_repeated_ids("topology");
@@ -2642,6 +3216,69 @@ impl CadIr {
         repeated.extend(self.process.drop_repeated_ids("process"));
         repeated.extend(self.native.drop_repeated_ids());
         repeated
+    }
+
+    /// Removes the record at `place`, returning its id and the ids of the
+    /// procedural constructions it was the owning carrier of, which are
+    /// removed with it: the document states no construction without its
+    /// carrier.
+    pub(crate) fn remove_record(
+        &mut self,
+        place: &crate::bounds::Place,
+    ) -> Option<(String, Vec<String>)> {
+        use crate::bounds::Place;
+        let owned = self.owned_constructions();
+        let id = match place {
+            Place::Home { home, arena, index } => match home.as_str() {
+                "geometry" => self.geometry.remove_record(arena, *index),
+                "model" => self.model.remove_record(arena, *index),
+                "design" => self.design.remove_record(arena, *index),
+                "process" => self.process.remove_record(arena, *index),
+                _ => None,
+            },
+            Place::Native {
+                codec,
+                arena,
+                index,
+            } => self.native.remove_record(codec, arena, *index),
+        }?;
+        let still = self.owned_constructions();
+        let lost =
+            |construction: &str| owned.contains(construction) && !still.contains(construction);
+        let mut dropped = Vec::new();
+        self.geometry.procedural_curves.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        self.geometry.procedural_surfaces.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        Some((id, dropped))
+    }
+
+    /// The ids of the procedural constructions a curve or surface carrier
+    /// owns.
+    fn owned_constructions(&self) -> std::collections::BTreeSet<String> {
+        let curves = self
+            .geometry
+            .curves
+            .iter()
+            .filter_map(|curve| curve.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        let surfaces = self
+            .geometry
+            .surfaces
+            .iter()
+            .filter_map(|surface| surface.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        curves.chain(surfaces).collect()
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record
@@ -2661,13 +3298,6 @@ impl CadIr {
 }
 
 /// Source-container metadata preserved for reporting.
-///
-/// Attribute keys ending in [`crate::compare::LOCAL_DIGEST_SUFFIX`] hold
-/// machine-local digests over decoded content for the write-path edit oracle.
-/// Not portable across platforms; not tolerance-aware. Digests over retained
-/// source bytes must not use that suffix. See
-/// [`crate::hash::document_local_sha256`] and
-/// [`crate::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2682,7 +3312,7 @@ pub struct SourceMeta {
 impl SourceMeta {
     pub(crate) fn repro_header(&self) -> Self {
         Self {
-            identity: FormatIdentity::unclassified(self.format()),
+            identity: FormatIdentity::unclassified(self.identity.codec()),
             attributes: BTreeMap::new(),
         }
     }
@@ -2696,13 +3326,6 @@ impl SourceMeta {
             identity: FormatIdentity::classified(dialects),
             attributes,
         }
-    }
-
-    pub(crate) fn normalized_digest_copy(&self) -> Self {
-        let mut copy = self.clone();
-        copy.attributes
-            .remove(crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-        copy
     }
 
     /// The complete source identity: format plus classified layers, if any.

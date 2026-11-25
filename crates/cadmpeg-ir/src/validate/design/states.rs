@@ -8,12 +8,13 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::design::evaluation::{CurrentState, Evaluation, StateBase};
+use crate::design::evaluation::{CurrentState, Evaluation, StateBase, StateDelta};
 use crate::design::names::NameEntry;
 use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::{CadIr, Topology};
-use crate::topology::{EdgeCarrier, ShellMember};
+use crate::ids::ProductDefinitionId;
+use crate::topology::EdgeCarrier;
 
 use super::records::PositionKey;
 use super::resolved::{records, Arena};
@@ -41,12 +42,19 @@ pub(super) struct Extent<'a> {
     pub(super) records: HashSet<&'a str>,
 }
 
+/// The records one `instance_bodies` entry of the current geometry reaches.
+pub(super) struct Instance<'a> {
+    pub(super) path: &'a OccurrencePath,
+    pub(super) records: HashSet<&'a str>,
+}
+
 /// The resolved states of a document's evaluations and current states.
 pub(super) struct States<'a> {
     ir: &'a CadIr,
     geometry: HashMap<&'a str, Arena>,
     layers: HashMap<&'a str, Layer<'a>>,
     pub(super) extents: Vec<Extent<'a>>,
+    pub(super) instances: Vec<Instance<'a>>,
 }
 
 /// A stored evaluation's chain of deltas, from its own down.
@@ -58,9 +66,9 @@ pub(super) struct Chain<'s, 'a> {
 }
 
 /// Where a lookup in an evaluation's chain stops.
-enum Bottom<'a> {
+enum Bottom<'s, 'a> {
     Empty,
-    Current(&'a Extent<'a>),
+    Current(&'s Extent<'a>),
 }
 
 impl<'a> States<'a> {
@@ -89,6 +97,7 @@ impl<'a> States<'a> {
             .iter()
             .any(|scope| !scope.current.is_empty());
         let mut extents: Vec<Extent<'a>> = Vec::new();
+        let mut instances: Vec<Instance<'a>> = Vec::new();
         if has_extents {
             let reach = Reach::new(&ir.geometry);
             for scope in &ir.design.scopes {
@@ -101,12 +110,22 @@ impl<'a> States<'a> {
                     });
                 }
             }
+            for definition in &ir.model.product_definitions {
+                for entry in &definition.instance_bodies {
+                    instances.push(Instance {
+                        path: &entry.occurrence,
+                        records: reach
+                            .reached_from(entry.bodies.iter().map(crate::ids::BodyId::as_str)),
+                    });
+                }
+            }
         }
         Self {
             ir,
             geometry: entities(&ir.geometry),
             layers,
             extents,
+            instances,
         }
     }
 
@@ -234,28 +253,66 @@ impl<'a> States<'a> {
     /// The instance paths with bodies in the resolved state of a stored
     /// evaluation, down to the first base outside the evaluations.
     pub(super) fn instance_paths(&self, evaluation: &str) -> Vec<&'a OccurrencePath> {
-        let mut paths = BTreeMap::new();
+        let (paths, _) = self.merged(evaluation, |delta| &delta.instance_bodies);
+        paths
+            .into_iter()
+            .filter_map(|(path, bodies)| bodies.map(|_| path))
+            .collect()
+    }
+
+    /// The owner of each occurrence that the resolved state of a stored
+    /// evaluation restates in `members`.
+    pub(super) fn members(&self, evaluation: &str) -> BTreeMap<&'a str, &'a ProductDefinitionId> {
+        let (members, _) = self.merged(evaluation, |delta| &delta.members);
+        members
+            .into_iter()
+            .filter_map(|(occurrence, owner)| owner.map(|owner| (occurrence.as_str(), owner)))
+            .collect()
+    }
+
+    /// The paths with a pose in the resolved state of a stored evaluation,
+    /// the poses of the current state its chain ends on included.
+    pub(super) fn pose_paths(&self, evaluation: &str) -> Vec<&'a OccurrencePath> {
+        let (mut poses, bottom) = self.merged(evaluation, |delta| &delta.poses);
+        if let Some(extent) = bottom {
+            for (path, pose) in &extent.state.poses {
+                poses.entry(path).or_insert(Some(pose));
+            }
+        }
+        poses
+            .into_iter()
+            .filter_map(|(path, pose)| pose.map(|_| path))
+            .collect()
+    }
+
+    /// Each key of one delta map in a stored evaluation's chain, with its
+    /// entry in the topmost delta that states it (`None` removes it), and the
+    /// current state's extent the chain ends on, where it ends on one.
+    fn merged<K: Ord, V>(
+        &self,
+        evaluation: &str,
+        map: impl Fn(&'a StateDelta) -> &'a BTreeMap<K, Option<V>>,
+    ) -> (BTreeMap<&'a K, Option<&'a V>>, Option<&Extent<'a>>) {
+        let mut entries = BTreeMap::new();
         let Some(mut at) = self.layers.get(evaluation) else {
-            return Vec::new();
+            return (entries, None);
         };
         for _ in 0..=self.layers.len() {
             if let Some(content) = &at.evaluation.content {
-                for (path, bodies) in &content.delta.instance_bodies {
-                    paths.entry(path).or_insert(bodies.is_some());
+                for (key, value) in map(&content.delta) {
+                    entries.entry(key).or_insert(value.as_ref());
                 }
             }
             match self.bottom_or_next(at) {
                 Some(Ok(next)) => at = next,
-                Some(Err(_)) | None => break,
+                Some(Err(Bottom::Current(extent))) => return (entries, Some(extent)),
+                Some(Err(Bottom::Empty)) | None => break,
             }
         }
-        paths
-            .into_iter()
-            .filter_map(|(path, held)| held.then_some(path))
-            .collect()
+        (entries, None)
     }
 
-    fn bottom_or_next(&self, layer: &Layer<'a>) -> Option<Result<&Layer<'a>, Bottom<'_>>> {
+    fn bottom_or_next(&self, layer: &Layer<'a>) -> Option<Result<&Layer<'a>, Bottom<'_, 'a>>> {
         let evaluation = layer.evaluation;
         let content = evaluation.content.as_ref()?;
         Some(match &content.base {
@@ -285,10 +342,7 @@ impl<'a> Reach<'a> {
         for shell in &topology.shells {
             add(shell.region.as_str(), shell.id.as_str());
             for member in &shell.members {
-                match member {
-                    ShellMember::WireEdge { id } => add(shell.id.as_str(), id.as_str()),
-                    ShellMember::FreeVertex { id } => add(shell.id.as_str(), id.as_str()),
-                }
+                add(shell.id.as_str(), member.as_str());
             }
         }
         for face in &topology.faces {

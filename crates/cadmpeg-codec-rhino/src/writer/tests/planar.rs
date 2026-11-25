@@ -370,29 +370,30 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
 }
 
 #[test]
-fn open_planar_solid_is_rejected_before_output() {
+fn open_planar_solid_is_written_as_an_open_brep_and_named() {
     let mut ir = adjacent_quad_sheet();
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("incidence"));
-    assert_eq!(output, [0xaa]);
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert_eq!(
+        decoded.geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/record.invalid")
+                && loss.contains("written as an open Brep")),
+        "{losses:?}"
+    );
 }
 
 /// A stated tolerance finer than the Rhino Brep write route resolves.
 const EPS_BELOW_WRITE_BOUND: f64 = 1.0e-12;
 
-/// Decimal rendering of `EPS_BELOW_WRITE_BOUND` in a refusal message.
-const EPS_BELOW_WRITE_BOUND_TEXT: &str = "0.000000000001";
-
 #[test]
-fn sub_resolution_edge_tolerance_is_refused_before_output() {
+fn sub_resolution_edge_tolerance_is_written_unchanged() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -402,23 +403,14 @@ fn sub_resolution_edge_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveLength::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
-    let message = error.to_string();
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("edge#polygon.0"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let (decoded, _) = super::written(&ir);
+    assert!(decoded.geometry.edges.iter().any(|edge| edge
+        .tolerance
+        .is_some_and(|tolerance| tolerance.get() == EPS_BELOW_WRITE_BOUND)));
 }
 
 #[test]
-fn sub_resolution_face_tolerance_is_refused_before_output() {
+fn sub_resolution_face_tolerance_is_written_unchanged() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -428,19 +420,8 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveLength::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
-    let message = error.to_string();
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("face#polygon"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let (decoded, _) = super::written(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 1);
 }
 
 #[test]
@@ -464,4 +445,120 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
         }
         assert_eq!(planar_solid_orientation(&model), 2);
     }
+}
+
+/// `adjacent_quad_sheet` with its second face on a plane whose normal is
+/// `-z` and with the face reversed: the face keeps its `+z` side.
+fn adjacent_sheet_with_reversed_face() -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let mut ir = adjacent_quad_sheet();
+    ir.geometry.surfaces[1].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("a plane frame"),
+    ));
+    ir.geometry.faces[1].sense = cadmpeg_ir::topology::Sense::Reversed;
+    ir
+}
+
+/// The senses of the two uses of the edge two decoded faces share.
+fn shared_edge_senses(ir: &cadmpeg_ir::document::CadIr) -> Vec<cadmpeg_ir::topology::Sense> {
+    let shared = ir
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| {
+            ir.geometry
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+                .count()
+                == 2
+        })
+        .expect("the faces share an edge");
+    ir.geometry
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == shared.id)
+        .map(|coedge| coedge.sense)
+        .collect()
+}
+
+#[test]
+fn reversed_face_of_a_consistent_shell_keeps_its_shared_edge() {
+    let ir = adjacent_sheet_with_reversed_face();
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1, "{losses:?}");
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert_eq!(decoded.geometry.edges.len(), 7);
+    assert_eq!(
+        decoded
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.sense)
+            .collect::<Vec<_>>(),
+        [
+            cadmpeg_ir::topology::Sense::Forward,
+            cadmpeg_ir::topology::Sense::Reversed
+        ]
+    );
+    let senses = shared_edge_senses(&decoded);
+    assert_ne!(senses[0], senses[1]);
+    let validation =
+        cadmpeg_ir::validate_neutral(&decoded, Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")
+                && !loss.contains("writer.edge-unjoined")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn shared_edge_with_equal_uses_is_written_as_two_edges() {
+    use cadmpeg_ir::topology::Sense;
+
+    let mut ir = adjacent_sheet_with_reversed_face();
+    let ring = ir.geometry.loops[1]
+        .coedges()
+        .iter()
+        .rev()
+        .cloned()
+        .collect();
+    ir.geometry.loops[1]
+        .replace_ring(ring, Vec::new())
+        .expect("the reversed ring");
+    for coedge in &mut ir.geometry.coedges[4..8] {
+        coedge.sense = match coedge.sense {
+            Sense::Forward => Sense::Reversed,
+            Sense::Reversed => Sense::Forward,
+        };
+    }
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 2, "{losses:?}");
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert_eq!(decoded.geometry.edges.len(), 8);
+    assert!(
+        losses.iter().any(|loss| loss
+            .contains(crate::loss::RhinoLossCode::WriterEdgeUnjoined.code())
+            && loss.contains("cadir:model:edge#adjacent.1")),
+        "{losses:?}"
+    );
+    assert!(
+        losses.iter().any(|loss| loss.contains("writer.body-split")),
+        "{losses:?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
 }

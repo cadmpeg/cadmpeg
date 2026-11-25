@@ -280,7 +280,7 @@ fn rollback_position(
 fn host<T>(scopes: &BTreeMap<String, T>, prefix: &str) -> String {
     scopes
         .keys()
-        .filter(|scoped| prefix.starts_with(scoped.as_str()))
+        .filter(|scoped| timeline::within(prefix, scoped))
         .max_by_key(|scoped| scoped.len())
         .cloned()
         .unwrap_or_default()
@@ -296,11 +296,10 @@ fn scope_definition(
     if prefix.is_empty() {
         return Some(root_definition(definitions));
     }
-    let member = crate::ids::archive_product_definition_id();
-    let id = format!("f3d:{prefix}{}", member.as_str().strip_prefix("f3d:")?);
+    let key = prefix.strip_suffix('@')?;
     definitions
         .iter()
-        .find(|definition| definition.id.as_str() == id)
+        .find(|definition| crate::ids::member_definition_key(definition.id.as_str()) == Some(key))
         .map(|definition| definition.id.clone())
 }
 
@@ -338,11 +337,10 @@ fn span<T>(
             .find(|(_, (scoped, _))| scoped == &definition.id)
             .map(|(prefix, _)| prefix);
         let spanning = || {
-            let id = definition.id.as_str();
-            let local = id.strip_prefix("f3d:").unwrap_or(id);
+            let document = timeline::document_prefix(definition.id.as_str());
             scopes
                 .keys()
-                .filter(|prefix| local.starts_with(prefix.as_str()))
+                .filter(|prefix| timeline::within(document, prefix))
                 .max_by_key(|prefix| prefix.len())
         };
         let prefix = match &definition.storage {

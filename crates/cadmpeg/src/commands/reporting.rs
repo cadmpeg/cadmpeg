@@ -35,18 +35,6 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) -> Result<()> {
             render_attribute(change.right.as_deref())
         );
     }
-    if source.local_digests.is_empty() {
-        return Ok(());
-    }
-    println!("  machine-local digests (informational, not a difference):");
-    for change in &source.local_digests {
-        println!(
-            "    {}: {} → {}",
-            change.key,
-            render_attribute(change.left.as_deref()),
-            render_attribute(change.right.as_deref())
-        );
-    }
     Ok(())
 }
 
@@ -488,9 +476,10 @@ pub(crate) fn print_check_report(
     for finding in &report.findings {
         writeln!(
             writer,
-            "  [{}/{}] {} ({})",
+            "  [{}/{}] {}: {} ({})",
             finding.severity,
             finding.check,
+            finding.rule,
             finding.message,
             finding.entity.as_deref().unwrap_or("-")
         )?;
@@ -545,6 +534,33 @@ mod tests {
                     "retained_records_changed": false
                 }
             })
+        );
+    }
+
+    #[test]
+    fn a_check_line_names_the_rule_of_its_finding() {
+        use cadmpeg_ir::report::check::{Check, Finding, ValidationReport};
+        use cadmpeg_ir::report::Severity;
+        let report = ValidationReport {
+            entity_counts: std::collections::BTreeMap::default(),
+            findings: vec![Finding {
+                check: Check::ReferentialIntegrity,
+                rule: cadmpeg_ir::rule_name!("referential_integrity.unresolved-typed-reference"),
+                severity: Severity::Error,
+                message: "unresolved typed reference f1".into(),
+                entity: Some("e1".into()),
+                related: Vec::new(),
+            }],
+            losses: Vec::new(),
+        };
+        let mut out = Vec::new();
+        super::print_check_report(&mut out, &report).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(
+            out.lines().any(|line| line
+                == "  [error/referential_integrity] referential_integrity.unresolved-typed-reference: \
+                    unresolved typed reference f1 (e1)"),
+            "{out}"
         );
     }
 }

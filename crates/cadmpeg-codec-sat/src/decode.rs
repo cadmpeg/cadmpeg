@@ -516,8 +516,17 @@ fn build_result(
             unknowns,
             stats,
             annotation_records,
+            unbounded_faces,
         },
-    ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
+    ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
+    for face in &unbounded_faces {
+        losses.push(SatLossCode::TopologyFaceBoundaryUnstated.note(format!(
+            "face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
+            face.record_index,
+            face.surface_kind,
+            face.face.as_str()
+        )));
+    }
 
     let geometry_transferred = !(ir.geometry.surfaces.is_empty()
         && ir.geometry.points.is_empty()

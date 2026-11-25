@@ -33,7 +33,7 @@ pub struct CameraState {
 /// Closed set of document GUI state families.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum PresentationStateKind {
     /// Persisted camera pose.
@@ -253,8 +253,8 @@ pub struct ViewPresentation {
 // Named presentation layers and their model-item membership.
 
 use crate::ids::{
-    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId, ProductDefinitionId,
-    SurfaceId, VertexId,
+    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointCloudId, PointId,
+    ProductDefinitionId, SurfaceId, VertexId,
 };
 
 /// A model or presentation object assigned to a layer.
@@ -318,6 +318,11 @@ pub enum PresentationItem {
         /// Assigned tessellation identity.
         tessellation: String,
     },
+    /// Point cloud.
+    PointCloud {
+        /// Assigned point cloud.
+        point_cloud: PointCloudId,
+    },
     /// Source item whose neutral target type is not modeled.
     Source {
         /// Stable source item identity.
@@ -360,6 +365,13 @@ pub struct PresentationLayer {
     /// Assigned items, each in the placed instance and the state that hold
     /// it, in deterministic projection order; order has no semantic meaning.
     pub items: Vec<crate::references::InstanceTarget<PresentationItem>>,
+    /// Identifier of the full-fidelity source record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 cadmpeg_core::named_optional_field!(
@@ -545,8 +557,10 @@ mod tests {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }
             .into()],
+            native_ref: None,
         });
 
+        crate::examples::add_document_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -565,8 +579,10 @@ mod tests {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }
             .into()],
+            native_ref: None,
         });
 
+        crate::examples::add_document_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -585,6 +601,7 @@ mod tests {
                 face: FaceId::mint("test:model:face#missing").expect("valid identity"),
             }
             .into()],
+            native_ref: None,
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -603,6 +620,7 @@ mod tests {
             description: None,
             visible,
             items: Vec::new(),
+            native_ref: None,
         }
     }
 
@@ -659,6 +677,45 @@ mod tests {
     }
 
     #[test]
+    fn layer_parents_form_no_cycle() {
+        let on_cycle = |ir: &CadIr| {
+            let mut layers: Vec<String> = validate_neutral(ir, Vec::new())
+                .expect("validate the neutral model")
+                .findings
+                .into_iter()
+                .filter(|finding| {
+                    finding.severity == crate::report::Severity::Error
+                        && finding.message
+                            == "presentation layer is its own ancestor through `parent`"
+                })
+                .filter_map(|finding| finding.entity)
+                .collect();
+            layers.sort_unstable();
+            layers
+        };
+        let mut ir = CadIr::empty();
+        ir.model.presentation_layers = vec![
+            layer("a", Some("c"), None),
+            layer("b", Some("a"), None),
+            layer("c", Some("b"), None),
+            layer("d", Some("a"), None),
+        ];
+        assert_eq!(
+            on_cycle(&ir),
+            [
+                "test:presentation:layer#a",
+                "test:presentation:layer#b",
+                "test:presentation:layer#c",
+            ]
+        );
+        ir.model.presentation_layers[0].parent = None;
+        assert!(on_cycle(&ir).is_empty());
+        ir.model.presentation_layers[3].parent =
+            Some(LayerId::mint("test:presentation:layer#d".to_owned()).unwrap());
+        assert_eq!(on_cycle(&ir), ["test:presentation:layer#d"]);
+    }
+
+    #[test]
     fn source_identity_admission_preserves_nonempty_wire() {
         let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
         let value: PresentationItem =
@@ -670,6 +727,30 @@ mod tests {
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
         assert!(cadmpeg_core::text::NonBlankString::new("").is_none());
+    }
+
+    #[test]
+    fn documents_and_view_orders_may_repeat_across_sources() {
+        let mut ir = CadIr::empty();
+        for key in ["assembly", "part"] {
+            ir.model
+                .presentation_documents
+                .push(PresentationDocument::new(
+                    PresentationId::mint(format!("test:presentation:document#{key}"))
+                        .expect("valid identity"),
+                ));
+            ir.model.view_presentations.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": format!("test:presentation:view#{key}"),
+                    "order": 1,
+                    "properties": {}
+                }))
+                .expect("valid wire"),
+            );
+        }
+        crate::examples::add_document_root(&mut ir);
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+        assert!(report.is_ok(), "{:?}", report.findings);
     }
 
     #[test]

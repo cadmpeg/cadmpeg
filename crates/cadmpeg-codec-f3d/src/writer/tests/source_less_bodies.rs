@@ -647,7 +647,7 @@ fn generated_source_less_drops_lossy_asm_history_graphs() {
         .unwrap();
     let orphan = &mut orphaned
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
@@ -676,7 +676,7 @@ fn generated_source_less_drops_lossy_asm_history_graphs() {
         .unwrap();
     let states = duplicate
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .get_mut("asm_delta_states")
         .expect("delta-state arena");
