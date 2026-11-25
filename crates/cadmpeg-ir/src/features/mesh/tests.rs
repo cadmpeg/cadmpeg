@@ -195,14 +195,14 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
     let source_scope = "f3d:Design/BulkStream.dat:design-parameter-scope#7";
-    let target_scope = "f3d:xref/child/Design/BulkStream.dat:design-parameter-scope#7";
+    let target_scope = "f3d:child@Design/BulkStream.dat:design-parameter-scope#7";
     let replacements =
         std::collections::BTreeMap::from([(source_scope.to_owned(), target_scope.to_owned())]);
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
         let mut map = IdentityMap::new(|source: &str| {
             let source = source.strip_prefix("f3d:").unwrap();
-            Ok(format!("f3d:xref/child/{source}"))
+            Ok(format!("f3d:child@{source}"))
         })
         .with_text_replacements(&text);
         let resolved: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "tessellations", "value": [
@@ -226,8 +226,8 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         assert_eq!(
             serde_json::to_value(resolved).unwrap(),
             serde_json::json!({"kind": "tessellations", "value": [
-                "f3d:xref/child/mesh:tessellation#first",
-                "f3d:xref/child/mesh:tessellation#second"
+                "f3d:child@mesh:tessellation#first",
+                "f3d:child@mesh:tessellation#second"
             ]})
         );
         let native: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "native", "value": {
@@ -254,7 +254,7 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         let unresolved = unresolved.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
             serde_json::to_value(unresolved).unwrap(),
-            serde_json::json!({"kind": "unresolved", "value": {"feature":"f3d:xref/child/model:feature#import"}})
+            serde_json::json!({"kind": "unresolved", "value": {"feature":"f3d:child@model:feature#import"}})
         );
         map.finish()
     })
@@ -486,7 +486,7 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
     let source_scope = "f3d:Design/BulkStream.dat:design-parameter-scope#7";
-    let target_scope = "f3d:xref/child/Design/BulkStream.dat:design-parameter-scope#7";
+    let target_scope = "f3d:child@Design/BulkStream.dat:design-parameter-scope#7";
     let replacements =
         std::collections::BTreeMap::from([(source_scope.to_owned(), target_scope.to_owned())]);
     let wire = serde_json::json!({"kind": "mesh_convert", "value": {
@@ -500,10 +500,7 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
         let mut map = IdentityMap::new(|id: &str| {
-            Ok(format!(
-                "f3d:xref/child/{}",
-                id.strip_prefix("f3d:").unwrap()
-            ))
+            Ok(format!("f3d:child@{}", id.strip_prefix("f3d:").unwrap()))
         })
         .with_text_replacements(&text);
         let mut visited = Vec::new();
@@ -519,8 +516,8 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
         let mut expected = wire.clone();
         let sources = &mut expected["value"]["sources"];
         sources[0]["value"]["native"] = target_scope.into();
-        sources[1]["value"][0] = "f3d:xref/child/mesh:tessellation#source".into();
-        sources[2]["value"]["feature"] = "f3d:xref/child/model:feature#convert".into();
+        sources[1]["value"][0] = "f3d:child@mesh:tessellation#source".into();
+        sources[2]["value"]["feature"] = "f3d:child@model:feature#convert".into();
         assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
         map.finish()
     })

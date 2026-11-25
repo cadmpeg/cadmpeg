@@ -2500,8 +2500,7 @@ mod tests {
         }));
 
         let mut other_document = restored.xref_references[0].clone();
-        other_document.id =
-            "f3d:xref/role-other/reference-0/occurrence-0/xref:reference#0".to_owned();
+        other_document.id = "f3d:role-other/reference-0/occurrence-0@xref:reference#0".to_owned();
         let other_bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &[other_document],

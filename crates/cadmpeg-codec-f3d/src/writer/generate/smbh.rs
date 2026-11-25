@@ -2135,6 +2135,7 @@ fn apply_native_edge_owners(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::codec::write::MissingStateForm;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
@@ -2210,6 +2211,7 @@ mod tests {
         let mut valid_output = Vec::new();
         write_new(
             &target,
+            MissingStateForm::GeometryTrue,
             cadmpeg_core::decode::ResourceLimits::desktop(),
             &mut valid_output,
         )
@@ -2250,6 +2252,7 @@ mod tests {
             let mut output = Vec::new();
             let generated = write_new(
                 &target,
+                MissingStateForm::GeometryTrue,
                 cadmpeg_core::decode::ResourceLimits::desktop(),
                 &mut output,
             )

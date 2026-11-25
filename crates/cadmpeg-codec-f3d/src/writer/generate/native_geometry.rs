@@ -6223,6 +6223,7 @@ mod pcurve_chart_tests {
             let mut output = vec![0x93, 0x2a];
             let generated = crate::writer::generate::write_new(
                 &target,
+                cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
                 cadmpeg_core::decode::ResourceLimits::desktop(),
                 &mut output,
             )
