@@ -94,14 +94,17 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                 domain_extent_points: uv,
             };
             assert_eq!(
-                validate_nurbs_trim(&surface, EPS_FIT, &edge, Sense::Forward, &explicit).is_ok(),
+                matches!(
+                    validate_nurbs_trim(&surface, EPS_FIT, &edge, Sense::Forward, &explicit),
+                    Ok(None)
+                ),
                 x == 0.5
             );
         }
     }
 }
 
-/// The refusal of a trim over the unit NURBS square whose pcurve is `geometry`.
+/// The finding of a trim over the unit NURBS square whose pcurve is `geometry`.
 fn trim_error(geometry: PcurveGeometry) -> String {
     let curve = NurbsCurve::from_lanes(
         1,
@@ -114,7 +117,7 @@ fn trim_error(geometry: PcurveGeometry) -> String {
     trim_refusal(geometry, &curve, [0., 1.])
 }
 
-/// The refusal of a trim over the unit NURBS square whose pcurve is
+/// The finding of a trim over the unit NURBS square whose pcurve is
 /// `geometry` and whose edge runs along `curve` over `domain`.
 fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) -> String {
     let surface = NurbsSurface::from_lanes(
@@ -133,7 +136,7 @@ fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) 
     trim_refusal_on(&surface, geometry, curve, domain)
 }
 
-/// The refusal of a trim over `surface` whose pcurve is `geometry` and whose
+/// The finding of a trim over `surface` whose pcurve is `geometry` and whose
 /// edge runs along `curve` over `domain`.
 fn trim_refusal_on(
     surface: &NurbsSurface,
@@ -176,8 +179,8 @@ fn trim_refusal_on(
         domain_extent_points: vec![Point2::new(0.5, 0.), Point2::new(0.5, 1.)],
     };
     validate_nurbs_trim(surface, EPS_FIT, &edge, Sense::Forward, &explicit)
-        .expect_err("the pcurve has no point in the surface domain")
-        .to_string()
+        .expect("the trim check completes")
+        .expect("the pcurve has no point in the surface domain")
 }
 
 fn vertical_line_at_max() -> PcurveGeometry {
