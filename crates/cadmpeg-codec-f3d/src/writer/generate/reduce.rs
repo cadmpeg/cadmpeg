@@ -13,7 +13,8 @@
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
 //! form; only a failure to write that is returned. A failure of the design
-//! scope's records takes one fallback: the design scope is not written.
+//! scope's records takes one fallback: the design scope is not written. A
+//! failure of the ASM history of the timeline items drops those items first.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -33,6 +34,7 @@ use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -95,6 +97,8 @@ pub(super) enum Stage {
     Design,
     /// The records of the root definition's design scope.
     NeutralDesign,
+    /// The ASM history of the design scope's timeline items.
+    History,
     /// The archive itself: nothing in the document can avoid it.
     Archive,
 }
@@ -104,6 +108,8 @@ pub(super) enum Stage {
 pub(super) struct Failure {
     pub(super) stage: Stage,
     pub(super) error: CodecError,
+    /// The timeline feature the failure concerns, where it names one.
+    pub(super) cause: Option<FeatureId>,
 }
 
 impl Failure {
@@ -111,6 +117,7 @@ impl Failure {
         Self {
             stage: Stage::Brep,
             error,
+            cause: None,
         }
     }
 
@@ -118,6 +125,7 @@ impl Failure {
         Self {
             stage: Stage::Design,
             error,
+            cause: None,
         }
     }
 
@@ -125,6 +133,15 @@ impl Failure {
         Self {
             stage: Stage::NeutralDesign,
             error,
+            cause: None,
+        }
+    }
+
+    pub(super) fn history(error: CodecError, cause: Option<FeatureId>) -> Self {
+        Self {
+            stage: Stage::History,
+            error,
+            cause,
         }
     }
 
@@ -132,6 +149,7 @@ impl Failure {
         Self {
             stage: Stage::Archive,
             error,
+            cause: None,
         }
     }
 }
@@ -296,7 +314,11 @@ impl<'a> Reduction<'a> {
         failure: Failure,
         writes_alone: impl Fn(&CadIr, &crate::native::F3dNative, Stage) -> bool,
     ) -> Result<(), CodecError> {
-        let Failure { stage, error } = failure;
+        let Failure {
+            stage,
+            error,
+            cause,
+        } = failure;
         if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
             return Err(error);
         }
@@ -305,6 +327,11 @@ impl<'a> Reduction<'a> {
             Stage::Archive => false,
             Stage::NeutralDesign => {
                 self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
+            }
+            Stage::History => {
+                self.drop_history_items(&reason, cause)
+                    || self.drop_design_part(&reason)
+                    || self.drop_neutral_design(&reason)
             }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
@@ -1376,6 +1403,15 @@ impl<'a> Reduction<'a> {
             && self
                 .fallback
                 .drop_next(&self.ir, self.missing_states, reason)
+    }
+
+    /// Drop the timeline items whose states the history holds, the first
+    /// part a history failure concerns.
+    fn drop_history_items(&mut self, reason: &str, cause: Option<FeatureId>) -> bool {
+        self.writes_neutral_design()
+            && self
+                .fallback
+                .drop_item_history(&self.ir, self.missing_states, cause, reason)
     }
 
     /// Write no design scope: every design scope, container, feature and
