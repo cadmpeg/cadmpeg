@@ -23,9 +23,11 @@ fn definition(id: &str, occurrences: &[&str]) -> ProductDefinition {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
+    let mut ir = ir.clone();
+    crate::examples::add_document_root(&mut ir);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::super::check_products(&ctx, ir, &mut findings).unwrap();
+    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
     findings
 }
 
@@ -175,7 +177,7 @@ fn a_definition_does_not_place_itself() {
             ),
             (
                 Some("test:model:product#root".into()),
-                "product definition places itself".into()
+                "product definition is the prototype of an occurrence it owns, directly or transitively".into()
             )
         ]
     );
@@ -192,9 +194,12 @@ fn a_definition_does_not_place_itself() {
         messages(&ir),
         [(
             Some("test:model:product#part".into()),
-            "product definition places itself".into()
+            "product definition is the prototype of an occurrence it owns, directly or transitively".into()
         )]
     );
+    assert!(findings(&ir)
+        .iter()
+        .all(|finding| finding.severity == crate::report::Severity::Error));
 }
 
 #[test]
@@ -295,78 +300,4 @@ fn product_sketch_reference_cannot_repeat_in_one_definition() {
     assert_eq!(found[0].message, "duplicate product sketch reference");
     assert_eq!(found[0].entity.as_deref(), Some("test:model:product#one"));
     assert_eq!(found[0].severity, crate::report::Severity::Error);
-}
-
-/// A triangle mesh with the identity `id` that represents `body`.
-fn mesh(id: &str, body: Option<crate::ids::BodyId>) -> crate::tessellation::Tessellation {
-    use crate::math::Point3;
-    use crate::tessellation::{Tessellation, TessellationMesh};
-
-    Tessellation::new(
-        id.try_into().expect("valid identity"),
-        TessellationMesh::List {
-            vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            triangles: vec![[0, 1, 2]],
-        },
-        Vec::new(),
-    )
-    .expect("a valid mesh")
-    .with_body(body)
-}
-
-/// A part definition `id` that owns the meshes `tessellations`.
-fn mesh_part(id: &str, tessellations: &[&str]) -> ProductDefinition {
-    let mut row = definition(id, &[]);
-    row.kind = Some(crate::products::ProductDefinitionKind::Part);
-    row.tessellations = tessellations
-        .iter()
-        .map(|id| (*id).try_into().unwrap())
-        .collect();
-    row
-}
-
-#[test]
-fn product_tessellations_exist_represent_no_body_and_have_one_definition() {
-    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let messages = |ir: &CadIr| {
-        let mut findings = Vec::new();
-        super::super::check_products(&ctx, ir, &mut findings).unwrap();
-        findings
-            .into_iter()
-            .map(|finding| finding.message)
-            .collect::<Vec<_>>()
-    };
-    let shared = "test:model:tessellation#shared";
-    let mut ir = CadIr::empty();
-    ir.model.tessellations.push(mesh(shared, None));
-    ir.model
-        .product_definitions
-        .push(mesh_part("test:model:product#one", &[shared]));
-    assert!(messages(&ir).is_empty());
-
-    ir.model
-        .product_definitions
-        .push(mesh_part("test:model:product#two", &[shared]));
-    assert!(messages(&ir).contains(&"tessellation has multiple product definitions".to_owned()));
-    ir.model.product_definitions.pop();
-
-    ir.model.product_definitions[0] = mesh_part("test:model:product#one", &[shared, shared]);
-    assert!(messages(&ir).contains(&"duplicate product tessellation reference".to_owned()));
-
-    ir.model.product_definitions[0] = mesh_part(
-        "test:model:product#one",
-        &["test:model:tessellation#missing"],
-    );
-    assert!(messages(&ir).contains(&"invalid product tessellation reference".to_owned()));
-
-    ir.model.tessellations[0] = mesh(
-        shared,
-        Some("test:model:body#solid".try_into().expect("valid identity")),
-    );
-    ir.model.product_definitions[0] = mesh_part("test:model:product#one", &[shared]);
-    assert!(messages(&ir).contains(&"product tessellation represents a body".to_owned()));
 }

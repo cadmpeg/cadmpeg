@@ -2,8 +2,8 @@
 //! Rewrite the identities owned by these fields.
 
 use super::{
-    ChannelAddressing, ColorAddressing, MeshColors, ShadedTriangle, ShadedVertex, Strip, Strips,
-    Tessellation, TessellationChannel, TessellationMesh, TessellationTextureAssignment,
+    ChannelAddressing, ColorAddressing, MeshColors, Meshed, ShadedTriangle, ShadedVertex, Strip,
+    Strips, Tessellation, TessellationChannel, TessellationMesh, TessellationTextureAssignment,
     TessellationTriangleGroup, TextureCoordinateAddressing, TextureCoordinates,
 };
 
@@ -12,11 +12,18 @@ rewrite_enum!(ChannelAddressing, []; {
     Corner {indices},
     Triangle {indices},
 });
+rewrite_enum!(Meshed, []; {
+    Body {body, faces},
+    Display {definition},
+    Definition {definition, name, color, visible},
+    Pmi {pmi},
+    Unresolved,
+});
 rewrite_record!(ShadedTriangle<N>, [N]; {corners, normals});
 rewrite_record!(ShadedVertex<P, N>, [P, N]; {position, normal});
 rewrite_record!(Strip<V>, [V]; (field0));
 rewrite_record!(Strips<V>, [V]; (field0));
-rewrite_record!(Tessellation, []; {id, body, faces, state, chordal_deflection, source_object, mesh, feature_edges, triangle_groups, texture_assignments, texture_coordinates, colors, channels});
+rewrite_record!(Tessellation, []; {id, of, state, chordal_deflection, source_object, mesh, feature_edges, triangle_groups, texture_assignments, texture_coordinates, colors, channels, native_ref});
 rewrite_record!(TessellationChannel, []; {addressing, item_size, kind, flags, data, count});
 rewrite_enum!(TessellationMesh<P, N>, [P, N]; {
     List {vertices, triangles},

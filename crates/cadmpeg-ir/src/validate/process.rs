@@ -7,6 +7,7 @@
 //! parameter's cached value only where a rule asks for its value.
 
 mod bindings;
+mod caches;
 mod evaluations;
 #[cfg(test)]
 mod fixture;
@@ -17,6 +18,7 @@ mod references;
 mod scope;
 mod walk;
 
+use crate::report::check::Ruled;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -43,19 +45,18 @@ pub(super) fn check_process(
     let records = ProcessRecords::new(&design);
     let walked = walk::walk_records(&records);
     order::check_order(&records, findings);
-    for record in &walked {
-        order::check_nesting(record.arena, record.id, &record.found, findings);
-    }
     references::check_references(&records, findings);
+    references::check_native_refs(&records, ids, findings);
     bindings::check_bindings(&records, &walked, findings);
     scope::check_scope(&records, &walked, findings);
     evaluations::check_evaluations(
         &records,
         ctx.policy().limits.max_state_chain_depth,
         findings,
-    );
+    )?;
     evaluations::check_resolved_states(ctx, &records, ids, findings)?;
     operations::check_operations(&records, findings);
+    caches::check_caches(&records, findings);
     Ok(())
 }
 
@@ -86,7 +87,7 @@ fn as_process<T>(findings: &mut Vec<Finding>, check: impl FnOnce(&mut Vec<Findin
     result
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Process,
@@ -96,7 +97,7 @@ fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments
     );
 }
 
-fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Process,

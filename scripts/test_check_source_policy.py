@@ -156,6 +156,8 @@ fn f() {
     ir.native.namespace("step");
     ir.native.namespace_mut("step");
     ir.native.namespace(/* key */ r#"step"# /* own */);
+    ir.native.namespace_mut(cadmpeg_ir::codec_id!("step"));
+    ir.native.namespace_mut(codec_id!( "step" ));
 }
 ''')
         self.assertEqual(self.findings("foreign_native_namespace"), [])
@@ -163,7 +165,8 @@ fn f() {
     def test_foreign_literal_and_nonliteral_arguments_fail(self) -> None:
         root = self.codec()
         for argument in ('"iges"', 'r#"iges"#', 'format', 'FORMAT',
-                         'crate::dialect::FORMAT', '"step".to_owned()', 'choose("step")'):
+                         'crate::dialect::FORMAT', '"step".to_owned()', 'choose("step")',
+                         'cadmpeg_ir::codec_id!("iges")', 'cadmpeg_ir::codec_id!(FORMAT)'):
             for method in ("namespace", "namespace_mut"):
                 with self.subTest(argument=argument, method=method):
                     self.write(f"{root}/writer.rs",
@@ -470,6 +473,16 @@ class PatternFilters(unittest.TestCase):
                 with self.subTest(name=name, gap=gap):
                     text = f"fn make() ->{gap}{name}\n{{ code.note(message) }}"
                     self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+
+    def test_loss_note_reference_returns_are_types(self) -> None:
+        for reference in ["&", "& ", "&'a ", "&mut ", "&'a mut "]:
+            for name in ["LossNote", "cadmpeg_ir::LossNote"]:
+                with self.subTest(reference=reference, name=name):
+                    text = f"fn loss(&self) -> {reference}{name} {{ &self.losses[0] }}"
+                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+                    text = f"fn loss(&self) -> {reference}{name} {{ LossNote {{ message }} }}"
+                    hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
+                    self.assertEqual([hit.rule for hit in hits], ["loss_note_literal"])
 
     def test_loss_note_type_occurrence_does_not_hide_inline_literals(self) -> None:
         for text, expected in [

@@ -7,7 +7,7 @@ use super::{
     region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
     set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
     with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
+    CommittedExtrusionBoundary, DecodeContext, ObjectDisplay, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -192,10 +192,6 @@ fn candidate_validation_propagates_entity_limit() {
                         format: cadmpeg_ir::codec_id!("rhino"),
                         object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
                             .expect("nonblank source id"),
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 ));
@@ -1011,6 +1007,7 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &test_association(),
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )
@@ -1056,10 +1053,6 @@ fn test_association() -> SourceObjectAssociation {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
             .expect("nonempty source identity"),
-        name: Some("Extrusion".to_string()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -1140,15 +1133,19 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     },
                     native_ref: None,
                 });
-                candidate.native.namespace_mut("rhino").arenas_mut().insert(
-                    "history_records".into(),
-                    vec![NativeRecord::new(
-                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
-                            .expect("valid identity"),
-                        serde_json::Map::new(),
-                    )
-                    .unwrap()],
-                );
+                candidate
+                    .native
+                    .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
+                    .arenas_mut()
+                    .insert(
+                        cadmpeg_core::nonblank_literal!("history_records"),
+                        vec![NativeRecord::new(
+                            cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
+                                .expect("valid identity"),
+                            serde_json::Map::new(),
+                        )
+                        .unwrap()],
+                    );
                 {
                     set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
                 }
@@ -1212,10 +1209,6 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                     format: cadmpeg_ir::codec_id!("rhino"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
                         .unwrap(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             )
@@ -1282,6 +1275,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &association,
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )
@@ -1295,6 +1289,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
             assert_eq!(ir.geometry.faces[1].sense, Sense::Forward);
         }
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
                 .expect("validate the neutral model")
@@ -1316,7 +1311,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1324,7 +1319,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     assert!(cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
@@ -1334,7 +1329,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1342,7 +1337,32 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     assert!(!cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
+        Vec::new()
+    )
+    .expect("admit the model")
+    .is_ok());
+}
+
+/// A finding of a check outside the draft and instance sets does not drop a
+/// candidate.
+#[test]
+fn admission_ignores_findings_outside_its_checks() {
+    let ir = cadmpeg_test_support::admissibility::rejected_outside_admission("rhino:test")
+        .expect("fixture identities are valid");
+    assert!(cadmpeg_ir::admit_with_annotations(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        &cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::RHINO_DRAFT,
+        Vec::new(),
+    )
+    .expect("admit the model")
+    .is_ok());
+    assert!(cadmpeg_ir::admit(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")

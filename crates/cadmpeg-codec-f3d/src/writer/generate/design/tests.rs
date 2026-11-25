@@ -15,13 +15,13 @@ use cadmpeg_ir::design::evaluation::{
     CurrentState, Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
 use cadmpeg_ir::design::expr::{
-    BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
+    Expression, ExpressionDialect, ExpressionToken, MulOp, Neutral, Node,
 };
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId, EvaluationId};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
-    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
 };
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
@@ -30,6 +30,7 @@ use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKin
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId, ParameterId};
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::pmi::{FitZone, LimitsAndFits};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::NonNegativeReal;
@@ -108,6 +109,7 @@ fn feature(id: &str, family: OperationFamily) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation: FeatureOperation::Unresolved { family },
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -170,11 +172,11 @@ fn scoped_cube() -> CadIr {
         parameter(
             "half",
             "Half",
-            neutral(Node::Binary {
-                op: BinaryOp::Divide,
-                left: Box::new(reference("width")),
-                right: Box::new(number(2.0, None)),
-            }),
+            neutral(Node::mul(
+                reference("width"),
+                MulOp::Divide,
+                number(2.0, None),
+            )),
             Some(30.0),
         ),
         parameter(
@@ -351,6 +353,51 @@ fn a_reference_cycle_is_written_as_a_cached_value_where_it_is_broken() {
         .iter()
         .any(|message| message.contains(parameter_id("a").as_str())
             && !message.contains(parameter_id("b").as_str())));
+    assert!(loss(&report, "export/dependency.cycle-broken")
+        .iter()
+        .any(|message| message.contains(parameter_id("a").as_str())
+            && !message.contains(parameter_id("b").as_str())));
+}
+
+#[test]
+fn a_fit_and_a_general_tolerance_are_written_as_no_tolerance() {
+    let mut ir = scoped_cube();
+    ir.design.parameters.extend([
+        DesignParameter {
+            tolerance: Some(Tolerance::Fit {
+                fit: LimitsAndFits {
+                    form_variance: "H".into(),
+                    zone: FitZone::Hole,
+                    grade: "7".into(),
+                    source: None,
+                },
+                mate: None,
+                deviations: None,
+            }),
+            ..parameter("bore", "Bore", neutral(number(8.0, None)), Some(8.0))
+        },
+        DesignParameter {
+            tolerance: Some(Tolerance::General),
+            ..parameter("depth", "Depth", neutral(number(5.0, None)), Some(5.0))
+        },
+    ]);
+    let (report, _) = write(&ir);
+    let dropped_fits = loss(&report, "export/fit.dropped");
+    assert_eq!(dropped_fits.len(), 1);
+    assert!(dropped_fits[0].contains(parameter_id("bore").as_str()));
+    assert!(!dropped_fits[0].contains(parameter_id("depth").as_str()));
+    let dropped_general = loss(&report, "export/general_tolerance.dropped");
+    assert_eq!(dropped_general.len(), 1);
+    assert!(dropped_general[0].contains(root().as_str()));
+    let severities = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().ends_with(".dropped"))
+        .map(|loss| loss.severity)
+        .collect::<Vec<_>>();
+    assert!(severities
+        .iter()
+        .all(|severity| *severity == Severity::Warning));
 }
 
 #[test]

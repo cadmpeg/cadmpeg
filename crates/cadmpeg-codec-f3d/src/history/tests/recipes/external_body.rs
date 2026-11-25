@@ -68,6 +68,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         color: None,
         visible,
         native_ref: None,
+        unstated: None,
     };
     let bodies = [
         body("f3d:brep/current/brep:body#1", Some(true)),
@@ -75,26 +76,21 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         body("f3d:brep/cache/brep:body#1", None),
     ];
     let regions = [
-        Region {
-            id: RegionId::mint("test:model:region#current-region").expect("identity grammar"),
-            body: bodies[0].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#current-shell").expect("identity grammar")],
-            native_ref: None,
-        },
-        Region {
-            id: RegionId::mint("test:model:region#external-region").expect("identity grammar"),
-            body: bodies[1].id.clone(),
-            shells: vec![
-                ShellId::mint("test:model:shell#external-shell").expect("identity grammar")
-            ],
-            native_ref: None,
-        },
-        Region {
-            id: RegionId::mint("test:model:region#cache-region").expect("identity grammar"),
-            body: bodies[2].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
-            native_ref: None,
-        },
+        Region::new(
+            RegionId::mint("test:model:region#current-region").expect("identity grammar"),
+            bodies[0].id.clone(),
+            vec![ShellId::mint("test:model:shell#current-shell").expect("identity grammar")],
+        ),
+        Region::new(
+            RegionId::mint("test:model:region#external-region").expect("identity grammar"),
+            bodies[1].id.clone(),
+            vec![ShellId::mint("test:model:shell#external-shell").expect("identity grammar")],
+        ),
+        Region::new(
+            RegionId::mint("test:model:region#cache-region").expect("identity grammar"),
+            bodies[2].id.clone(),
+            vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
+        ),
     ];
     let shell = |id: &str, region: &str| {
         Shell::new(

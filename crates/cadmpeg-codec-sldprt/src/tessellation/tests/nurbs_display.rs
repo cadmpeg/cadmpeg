@@ -72,7 +72,7 @@ fn geometric_nurbs_surface_route_assigns_the_face() {
         vec!["synthetic:test:tessellation#admitted-nurbs"]
     );
     assert_eq!(
-        ir.model.tessellations[0].faces,
+        ir.model.tessellations[0].of.faces(),
         vec![ir.geometry.faces[0].id.clone()]
     );
 }

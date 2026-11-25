@@ -18,7 +18,9 @@ mod encoding;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod partial;
 mod planar;
+mod reported_writes;
 mod targets;
 
 #[test]
@@ -36,6 +38,28 @@ fn frame_admission_refuses_nonfinite_axes() {
 #[test]
 fn empty_point_cloud_cannot_emit_infinite_bounds() {
     assert!(super::point_cloud_payload(&[]).is_err());
+}
+
+/// Writes `ir` as archive version 8 and reads the archive back: the decoded
+/// document and each write loss as `namespace/code: message`.
+fn written(ir: &CadIr) -> (CadIr, Vec<String>) {
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes the document");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    let losses = report
+        .losses
+        .iter()
+        .map(|loss| format!("{}: {}", loss.code, loss.message))
+        .collect();
+    (decoded.ir().clone(), losses)
 }
 
 fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
@@ -163,13 +187,11 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     ir.geometry.faces.push(Face {
         id: face.clone(),
@@ -309,7 +331,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         .collect::<Vec<_>>();
     let face_loops = ir.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .cloned()
         .chain(std::iter::once(loop_id.clone()))
         .collect();
@@ -463,13 +485,11 @@ fn adjacent_quad_sheet() -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     for index in 0..2 {
         ir.geometry.faces.push(Face {
@@ -683,13 +703,11 @@ fn planar_tetrahedron() -> CadIr {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     for index in 0..4 {
         ir.geometry.points.push(Point::new(

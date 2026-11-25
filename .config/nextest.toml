@@ -20,5 +20,6 @@ filter = '''
     | test(=golden_tests::golden_snapshots_hold)
     | test(/^integration_tests::csg_solids::a_sphere_and_a_torus_/)
     | test(=every_read_optional_field_refuses_a_null_spelling)
+    | test(/^writer::tests::leaf_sweep::every_leaf_edit_of_/)
 '''
 priority = 100

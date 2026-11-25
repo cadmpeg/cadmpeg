@@ -27,6 +27,7 @@ fn the_decode_digest_is_the_digest_of_the_root_files_bytes() {
 #[test]
 fn the_sidecar_writes_one_digest_per_file_before_its_records() {
     let mut fidelity = fidelity();
+    fidelity.content_digest = Some(Sha256Digest::digest(b"document"));
     let component = Sha256Digest::digest(b"component file");
     fidelity
         .file_digests
@@ -35,6 +36,8 @@ fn the_sidecar_writes_one_digest_per_file_before_its_records() {
     let keys: Vec<&str> = [
         "decode_digest",
         "file_digests",
+        "content_digest",
+        "codec_digests",
         "unrepresented",
         "annotations",
         "retained_records",
@@ -64,11 +67,12 @@ fn the_sidecar_writes_one_digest_per_file_before_its_records() {
 }
 
 #[test]
-fn every_digest_field_is_required() {
+fn every_digest_field_but_the_content_digest_is_required() {
     let wire = serde_json::to_value(fidelity()).unwrap();
     for field in [
         "decode_digest",
         "file_digests",
+        "codec_digests",
         "annotations",
         "retained_records",
     ] {
@@ -82,12 +86,40 @@ fn every_digest_field_is_required() {
 }
 
 #[test]
+fn a_content_digest_is_absent_where_none_was_taken() {
+    let none = fidelity();
+    let wire = serde_json::to_value(&none).unwrap();
+    assert!(wire.get("content_digest").is_none(), "{wire}");
+    assert_eq!(
+        serde_json::from_value::<SourceFidelity>(wire.clone()).unwrap(),
+        none
+    );
+
+    let mut null = wire;
+    null["content_digest"] = serde_json::Value::Null;
+    serde_json::from_value::<SourceFidelity>(null).expect_err("an absent digest is omitted");
+
+    let mut taken = fidelity();
+    taken.content_digest = Some(Sha256Digest::digest(b"document"));
+    let wire = serde_json::to_value(&taken).unwrap();
+    assert_eq!(
+        wire["content_digest"],
+        Sha256Digest::digest(b"document").as_str()
+    );
+    assert_eq!(
+        serde_json::from_value::<SourceFidelity>(wire).unwrap(),
+        taken
+    );
+}
+
+#[test]
 fn a_component_file_is_keyed_once() {
     let digest = Sha256Digest::digest(b"component");
     let text = format!(
         r#"{{"decode_digest":"{root}","file_digests":{{
             "synthetic:document:definition#pin":"{digest}",
             "synthetic:document:definition#pin":"{digest}"}},
+            "content_digest":"{digest}","codec_digests":{{}},
             "unrepresented":[],"annotations":{{"provenance":{{}},"exactness":{{}}}},"retained_records":{{}}}}"#,
         root = root_digest(),
     );
@@ -160,5 +192,46 @@ fn appending_keeps_one_digest_per_component_file() {
         error.contains("synthetic:document:definition#pin"),
         "{error}"
     );
+    assert_eq!(left, original);
+}
+
+#[test]
+fn a_codec_digest_is_keyed_once() {
+    let digest = Sha256Digest::digest(b"lane");
+    let text = format!(
+        r#"{{"decode_digest":"{root}","file_digests":{{}},"content_digest":"{digest}",
+            "codec_digests":{{"synthetic_lane":"{digest}","synthetic_lane":"{digest}"}},
+            "unrepresented":[],"annotations":{{"provenance":{{}},"exactness":{{}}}},"retained_records":{{}}}}"#,
+        root = root_digest(),
+    );
+    let error = serde_json::from_str::<SourceFidelity>(&text)
+        .expect_err("a codec digest states one value")
+        .to_string();
+    assert!(error.contains("duplicate key synthetic_lane"), "{error}");
+}
+
+#[test]
+fn appending_keeps_one_value_per_codec_digest() {
+    let lane = cadmpeg_core::nonblank_literal!("synthetic_lane");
+    let mut left = fidelity();
+    left.codec_digests
+        .insert(lane.clone(), Sha256Digest::digest(b"lane"));
+    let mut agreeing = fidelity();
+    agreeing
+        .codec_digests
+        .insert(lane.clone(), Sha256Digest::digest(b"lane"));
+    left.append(agreeing).unwrap();
+    assert_eq!(left.codec_digests.len(), 1);
+
+    let original = left.clone();
+    let mut conflicting = fidelity();
+    conflicting
+        .codec_digests
+        .insert(lane, Sha256Digest::digest(b"edited lane"));
+    let error = left
+        .append(conflicting)
+        .expect_err("one codec digest has one value")
+        .to_string();
+    assert!(error.contains("synthetic_lane"), "{error}");
     assert_eq!(left, original);
 }

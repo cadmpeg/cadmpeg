@@ -104,13 +104,13 @@ Ve 0.001 0 0 0 0 0 1001000 *
             )
             .expect("body and free feature shapes with GUI visibility");
         let ir = decoded.ir();
-        assert_eq!(ir.geometry.bodies.len(), 5);
-        assert_eq!(ir.geometry.vertices.len(), 5);
+        // The current model holds the Body's shape and the free feature's;
+        // the sketch's shape, the `Tip`'s repeat of the Body's state, and
+        // the pad's tool body are no part of it (§5.4, §5.5).
+        assert_eq!(ir.geometry.bodies.len(), 2);
+        assert_eq!(ir.geometry.vertices.len(), 2);
         for (name, visible) in [
             ("Body.Shape.brp", body_visible),
-            ("Sketch.Shape.brp", false),
-            ("Pad.Shape.brp", false),
-            ("Pad.AddSubShape.brp", false),
             ("Free.Shape.brp", free_visible),
         ] {
             let body = ir

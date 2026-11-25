@@ -44,10 +44,6 @@ fn sourced_point(id: &str) -> crate::topology::Point {
         format: crate::codec_id!("rhino"),
         geometry_role: None,
         object_id: cadmpeg_core::nonblank_literal!("synthetic"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     });
     point
@@ -65,7 +61,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
         .try_admit_append(
             first,
             annotations.sparse_transaction(),
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, _| {
                 assert!(report.unwrap().is_ok());
                 Ok(Ok::<_, ()>(()))
@@ -104,13 +100,16 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
                 region_id.clone(),
                 id.try_into().unwrap(),
             ));
-        candidate.geometry.regions.push(crate::topology::Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id],
-            native_ref: None,
-        });
+        candidate
+            .geometry
+            .regions
+            .push(crate::topology::Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                vec![shell_id],
+            ));
         candidate.geometry.bodies.push(crate::topology::Body {
+            unstated: None,
             id: body_id,
             kind: crate::topology::BodyKind::General,
             transform: None,
@@ -124,7 +123,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
             .try_admit_append(
                 candidate,
                 annotations.sparse_transaction(),
-                crate::RHINO_DRAFT_CHECKS,
+                crate::RHINO_DRAFT,
                 |report, _| {
                     let report = report.unwrap();
                     if target == point_id {
@@ -161,7 +160,7 @@ fn source_link_mutation_is_checked_after_reusing_admitted_state() {
         .try_admit_append(
             asset_candidate(0),
             annotations.sparse_transaction(),
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, _| {
                 assert!(report.unwrap().is_ok());
                 Ok(Ok::<_, ()>(()))
@@ -180,7 +179,7 @@ fn source_link_mutation_is_checked_after_reusing_admitted_state() {
         .try_admit_append(
             asset_candidate(1),
             annotations.sparse_transaction(),
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, _| {
                 assert!(report.is_err());
                 Ok(Err::<(), _>(()))
@@ -213,20 +212,15 @@ fn native_annotation_field_paths_use_complete_source_records() {
             .field_exactness(source, "links.0", crate::Exactness::Derived)
             .unwrap();
         session
-            .try_admit_append(
-                candidate,
-                changes,
-                crate::RHINO_DRAFT_CHECKS,
-                |report, _| {
-                    let report = report.unwrap();
-                    assert!(report.is_ok(), "{report:?}");
-                    assert!(!report
-                        .findings
-                        .iter()
-                        .any(|finding| finding.check == crate::report::check::Check::Annotations));
-                    Ok(Ok::<_, ()>(()))
-                },
-            )
+            .try_admit_append(candidate, changes, crate::RHINO_DRAFT, |report, _| {
+                let report = report.unwrap();
+                assert!(report.is_ok(), "{report:?}");
+                assert!(!report
+                    .findings
+                    .iter()
+                    .any(|finding| finding.check == crate::report::check::Check::Annotations));
+                Ok(Ok::<_, ()>(()))
+            })
             .unwrap()
             .unwrap();
     }
@@ -245,12 +239,12 @@ fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
     builder.exactness("test:model:asset#missing", crate::Exactness::Derived);
     let annotations = builder.build();
     assert!(session
-        .admit_appended(&annotations, crate::RHINO_INSTANCE_CHECKS)
+        .admit_appended(&annotations, crate::RHINO_INSTANCE)
         .unwrap()
         .unwrap()
         .is_ok());
     let report = session
-        .admit_appended(&annotations, crate::RHINO_DRAFT_CHECKS)
+        .admit_appended(&annotations, crate::RHINO_DRAFT)
         .unwrap()
         .unwrap();
     assert!(report
@@ -262,7 +256,7 @@ fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
         .try_admit_append(
             asset_candidate(1),
             annotations.sparse_transaction(),
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, _| {
                 let report = report.unwrap();
                 assert!(report
@@ -291,7 +285,7 @@ fn sparse_deletion_replaces_invalid_base_annotations_in_combined_admission() {
         .try_admit_append(
             asset_candidate(0),
             changes,
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, changes| {
                 assert!(report.unwrap().is_ok());
                 Ok(Ok::<_, ()>(changes.prepare()))
@@ -313,7 +307,7 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
         .try_admit_append(
             asset_candidate(0),
             annotations.sparse_transaction(),
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, _| {
                 assert!(report.unwrap().is_ok());
                 Ok(Ok::<_, ()>(()))
@@ -330,7 +324,7 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
         .try_admit_append(
             asset_candidate(1),
             annotations.sparse_transaction(),
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, _| {
                 let report = report.unwrap();
                 assert!(report.findings.iter().any(|finding| finding.check

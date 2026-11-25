@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    output_empty, target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions,
+    Consumption, EncodeInput, ExportBody, WritePath,
 };
 
 use crate::loss::RhinoLossCode;
@@ -20,6 +20,28 @@ const OFF_CATALOG_SOURCE_REASON: &str =
     "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
 
+/// The regions that state no complete shell list and hold no partial face.
+/// Their stated faces can close, and 3DM reads a closed Brep as a solid, so
+/// the writer writes each of their faces as its own Brep.
+fn unjoined_regions(ir: &cadmpeg_ir::CadIr) -> std::collections::BTreeSet<&str> {
+    let geometry = &ir.geometry;
+    let lists = geometry.child_lists();
+    geometry
+        .regions
+        .iter()
+        .filter(|region| {
+            lists.complete_shells(region).is_none()
+                && !region.stated_shells().any(|shell| {
+                    lists
+                        .stated_shell_faces(shell)
+                        .iter()
+                        .any(|face| face.loops.is_partial())
+                })
+        })
+        .map(|region| region.id.as_str())
+        .collect()
+}
+
 /// Synthesize the resolved archive version.
 ///
 /// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
@@ -33,33 +55,57 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
+    let unjoined = unjoined_regions(input.ir);
+    let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
+        input.ir,
+        "Rhino",
+        "its faces are written as an open Brep",
+    )? {
+        Some((complete, losses)) => (Some(complete), losses),
+        None => (None, Vec::new()),
+    };
+    let ir = complete.as_ref().unwrap_or(input.ir);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
-    super::write(&recovered.document, version, &mut bytes)?;
-    let vertex_quantization = !version.stores_mesh_vertices_as_f64()
-        && input
-            .ir
-            .model
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
+    let written = super::write(&recovered.document, version, &unjoined, &mut bytes)?;
+    let withheld_meshes = super::withheld_body_meshes(ir);
+    let written_meshes = || {
+        ir.model
             .tessellations
             .iter()
+            .filter(|mesh| !withheld_meshes.contains(mesh.id.as_str()))
+    };
+    let vertex_quantization = !version.stores_mesh_vertices_as_f64()
+        && written_meshes()
             .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
             .any(|point| {
                 cadmpeg_core::convert::f32_from_f64(point.x).map(f64::from) != Some(point.x)
                     || cadmpeg_core::convert::f32_from_f64(point.y).map(f64::from) != Some(point.y)
                     || cadmpeg_core::convert::f32_from_f64(point.z).map(f64::from) != Some(point.z)
             });
-    let normal_quantization = input
-        .ir
-        .model
-        .tessellations
-        .iter()
+    let normal_quantization = written_meshes()
         .flat_map(cadmpeg_ir::tessellation::Tessellation::vertex_normals)
         .any(|normal| {
             cadmpeg_core::convert::f32_from_f64(normal.x).map(f64::from) != Some(normal.x)
                 || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
-    let mut losses = Vec::new();
+    let mut losses = partial_losses;
+    losses.extend(written.losses);
+    if !written.wrote_object {
+        losses.push(output_empty(
+            "the written 3DM archive holds no object: the document states no geometry or mesh \
+             this writer encodes",
+        ));
+    }
+    if !withheld_meshes.is_empty() {
+        losses.push(RhinoLossCode::WriterBodyMeshWithheld.note(format!(
+            "{} tessellation record(s) that display a body written as a Brep were withheld; the \
+             writer writes no Brep render mesh: {}",
+            withheld_meshes.len(),
+            withheld_meshes.iter().copied().collect::<Vec<_>>().join(", ")
+        )));
+    }
     if !recovered.sampled_agreements.is_empty() {
         losses.push(RhinoLossCode::EdgePcurveAgreementSampled.note(format!(
             "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",
@@ -104,6 +150,45 @@ pub(crate) fn plan(
             !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
         })
         .count();
+    // A withheld support record is charged above; every other record is
+    // written without its source-object association.
+    let associations = input
+        .ir
+        .geometry
+        .points
+        .iter()
+        .filter(|point| {
+            owned_points.contains(&point.id) || !super::is_support(point.source_object.as_ref())
+        })
+        .filter_map(|point| point.source_object.as_ref())
+        .chain(
+            input
+                .ir
+                .geometry
+                .curves
+                .iter()
+                .filter(|curve| {
+                    owned_curves.contains(&curve.id)
+                        || !super::is_support(curve.source_object.as_ref())
+                })
+                .filter_map(|curve| curve.source_object.as_ref()),
+        )
+        .chain(
+            input
+                .ir
+                .geometry
+                .surfaces
+                .iter()
+                .filter_map(|surface| surface.source_object.as_ref()),
+        )
+        .chain(written_meshes().filter_map(|mesh| mesh.source_object.as_ref()))
+        .count();
+    if associations != 0 {
+        losses.push(RhinoLossCode::WriterSourceAssociationOmitted.note(format!(
+            "{associations} source-object association(s) were not written; a 3DM object holds \
+             no source-format object identity"
+        )));
+    }
     if points != 0 || curves != 0 {
         losses.push(RhinoLossCode::WriterSupportGeometryWithheld.note(format!(
             "{points} support point record(s) and {curves} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry"
@@ -142,15 +227,17 @@ pub(crate) fn plan(
 
 /// What `prepare_write` does with each model arena.
 ///
-/// `subds`, procedural surfaces and curves, features, configurations, parameters,
-/// sketches, sketch entities and constraints, appearances, appearance bindings
-/// and attributes are `Dropped` because `prepare_write` refuses non-empty arenas.
-/// Topology is written as Brep and point objects or refused as orphaned;
-/// unowned pcurves are refused.
+/// Arenas 3DM is not written with are `Omitted`: the archive is written
+/// without them, and the export wrapper charges each non-empty one. Procedural
+/// surfaces and curves are definitions beside the solved carriers the archive
+/// holds. Topology and pcurves are written as Brep and point objects;
+/// `WriterRecordOmitted` names each record the writer leaves out.
 /// `points` and `curves` are `Reported` because
-/// `WriterSupportGeometryWithheld` accounts for withheld support records.
+/// `WriterSupportGeometryWithheld` accounts for withheld support records, and
+/// `tessellations` because `WriterBodyMeshWithheld` accounts for the display
+/// meshes of bodies written as Breps.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
+    use ArenaDisposition::{Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -163,19 +250,19 @@ const COVERAGE: ArenaDispositions = {
         points: Reported,
         surfaces: Written,
         curves: Reported,
-        subds: Dropped,
+        subds: Omitted,
         pcurves: Written,
-        procedural_surfaces: Dropped,
-        procedural_curves: Dropped,
+        procedural_surfaces: Omitted,
+        procedural_curves: Omitted,
         assets: Omitted,
-        features: Dropped,
+        features: Omitted,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
-        configurations: Dropped,
-        parameters: Dropped,
-        sketches: Dropped,
-        sketch_entities: Dropped,
-        sketch_constraints: Dropped,
+        configurations: Omitted,
+        parameters: Omitted,
+        sketches: Omitted,
+        sketch_entities: Omitted,
+        sketch_constraints: Omitted,
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
@@ -187,12 +274,12 @@ const COVERAGE: ArenaDispositions = {
         semantic_annotations: Omitted,
         presentation_documents: Omitted,
         view_presentations: Omitted,
-        tessellations: Written,
+        tessellations: Reported,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Dropped,
-        appearance_bindings: Dropped,
-        attributes: Dropped,
+        appearances: Omitted,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
         pmi: Omitted,
         presentation_layers: Omitted,
         physical_materials: Omitted,

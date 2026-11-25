@@ -3,15 +3,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::CodecError;
+
 use super::parameters;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
+use super::selections::check_path;
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation};
+use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
 use crate::design::refs::Position;
-use crate::design::selection::{OccurrencePath, StepRef};
+use crate::design::selection::OccurrencePath;
 use crate::features::ConfigurationId;
+use crate::products::{ProductDefinition, Storage};
 use crate::report::check::Finding;
 
 /// A position names an existing member of a container, an ordered container
@@ -30,10 +34,25 @@ pub(in crate::validate) fn check_position(
                 super::error(
                     findings,
                     entity,
-                    format_args!("{position} names no ordered container of the design"),
+                    crate::rule!(
+                        "design.names-no-ordered-container-design",
+                        "{position} names no ordered container of the design"
+                    ),
                 );
             }
             ordered
+        }
+        PositionKey::After(MemberKey::Container(id))
+            if matches!(index.containers.get(id), Some(Container::Unordered { .. })) =>
+        {
+            super::error(
+                findings,
+                entity,
+                crate::rule!("design.position-after-unordered-container",
+                    "{position} names unordered container {id}, whose members have their own results; it names no state"
+                ),
+            );
+            false
         }
         PositionKey::After(member) => {
             let ordered_root = matches!(
@@ -48,7 +67,8 @@ pub(in crate::validate) fn check_position(
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.names-no-member-container-no-ordered",
                         "{position} names no member of a container and no ordered root container"
                     ),
                 );
@@ -56,6 +76,95 @@ pub(in crate::validate) fn check_position(
             listed
         }
     }
+}
+
+/// The feature `position` is after, where it is a feature member of an
+/// unordered container: `After(m)` is then `m`'s own result (§5.3).
+fn unordered_feature<'a>(
+    index: &DesignRecords<'a>,
+    position: PositionKey<'a>,
+) -> Option<&'a Feature> {
+    let PositionKey::After(MemberKey::Feature(id)) = position else {
+        return None;
+    };
+    match index.container_of(position) {
+        Some(Container::Unordered { .. }) => index.features.get(id).copied(),
+        _ => None,
+    }
+}
+
+/// Whether a feature member of an unordered container has a result of its
+/// own in `configuration` (§5.3): it has none where it is stateless there or
+/// its operation there places or connects occurrences. `None` where that
+/// operation is `Native`, which states nothing to decide it.
+fn has_own_result(
+    index: &DesignRecords<'_>,
+    feature: &Feature,
+    configuration: Option<&str>,
+) -> Option<bool> {
+    let operation = &index.definition_in(feature, configuration).operation;
+    if matches!(operation, FeatureOperation::Native { .. }) {
+        return None;
+    }
+    if is_stateless(index, feature, configuration) {
+        return Some(false);
+    }
+    let places = matches!(
+        operation,
+        FeatureOperation::Place(_)
+            | FeatureOperation::PlaceSet(_)
+            | FeatureOperation::Joint(_)
+            | FeatureOperation::RigidGroup(_)
+            | FeatureOperation::ComponentPattern(_)
+            | FeatureOperation::MirrorComponents(_)
+            | FeatureOperation::Unresolved {
+                family: OperationFamily::Place
+                    | OperationFamily::PlaceSet
+                    | OperationFamily::Joint
+                    | OperationFamily::RigidGroup
+                    | OperationFamily::ComponentPattern
+                    | OperationFamily::MirrorComponents
+            }
+    );
+    Some(!places)
+}
+
+/// A `Pinned` anchor or a `StateBase::Current` is at no `After(m)` for a
+/// feature `m` of an unordered container that has no result of its own in
+/// any configuration of its scope (§5.3). Returns whether it is not.
+pub(in crate::validate) fn check_resulting_position(
+    index: &DesignRecords<'_>,
+    position: PositionKey<'_>,
+    entity: &str,
+    findings: &mut Vec<Finding>,
+) -> bool {
+    let Some(feature) = unordered_feature(index, position) else {
+        return true;
+    };
+    let id = feature.id.as_str();
+    let configurations: Vec<Option<&str>> = match index
+        .scope_of(MemberKey::Feature(id))
+        .and_then(|scope| index.scope_configurations.get(scope))
+    {
+        Some(configurations) => configurations
+            .iter()
+            .map(|configuration| Some(configuration.id.as_str()))
+            .collect(),
+        None => vec![None],
+    };
+    let resultless = configurations
+        .into_iter()
+        .all(|configuration| has_own_result(index, feature, configuration) == Some(false));
+    if resultless {
+        super::error(
+            findings,
+            entity,
+            crate::rule!("design.position-after-member-without-result",
+                "{position} is after {id}, a member of an unordered container with no result of its own in any configuration of its scope; it names no state"
+            ),
+        );
+    }
+    !resultless
 }
 
 /// Whether `position` is `After(Container(c))` for an ordered container `c`.
@@ -82,29 +191,31 @@ fn current_positions<'a>(index: &DesignRecords<'a>, scope: &str) -> BTreeSet<Pos
         .unwrap_or_default()
 }
 
-/// The evaluation rules. `max_chain_depth` is the reader's ceiling on a chain
-/// of state bases, `ResourceLimits::max_state_chain_depth`.
+/// The evaluation rules. `max_chain_depth` is the caller's ceiling on a chain
+/// of state bases, `ResourceLimits::max_state_chain_depth`; a longer chain
+/// refuses the session.
 pub(super) fn check_evaluations(
     index: &DesignRecords<'_>,
     max_chain_depth: u64,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     let StateChains { cyclic, depths } = state_chains(index).unwrap_or_else(|id| {
         super::error(
             findings,
             id,
-            format_args!("the depth of the evaluation's chain of state bases overflows"),
+            crate::rule!(
+                "design.depth-evaluation-chain-state-bases-overflows",
+                "the depth of the evaluation's chain of state bases overflows"
+            ),
         );
         StateChains::default()
     });
-    for (id, depth) in &depths {
-        if depth.checked_sub(1) == Some(max_chain_depth) {
-            super::error(
-                findings,
-                id,
-                format_args!("evaluation's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"),
-            );
-        }
+    if let Some(refusal) = depths
+        .values()
+        .max()
+        .and_then(|&deepest| crate::validate::state_chain_refusal(max_chain_depth, deepest))
+    {
+        return Err(refusal);
     }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {
@@ -115,7 +226,10 @@ pub(super) fn check_evaluations(
             super::error(
                 findings,
                 id,
-                format_args!("evaluation's scope {scope} has no design scope"),
+                crate::rule!(
+                    "design.evaluation-scope-no-design-scope",
+                    "evaluation's scope {scope} has no design scope"
+                ),
             );
         }
         let configuration = evaluation
@@ -126,14 +240,16 @@ pub(super) fn check_evaluations(
             (None, true) => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-states-no-configuration-scope-configurations",
                     "evaluation states no configuration, but its scope has configurations"
                 ),
             ),
             (Some(configuration), false) => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-names-configuration-scope-none",
                     "evaluation names configuration {configuration}, but its scope has none"
                 ),
             ),
@@ -146,7 +262,7 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation names {configuration}, which is no configuration of its scope"),
+                        crate::rule!("design.evaluation-names-no-configuration-scope", "evaluation names {configuration}, which is no configuration of its scope"),
                     );
                 }
             }
@@ -160,7 +276,7 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation evaluates {position}, which is the state at that ordered container's rollback position"),
+                        crate::rule!("design.evaluation-evaluates-state-ordered-container-rollback", "evaluation evaluates {position}, which is the state at that ordered container's rollback position"),
                     );
                 }
                 let active = design_scope.is_some_and(|s| {
@@ -170,7 +286,7 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation of the active configuration repeats the current state at {position}"),
+                        crate::rule!("design.evaluation-active-configuration-repeats-current-state", "evaluation of the active configuration repeats the current state at {position}"),
                     );
                 }
                 match position {
@@ -183,19 +299,48 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation evaluates the tool body of {feature}, which is no feature of the design"),
+                        crate::rule!("design.evaluation-evaluates-tool-body-no-feature", "evaluation evaluates the tool body of {feature}, which is no feature of the design"),
                     );
                 }
                 Some(feature)
             }
         };
+        if let OfKey::State(position) = of {
+            let resultless = unordered_feature(index, position).filter(|feature| {
+                !is_stateless(index, feature, configuration)
+                    && has_own_result(index, feature, configuration) == Some(false)
+            });
+            if let Some(member) = resultless {
+                super::error(
+                    findings,
+                    id,
+                    crate::rule!("design.evaluation-after-member-without-result",
+                        "evaluation evaluates {position}, but {} has no result of its own in the evaluation's configuration",
+                        member.id.as_str()
+                    ),
+                );
+            }
+        }
         if let Some(feature) = feature.and_then(|feature| index.features.get(feature)) {
             if is_stateless(index, feature, configuration) {
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("design.feature-stateless-evaluation-configuration-no-evaluation", 
                         "feature {} is stateless in the evaluation's configuration and has no evaluation there",
+                        feature.id.as_str()
+                    ),
+                );
+            } else if matches!(of, OfKey::Tool(_))
+                && super::ops::builds_tool_body(
+                    &index.definition_in(feature, configuration).operation,
+                ) == Some(false)
+            {
+                super::error(
+                    findings,
+                    id,
+                    crate::rule!("design.evaluation-evaluates-tool-body-operation-evaluation", 
+                        "evaluation evaluates the tool body of {}, whose operation in the evaluation's configuration builds none",
                         feature.id.as_str()
                     ),
                 );
@@ -206,7 +351,8 @@ pub(super) fn check_evaluations(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-repeats-scope-configuration-evaluation",
                     "evaluation repeats the scope, configuration, and `of` of evaluation {first}"
                 ),
             );
@@ -216,7 +362,7 @@ pub(super) fn check_evaluations(
                 super::error(
                     findings,
                     id,
-                    format_args!("evaluation with no content has status `current`; it is `stale` or `failed`"),
+                    crate::rule!("design.evaluation-no-content-status-current-stale", "evaluation with no content has status `current`; it is `stale` or `failed`"),
                 );
             }
             continue;
@@ -225,21 +371,23 @@ pub(super) fn check_evaluations(
             StateBase::Empty => {}
             StateBase::Current(position) => {
                 let position = PositionKey::of(position);
-                if check_position(index, position, id, findings) {
+                if check_position(index, position, id, findings)
+                    && check_resulting_position(index, position, id, findings)
+                {
                     if matches!(position, PositionKey::After(MemberKey::Container(_)))
                         && !index.at_unstated_rollback(position)
                     {
                         super::error(
                             findings,
                             id,
-                            format_args!("state base names {position}; a stated rollback position is spelled through its member"),
+                            crate::rule!("design.state-base-names-stated-rollback-position", "state base names {position}; a stated rollback position is spelled through its member"),
                         );
                     }
                     if !current_positions(index, scope).contains(&position) {
                         super::error(
                             findings,
                             id,
-                            format_args!("state base names {position}, which is the position of no current state of the evaluation's scope"),
+                            crate::rule!("design.state-base-names-position-no-current", "state base names {position}, which is the position of no current state of the evaluation's scope"),
                         );
                     }
                 }
@@ -248,7 +396,8 @@ pub(super) fn check_evaluations(
                 None if index.ir.fragment => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.fragment-does-not-hold-evaluation-base",
                         "the fragment does not hold the evaluation's base {}",
                         base.as_str()
                     ),
@@ -256,7 +405,8 @@ pub(super) fn check_evaluations(
                 None => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.state-base-no-evaluation-design",
                         "state base {} is no evaluation of the design",
                         base.as_str()
                     ),
@@ -264,7 +414,8 @@ pub(super) fn check_evaluations(
                 Some(base) if base.content.is_none() => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.state-base-evaluation-no-content",
                         "state base {} is an evaluation with no content",
                         base.id.as_str()
                     ),
@@ -276,12 +427,14 @@ pub(super) fn check_evaluations(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-own-ancestor-through-state-bases",
                     "evaluation is its own ancestor through its state bases; bases form a forest"
                 ),
             );
         }
     }
+    Ok(())
 }
 
 /// The chains of state bases: the evaluations on a cycle, and the depth of
@@ -412,32 +565,19 @@ pub(super) fn is_stateless(
         .cannot_change_state()
 }
 
-/// Every `Occurrence` step of the path names an occurrence of the model.
-pub(super) fn check_path_steps(
-    index: &DesignRecords<'_>,
-    path: &OccurrencePath,
-    entity: &str,
-    what: &str,
-    findings: &mut Vec<Finding>,
-) {
-    for step in &path.0 {
-        if let StepRef::Occurrence(occurrence) = &step.occurrence {
-            if !index.occurrences.contains_key(occurrence.as_str()) {
-                super::error(
-                    findings,
-                    entity,
-                    format_args!(
-                        "{what} path names {}, which is no occurrence of the model",
-                        occurrence.as_str()
-                    ),
-                );
-            }
-        }
-    }
+/// The bodies a definition lists in `bodies` and in its `instance_bodies`.
+fn listed_bodies(definition: &ProductDefinition) -> impl Iterator<Item = &crate::ids::BodyId> {
+    definition.bodies.iter().chain(
+        definition
+            .instance_bodies
+            .iter()
+            .flat_map(|entry| &entry.bodies),
+    )
 }
 
 pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
+    let moved = super::selections::moved_occurrences(ir);
     let bodies: BTreeSet<&str> = ir
         .geometry
         .bodies
@@ -448,29 +588,39 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
     for scope in &ir.design.scopes {
         let entity = scope.definition.as_str();
         let spanned = index.spanned_definitions(entity);
+        let spanned: Vec<&ProductDefinition> = spanned
+            .iter()
+            .filter_map(|definition| index.definitions.get(definition).copied())
+            .collect();
         let owned: BTreeSet<&str> = spanned
             .iter()
-            .filter_map(|definition| index.definitions.get(definition))
-            .flat_map(|definition| {
-                definition.bodies.iter().chain(
-                    definition
-                        .instance_bodies
-                        .iter()
-                        .flat_map(|entry| &entry.bodies),
-                )
+            .flat_map(|definition| listed_bodies(definition))
+            .map(crate::ids::BodyId::as_str)
+            .collect();
+        // §5.1 stops the span at a definition stored as a file.
+        let required: BTreeSet<&str> = spanned
+            .iter()
+            .filter(|definition| {
+                definition.id.as_str() == entity || matches!(definition.storage, Storage::Embedded)
             })
+            .flat_map(|definition| listed_bodies(definition))
             .map(crate::ids::BodyId::as_str)
             .collect();
         let mut posed: BTreeMap<&OccurrencePath, usize> = BTreeMap::new();
+        let active = scope
+            .active_configuration
+            .as_ref()
+            .map(ConfigurationId::as_str);
         for current in &scope.current {
-            check_current_position(index, &current.at, entity, findings);
+            check_current_position(index, &current.at, entity, active, findings);
             for body in &current.bodies {
                 *listed.entry(body.as_str()).or_default() += 1;
                 if !bodies.contains(body.as_str()) {
                     super::error(
                         findings,
                         entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.current-state-lists-no-body-current",
                             "current state lists {}, which is no body of the current geometry",
                             body.as_str()
                         ),
@@ -479,7 +629,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             }
             for path in current.poses.keys() {
                 *posed.entry(path).or_default() += 1;
-                check_path_steps(index, path, entity, "pose", findings);
+                check_path(index, Some(entity), path, &moved, entity, findings);
             }
         }
         for body in &scope.unproduced {
@@ -488,7 +638,8 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.unproduced-entry-must-body-current-geometry",
                         "unproduced entry {} must be a body of the current geometry",
                         body.as_str()
                     ),
@@ -498,37 +649,34 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.unproduced-body-must-owned-definition-scope",
                         "unproduced body {} must be owned by a definition the scope spans",
                         body.as_str()
                     ),
                 );
             }
         }
+        let here: BTreeSet<&str> = scope
+            .current
+            .iter()
+            .flat_map(|current| &current.bodies)
+            .chain(&scope.unproduced)
+            .map(crate::ids::BodyId::as_str)
+            .collect();
+        for body in required.difference(&here) {
+            super::error(
+                findings,
+                body,
+                crate::rule!("design.body-definition-scope-spans-belongs-no", "body of a definition scope {entity} spans belongs to no current state or unproduced set of that scope"),
+            );
+        }
         for count in posed.into_values() {
             if count > 1 {
                 super::error(
                     findings,
                     entity,
-                    format_args!("an instance path has a pose in {count} current states of the scope; it has one in at most one"),
-                );
-            }
-        }
-    }
-    // A body of a scoped definition is listed by some scope, not
-    // necessarily its own.
-    for scope in &ir.design.scopes {
-        let entity = scope.definition.as_str();
-        let own = index
-            .definitions
-            .get(entity)
-            .map_or(&[][..], |definition| &definition.bodies[..]);
-        for body in own.iter().map(crate::ids::BodyId::as_str) {
-            if !listed.contains_key(body) {
-                super::error(
-                    findings,
-                    body,
-                    format_args!("body of scoped definition {entity} belongs to no current state or unproduced set"),
+                    crate::rule!("design.instance-path-pose-current-states-scope", "an instance path has a pose in {count} current states of the scope; it has one in at most one"),
                 );
             }
         }
@@ -538,7 +686,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             super::error(
                 findings,
                 body,
-                format_args!("body belongs to {count} current states or unproduced sets; it belongs to exactly one"),
+                crate::rule!("design.body-belongs-current-states-unproduced-sets", "body belongs to {count} current states or unproduced sets; it belongs to exactly one"),
             );
         }
     }
@@ -548,23 +696,37 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
 /// A current state names an existing position, and one inside an ordered
 /// container is at that container's rollback position: spelled through its
 /// member where the rollback is stated, and as `After(Container(c))` where
-/// it is not (§5.3).
+/// it is not (§5.3). In an unordered container it is after a member that
+/// has a result of its own in the active configuration.
 fn check_current_position(
     index: &DesignRecords<'_>,
     at: &Position,
     entity: &str,
+    active: Option<&str>,
     findings: &mut Vec<Finding>,
 ) {
     let at = PositionKey::of(at);
     if !check_position(index, at, entity, findings) {
         return;
     }
+    if let Some(member) = unordered_feature(index, at) {
+        if has_own_result(index, member, active) == Some(false) {
+            super::error(
+                findings,
+                entity,
+                crate::rule!("design.current-state-after-member-without-result",
+                    "current state is at {at}, but {} has no result of its own in the active configuration",
+                    member.id.as_str()
+                ),
+            );
+        }
+    }
     if matches!(at, PositionKey::After(MemberKey::Container(_))) {
         if !index.at_unstated_rollback(at) {
             super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!("design.current-state-stated-rollback-position-spelled", 
                     "current state is at {at}; a stated rollback position is spelled through its member"
                 ),
             );
@@ -579,7 +741,7 @@ fn check_current_position(
             super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!("design.current-state-not-rollback-position-container", 
                     "current state is at {at}, not at the rollback position of container {}, {rollback}",
                     container.id().as_str()
                 ),
@@ -612,7 +774,8 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
                 super::error(
                     findings,
                     holder,
-                    format_args!(
+                    crate::rule!(
+                        "design.stored-feature-names-no-tessellation-model",
                         "stored feature names {}, which is no tessellation of the model",
                         tessellation.as_str()
                     ),
@@ -648,7 +811,7 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
                     super::error(
                         findings,
                         id,
-                        format_args!("stored feature names {}, which is no body of the current state after it", body.as_str()),
+                        crate::rule!("design.stored-feature-names-no-body-current", "stored feature names {}, which is no body of the current state after it", body.as_str()),
                     );
                 }
             }

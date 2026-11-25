@@ -7,6 +7,14 @@ use std::io::Write;
 
 use cadmpeg_ir::examples::unit_cube;
 
+/// The unit cube with the root definition a document that holds model records
+/// states (§8.1).
+pub(crate) fn rooted_cube() -> cadmpeg_ir::CadIr {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    cadmpeg_ir::examples::add_document_root(&mut ir);
+    ir
+}
+
 pub(crate) fn fixture(
     dir: &std::path::Path,
     name: &str,

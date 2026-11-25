@@ -98,24 +98,27 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
 }
 
 #[test]
-fn invalid_archive_tolerances_are_rejected_before_output() {
+fn angular_tolerance_just_above_pi_is_written_as_the_default() {
     let mut ir = CadIr::empty();
     ir.tolerances.angular = cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::PI.next_up())
         .expect("positive finite tolerance");
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("invalid tolerance must not be serialized");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert_eq!(output, [0xaa]);
+    let (decoded, losses) = super::written(&ir);
+    assert!(
+        (decoded.tolerances.angular.get() - std::f64::consts::PI / 180.0).abs() < 1e-15,
+        "{:?}",
+        decoded.tolerances.angular
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/value.unwritable")
+                && loss.contains("document angular tolerance")),
+        "{losses:?}"
+    );
 }
 
 #[test]
-fn rejection_occurs_before_output() {
+fn free_curve_without_a_3dm_form_is_omitted_and_named() {
     let mut ir = CadIr::empty();
     ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
@@ -127,15 +130,23 @@ fn rejection_occurs_before_output() {
         source_object: None,
         native_ref: None,
     });
-    let mut output = vec![0xaa];
-    assert!(RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .is_err());
-    assert_eq!(output, [0xaa]);
+    ir.geometry.points.push(Point::new(
+        PointId::mint("rhino:test:point#kept").expect("identity grammar"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    let (decoded, losses) = super::written(&ir);
+    assert!(decoded.geometry.curves.is_empty());
+    assert_eq!(decoded.geometry.points.len(), 1);
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterRecordOmitted
+                .kind()
+                .to_string()
+        ) && loss.contains("rhino:test:curve#a")),
+        "{losses:?}"
+    );
 }
 
 #[test]
@@ -246,7 +257,7 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
         curve.knots().as_slice(),
         [-1.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 12.0]
     );
-    check_knot_roundtrip("reversed", "curve", curve.knots(), 3, 6, curve.periodic())
+    check_knot_roundtrip("reversed", "curve", curve.knots(), 3, 6)
         .expect("canonicalized knots serialize without another change");
 }
 
@@ -399,13 +410,20 @@ fn standalone_mesh_round_trips_across_archive_versions() {
             ),
         ])
         .expect("valid triangle group partition");
-    assert!(matches!(
-        RhinoCodec.plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        ),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.model.tessellations.len(), 1);
+    assert_eq!(
+        decoded.model.tessellations[0].triangles(),
+        ir.model.tessellations[0].triangles()
+    );
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterMeshDataOmitted
+                .kind()
+                .to_string()
+        ) && loss.contains("triangle groups")),
+        "{losses:?}"
+    );
 }
 
 #[test]
@@ -426,7 +444,8 @@ fn admitted_mesh_values_outside_rhino_float_range_are_a_writer_limit() {
     .expect("finite coordinates are admitted by the IR");
 
     let error = super::super::check_mesh(&mesh)
-        .expect_err("Rhino mesh coordinates use finite 32-bit floats");
+        .err()
+        .expect("Rhino mesh coordinates use finite 32-bit floats");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
@@ -615,13 +634,13 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         ),
         visible: Some(false),
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region::new(
+        region_id.clone(),
+        body_id,
+        vec![shell_id.clone()],
+    ));
     ir.geometry
         .shells
         .push(cadmpeg_ir::topology::Shell::with_members(
@@ -721,7 +740,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 }
 
 #[test]
-fn unsupported_retained_native_records_are_refused_before_output() {
+fn unsupported_retained_native_records_are_omitted_and_named() {
     let mut source = CadIr::empty();
     source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#retained").expect("identity grammar"),
@@ -744,9 +763,9 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("rhino")
+        .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
         .arenas_mut()
-        .entry("materials".into())
+        .entry(cadmpeg_core::nonblank_literal!("materials"))
         .or_default()
         .push(
             cadmpeg_ir::NativeRecord::new(
@@ -757,20 +776,19 @@ fn unsupported_retained_native_records_are_refused_before_output() {
             .expect("valid native identity"),
         );
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+    let (rewritten, losses) = super::written(decoded.ir());
+    assert_eq!(rewritten.geometry.points.len(), 1);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/native.records-omitted")
+                && loss.contains("rhino:presentation:material#unsupported")),
+        "{losses:?}"
+    );
 }
 
 #[test]
-fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
+fn noncanonical_nurbs_periodicity_is_written_as_the_stored_knots_state() {
     let mut ir = CadIr::empty();
     ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
@@ -792,15 +810,21 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
         source_object: None,
         native_ref: None,
     });
-    let mut output = vec![0xaa];
-    assert!(RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .is_err());
-    assert_eq!(output, [0xaa]);
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.curves.len(), 1);
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(written)) =
+        &decoded.geometry.curves[0].geometry
+    else {
+        panic!("the curve reads back as NURBS");
+    };
+    assert!(!written.periodic());
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/value.unwritable")
+                && loss.contains("cadir:model:curve#periodic")),
+        "{losses:?}"
+    );
 }
 
 #[test]
@@ -821,7 +845,8 @@ fn mesh_coordinate_above_f32_max_refuses_round_down() {
     .expect("finite coordinates are admitted by the IR");
 
     let error = super::super::check_mesh(&mesh)
-        .expect_err("Rhino mesh coordinates use finite 32-bit floats");
+        .err()
+        .expect("Rhino mesh coordinates use finite 32-bit floats");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
@@ -843,7 +868,8 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
     .expect("finite coordinates are admitted by the IR");
 
     let error = super::super::check_mesh(&mesh)
-        .expect_err("Rhino mesh coordinates use finite 32-bit floats");
+        .err()
+        .expect("Rhino mesh coordinates use finite 32-bit floats");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
@@ -857,10 +883,6 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         format: cadmpeg_ir::codec_id!("iges"),
         object_id: cadmpeg_core::nonblank_literal!("D1"),
         geometry_role: Some(SourceGeometryRole::Support),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut ir = CadIr::empty();
@@ -917,4 +939,81 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         Point3::new(1.0, 2.0, 3.0)
     );
     assert!(decoded.ir().geometry.curves.is_empty());
+}
+
+#[test]
+fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
+    let mut ir = CadIr::empty();
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+        native_ref: None,
+    });
+    let write = |ir: &CadIr| {
+        let mut bytes = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(ir, None),
+                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .map(|report| (bytes, report.losses))
+    };
+    let decoded = RhinoCodec
+        .decode(
+            &mut Cursor::new(write(&ir).expect("a free curve is writable").0),
+            &DecodeOptions::default(),
+        )
+        .expect("required invariant");
+    let decoded = decoded.ir();
+    let curve = decoded.geometry.curves[0].id.clone();
+
+    let [layer] = decoded.model.presentation_layers.as_slice() else {
+        panic!("{:#?}", decoded.model.presentation_layers);
+    };
+    assert_eq!(
+        layer
+            .items
+            .iter()
+            .map(|item| item.entity.clone())
+            .collect::<Vec<_>>(),
+        [cadmpeg_ir::presentation::PresentationItem::Curve {
+            curve: curve.clone()
+        }]
+    );
+    assert!(layer.native_ref.is_some());
+
+    let [binding] = decoded.model.appearance_bindings.as_slice() else {
+        panic!("{:#?}", decoded.model.appearance_bindings);
+    };
+    assert_eq!(
+        binding.target.entity,
+        cadmpeg_ir::appearance::AppearanceTarget::Curve(curve)
+    );
+    assert_eq!(binding.visible, Some(true));
+    assert!(decoded
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id == binding.appearance && appearance.base_color.is_some()));
+
+    let (_, losses) = write(decoded).expect("the writer omits the display it cannot write");
+    for arena in ["presentation_layers", "appearance_bindings", "appearances"] {
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.message.contains(&format!("model arena `{arena}`"))),
+            "{arena}: {losses:#?}"
+        );
+    }
 }

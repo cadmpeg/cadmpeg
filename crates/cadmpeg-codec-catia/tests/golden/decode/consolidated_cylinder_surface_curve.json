@@ -278,7 +278,7 @@
               },
               "radius": 2.0,
               "ref_direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               }
@@ -352,20 +352,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -382,24 +375,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -439,7 +423,7 @@
               "frame_token": 25,
               "kind": "resolved",
               "reference_direction": [
-                -0.0,
+                0.0,
                 1.0,
                 0.0
               ]
@@ -1255,7 +1239,6 @@
         "catia:consolidated:construction#0": {
           "entity": "derived",
           "fields": {
-            "curve": "derived",
             "definition": "derived"
           },
           "kind": "entity"
@@ -1400,6 +1383,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "f528899ab96238795f96202b56cf3ea7d63fe34cab074f2efe009dfd9cd63865",
     "file_digests": {},
     "retained_records": {

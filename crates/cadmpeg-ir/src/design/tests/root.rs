@@ -12,6 +12,7 @@ use serde_json::json;
 use super::fixtures::{feature, id, name_tables};
 use super::root_fixtures as root;
 use super::{read_desktop, refuses, round_trip, to_value};
+use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::configuration::{OccurrenceOverride, Overrides};
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
@@ -98,6 +99,7 @@ fn every_design_root_type_round_trips() {
 fn a_feature_definition_has_no_wrapper_level() {
     let definition = FeatureDefinition {
         operation: FeatureOperation::Sketch(id("sketch", 1)),
+        assembly: None,
         refine: None,
         fuzzy_tolerance: None,
     };
@@ -120,6 +122,42 @@ fn a_feature_definition_has_no_wrapper_level() {
         json!({"kind": "automatic"})
     );
     assert!(to_value(&fuzzy).get("refine").is_none());
+}
+
+/// §5.10 and §6.7: `assembly` sits beside `operation`, and its participants
+/// are `[effect, selection]` pairs in key order, `None` first and written
+/// `null`.
+#[test]
+fn an_assembly_context_is_pairs_beside_the_operation() {
+    let definition = root::feature_definitions().remove(2);
+    let wire = to_value(&definition);
+    let participants = &definition.assembly.as_ref().unwrap().participants;
+    let selections: Vec<_> = participants.values().map(to_value).collect();
+    assert_eq!(
+        wire,
+        json!({
+            "operation": {"kind": "unresolved", "value": {"family": "hole"}},
+            "assembly": {"participants": [
+                [null, selections[0]],
+                [{"kind": "definitions"}, selections[1]],
+            ]},
+        })
+    );
+    let mut reversed = wire.clone();
+    reversed["assembly"]["participants"] = json!([
+        [{"kind": "definitions"}, selections[1]],
+        [null, selections[0]],
+    ]);
+    assert!(refuses::<FeatureDefinition>(&reversed.to_string()).contains("out of key order"));
+    let mut repeated = wire.clone();
+    repeated["assembly"]["participants"] = json!([
+        [{"kind": "definitions"}, selections[1]],
+        [{"kind": "definitions"}, selections[0]],
+    ]);
+    assert!(refuses::<FeatureDefinition>(&repeated.to_string()).contains("stated twice"));
+    let mut null = wire;
+    null["assembly"] = json!(null);
+    assert!(refuses::<FeatureDefinition>(&null.to_string()).contains("assembly"));
 }
 
 #[test]
@@ -383,12 +421,12 @@ fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'sta
         .unwrap()
 }
 
-/// Statement nesting has no ceiling of its own; the JSON depth limit bounds
-/// it. One level past the deepest nesting the reader admits is refused by
-/// that limit, and the deepest reads, prints the same bytes, clones,
-/// compares, and drops on a default thread.
+/// The document's depth bound (§2.5) bounds statement nesting. One level
+/// past the deepest nesting the reader admits is refused by that bound, and
+/// the deepest reads, prints the same bytes, clones, compares, and drops on
+/// a default thread.
 #[test]
-fn statements_nest_to_the_json_depth_limit_on_a_default_thread() {
+fn statements_nest_to_the_document_depth_bound_on_a_default_thread() {
     fn nested(depth: usize) -> String {
         let condition = || Neutral(Node::Boolean(true));
         let leaf = Statement::If {
@@ -403,16 +441,16 @@ fn statements_nest_to_the_json_depth_limit_on_a_default_thread() {
         });
         serde_json::to_string(&statement).unwrap()
     }
-    let past = (1..128)
+    let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&depth| read_desktop::<Statement>(&nested(depth)).is_err())
-        .expect("the reader refuses some depth below the JSON limit");
+        .expect("the reader refuses a depth past the document bound");
     assert!(past > 1, "a single statement is refused");
     let refusal = on_a_default_thread({
         let text = nested(past);
         move || read_desktop::<Statement>(&text).err()
     });
     assert!(
-        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
+        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("levels of a CADIR document")),
         "depth {past}: {refusal:?}"
     );
     let deepest = nested(past - 1);

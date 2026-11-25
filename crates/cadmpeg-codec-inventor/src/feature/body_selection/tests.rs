@@ -337,6 +337,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     let metadata = [metadata()];
     let roots = [root()];
@@ -749,6 +750,7 @@ fn model_with_bodies(names: &[(&str, Option<&str>)]) -> CadIr {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
     ir

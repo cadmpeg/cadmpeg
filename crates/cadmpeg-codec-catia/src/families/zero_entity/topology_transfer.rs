@@ -658,7 +658,7 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Derived
             ));
             admitted!(annotations
-                .derived(&edge_id, "curve")
+                .derived(&edge_id, "carrier.curve")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
@@ -671,7 +671,7 @@ pub(super) fn transfer_closed_face_topology(
                 .map_err(cadmpeg_core::CodecError::from));
             if param_range.is_some() {
                 admitted!(annotations
-                    .derived(&edge_id, "param_range")
+                    .derived(&edge_id, "carrier.param_range")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
             }
@@ -806,11 +806,11 @@ pub(super) fn transfer_closed_face_topology(
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(loop_id, "coedges")
+                    .derived(loop_id, "boundary.coedges")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(loop_id, "vertex_uses")
+                    .derived(loop_id, "boundary.vertex_uses")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 let ring =
@@ -922,10 +922,6 @@ pub(super) fn transfer_closed_face_topology(
                             .derived(&coedge_id, "use_curve")
                             .map(|_| ())
                             .map_err(cadmpeg_core::CodecError::from));
-                        admitted!(annotations
-                            .derived(&coedge_id, "use_curve_parameter_range")
-                            .map(|_| ())
-                            .map_err(cadmpeg_core::CodecError::from));
                     }
                     if let Err(error) = admission.charge() {
                         return Some(Err(error));
@@ -985,7 +981,7 @@ pub(super) fn transfer_closed_face_topology(
             name: None,
             color: None,
             visible: None,
-            native_ref: None,
+            native_ref: None, unstated: None,
         };
         ir.geometry.bodies.push(body);
         admitted!(annotate(
@@ -1008,12 +1004,7 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let shells = vec![copied_id!(shell_id, ShellId)];
-        let region = Region {
-            id: copied_id!(region_id, RegionId),
-            body: body_id,
-            shells,
-            native_ref: None,
-        };
+        let region = Region::new(copied_id!(region_id, RegionId), body_id, shells);
         ir.geometry.regions.push(region);
         admitted!(annotate(
             annotations,
@@ -1501,7 +1492,9 @@ mod tests {
         assert_eq!(counts.coedges, 6);
         assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
         assert_eq!(
-            ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+            ir.geometry
+                .stated_shell_faces(&ir.geometry.shells[0].id)
+                .count(),
             2
         );
         assert!(ir.geometry.coedges.iter().all(|coedge| {

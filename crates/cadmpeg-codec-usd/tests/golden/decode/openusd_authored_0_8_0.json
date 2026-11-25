@@ -29,19 +29,9 @@
           "name": "Rail"
         },
         {
-          "id": "usd:stage:body#/Plant/Frame/Tube",
-          "kind": "general",
-          "name": "Tube"
-        },
-        {
           "id": "usd:stage:body#/Plant/Roof",
           "kind": "sheet",
           "name": "Roof"
-        },
-        {
-          "id": "usd:stage:body#prototype0",
-          "kind": "general",
-          "name": "Leg"
         }
       ],
       "coedges": [
@@ -755,17 +745,11 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -958,7 +942,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -980,12 +963,10 @@
             "usd:stage:occurrence#/Plant/Leg1"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Plant",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -999,12 +980,10 @@
             "usd:stage:occurrence#/Plant/Frame/Rail"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Frame",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1017,17 +996,13 @@
           "native_ref": "/Plant/Frame/Rail",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Rail",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Plant/Frame/Tube"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Plant/Frame/Tube",
           "instance_bodies": [],
@@ -1035,12 +1010,10 @@
           "native_ref": "/Plant/Frame/Tube",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Tube",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1053,17 +1026,13 @@
           "native_ref": "/Plant/Roof",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Roof",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#prototype0"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#prototype0",
           "instance_bodies": [],
@@ -1071,12 +1040,10 @@
           "native_ref": "/Plant/Leg0",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Leg",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1087,29 +1054,18 @@
             "usd:stage:occurrence#/Plant"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Plant/Frame/Tube",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Plant/Frame/Tube",
           "mesh": {
@@ -1199,14 +1155,16 @@
               }
             ]
           },
+          "of": {
+            "definition": "usd:stage:definition#/Plant/Frame/Tube",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
-          "body": "usd:stage:body#prototype0",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#prototype0",
           "mesh": {
@@ -1273,6 +1231,10 @@
                 }
               }
             ]
+          },
+          "of": {
+            "definition": "usd:stage:definition#prototype0",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -1390,6 +1352,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "8adf1f271e308a0dd6a03599de7aab5ff418b041037d70f3a07c13c8580c6756",
     "file_digests": {},
     "retained_records": {},

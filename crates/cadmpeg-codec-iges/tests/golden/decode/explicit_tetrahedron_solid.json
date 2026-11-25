@@ -154,10 +154,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AB",
-            "object_id": "D21",
-            "visible": true
+            "object_id": "D21"
           }
         },
         {
@@ -186,10 +183,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AC",
-            "object_id": "D23",
-            "visible": true
+            "object_id": "D23"
           }
         },
         {
@@ -218,10 +212,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AD",
-            "object_id": "D25",
-            "visible": true
+            "object_id": "D25"
           }
         },
         {
@@ -250,10 +241,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "BC",
-            "object_id": "D27",
-            "visible": true
+            "object_id": "D27"
           }
         },
         {
@@ -282,10 +270,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "BD",
-            "object_id": "D29",
-            "visible": true
+            "object_id": "D29"
           }
         },
         {
@@ -314,10 +299,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CD",
-            "object_id": "D31",
-            "visible": true
+            "object_id": "D31"
           }
         }
       ],
@@ -589,10 +571,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF1",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -622,10 +601,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF2",
-            "object_id": "D15",
-            "visible": true
+            "object_id": "D15"
           }
         },
         {
@@ -655,10 +631,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF3",
-            "object_id": "D17",
-            "visible": true
+            "object_id": "D17"
           }
         },
         {
@@ -688,10 +661,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF4",
-            "object_id": "D19",
-            "visible": true
+            "object_id": "D19"
           }
         }
       ],
@@ -719,26 +689,277 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D21",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D21"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "AB"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D23",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D23"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "AC"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D25",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D25"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "AD"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D27",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D27"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "BC"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D29",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D29"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "BD"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D31",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D31"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CD"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D13",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D13"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURF1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D15",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D15"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURF2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D17",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D17"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURF3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D19",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D19"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURF4"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "body": "iges:model:body#D55",
+                "kind": "body"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D55:D53:D45",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D55:D53:D47",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D55:D53:D49",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D55:D53:D51",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D21",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D23",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D25",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D27",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D29",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D31",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D13"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D15"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D17"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D19"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [
@@ -749,24 +970,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -4853,7 +5065,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -5172,6 +5383,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "7441d51afbc8dc10c880a3f6926caefea668ff07c2ee394e00fa88a6a143bc14",
     "file_digests": {},
     "retained_records": {

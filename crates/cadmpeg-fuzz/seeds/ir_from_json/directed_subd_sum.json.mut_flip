@@ -149,7 +149,7 @@
                 0.5
               ],
               "tag": "smooth_x",
-              "sector_coefficients": [
+      ß       "sector_coefficients": [
                 0.25,
                 0.75
               ]
@@ -158,7 +158,7 @@
               "vertices": [
                 2,
                 0
-            ß ],
+              ],
               "sharpness": [
                 1.0,
                 0.0
@@ -231,21 +231,8 @@
   },
   "model": {
     "assets": [],
-    "features": [],
-    "feature_input_topologies": [],
-    "feature_result_topologies": [],
-    "configurations": [],
-    "parameters": [],
-    "sketches": [],
-    "sketch_entities": [],
-    "sketch_constraints": [],
-    "spatial_sketches": [],
-    "spatial_sketch_entities": [],
-    "spatial_sketch_constraints": [],
-    "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
-    "assembly_joints": [],
     "drawings": [],
     "semantic_annotations": [],
     "presentation_documents": [],
@@ -264,8 +251,7 @@
     "physics_scenes": [],
     "solver_settings": [],
     "declared_measures": [],
-    "point_clouds": [],
-    "history_bodies": []
+    "point_clouds": []
   },
   "design": {
     "scopes": [],

@@ -21,6 +21,7 @@ use cadmpeg_ir::report::check::ValidationReport;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::schema::EntityKind;
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::{Annotations, Exactness};
 
@@ -213,10 +214,12 @@ fn range_stated_by_vertices(
 
 /// Remove the content the `SolidWorks` form has no field for from the document
 /// the writer writes, and name each record. `retained` states that retained
-/// source records feed the write.
+/// source records feed the write, and `digests` are the codec digests the
+/// decode recorded.
 pub(super) fn unwritable_content(
     ir: &mut CadIr,
     retained: bool,
+    digests: &CodecDigests,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     let mut named = Vec::new();
@@ -281,7 +284,7 @@ pub(super) fn unwritable_content(
             .map(|subd| subd.id.as_str().to_owned())
             .collect::<Vec<_>>(),
     ));
-    losses.extend(pmi(ir, retained)?);
+    losses.extend(pmi(ir, retained, digests)?);
     losses.extend(active_configuration(ir));
     Ok(losses)
 }
@@ -290,12 +293,12 @@ pub(super) fn unwritable_content(
 /// and it holds the PMI its baseline digests. PMI with no retained block or no
 /// baseline is not written; PMI that differs from its baseline is an edit the
 /// retained SWIFT records do not hold.
-fn pmi(ir: &mut CadIr, retained: bool) -> Result<Option<LossNote>, CodecError> {
-    let baseline = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get(super::PMI_LOCAL_DIGEST_ATTRIBUTE))
-        .cloned()
+fn pmi(
+    ir: &mut CadIr,
+    retained: bool,
+    digests: &CodecDigests,
+) -> Result<Option<LossNote>, CodecError> {
+    let baseline = crate::codec_digests::baseline(digests, super::PMI_LOCAL_DIGEST_ATTRIBUTE)
         .filter(|_| retained);
     let Some(baseline) = baseline else {
         let ids = std::mem::take(&mut ir.model.pmi)
@@ -544,8 +547,8 @@ pub(super) fn empty_output(ir: &CadIr) -> Option<LossNote> {
 
 /// Each Error the written document's validation finds is written from the
 /// canonical side (§3.4, Refusals): one note per kind of the records the
-/// findings name, and one for the findings that name no record of a model
-/// arena.
+/// findings name, and one that names the rule of each finding that names no
+/// record of a model arena.
 pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<LossNote> {
     let index = ModelIndex::new_model_only(ir);
     let mut grouped = Vec::<(EntityKind, Vec<String>)>::new();
@@ -557,8 +560,8 @@ pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<
         let entity = finding.entity.as_deref();
         let Some((id, kind)) = entity.and_then(|id| Some((id, index.neutral_kind(id)?))) else {
             rules.push(match entity {
-                Some(id) => format!("{} ({id}: {})", finding.check, finding.message),
-                None => format!("{} ({})", finding.check, finding.message),
+                Some(id) => format!("{} ({id}: {})", finding.rule, finding.message),
+                None => format!("{} ({})", finding.rule, finding.message),
             });
             continue;
         };
@@ -634,8 +637,7 @@ pub(super) fn unwritable_carriers(
         .iter()
         .flat_map(|region| {
             region
-                .shells
-                .iter()
+                .stated_shells()
                 .map(move |shell| (shell.as_str(), region.body.as_str()))
         })
         .collect::<HashMap<_, _>>();
@@ -643,7 +645,7 @@ pub(super) fn unwritable_carriers(
         .geometry
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().map(move |loop_| (loop_.as_str(), face)))
+        .flat_map(|face| face.loops.stated().map(move |loop_| (loop_.as_str(), face)))
         .collect::<HashMap<_, _>>();
     let edges = ir
         .geometry
@@ -774,7 +776,7 @@ fn dangling_references(geometry: &cadmpeg_ir::document::Topology) -> Vec<(&str, 
         .iter()
         .flat_map(|face| {
             face.loops
-                .iter()
+                .stated()
                 .map(move |loop_| (loop_.as_str(), face.id.as_str()))
         })
         .collect::<HashMap<_, _>>();
@@ -786,7 +788,7 @@ fn dangling_references(geometry: &cadmpeg_ir::document::Topology) -> Vec<(&str, 
                 format!("missing surface {}", face.surface.as_str()),
             ));
         }
-        for loop_ in &face.loops {
+        for loop_ in face.loops.stated() {
             match loops.get(loop_.as_str()) {
                 None => {
                     dangling.push((face.id.as_str(), format!("missing loop {}", loop_.as_str())));

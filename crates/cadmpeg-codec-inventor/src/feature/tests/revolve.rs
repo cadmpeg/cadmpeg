@@ -903,7 +903,7 @@ fn slot16_projects_both_values_and_reports_only_the_true_control() {
                         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
                             .expect("native arena context");
                     let mut ir = cadmpeg_ir::CadIr::empty();
-                    let namespace = ir.native.namespace_mut("inventor");
+                    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("inventor"));
                     namespace
                         .set_arena(&ctx, "pm_dc_feature_properties", properties)
                         .expect("native properties");

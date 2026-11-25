@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The recursive process types the spec gives no ceiling: step folders,
-//! program groups, and motions nested through a cycle's expansion. The JSON
-//! depth limit bounds their reading, and every operation at the deepest
+//! The recursive process types: step folders and program groups. A cycle's
+//! expansion holds no cycle, so motions do not nest. The document's depth
+//! bound (§2.5) bounds their reading, and every operation at the deepest
 //! depth the reader admits runs on a 256 KiB stack.
 
 use cadmpeg_core::CodecError;
@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use super::fixtures::{cycles, operation_id};
 use super::read_desktop;
+use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::process::cycle::Cycle;
 use crate::process::setup::{ProgramStep, Step};
 use crate::process::toolpath::Motion;
@@ -30,15 +31,6 @@ fn groups(depth: usize) -> ProgramStep {
     })
 }
 
-fn expansions(depth: usize) -> Motion {
-    let leaf = || -> Cycle { cycles().remove(1) };
-    (0..depth).fold(Motion::Cycle(Box::new(leaf())), |motion, _| {
-        let mut cycle = leaf();
-        cycle.expansion = Some(vec![motion]);
-        Motion::Cycle(Box::new(cycle))
-    })
-}
-
 /// Runs `work` on a thread whose stack is 2 MiB, the default for a spawned
 /// thread.
 fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
@@ -51,23 +43,23 @@ fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'sta
 }
 
 /// Finds the deepest nesting the reader admits, requires one level more to
-/// be refused by the JSON depth limit, and at the deepest admitted depth
+/// be refused by the document's depth bound, and at the deepest admitted depth
 /// reads, prints, clones, compares, and drops on a default thread.
-fn nests_to_the_json_depth_limit<T>(nested: impl Fn(usize) -> T)
+fn nests_to_the_document_depth_bound<T>(nested: impl Fn(usize) -> T)
 where
     T: Serialize + DeserializeOwned + Clone + PartialEq + Send + 'static,
 {
     let text = |depth| serde_json::to_string(&nested(depth)).unwrap();
-    let past = (1..128)
+    let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&depth| read_desktop::<T>(&text(depth)).is_err())
-        .expect("the reader refuses some depth below the JSON limit");
+        .expect("the reader refuses a depth past the document bound");
     assert!(past > 1, "a single level is refused");
     let refusal = on_a_default_thread({
         let text = text(past);
         move || read_desktop::<T>(&text).err()
     });
     assert!(
-        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
+        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("levels of a CADIR document")),
         "depth {past}: {refusal:?}"
     );
     let deepest = text(past - 1);
@@ -87,16 +79,19 @@ where
 }
 
 #[test]
-fn step_folders_nest_to_the_json_depth_limit_on_a_default_thread() {
-    nests_to_the_json_depth_limit(folders);
+fn step_folders_nest_to_the_document_depth_bound_on_a_default_thread() {
+    nests_to_the_document_depth_bound(folders);
 }
 
 #[test]
-fn program_groups_nest_to_the_json_depth_limit_on_a_default_thread() {
-    nests_to_the_json_depth_limit(groups);
+fn program_groups_nest_to_the_document_depth_bound_on_a_default_thread() {
+    nests_to_the_document_depth_bound(groups);
 }
 
 #[test]
-fn cycle_expansions_nest_to_the_json_depth_limit_on_a_default_thread() {
-    nests_to_the_json_depth_limit(expansions);
+fn a_cycle_expansion_holds_no_cycle() {
+    let inner = serde_json::to_value(Motion::Cycle(Box::new(cycles().remove(1)))).unwrap();
+    let mut outer = serde_json::to_value(cycles().remove(1)).unwrap();
+    outer["expansion"] = serde_json::json!([inner]);
+    assert!(read_desktop::<Cycle>(&outer.to_string()).is_err());
 }

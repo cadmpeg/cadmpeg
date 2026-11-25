@@ -362,13 +362,13 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         cube_id!(ShellId, "shell", 0_usize),
         cube_id!(RegionId, "region", 0_usize),
     ));
-    ir.geometry.regions.push(Region {
-        id: cube_id!(RegionId, "region", 0_usize),
-        body: cube_id!(BodyId, "body", 0_usize),
-        shells: vec![cube_id!(ShellId, "shell", 0_usize)],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        cube_id!(RegionId, "region", 0_usize),
+        cube_id!(BodyId, "body", 0_usize),
+        vec![cube_id!(ShellId, "shell", 0_usize)],
+    ));
     ir.geometry.bodies.push(Body {
+        unstated: None,
         id: cube_id!(BodyId, "body", 0_usize),
         kind: BodyKind::Solid,
         transform: None,
@@ -381,6 +381,52 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
     ir.finalize();
 
     Ok(ir)
+}
+
+/// Adds the root definition that a document holding a model record states
+/// (§8.1), listing the bodies no other definition lists. A document that
+/// states a root keeps it.
+pub fn add_document_root(ir: &mut CadIr) {
+    use crate::products::{ExternalDocument, ProductDefinition};
+    if ir
+        .model
+        .product_definitions
+        .iter()
+        .any(ProductDefinition::is_root)
+    {
+        return;
+    }
+    let listed: std::collections::BTreeSet<&crate::ids::BodyId> = ir
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| {
+            definition.bodies.iter().chain(
+                definition
+                    .instance_bodies
+                    .iter()
+                    .flat_map(|entry| &entry.bodies),
+            )
+        })
+        .collect();
+    let mut root = ProductDefinition::root(
+        crate::ids::ProductDefinitionId::compose(
+            &crate::identity_namespace!("test", "model", "product-definition"),
+            crate::identity_key!("document"),
+        ),
+        ExternalDocument::default(),
+    );
+    root.bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .filter(|body| !listed.contains(body))
+        .collect();
+    ir.model.product_definitions.push(root);
+    ir.model
+        .product_definitions
+        .sort_by(|left, right| left.id.cmp(&right.id));
 }
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.

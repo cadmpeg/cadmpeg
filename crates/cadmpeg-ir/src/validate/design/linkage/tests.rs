@@ -15,7 +15,7 @@ use crate::ids::Identity;
 use crate::math::Point3;
 use crate::units::UnitVector3;
 use crate::validate::design::fixture::{
-    assert_finding, assert_no_design_finding, document, feature, unresolved,
+    assert_finding, assert_no_design_finding, configuration, document, feature, id, unresolved,
 };
 use crate::NativeRecord;
 
@@ -42,6 +42,18 @@ fn design_identities_are_unique() {
         .features
         .push(unresolved("fillet", OperationFamily::Fillet));
     assert_finding(&ir, "is not unique among the design records");
+}
+
+#[test]
+fn a_design_record_shares_no_id_with_a_model_record() {
+    let mut ir = document();
+    let mut shared = configuration("shared", None);
+    shared.id = id("definition", "part");
+    ir.design.configurations.push(shared);
+    assert_finding(
+        &ir,
+        "design.configurations record id is also the id of a product_definitions record",
+    );
 }
 
 /// A datum axis feature whose record and link name native records.
@@ -83,7 +95,7 @@ fn linked_datum(record: &str, link: &str) -> Feature {
 #[test]
 fn a_datum_link_native_ref_resolves() {
     let mut ir = document();
-    ir.native.namespace_mut("sldprt");
+    ir.native.namespace_mut(crate::codec_id!("sldprt"));
     ir.design.features.push(linked_datum(
         "sldprt:feature#missing",
         "sldprt:link#missing",
@@ -91,13 +103,16 @@ fn a_datum_link_native_ref_resolves() {
     assert_finding(&ir, "native_ref `sldprt:link#missing` does not resolve");
 
     let (record, link) = ("sldprt:native:feature#0", "sldprt:native:link#0");
-    ir.native.namespace_mut("sldprt").arenas_mut().insert(
-        "records".into(),
-        [record, link]
-            .into_iter()
-            .map(|id| NativeRecord::new(Identity::new(id).unwrap(), Map::new()).unwrap())
-            .collect(),
-    );
+    ir.native
+        .namespace_mut(crate::codec_id!("sldprt"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            [record, link]
+                .into_iter()
+                .map(|id| NativeRecord::new(Identity::new(id).unwrap(), Map::new()).unwrap())
+                .collect(),
+        );
     ir.native.finalize();
     ir.design.features.pop();
     ir.design.features.push(linked_datum(record, link));

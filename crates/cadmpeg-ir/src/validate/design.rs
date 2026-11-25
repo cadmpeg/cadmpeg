@@ -24,11 +24,12 @@ mod fit;
 pub(super) mod fixture;
 mod folds;
 mod index;
+mod joins;
 mod linkage;
 mod matching;
 mod materials;
 mod names;
-mod ops;
+pub(super) mod ops;
 mod overrides;
 mod parameter_records;
 #[cfg(test)]
@@ -40,17 +41,19 @@ pub(super) mod resolved;
 pub(super) mod selections;
 mod sheet_metal;
 mod states;
+mod target_states;
 mod tolerances;
 mod walk;
 
 #[cfg(test)]
 mod tests;
 
+use crate::report::check::Ruled;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::design::feature::Feature;
-use crate::document::{CadIr, Topology};
+use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::index::ModelIndex;
 use crate::report::{
@@ -61,30 +64,7 @@ use crate::report::{
 use super::record_finding;
 use index::DesignIndex;
 use records::MemberKey;
-use walk::{Collect, ConstructionView, SelectionView, Walk};
-
-/// Checks that a `Topology` is closed over its own references: every
-/// reference of its records names a record of it.
-fn check_closed_topology(
-    ctx: &DecodeContext<'_>,
-    topology: &Topology,
-    at: &str,
-    what: &str,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    let mut alone = CadIr::empty();
-    alone.geometry = topology.clone();
-    let index = crate::index::ModelIndex::build(&alone);
-    let mut nested = Vec::new();
-    super::topology::check_references(ctx, &alone, &index, &mut nested)?;
-    for mut finding in nested {
-        finding.check = Check::Design;
-        finding.message = format!("{what}: {}", finding.message);
-        finding.related.insert(0, at.to_owned());
-        findings.push(finding);
-    }
-    Ok(())
-}
+use walk::{BoundDimension, Collect, ConstructionView, SelectionView, Walk};
 
 /// The record that holds a walked selection or construction.
 #[derive(Debug, Clone, Copy)]
@@ -120,11 +100,13 @@ impl<'a> Holder<'a> {
     }
 }
 
-/// The selections and constructions one design record holds.
+/// The selections, constructions, and bound dimensions one design record
+/// holds.
 struct Held<'a> {
     holder: Holder<'a>,
     selections: Vec<SelectionView<'a>>,
     constructions: Vec<ConstructionView<'a>>,
+    dimensions: Vec<BoundDimension<'a>>,
 }
 
 /// Check the design layer of `ir` against part 10's scope-and-linkage,
@@ -139,6 +121,7 @@ pub(super) fn check_design(
 ) -> Result<(), CodecError> {
     if ir.design.is_empty() {
         linkage::check_scope(ir, findings);
+        linkage::check_identities(ir, findings);
         tolerances::check_definition_general_tolerances(ir, findings);
         if !ir.process.parameters.is_empty() {
             let records = records::DesignRecords::new(ir);
@@ -150,12 +133,13 @@ pub(super) fn check_design(
     let records = &index.records;
     linkage::check_linkage(records, ids, findings);
     containers::check_containers(records, findings);
-    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings);
+    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings)?;
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
     ops::check_operations(records, findings);
     overrides::check(records, findings);
+    target_states::check(ir, findings);
     parameter_records::check_parameter_records(records, findings);
     programs::check_programs(records, findings);
     expressions::check_expressions(ctx, records, findings)?;
@@ -165,19 +149,22 @@ pub(super) fn check_design(
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
+    dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     sheet_metal::check(&index, findings);
     let states = states::States::new(ir);
+    joins::check(&index, &states, findings);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
-    selections::check(ctx, &index, &matchers, &held, findings)?;
+    selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
     materials::check(&index, &matchers, findings);
     Ok(())
 }
 
-/// Walks every design record that can hold a selection or a construction.
+/// Walks every design record that can hold a selection, a construction, or a
+/// dimension.
 fn collect<'a>(
     ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
@@ -188,11 +175,15 @@ fn collect<'a>(
     let mut add = |holder: Holder<'a>, record: &'a dyn Walk| -> Result<(), CodecError> {
         let mut into = Collect::new(ctx);
         record.walk(&mut into)?;
-        if !into.selections.is_empty() || !into.constructions.is_empty() {
+        if !into.selections.is_empty()
+            || !into.constructions.is_empty()
+            || !into.dimensions.is_empty()
+        {
             held.push(Held {
                 holder,
                 selections: into.selections,
                 constructions: into.constructions,
+                dimensions: into.dimensions,
             });
         }
         Ok(())
@@ -318,7 +309,7 @@ fn collect<'a>(
     Ok(held)
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     record_finding(
         findings,
         Check::Design,
@@ -328,7 +319,7 @@ fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments
     );
 }
 
-fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Design,

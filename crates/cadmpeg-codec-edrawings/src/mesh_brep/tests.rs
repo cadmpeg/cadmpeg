@@ -34,7 +34,9 @@ fn convert(
 }
 
 fn assert_valid(ir: &CadIr) {
-    let report = validate_neutral(ir, Vec::new()).unwrap();
+    let mut rooted = ir.clone();
+    cadmpeg_ir::examples::add_document_root(&mut rooted);
+    let report = validate_neutral(&rooted, Vec::new()).unwrap();
     let errors: Vec<_> = report
         .findings
         .iter()
@@ -238,14 +240,14 @@ fn plate_with_through_hole_has_inner_loops() {
         .geometry
         .faces
         .iter()
-        .filter(|f| f.loops.len() == 2)
+        .filter(|f| f.loops.stated().count() == 2)
         .count();
     assert_eq!(with_hole, 2);
     assert!(ir
         .geometry
         .faces
         .iter()
-        .filter(|f| f.loops.len() == 2)
+        .filter(|f| f.loops.stated().count() == 2)
         .all(|f| matches!(f.loops, cadmpeg_ir::topology::FaceLoops::Classified { .. })));
     assert_valid(&ir);
 }
@@ -789,7 +791,11 @@ fn add_cube(
 }
 
 fn shells_of_regions(ir: &CadIr) -> Vec<usize> {
-    ir.geometry.regions.iter().map(|r| r.shells.len()).collect()
+    ir.geometry
+        .regions
+        .iter()
+        .map(|r| r.stated_shells().count())
+        .collect()
 }
 
 #[test]
@@ -990,7 +996,8 @@ fn collapsing_a_digon_pairs_the_coedges_across_it() {
     assert_eq!(set.collapse_digons().unwrap(), 1);
     assert!(set.rings[0].is_empty());
     assert!(!set.runs[0].live && !set.runs[1].live);
-    assert_eq!((set.runs[2].partner, set.runs[3].partner), (3, 2));
+    assert_eq!(3, set.runs[2].partner);
+    assert_eq!(2, set.runs[3].partner);
     assert_eq!(set.runs[4].partner, 4);
     // An open edge across one side leaves the other side open.
     let mut set = RunSet {

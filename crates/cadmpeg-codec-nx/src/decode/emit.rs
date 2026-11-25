@@ -291,6 +291,7 @@ pub(super) fn emit_topology(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
 
@@ -337,12 +338,9 @@ pub(super) fn emit_topology(
             }
             annotations.derived(region.as_str(), "body")?;
 
-            ir.geometry.regions.push(Region {
-                id: region.clone(),
-                body: body.clone(),
-                shells: Vec::new(),
-                native_ref: None,
-            });
+            ir.geometry
+                .regions
+                .push(Region::new(region.clone(), body.clone(), Vec::new()));
             regions.insert(region_xmt, (region.clone(), body.clone()));
             region
         };
@@ -373,7 +371,7 @@ pub(super) fn emit_topology(
             .iter_mut()
             .find(|candidate| candidate.id == region_id)
         {
-            parent.shells.push(shell_id.clone());
+            parent.push_shell(shell_id.clone());
         }
         shells.insert(node.xmt(), shell_id);
     }
@@ -382,7 +380,7 @@ pub(super) fn emit_topology(
         .geometry
         .regions
         .iter()
-        .filter(|region| !region.shells.is_empty())
+        .filter(|region| region.stated_shells().next().is_some())
     {
         shell_owners.insert(region.body.clone());
     }
@@ -1127,9 +1125,9 @@ pub(super) fn emit_topology(
                     Some("INTERSECTION_PCURVE"),
                 );
                 annotations.derived(pcurve_id.as_str(), "geometry")?;
-                annotations.derived(pcurve_id.as_str(), "parameter_range")?;
+                annotations.derived(pcurve_id.as_str(), "metadata.form.parameter_range")?;
                 if fit_tolerance.is_some() {
-                    annotations.derived(pcurve_id.as_str(), "fit_tolerance")?;
+                    annotations.derived(pcurve_id.as_str(), "metadata.form.fit_tolerance")?;
                 }
 
                 ir.geometry.pcurves.push(Pcurve {

@@ -11,7 +11,7 @@ STUBS = """
 git() { printf '%s\n' "$STAGED"; }
 python3() {
   if [ "$1" = scripts/staged-crates.py ]; then
-    if [ "$2" = --owners ]; then printf '%s\n' "$OWNERS"; else printf '%s\n' "$CRATES"; fi
+    printf '%s\n' "$OWNERS"
     return
   fi
   printf 'python3 %s\n' "$*"
@@ -20,10 +20,10 @@ cargo() { printf 'cargo %s\n' "$*"; }
 """
 
 
-def run_hook(staged, owners="", crates=""):
+def run_hook(staged, owners=""):
     result = subprocess.run(
         ["sh"], input=STUBS + HOOK.read_text(), text=True, capture_output=True,
-        env={**os.environ, "STAGED": staged, "OWNERS": owners, "CRATES": crates},
+        env={**os.environ, "STAGED": staged, "OWNERS": owners},
         check=True,
     )
     return result.stdout.splitlines()
@@ -61,21 +61,20 @@ class CheckerRouting(unittest.TestCase):
 
 
 class RustGate(unittest.TestCase):
-    def cargo(self, staged, owners="", crates=""):
-        return [line for line in run_hook(staged, owners, crates) if line.startswith("cargo ")]
+    def cargo(self, staged, owners=""):
+        return [line for line in run_hook(staged, owners) if line.startswith("cargo ")]
 
     def test_no_rust_input_runs_no_cargo(self):
         for staged in ["README.md", "crates/cadmpeg-registry/docs/dialect-support.toml"]:
             with self.subTest(staged=staged):
                 self.assertEqual(self.cargo(staged), [])
 
-    def test_crate_source_formats_owners_and_lints_dependents(self):
+    def test_crate_source_formats_and_lints_owners(self):
         self.assertEqual(
             self.cargo("crates/cadmpeg-codec-step/src/reader.rs",
-                       owners="cadmpeg-codec-step",
-                       crates="cadmpeg\ncadmpeg-codec-step"),
+                       owners="cadmpeg-codec-step"),
             ["cargo fmt -p cadmpeg-codec-step --check",
-             "cargo clippy -p cadmpeg -p cadmpeg-codec-step --all-targets"],
+             "cargo clippy -p cadmpeg-codec-step --all-targets"],
         )
 
     def test_manifest_or_toolchain_selects_workspace(self):
@@ -90,7 +89,7 @@ class RustGate(unittest.TestCase):
     def test_unowned_rust_file_selects_workspace(self):
         self.assertEqual(
             self.cargo("crates/cadmpeg-fuzz/fuzz_targets/step.rs",
-                       owners="WORKSPACE", crates="WORKSPACE"),
+                       owners="WORKSPACE"),
             ["cargo fmt --all --check", "cargo clippy --workspace --all-targets"],
         )
 

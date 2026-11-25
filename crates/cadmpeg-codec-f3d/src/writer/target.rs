@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
-    ExportBody, PatchConsumption, WritePath,
+    ExportBody, MissingStateForm, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -84,10 +84,11 @@ enum Preservation {
 }
 
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
-    let Some(record) = input
-        .fidelity
-        .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-    else {
+    let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
+        sidecar
+            .retained_record(ids::FILE_SOURCE_IMAGE_ID)
+            .map(|record| (sidecar, record))
+    }) else {
         return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
@@ -95,7 +96,8 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(input.ir, data, &mut bytes, &mut notes)?;
+    let write_path =
+        F3dCodec::write_preserved_bytes(input.ir, fidelity, data, &mut bytes, &mut notes)?;
     Ok(Preservation::Written {
         bytes,
         write_path,
@@ -199,13 +201,21 @@ fn synthesized_body(
                 )));
         }
     }
-    Ok(body(
+    let mut body = body(
         input.ir,
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(generated.coverage),
         losses,
         bytes,
-    ))
+    );
+    if input.missing_states == MissingStateForm::HistoryTrue {
+        body.notes.push(
+            "the F3D writer writes the geometry-true form only, so the file holds the current \
+             geometry and not the history-true form the request names"
+                .to_owned(),
+        );
+    }
+    Ok(body)
 }
 
 fn body(

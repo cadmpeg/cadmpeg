@@ -6,8 +6,8 @@ use super::fixtures::{self, parameter_ref};
 use super::round_trip;
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::expr::{
-    self, BendVariable, BinaryOp, Constant, Expression, Function, Neutral, NeutralWire, Node,
-    UnaryOp,
+    self, AddOp, BendVariable, BinaryOp, Constant, Expression, Function, MulOp, Neutral,
+    NeutralWire, Node, UnaryOp,
 };
 use crate::design::units::UnitSymbol;
 use crate::scalar::NonNegativeReal;
@@ -206,28 +206,10 @@ fn every_node_variant_round_trips_as_neutral_text() {
             operand: Box::new(operand.clone()),
         }));
     }
-    for op in [
-        BinaryOp::Add,
-        BinaryOp::Subtract,
-        BinaryOp::Multiply,
-        BinaryOp::Divide,
-        BinaryOp::Power,
-        BinaryOp::Equal,
-        BinaryOp::NotEqual,
-        BinaryOp::Less,
-        BinaryOp::LessEqual,
-        BinaryOp::Greater,
-        BinaryOp::GreaterEqual,
-        BinaryOp::And,
-        BinaryOp::Or,
-    ] {
+    for op in Operator::ALL {
         for left in &leaves {
             for right in [&leaves[9], &leaves[11], &leaves[5]] {
-                trees.push(Node::Binary {
-                    op,
-                    left: Box::new(left.clone()),
-                    right: Box::new(right.clone()),
-                });
+                trees.push(op.apply(left.clone(), right.clone()));
             }
         }
     }
@@ -243,21 +225,46 @@ fn every_node_variant_round_trips_as_neutral_text() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
-const BINARY_OPS: [BinaryOp; 13] = [
-    BinaryOp::Add,
-    BinaryOp::Subtract,
-    BinaryOp::Multiply,
-    BinaryOp::Divide,
-    BinaryOp::Power,
-    BinaryOp::Equal,
-    BinaryOp::NotEqual,
-    BinaryOp::Less,
-    BinaryOp::LessEqual,
-    BinaryOp::Greater,
-    BinaryOp::GreaterEqual,
-    BinaryOp::And,
-    BinaryOp::Or,
-];
+/// Every two-operand operator of canonical text: `^` and the comparisons as
+/// a `Binary`, and the four chain levels as one more operand of a run.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum Operator {
+    Binary(BinaryOp),
+    Add(AddOp),
+    Mul(MulOp),
+    And,
+    Or,
+}
+
+impl Operator {
+    pub(super) const ALL: [Self; 13] = [
+        Self::Add(AddOp::Add),
+        Self::Add(AddOp::Subtract),
+        Self::Mul(MulOp::Multiply),
+        Self::Mul(MulOp::Divide),
+        Self::Binary(BinaryOp::Power),
+        Self::Binary(BinaryOp::Equal),
+        Self::Binary(BinaryOp::NotEqual),
+        Self::Binary(BinaryOp::Less),
+        Self::Binary(BinaryOp::LessEqual),
+        Self::Binary(BinaryOp::Greater),
+        Self::Binary(BinaryOp::GreaterEqual),
+        Self::And,
+        Self::Or,
+    ];
+
+    /// `left` and `right` joined by the operator, in the one tree the text
+    /// of the two reads as.
+    pub(super) fn apply<R>(self, left: Node<R>, right: Node<R>) -> Node<R> {
+        match self {
+            Self::Binary(op) => Node::binary(op, left, right),
+            Self::Add(op) => Node::add(left, op, right),
+            Self::Mul(op) => Node::mul(left, op, right),
+            Self::And => Node::and(left, right),
+            Self::Or => Node::or(left, right),
+        }
+    }
+}
 
 /// A fixed sequence of choices, so the trees are the same on every run.
 pub(super) struct Choices(pub(super) u64);
@@ -296,11 +303,7 @@ fn tree(choices: &mut Choices, leaves: &[Node<ParameterRef>], depth: u32) -> Nod
         2 | 3 => {
             let left = operand();
             let right = operand();
-            Node::Binary {
-                op: choices.pick(&BINARY_OPS),
-                left,
-                right,
-            }
+            choices.pick(&Operator::ALL).apply(*left, *right)
         }
         4 => {
             let count = choices.below(4);
@@ -312,7 +315,10 @@ fn tree(choices: &mut Choices, leaves: &[Node<ParameterRef>], depth: u32) -> Nod
                 args,
             }
         }
-        _ => Node::If(Box::new([*operand(), *operand(), *operand()])),
+        _ => {
+            let (condition, then, otherwise) = (operand(), operand(), operand());
+            Node::branch(*condition, *then, *otherwise)
+        }
     }
 }
 
@@ -321,11 +327,13 @@ fn holds_a_call_with_no_argument(node: &Node<ParameterRef>) -> bool {
         Node::Call { args, .. } => {
             args.is_empty() || args.iter().any(holds_a_call_with_no_argument)
         }
-        Node::Unary { operand, .. } => holds_a_call_with_no_argument(operand),
-        Node::Binary { left, right, .. } => {
-            holds_a_call_with_no_argument(left) || holds_a_call_with_no_argument(right)
-        }
-        Node::If(branches) => branches.iter().any(holds_a_call_with_no_argument),
+        Node::Unary { .. }
+        | Node::Binary { .. }
+        | Node::Sum { .. }
+        | Node::Product { .. }
+        | Node::All(_)
+        | Node::Any(_)
+        | Node::If { .. } => node.operands().any(holds_a_call_with_no_argument),
         Node::Number { .. }
         | Node::Constant(_)
         | Node::Boolean(_)
@@ -356,7 +364,6 @@ fn every_printed_expression_reads_back() {
                 assert!(holds_a_call_with_no_argument(&node), "{node:?}: {error}");
                 refused += 1;
             }
-            Err(error) => panic!("{node:?}: {error}"),
         }
     }
     assert!(
@@ -466,16 +473,13 @@ fn quantity(node: &Node<ParameterRef>, refs: &[[i32; 4]]) -> [i32; 4] {
             let index: usize = id.as_str().rsplit('#').next().unwrap().parse().unwrap();
             refs[index]
         }
-        Node::Binary {
-            op: BinaryOp::Multiply,
-            left,
-            right,
-        } => combine(quantity(left, refs), quantity(right, refs), 1),
-        Node::Binary {
-            op: BinaryOp::Divide,
-            left,
-            right,
-        } => combine(quantity(left, refs), quantity(right, refs), -1),
+        Node::Product { first, rest } => {
+            rest.iter()
+                .fold(quantity(first, refs), |held, (op, operand)| {
+                    let sign = if *op == MulOp::Multiply { 1 } else { -1 };
+                    combine(held, quantity(operand, refs), sign)
+                })
+        }
         other => panic!("not a product or quotient: {other:?}"),
     }
 }
@@ -499,5 +503,97 @@ fn the_feed_per_tooth_example_type_checks() {
         quantity(&per_tooth, &[feed, angular_speed, count]),
         [1, 0, 0, 0],
         "a length per tooth"
+    );
+}
+
+/// "A chain is a run of one left-associative level of the grammar … held as
+/// one node with its operands in source order", and "an `if` that is the
+/// last operand of an `if` is a further case of it".
+#[test]
+fn a_run_of_one_level_is_one_node_and_an_if_in_last_place_is_a_further_case() {
+    let leaf = |index| Node::Reference(parameter_ref(index));
+    assert_eq!(
+        read("$0 + $1 - $2").unwrap(),
+        Node::Sum {
+            first: Box::new(leaf(0)),
+            rest: vec![(AddOp::Add, leaf(1)), (AddOp::Subtract, leaf(2))],
+        }
+    );
+    assert_eq!(
+        read("$0 * $1 / $2").unwrap(),
+        Node::Product {
+            first: Box::new(leaf(0)),
+            rest: vec![(MulOp::Multiply, leaf(1)), (MulOp::Divide, leaf(2))],
+        }
+    );
+    assert_eq!(
+        read("$0 and $1 and $2").unwrap(),
+        Node::All(vec![leaf(0), leaf(1), leaf(2)])
+    );
+    assert_eq!(
+        read("$0 or $1 or $2").unwrap(),
+        Node::Any(vec![leaf(0), leaf(1), leaf(2)])
+    );
+    assert_eq!(
+        read("$0 - ($1 + $2)").unwrap(),
+        Node::Sum {
+            first: Box::new(leaf(0)),
+            rest: vec![(
+                AddOp::Subtract,
+                Node::Sum {
+                    first: Box::new(leaf(1)),
+                    rest: vec![(AddOp::Add, leaf(2))],
+                },
+            )],
+        }
+    );
+    assert!(read("($0 + $1) + $2").is_err());
+    let ladder = Node::If {
+        cases: vec![(leaf(0), leaf(1)), (leaf(2), leaf(3))],
+        otherwise: Box::new(leaf(4)),
+    };
+    assert_eq!(read("if($0, $1, if($2, $3, $4))").unwrap(), ladder);
+    assert_eq!(
+        expr::print(&ladder).unwrap().text,
+        "if($0, $1, if($2, $3, $4))"
+    );
+    assert_eq!(
+        Node::branch(leaf(0), leaf(1), Node::branch(leaf(2), leaf(3), leaf(4))),
+        ladder
+    );
+    let nested = read("if($0, if($1, $2, $3), $4)").unwrap();
+    let Node::If { cases, otherwise } = &nested else {
+        panic!("an if: {nested:?}");
+    };
+    assert_eq!(cases.len(), 1);
+    assert_eq!(**otherwise, leaf(4));
+}
+
+/// "Its conditions are tested in order; the value of the first that is true
+/// is evaluated, or `otherwise` where none is, and nothing else."
+#[test]
+fn a_ladder_evaluates_the_value_of_its_first_true_condition_only() {
+    use crate::design::edit::{evaluate, EvalError, Value};
+
+    let ladder = read("if($0, 1, if($1, 2, 3 / 0))").unwrap();
+    let run = |first: bool, second: bool| {
+        evaluate(&ladder, &mut |reference: &ParameterRef| {
+            Some(Value::Boolean(if *reference == parameter_ref(0) {
+                first
+            } else {
+                second
+            }))
+        })
+    };
+    let number = |value: f64| Value::Number {
+        value,
+        quantity: crate::design::units::Quantity::REAL,
+    };
+    assert_eq!(run(true, true), Ok(number(1.0)));
+    assert_eq!(run(true, false), Ok(number(1.0)));
+    assert_eq!(run(false, true), Ok(number(2.0)));
+    assert_eq!(
+        run(false, false),
+        Err(EvalError::Domain("division by zero"))
     );
 }

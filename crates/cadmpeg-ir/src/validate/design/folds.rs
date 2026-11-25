@@ -60,7 +60,11 @@ pub(super) fn check<'a>(
                     }
                 }
                 for message in messages {
-                    super::error(findings, record.holder.record(), format_args!("{message}"));
+                    super::error(
+                        findings,
+                        record.holder.record(),
+                        crate::rule!("design.fold-straight-edge-picks", "{message}"),
+                    );
                 }
             }
         }

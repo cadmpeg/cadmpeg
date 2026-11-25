@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::record_invalid;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -8,12 +9,14 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
 use super::{
-    admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, check_object_attributes,
-    close_point, generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
+    admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, close_point,
+    generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
     EPS_WRITE_DEGENERATE,
 };
 
@@ -25,6 +28,10 @@ pub(super) struct WritableModel<'a> {
     pub(super) loops: Vec<WritableLoop<'a>>,
     pub(super) faces: Vec<WritableFace<'a>>,
     pub(super) surfaces: Vec<WritableFaceSurface<'a>>,
+    /// The losses of the Brep write: `export:record.invalid` for each record
+    /// it writes although its geometry disagrees, and `export:value.unwritable`
+    /// for the face values a Brep face does not hold.
+    pub(super) losses: Vec<LossNote>,
 }
 
 pub(super) struct WritableVertex<'a> {
@@ -109,26 +116,59 @@ pub(super) struct WritableObjectCurve<'a> {
 
 enum ObjectCurveGeometry<'a> {
     Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve),
-    Nurbs(&'a NurbsCurve),
+    /// A bounded line: its endpoints and its parameter range.
+    Line {
+        from: Point3,
+        to: Point3,
+        domain: [f64; 2],
+    },
+    Nurbs(std::borrow::Cow<'a, NurbsCurve>),
 }
 
 impl<'a> WritableObjectCurve<'a> {
     /// Admits a free curve with writable attributes and geometry.
     pub(super) fn try_new(curve: &'a cadmpeg_ir::geometry::Curve) -> Result<Self, CodecError> {
-        if curve.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "curve {} source-object state is not writable",
-                curve.id.as_str()
-            )));
-        }
         let geometry = match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
                 ObjectCurveGeometry::Circle(circle)
             }
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
+                let range = curve.parameter_range.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "line {} states no parameter range, and 3DM holds no unbounded line",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let domain = FiniteReal::raw_array(range.finite_endpoints());
+                let origin = line.origin().get();
+                let direction = *line.direction().as_raw();
+                let at = |parameter: f64| {
+                    Point3::new(
+                        origin.x + direction.x * parameter,
+                        origin.y + direction.y * parameter,
+                        origin.z + direction.z * parameter,
+                    )
+                };
+                ObjectCurveGeometry::Line {
+                    from: at(domain[0]),
+                    to: at(domain[1]),
+                    domain,
+                }
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
+                let nurbs = polyline_nurbs(polyline).map_err(|error| {
+                    CodecError::NotImplemented(format!(
+                        "polyline {} has no degree-1 NURBS form: {error}",
+                        curve.id.as_str()
+                    ))
+                })?;
+                check_nurbs_curve(curve.id.as_str(), &nurbs)?;
+                ObjectCurveGeometry::Nurbs(std::borrow::Cow::Owned(nurbs))
+            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                ObjectCurveGeometry::Nurbs(nurbs)
+                ObjectCurveGeometry::Nurbs(std::borrow::Cow::Borrowed(nurbs))
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -142,7 +182,16 @@ impl<'a> WritableObjectCurve<'a> {
 
     /// Encodes the admitted curve as a native class payload.
     pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), CodecError> {
-        Ok(match self.geometry {
+        Ok(match &self.geometry {
+            ObjectCurveGeometry::Line { from, to, domain } => (
+                super::LINE_CLASS,
+                super::bounded_line_payload(
+                    [from.x, from.y, from.z],
+                    [to.x, to.y, to.z],
+                    *domain,
+                    3,
+                )?,
+            ),
             ObjectCurveGeometry::Circle(circle) => {
                 let center = circle.center().get();
                 let axis = circle.frame().axis().as_raw();
@@ -158,6 +207,39 @@ impl<'a> WritableObjectCurve<'a> {
             }
         })
     }
+}
+
+/// The degree-1 NURBS curve through the samples of `polyline`, at their
+/// stated parameters or, where it states none, at their indexes.
+fn polyline_nurbs(
+    polyline: &cadmpeg_ir::geometry::sampled::PolylineCurve,
+) -> Result<NurbsCurve, String> {
+    let points = polyline
+        .points()
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
+        .collect::<Vec<_>>();
+    if points.len() < 2 {
+        return Err("it holds one sample".into());
+    }
+    let parameters = match polyline.parameters() {
+        Some(parameters) => parameters.map(FiniteReal::get).collect::<Vec<_>>(),
+        None => (0..points.len())
+            .map(|index| {
+                cadmpeg_core::convert::f64_from_index(index)
+                    .ok_or_else(|| "a sample index exceeds the f64 range".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    let (Some(first), Some(last)) = (parameters.first(), parameters.last()) else {
+        return Err("it holds no sample".into());
+    };
+    let knots = std::iter::once(*first)
+        .chain(parameters.iter().copied())
+        .chain(std::iter::once(*last))
+        .collect::<Vec<_>>();
+    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(points, None)
+        .map_err(|error| error.to_string())?;
+    NurbsCurve::new(1, knots, poles, false).map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Copy)]
@@ -177,12 +259,6 @@ pub(super) enum WritableFaceSurface<'a> {
 
 impl<'a> WritableFaceSurface<'a> {
     pub(super) fn try_new(surface: &'a cadmpeg_ir::geometry::Surface) -> Result<Self, CodecError> {
-        if surface.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "surface {} source-object state is not writable",
-                surface.id.as_str(),
-            )));
-        }
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
                 let origin = plane.origin().get();
@@ -306,16 +382,25 @@ impl<'a> WritableModel<'a> {
         {
             return Err(CodecError::NotImplemented("Brep writing requires one shell with distinct explicit carriers and polygonal loops".into()));
         }
-        if geometry.body_regions(&body.id).count() != 1 || body.transform.is_some() {
+        if geometry
+            .complete_body_regions(&body.id)
+            .is_none_or(|regions| regions.count() != 1)
+            || geometry.complete_shells(&geometry.regions[0]).is_none()
+        {
+            return Err(CodecError::NotImplemented(
+                "Brep writing requires a body that states every region, shell, face, and loop"
+                    .into(),
+            ));
+        }
+        if body.transform.is_some() {
             return Err(CodecError::NotImplemented(
                 "Brep body placement is not writable".into(),
             ));
         }
-        check_object_attributes(body.id.as_str(), body.name.as_deref())?;
         let region = &geometry.regions[0];
         let shell = &geometry.shells[0];
         if region.body != body.id
-            || region.shells != std::slice::from_ref(&shell.id)
+            || !region.stated_shells().eq(std::iter::once(&shell.id))
             || shell.region != region.id
             || geometry.faces.iter().any(|face| face.shell != shell.id)
             || !shell.members.is_empty()
@@ -333,11 +418,11 @@ impl<'a> WritableModel<'a> {
         let mut ordered_vertices = Vec::new();
         match layout {
             Layout::SingleFace => {
-                if !geometry.faces[0]
-                    .loops
-                    .iter()
-                    .eq(geometry.loops.iter().map(|loop_| &loop_.id))
-                {
+                if !geometry.faces[0].loops.boundary().is_some_and(|loops| {
+                    loops
+                        .iter()
+                        .eq(geometry.loops.iter().map(|loop_| &loop_.id))
+                }) {
                     return Err(CodecError::Malformed(
                         "single-face loop order is inconsistent".into(),
                     ));
@@ -385,7 +470,6 @@ impl<'a> WritableModel<'a> {
         let face_positions = positions(geometry.faces.iter().map(|face| face.id.as_str()))?;
         let surface_positions =
             positions(geometry.surfaces.iter().map(|surface| surface.id.as_str()))?;
-        let mut used_points = BTreeSet::new();
         let vertices = ordered_vertices
             .into_iter()
             .map(|vertex| {
@@ -399,18 +483,13 @@ impl<'a> WritableModel<'a> {
                             vertex.point.as_str()
                         ))
                     })?;
-                if layout == Layout::MultiFace && !used_points.insert(point.id.as_str()) {
-                    return Err(CodecError::malformed(format_args!(
-                        "vertex {} has a shared point",
-                        vertex.id.as_str()
-                    )));
-                }
                 Ok(WritableVertex {
                     source: vertex,
                     point: point.position().get(),
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
+        let mut findings = Vec::new();
         let mut edges = Vec::new();
         let mut used_curves = BTreeSet::new();
         for edge in ordered_edges {
@@ -428,12 +507,6 @@ impl<'a> WritableModel<'a> {
                     CodecError::malformed(format_args!("curve {} is missing", curve_id.as_str()))
                 })?;
             used_curves.insert(curve_id.as_str());
-            if curve.source_object.is_some() {
-                return Err(CodecError::NotImplemented(format!(
-                    "edge curve {} source-object state is not writable",
-                    curve.id.as_str()
-                )));
-            }
             let domain = edge
                 .param_range()
                 .ok_or_else(|| {
@@ -531,14 +604,18 @@ impl<'a> WritableModel<'a> {
             let ends = super::edge_ends(edge)?;
             let start = resolve(&vertex_positions, ends.start.as_str())?;
             let end = resolve(&vertex_positions, ends.end.as_str())?;
-            let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
+            let tolerance = stated_write_tolerance(edge.tolerance, ir);
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
             {
-                return Err(CodecError::malformed(format_args!(
-                    "edge {} endpoints disagree with its line curve",
-                    edge.id.as_str()
-                )));
+                findings.push(record_invalid(
+                    EntityKind::Edge,
+                    format!(
+                        "edge {} endpoints disagree with its curve {}",
+                        edge.id.as_str(),
+                        curve.id.as_str()
+                    ),
+                ));
             }
             edges.push(WritableEdge {
                 source: edge,
@@ -575,20 +652,19 @@ impl<'a> WritableModel<'a> {
             .faces
             .iter()
             .map(|face| {
+                let boundary = face.loops.boundary().filter(|loops| !loops.is_empty());
                 if face.shell != shell.id
-                    || face.loops.is_empty()
-                    || face.name.is_some()
-                    || face.color.is_some()
+                    || boundary.is_none()
                     || !used_surfaces.insert(face.surface.as_str())
                 {
                     return Err(CodecError::NotImplemented(format!(
-                        "face {} has unsupported ownership, attributes, or shared surface state",
+                        "face {} has unsupported ownership or shared surface state",
                         face.id.as_str()
                     )));
                 }
-                let loops = face
-                    .loops
-                    .iter()
+                let loops = boundary
+                    .into_iter()
+                    .flatten()
                     .map(|id| {
                         if !owned_loops.insert(id.as_str()) {
                             return Err(CodecError::malformed(format_args!(
@@ -702,12 +778,17 @@ impl<'a> WritableModel<'a> {
                         )?;
                         match pcurve {
                             None => generated,
-                            Some(pcurve) if pcurve.payload == generated => pcurve.payload,
                             Some(pcurve) => {
-                                return Err(CodecError::malformed(format_args!(
-                                    "pcurve {} does not exactly match its directed planar C3 projection",
-                                    pcurve.source.id.as_str(),
-                                )))
+                                if pcurve.payload != generated {
+                                    findings.push(record_invalid(
+                                        EntityKind::Pcurve,
+                                        format!(
+                                            "pcurve {} does not exactly match its directed planar C3 projection",
+                                            pcurve.source.id.as_str(),
+                                        ),
+                                    ));
+                                }
+                                pcurve.payload
                             }
                         }
                     }
@@ -717,15 +798,13 @@ impl<'a> WritableModel<'a> {
                                 "coedge {} has no explicit pcurve", coedge.id.as_str(),
                             ))
                         })?;
-                        let face_tolerance = stated_write_tolerance(
-                            face.source.tolerance,
-                            ir,
-                            face.source.id.as_str(),
-                        )?;
-                        validate_nurbs_trim(
+                        let face_tolerance = stated_write_tolerance(face.source.tolerance, ir);
+                        if let Some(finding) = validate_nurbs_trim(
                             surface, face_tolerance,
                             &edges[edge], coedge.sense, &pcurve,
-                        )?;
+                        )? {
+                            findings.push(record_invalid(EntityKind::Pcurve, finding));
+                        }
                         pcurve.payload
                     }
                 };
@@ -752,6 +831,7 @@ impl<'a> WritableModel<'a> {
             loops,
             faces,
             surfaces,
+            losses: findings,
         };
         for loop_ in &result.loops {
             for (index, position) in loop_.coedges.iter().copied().enumerate() {
@@ -764,6 +844,7 @@ impl<'a> WritableModel<'a> {
                 }
             }
         }
+        let mut open_solid_edges = Vec::new();
         for (position, edge) in result.edges.iter_mut().enumerate() {
             let uses = result
                 .coedges
@@ -772,15 +853,15 @@ impl<'a> WritableModel<'a> {
                 .filter(|(_, coedge)| coedge.edge == position)
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
-            if uses.is_empty()
-                || uses.len() > 2
-                || body.kind == BodyKind::Solid && uses.len() != 2
-                || layout == Layout::SingleFace && uses.len() != 1
+            if uses.is_empty() || uses.len() > 2 || layout == Layout::SingleFace && uses.len() != 1
             {
                 return Err(CodecError::NotImplemented(format!(
                     "edge {} incidence is incompatible with the body kind",
                     edge.source.id.as_str()
                 )));
+            }
+            if body.kind == BodyKind::Solid && uses.len() == 1 {
+                open_solid_edges.push(edge.source.id.as_str().to_owned());
             }
             let start = uses[0];
             let mut current = start;
@@ -837,6 +918,7 @@ impl<'a> WritableModel<'a> {
                 ));
             }
         }
+        let mut plane_findings = Vec::new();
         for loop_ in &result.loops {
             let face = &result.faces[loop_.face];
             match result.surfaces[face.surface] {
@@ -846,8 +928,7 @@ impl<'a> WritableModel<'a> {
                     normal,
                     u_axis,
                 } => {
-                    let tolerance =
-                        stated_write_tolerance(face.source.tolerance, ir, face.source.id.as_str())?;
+                    let tolerance = stated_write_tolerance(face.source.tolerance, ir);
                     let mut boundary = Vec::new();
                     for position in &loop_.coedges {
                         let coedge = &result.coedges[*position];
@@ -858,10 +939,15 @@ impl<'a> WritableModel<'a> {
                                     + (point.y - origin.y) * normal.y
                                     + (point.z - origin.z) * normal.z;
                                 if distance.abs() > tolerance {
-                                    return Err(CodecError::malformed(format_args!(
-                                        "edge curve {} is outside its face plane tolerance",
-                                        edge.curve_id
-                                    )));
+                                    plane_findings.push(record_invalid(
+                                        EntityKind::Curve,
+                                        format!(
+                                            "edge curve {} is outside the plane tolerance of face {}",
+                                            edge.curve_id,
+                                            face.source.id.as_str()
+                                        ),
+                                    ));
+                                    break;
                                 }
                             }
                         }
@@ -878,10 +964,14 @@ impl<'a> WritableModel<'a> {
                                 + (point.y - origin.y) * normal.y
                                 + (point.z - origin.z) * normal.z;
                             if distance.abs() > tolerance {
-                                return Err(CodecError::malformed(format_args!(
-                                    "loop {} vertex is outside its face plane tolerance",
-                                    loop_.source.id.as_str()
-                                )));
+                                plane_findings.push(record_invalid(
+                                    EntityKind::Vertex,
+                                    format!(
+                                        "vertex {} of loop {} is outside its face plane tolerance",
+                                        result.vertices[vertex].source.id.as_str(),
+                                        loop_.source.id.as_str()
+                                    ),
+                                ));
                             }
                         }
                     }
@@ -893,15 +983,38 @@ impl<'a> WritableModel<'a> {
                             .map(|(from, to)| from[0] * to[1] - to[0] * from[1])
                             .sum::<f64>();
                         if !twice_area.is_finite() || twice_area.abs() <= tolerance * tolerance {
-                            return Err(CodecError::malformed(format_args!(
-                                "loop {} has degenerate planar area",
-                                loop_.source.id.as_str()
-                            )));
+                            plane_findings.push(record_invalid(
+                                EntityKind::Loop,
+                                format!(
+                                    "loop {} has degenerate planar area",
+                                    loop_.source.id.as_str()
+                                ),
+                            ));
                         }
                     }
                 }
             }
         }
+        result.losses.extend(plane_findings);
+        if !open_solid_edges.is_empty() {
+            result.losses.push(record_invalid(
+                EntityKind::Body,
+                format!(
+                    "solid body {} has edges with one use and is written as an open Brep: {}",
+                    body.id.as_str(),
+                    open_solid_edges.join(", ")
+                ),
+            ));
+        }
+        result.losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "Rhino",
+            "writes these Brep faces without their name or color, which a 3DM Brep face does not hold",
+            geometry
+                .faces
+                .iter()
+                .filter(|face| face.name.is_some() || face.color.is_some())
+                .map(|face| face.id.as_str().to_owned()),
+        ));
         Ok(result)
     }
 

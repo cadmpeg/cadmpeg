@@ -17,7 +17,6 @@ mod tree;
 #[cfg(feature = "schema")]
 use std::borrow::Cow;
 
-use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
@@ -28,7 +27,6 @@ pub use self::parse::parse;
 pub use self::print::{format_number, print};
 use super::construction::FrameAxis;
 use super::dimension::ParameterRef;
-use super::read::{self, Ceiling};
 use super::selection::OrderedSelection;
 use super::units::Unit;
 use crate::scalar::{FiniteReal, NonNegativeReal};
@@ -180,6 +178,26 @@ pub enum Node<R> {
         /// The right operand.
         right: Box<Node<R>>,
     },
+    /// A run of `+` and `-`, evaluated from the left: `first`, then each
+    /// later operand with the operator before it.
+    Sum {
+        /// The first operand.
+        first: Box<Node<R>>,
+        /// Each later operand with the operator before it.
+        rest: Vec<(AddOp, Node<R>)>,
+    },
+    /// A run of `*` and `/`, evaluated from the left: `first`, then each
+    /// later operand with the operator before it.
+    Product {
+        /// The first operand.
+        first: Box<Node<R>>,
+        /// Each later operand with the operator before it.
+        rest: Vec<(MulOp, Node<R>)>,
+    },
+    /// A run of `and`. Every operand evaluates.
+    All(Vec<Node<R>>),
+    /// A run of `or`. Every operand evaluates.
+    Any(Vec<Node<R>>),
     /// A function call.
     Call {
         /// The function.
@@ -187,9 +205,97 @@ pub enum Node<R> {
         /// The arguments.
         args: Vec<Node<R>>,
     },
-    /// `if(c, a, b)`: `c` is Boolean, `a` and `b` are of the same kind, and
-    /// only the taken branch evaluates.
-    If(Box<[Node<R>; 3]>),
+    /// A ladder of conditions: `if(p, a, if(q, b, c))` is `cases: [(p, a),
+    /// (q, b)], otherwise: c`. The conditions are tested in order, and only
+    /// the value of the first that is true, or `otherwise` where none is,
+    /// evaluates.
+    If {
+        /// Each condition with its value, in order.
+        cases: Vec<(Node<R>, Node<R>)>,
+        /// The value where no condition is true.
+        otherwise: Box<Node<R>>,
+    },
+}
+
+impl<R> Node<R> {
+    /// `left op right` as one `Sum`: `right` joins the run of `left` where
+    /// `left` is a `Sum`.
+    #[must_use]
+    pub fn add(mut left: Self, op: AddOp, right: Self) -> Self {
+        if let Self::Sum { rest, .. } = &mut left {
+            rest.push((op, right));
+            left
+        } else {
+            Self::Sum {
+                first: Box::new(left),
+                rest: vec![(op, right)],
+            }
+        }
+    }
+
+    /// `left op right` as one `Product`: `right` joins the run of `left`
+    /// where `left` is a `Product`.
+    #[must_use]
+    pub fn mul(mut left: Self, op: MulOp, right: Self) -> Self {
+        if let Self::Product { rest, .. } = &mut left {
+            rest.push((op, right));
+            left
+        } else {
+            Self::Product {
+                first: Box::new(left),
+                rest: vec![(op, right)],
+            }
+        }
+    }
+
+    /// `left and right` as one `All`: `right` joins the run of `left` where
+    /// `left` is an `All`.
+    #[must_use]
+    pub fn and(mut left: Self, right: Self) -> Self {
+        if let Self::All(operands) = &mut left {
+            operands.push(right);
+            left
+        } else {
+            Self::All(vec![left, right])
+        }
+    }
+
+    /// `left or right` as one `Any`: `right` joins the run of `left` where
+    /// `left` is an `Any`.
+    #[must_use]
+    pub fn or(mut left: Self, right: Self) -> Self {
+        if let Self::Any(operands) = &mut left {
+            operands.push(right);
+            left
+        } else {
+            Self::Any(vec![left, right])
+        }
+    }
+
+    /// `if(condition, then, otherwise)` as one `If`: where `otherwise` is an
+    /// `If`, the condition and `then` become the first case of its ladder.
+    #[must_use]
+    pub fn branch(condition: Self, then: Self, mut otherwise: Self) -> Self {
+        if let Self::If { cases, .. } = &mut otherwise {
+            cases.insert(0, (condition, then));
+            otherwise
+        } else {
+            Self::If {
+                cases: vec![(condition, then)],
+                otherwise: Box::new(otherwise),
+            }
+        }
+    }
+
+    /// `left op right` as a `Binary`.
+    #[must_use]
+    pub fn binary(op: BinaryOp, left: Self, right: Self) -> Self {
+        Self::Binary {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
 }
 
 /// A dimensionless constant.
@@ -227,19 +333,33 @@ pub enum UnaryOp {
     Not,
 }
 
-/// A binary operation.
+/// An operator of a `Sum`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum BinaryOp {
+pub enum AddOp {
     /// `+`, of the same quantity.
     Add,
     /// `-`, of the same quantity.
     Subtract,
+}
+
+/// An operator of a `Product`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum MulOp {
     /// `*`: exponents add.
     Multiply,
     /// `/`: exponents subtract; real division.
     Divide,
+}
+
+/// A binary operation: `^` and the comparisons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum BinaryOp {
     /// `^`: right-associative, and binds tighter than unary minus.
     Power,
     /// `==`: exact comparison of canonical values.
@@ -254,10 +374,6 @@ pub enum BinaryOp {
     Greater,
     /// `>=`, of the same quantity.
     GreaterEqual,
-    /// `and`, of Booleans.
-    And,
-    /// `or`, of Booleans.
-    Or,
 }
 
 /// A function. Its name in canonical text is the lower-case variant name.
@@ -446,18 +562,10 @@ pub struct NeutralWire<R> {
 /// Why expression text does not read as a [`Neutral`].
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ExprError {
-    /// The text is not canonical text of a tree over its side lists.
+    /// The text is not canonical text of a tree over its side lists, or its
+    /// tree is deeper than an expression's bound (§2.5).
     #[error("{0}")]
     Malformed(String),
-    /// The text nests past the expression ceiling.
-    #[error("{} exceeds the ceiling of {}", .0.operation, .0.limit)]
-    ResourceLimit(ResourceLimit),
-}
-
-impl From<ResourceLimit> for ExprError {
-    fn from(limit: ResourceLimit) -> Self {
-        Self::ResourceLimit(limit)
-    }
 }
 
 /// Reads a wire payload: parses the text, then requires that printing the
@@ -465,10 +573,9 @@ impl From<ResourceLimit> for ExprError {
 ///
 /// # Errors
 ///
-/// Returns [`ExprError::Malformed`] for text that does not parse, that is
-/// not canonical, or whose side lists are not each stated once in order of
-/// first use, and [`ExprError::ResourceLimit`] for text nested past the
-/// expression ceiling.
+/// Returns [`ExprError::Malformed`] for text that does not parse, whose tree
+/// is deeper than an expression's bound, that is not canonical, or whose side
+/// lists are not each stated once in order of first use.
 pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, ExprError> {
     let node = parse(&wire.text, &wire.refs, &wire.measures)?;
     let again = print(&node)?;
@@ -486,8 +593,14 @@ pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, Expr
     Ok(node)
 }
 
+/// Writes the tree's canonical text. A tree deeper than an expression's bound
+/// still writes, and is noted for the decode wrapper, which gives up the
+/// record that holds it (§2.5).
 impl<R: Serialize + PartialEq + Clone> Serialize for Neutral<R> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.0.depth() > crate::bounds::MAX_EXPRESSION_DEPTH {
+            crate::bounds::note_expression_past();
+        }
         print(&self.0)
             .map_err(serde::ser::Error::custom)?
             .serialize(serializer)
@@ -511,37 +624,6 @@ impl<R: JsonSchema> JsonSchema for Neutral<R> {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         NeutralWire::<R>::json_schema(generator)
-    }
-}
-
-fn level() -> Result<read::Depth, ExprError> {
-    Ok(read::enter(Ceiling::Expression)?)
-}
-
-/// The levels a left-associative chain (`or`, `and`, `+ -`, `* /`) holds
-/// while it is read or printed. Its tree is one level deeper for each operand
-/// past its second, so each such operand enters a level, held to the chain's
-/// end.
-struct Chain {
-    operands: usize,
-    levels: Vec<read::Depth>,
-}
-
-impl Chain {
-    const fn new() -> Self {
-        Self {
-            operands: 1,
-            levels: Vec::new(),
-        }
-    }
-
-    /// Enters the chain's next operand.
-    fn next(&mut self) -> Result<(), ExprError> {
-        self.operands += 1;
-        if self.operands > 2 {
-            self.levels.push(level()?);
-        }
-        Ok(())
     }
 }
 
