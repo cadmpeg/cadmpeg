@@ -514,8 +514,8 @@ jobs:
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
     # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
-    # 3-core runner at two cargo jobs the test build takes about 50 minutes
-    # and the tests about 20; on the 5-core runner, 13 and 9.
+    # 3-core runner the test build takes about 50 minutes when it stays in
+    # memory, and the tests about 20; on the 5-core runner, 13 and 9.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -553,11 +553,10 @@ jobs:
           tool: cargo-nextest
 
       # Each step's timeout ends it before the job's, so the job fails rather
-      # than being cancelled, and the report and cache steps run. The build
-      # prints a timestamped `Compiling` line per workspace crate.
+      # than being cancelled, and the report and cache steps run.
       - name: Build tests
-        timeout-minutes: 70
-        run: cargo nextest run --no-run --workspace --bins --tests
+        timeout-minutes: 75
+        run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
 
       - name: Unit and integration tests
         timeout-minutes: 40

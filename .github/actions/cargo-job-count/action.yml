@@ -1,44 +1,44 @@
 # SPDX-License-Identifier: Apache-2.0
 name: Match cargo's job count to the runner
 description: >
-  Export CARGO_BUILD_JOBS as the runner's core count, lowered to one job per
-  2.5 GiB of memory, overriding the `jobs` cap in .cargo/config.toml. Use it
-  after Swatinem/rust-cache: that action hashes every CARGO_* variable into
-  its cache key, and macos-latest is a 3-core or a 5-core runner, so a count
-  exported before the restore splits the cache by runner size.
+  Export CARGO_BUILD_JOBS as the runner's core count, overriding the `jobs`
+  cap in .cargo/config.toml. Use it after Swatinem/rust-cache: that action
+  hashes every CARGO_* variable into its cache key, and macos-latest is a
+  3-core or a 5-core runner, so a count exported before the restore splits
+  the cache by runner size and a cold 3-core build outruns the job timeout.
 
 runs:
   using: composite
   steps:
     # `.cargo/config.toml` caps `jobs` at 6 so the final burst of very large
     # concurrent links cannot push a developer machine past systemd-oomd's
-    # pressure threshold. Runners have 3 to 5 cores, where that cap is
-    # oversubscription rather than a limit. The 3-core macOS runner has 7 GiB:
-    # three concurrent compilations of the largest workspace crates swap it,
-    # and each of them takes about ten times as long as on the 5-core, 14 GiB
-    # runner. Two jobs keep the build in memory.
+    # pressure threshold. Runners have 3 to 4 cores, where that cap is
+    # oversubscription rather than a limit: a full test build on 3 cores takes
+    # 287s at `jobs=3` and 476s at `jobs=6`. An environment variable beats the
+    # config file, so the cap keeps protecting the machine it was written for.
     - name: Export CARGO_BUILD_JOBS
       shell: bash
       run: |
         set -euo pipefail
-        # `nproc` and /proc/meminfo on Linux and on the Windows runner's Git
-        # Bash; macOS has neither.
+        # `nproc` on Linux and on the Windows runner's Git Bash; macOS has
+        # neither GNU coreutils nor `nproc`.
         cores="$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)"
-        memory_kib="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true)"
-        if [[ ! $memory_kib =~ ^[0-9]+$ ]]; then
-          memory_bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
-          if [[ $memory_bytes =~ ^[0-9]+$ ]]; then
-            memory_kib=$((memory_bytes / 1024))
+        ram_gib=""
+        if [ -r /proc/meminfo ]; then
+          ram_kib="$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo)"
+          if [ -n "$ram_kib" ]; then
+            ram_gib="$((ram_kib / 1048576))"
+          fi
+        elif command -v sysctl >/dev/null 2>&1; then
+          ram_bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
+          if [ -n "$ram_bytes" ]; then
+            ram_gib="$((ram_bytes / 1073741824))"
           fi
         fi
-        jobs=$cores
-        if [[ $memory_kib =~ ^[0-9]+$ ]]; then
-          by_memory=$((memory_kib * 2 / (5 * 1024 * 1024)))
-          if ((by_memory < jobs)); then
-            jobs=$((by_memory > 0 ? by_memory : 1))
-          fi
-          echo "runner reports ${cores} cores and $((memory_kib / 1024)) MiB; ${jobs} jobs"
+        if [ -n "$ram_gib" ]; then
+          echo "runner reports ${cores} cores, ${ram_gib} GiB RAM"
+          echo "CI_RUNNER_RAM_GIB=${ram_gib}" >> "$GITHUB_ENV"
         else
-          echo "runner reports ${cores} cores and no memory size; ${jobs} jobs"
+          echo "runner reports ${cores} cores"
         fi
-        echo "CARGO_BUILD_JOBS=${jobs}" >> "$GITHUB_ENV"
+        echo "CARGO_BUILD_JOBS=${cores}" >> "$GITHUB_ENV"
