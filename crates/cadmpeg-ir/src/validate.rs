@@ -25,7 +25,7 @@ mod annotations_native;
 mod appearance_attributes;
 mod carriers_parameterization;
 mod cycles;
-mod design;
+pub(crate) mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;

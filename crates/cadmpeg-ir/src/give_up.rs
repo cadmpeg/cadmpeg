@@ -20,6 +20,8 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::Serialize;
 
+use crate::design::container::Container;
+use crate::design::refs::Member;
 use crate::document::{ArenaHome, ArenaName, CadIr};
 use crate::report::loss::LossNote;
 use crate::schema::ArenaRecord;
@@ -331,6 +333,33 @@ pub(crate) fn drop_records(
     Ok(removed)
 }
 
+/// States `Source` each expression of the records of each seed whose tree
+/// passes the bound of an expression (§2.5), the form §3.3 gives an
+/// expression of which nothing is read, and returns the seeds whose records
+/// it restated. The arenas are in identity order.
+pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed> {
+    let Some(schema) = Schema::read() else {
+        return Vec::new();
+    };
+    let gone = BTreeSet::new();
+    seeds
+        .iter()
+        .filter(|seed| {
+            let Arena::Home { home, field } = &seed.arena else {
+                return false;
+            };
+            let Some(restate) = Restate::new(&schema, &gone, &seed.id, *home == "process") else {
+                return false;
+            };
+            let restate = restate.past_the_bound();
+            ir.rewrite_records(&seed.arena, &seed.id, |record| {
+                restate.record(home, field, record)
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 /// Removes every copy of `seed` and releases it, or returns `None` where
 /// its arena holds none.
 fn remove(
@@ -425,33 +454,135 @@ fn parents(ir: &CadIr, arena: &Arena, id: &str) -> Vec<String> {
     }
 }
 
-/// The procedural constructions that the copies of `id` in `arena` carry:
-/// the document states no construction without its owning carrier.
+/// The records that the copies of `id` in `arena` own, which the document
+/// states none of without their owner: the procedural construction of a
+/// curve or a surface, each member of a container (§5.2), and each root
+/// container of a scope with each record that names the scope (§5.1).
 fn owned(ir: &CadIr, arena: &Arena, id: &str) -> Vec<(Arena, String)> {
-    let Arena::Home {
-        home: "geometry",
-        field,
-    } = arena
-    else {
+    let Arena::Home { home, field } = arena else {
         return Vec::new();
     };
-    let constructions: Vec<(&str, String)> = match *field {
-        "curves" => records(&ir.geometry.curves, id)
+    let owned: Vec<(&str, &str, String)> = match (*home, *field) {
+        ("geometry", "curves") => records(&ir.geometry.curves, id)
             .iter()
             .filter_map(|curve| curve.geometry.procedural_construction())
-            .map(|construction| ("procedural_curves", construction.as_str().to_owned()))
+            .map(|construction| {
+                (
+                    "geometry",
+                    "procedural_curves",
+                    construction.as_str().to_owned(),
+                )
+            })
             .collect(),
-        "surfaces" => records(&ir.geometry.surfaces, id)
+        ("geometry", "surfaces") => records(&ir.geometry.surfaces, id)
             .iter()
             .filter_map(|surface| surface.geometry.procedural_construction())
-            .map(|construction| ("procedural_surfaces", construction.as_str().to_owned()))
+            .map(|construction| {
+                (
+                    "geometry",
+                    "procedural_surfaces",
+                    construction.as_str().to_owned(),
+                )
+            })
             .collect(),
+        ("design", "containers") => records(&ir.design.containers, id)
+            .iter()
+            .flat_map(|container| match container {
+                Container::Ordered { members, .. } => members.iter().collect::<Vec<_>>(),
+                Container::Unordered { members, .. } => members.iter().collect(),
+            })
+            .map(|member| match member {
+                Member::Feature(feature) => ("design", "features", feature.as_str().to_owned()),
+                Member::Container(container) => {
+                    ("design", "containers", container.as_str().to_owned())
+                }
+            })
+            .collect(),
+        ("design", "scopes") => {
+            let design = &ir.design;
+            records(&design.scopes, id)
+                .iter()
+                .flat_map(|scope| &scope.roots)
+                .map(|root| ("design", "containers", root.as_str().to_owned()))
+                .chain(scoped(
+                    "design",
+                    "parameters",
+                    &design.parameters,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .chain(scoped(
+                    "design",
+                    "programs",
+                    &design.programs,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .chain(scoped(
+                    "design",
+                    "sheet_metal_rules",
+                    &design.sheet_metal_rules,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .chain(scoped(
+                    "design",
+                    "configurations",
+                    &design.configurations,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .chain(scoped(
+                    "design",
+                    "arrangements",
+                    &design.arrangements,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .chain(scoped(
+                    "design",
+                    "publications",
+                    &design.publications,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .chain(scoped(
+                    "design",
+                    "evaluations",
+                    &design.evaluations,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .chain(scoped(
+                    "process",
+                    "setups",
+                    &ir.process.setups,
+                    id,
+                    |record| record.scope.as_str(),
+                ))
+                .collect()
+        }
         _ => Vec::new(),
     };
-    constructions
+    owned
         .into_iter()
-        .filter_map(|(field, id)| Some((Arena::home("geometry", field)?, id)))
+        .filter_map(|(home, field, id)| Some((Arena::home(home, field)?, id)))
         .collect()
+}
+
+/// The identity of each record of `records`, of the arena `field` of `home`,
+/// whose scope, as `of` reads it, is `scope`.
+fn scoped<'a, T: ArenaRecord>(
+    home: &'static str,
+    field: &'static str,
+    records: &'a [T],
+    scope: &'a str,
+    of: fn(&T) -> &str,
+) -> impl Iterator<Item = (&'static str, &'static str, String)> + 'a {
+    records
+        .iter()
+        .filter(move |record| of(record) == scope)
+        .map(move |record| (home, field, record.record_identity().to_owned()))
 }
 
 /// Marks each shell and body of `parents` the document holds: it no longer

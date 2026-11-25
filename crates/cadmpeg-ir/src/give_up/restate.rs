@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-use crate::design::expr::ExpressionDialect;
+use crate::design::expr::{ExpressionDialect, Neutral};
 use crate::design::selection::{Members, PickTarget, Picked, Unordered};
 use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
@@ -100,10 +100,23 @@ pub(crate) fn names(value: &Value, gone: &BTreeSet<String>) -> bool {
     }
 }
 
+/// Whether `expression`, the JSON of an expression, reads back: a neutral
+/// tree reads where its text parses within the bound of an expression.
+fn reads(expression: &Value) -> bool {
+    if expression.get("kind").and_then(Value::as_str) != Some("neutral") {
+        return true;
+    }
+    expression
+        .get("value")
+        .is_some_and(|wire| serde_json::from_value::<Neutral<Value>>(wire.clone()).is_ok())
+}
+
 /// The rewrite of the records that name an id of `gone`.
 pub(crate) struct Restate<'a> {
     schema: &'a Schema,
     gone: &'a BTreeSet<String>,
+    /// Whether an expression whose tree passes its bound (§2.5) is lost.
+    past_the_bound: bool,
     /// The dialect of an expression restated from a neutral tree.
     dialect: Option<Value>,
     /// The target of a pick restated `Native`.
@@ -123,10 +136,18 @@ impl<'a> Restate<'a> {
         Some(Self {
             schema,
             gone,
+            past_the_bound: false,
             dialect: ExpressionDialect::of_codec(codec, process)
                 .and_then(|dialect| serde_json::to_value(dialect).ok()),
             native: serde_json::to_value(PickTarget::Native { within: None }).ok()?,
         })
+    }
+
+    /// The rewrite that also states `Source` each expression whose tree
+    /// passes the bound of an expression (§2.5): its text does not read.
+    pub(crate) fn past_the_bound(mut self) -> Self {
+        self.past_the_bound = true;
+        self
     }
 
     /// Rewrites `record`, a record of the arena `field` of `home`, into the
@@ -344,11 +365,12 @@ impl<'a> Restate<'a> {
         Fate::Kept
     }
 
-    /// An expression that names a lost id is `Source` with no tokens, an
-    /// expression of which nothing is read (§5.13). A `Source` keeps its
-    /// dialect.
+    /// An expression that names a lost id, or that does not read where
+    /// `past_the_bound`, is `Source` with no tokens, an expression of which
+    /// nothing is read (§5.13). A `Source` keeps its dialect.
     fn expression(&self, value: &mut Value) -> Fate {
-        if !names(value, self.gone) {
+        let lost = names(value, self.gone) || (self.past_the_bound && !reads(value));
+        if !lost {
             return Fate::Clean;
         }
         match value.get("kind").and_then(Value::as_str) {
