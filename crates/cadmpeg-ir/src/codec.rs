@@ -456,15 +456,13 @@ impl DecodeResult {
     }
 
     /// States the tolerance of each vertex the source stores farther from a
-    /// curve end part 10 compares it with than the coincidence allowance
-    /// there, and charges `geometry.vertex-tolerance-widened` (§2.3).
+    /// position part 10 compares it with than the coincidence allowance
+    /// there, and charges the pass's loss (§2.3).
     fn widen_vertex_tolerances(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
-        if let Some(widened) =
+        if let Some(loss) =
             vertex_tolerance::widen(&mut self.ir, &mut self.source_fidelity.annotations, policy)?
         {
-            self.report
-                .losses
-                .push(DecodeLossCode::VertexToleranceWidened.note(widened.message()));
+            self.report.losses.push(loss);
         }
         Ok(())
     }

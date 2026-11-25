@@ -36,7 +36,7 @@ mod physics;
 mod pmi;
 mod point_clouds;
 mod presentation;
-mod process;
+pub(crate) mod process;
 mod products;
 mod referential_integrity;
 mod semantic_annotations;
@@ -225,31 +225,6 @@ fn check_topology_rules(
     check_topology_tolerances(ir, findings);
     check_subdivision_schemes(&ir.geometry, findings);
     Ok(())
-}
-
-/// The findings of the rules of one `Topology` that `document` holds outside
-/// its current geometry (a resolved state, a witness body): the topology is
-/// checked as the geometry of a document of its own, at `document`'s
-/// tolerances (part 10, Coincidence). With `references`, every reference of
-/// its records names a record of it.
-fn nested_topology_findings(
-    ctx: &DecodeContext<'_>,
-    document: crate::native::view::NativeView<'_>,
-    topology: crate::document::Topology,
-    references: bool,
-    caches: bool,
-) -> Result<Vec<Finding>, CodecError> {
-    let mut alone = CadIr::empty();
-    alone.fragment = document.ir.fragment;
-    alone.tolerances = document.ir.tolerances;
-    alone.geometry = topology;
-    let index = crate::index::ModelIndex::build(&alone);
-    let mut findings = Vec::new();
-    if references {
-        check_references(ctx, &alone, &index, &mut findings)?;
-    }
-    check_topology_rules(ctx, &index, document, caches, &mut findings)?;
-    Ok(findings)
 }
 
 /// `finding` on a record of a topology that the record `holder` holds, as a

@@ -120,6 +120,40 @@ fn a_closed_nest_in_its_own_scope_has_no_finding() {
 }
 
 #[test]
+fn a_nest_is_checked_at_its_documents_tolerances() {
+    // The nest's corner at the origin lies 0.05 below the start of its three
+    // edges: past the coincidence allowance at the default tolerances, and
+    // within it at a linear tolerance of 0.1.
+    let gaps = |tolerances: crate::units::Tolerances| {
+        let mut ir = crate::examples::unit_cube().expect("cube");
+        ir.tolerances = tolerances;
+        ir.model.features.push(feature("test:model:feature#base"));
+        let mut nest = scoped(cube_nest());
+        let corner = nest
+            .points
+            .iter_mut()
+            .find(|point| point.position().get() == crate::math::Point3::new(0.0, 0.0, 0.0))
+            .expect("corner at the origin");
+        corner.set_position(
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, -0.05))
+                .expect("finite"),
+        );
+        let mut body = history_body("0", nest);
+        body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
+        ir.model.history_bodies.push(body);
+        findings(&ir)
+            .into_iter()
+            .filter(|finding| finding.message.contains("miss the edge's vertex positions"))
+            .count()
+    };
+    assert!(gaps(crate::units::Tolerances::default()) > 0);
+    let loose =
+        crate::units::Tolerances::new(0.1, crate::units::Tolerances::default().angular.get())
+            .expect("positive finite tolerances");
+    assert_eq!(gaps(loose), 0);
+}
+
+#[test]
 fn a_reference_that_leaves_the_nest_is_reported() {
     let mut ir = crate::examples::unit_cube().expect("cube");
     let mut nest = scoped(cube_nest());

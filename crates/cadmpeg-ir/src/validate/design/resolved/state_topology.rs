@@ -18,7 +18,8 @@ use super::super::records::PositionKey;
 use super::ResolvedState;
 use crate::native::view::NativeView;
 use crate::report::check::{Check, Finding};
-use crate::validate::{nested_finding, nested_topology_findings};
+use crate::validate::nested_finding;
+use crate::validate::topology::nested;
 
 /// The state that a resolved state is: the base a record's content names, or
 /// the record itself.
@@ -68,8 +69,7 @@ impl<'a, 'c, 'd> StateRules<'a, 'c, 'd> {
         if let Some(checked) = key.and_then(|key| self.checked.get(&(key, caches))) {
             return Ok(Rc::clone(checked));
         }
-        let findings =
-            nested_topology_findings(self.ctx, self.document, state.topology(), false, caches)?;
+        let findings = nested::check(self.ctx, self.document, state.topology(), None, caches)?;
         let breaches = findings
             .iter()
             .map(|finding| format!("{finding:?}"))

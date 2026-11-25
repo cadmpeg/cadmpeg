@@ -693,13 +693,12 @@ impl Walk<'_, '_, '_> {
             }
             if let Some(body) = &witness.body {
                 body.visit_identity_references(self.ctx, &mut |_| Ok(()))?;
-                let mut nested = Vec::new();
-                super::nested::check(
+                let nested = super::nested::check(
                     self.ctx,
-                    self.ids.ir().tolerances,
+                    self.ids.native_view(),
                     body.as_ref().clone(),
-                    self.file_keys,
-                    &mut nested,
+                    Some(self.file_keys),
+                    true,
                 )?;
                 for mut finding in nested {
                     if let Some(entity) = finding.entity.replace(self.owner.id.as_str().to_owned())

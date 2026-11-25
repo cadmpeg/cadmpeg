@@ -37,6 +37,10 @@ pub(crate) enum DecodeLossCode {
     /// The wrapper stated the tolerance of vertices the source stores
     /// farther from a compared position than the coincidence allowance.
     VertexToleranceWidened,
+    /// The wrapper's vertex tolerance pass stopped under a ceiling of its
+    /// session, or on a record it could not evaluate, and widened no vertex
+    /// tolerance.
+    VertexToleranceUnmeasured,
 }
 
 impl DecodeLossCode {
@@ -47,6 +51,7 @@ impl DecodeLossCode {
             Self::IdRepeated => "id.repeated",
             Self::NormalizeIncomplete => "normalize.incomplete",
             Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::VertexToleranceUnmeasured => "geometry.vertex-tolerance-unmeasured",
         }
     }
 
@@ -56,6 +61,7 @@ impl DecodeLossCode {
             Self::IdRepeated => Severity::Error,
             Self::NormalizeIncomplete => Severity::Warning,
             Self::VertexToleranceWidened => Severity::Info,
+            Self::VertexToleranceUnmeasured => Severity::Warning,
         }
     }
 
@@ -68,20 +74,24 @@ impl DecodeLossCode {
             Self::DepthNotDelivered {
                 class: ArenaClass::Design | ArenaClass::Process,
             } => LossTaxonomy::ParametricRecordOmitted,
-            Self::IdRepeated | Self::NormalizeIncomplete | Self::VertexToleranceWidened => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::IdRepeated
+            | Self::NormalizeIncomplete
+            | Self::VertexToleranceWidened
+            | Self::VertexToleranceUnmeasured => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
     /// A shallower delivery refuses a strict decode. A record the
     /// normalizer gave up keeps all its content in a spelling the decoder
-    /// stated, so it refuses nothing; a repeated id and a widened tolerance
-    /// refuse nothing either.
+    /// stated, so it refuses nothing; a repeated id and a widened or
+    /// unmeasured tolerance refuse nothing either.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::DepthNotDelivered { .. } => Some(Severity::Warning),
-            Self::IdRepeated | Self::NormalizeIncomplete | Self::VertexToleranceWidened => None,
+            Self::IdRepeated
+            | Self::NormalizeIncomplete
+            | Self::VertexToleranceWidened
+            | Self::VertexToleranceUnmeasured => None,
         }
     }
 

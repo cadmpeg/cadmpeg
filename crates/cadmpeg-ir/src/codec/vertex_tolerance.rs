@@ -13,13 +13,10 @@
 //! itself does, or where that carrier distance cannot be measured: there a
 //! range is off, not the vertex.
 //!
-//! Every `Topology` of the document is measured at the document's
-//! `tolerances` (part 10, Coincidence): the current geometry, the delta of
-//! each evaluation and process state, and each history body's nest. A delta
-//! or a nest is measured on its own records, which hold the record versions
-//! of its state. Its records carry no annotation of their own, so each one
-//! counts as read, and its widened tolerances are counted in the loss but not
-//! marked derived (interim; inventory gap 20261125-V11-DECODE-REPORTS-2-1).
+//! The pass widens the current geometry alone. A record inside an
+//! evaluation's or a process state's delta, a history body, or a witness
+//! body has no annotation key of its own, so its widened tolerance could not
+//! be marked derived; validation reports the gaps there.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -27,7 +24,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget}
 use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, AnnotationFieldError, Annotations};
-use crate::document::Topology;
+use crate::codec::loss::DecodeLossCode;
 use crate::eval::admission::ModelEvaluationPass;
 use crate::eval::decode::{curve_point, surface_point_solved};
 use crate::eval::finite_or_refusal;
@@ -35,9 +32,9 @@ use crate::geometry::{Curve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface
 use crate::index::ModelIndex;
 use crate::math::Point3;
 use crate::provenance::Exactness;
+use crate::report::loss::LossNote;
 use crate::scalar::PositiveLength;
-use crate::topology::{IncreasingParameterInterval, Vertex};
-use crate::units::Tolerances;
+use crate::topology::IncreasingParameterInterval;
 use crate::validate::geometry_consistency::{
     pcurve_image_comparisons, ComparedCarrier, CurveEndComparisons, VertexComparison,
 };
@@ -56,56 +53,12 @@ const CARRIER_REFINEMENTS: usize = 48;
 /// The work one NURBS surface projection may spend.
 const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 
-/// The number of vertex tolerances the pass stated, and the largest increase
-/// over the tolerance in force at each before.
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct Widened {
-    pub(super) count: usize,
-    pub(super) largest: f64,
-}
-
-impl Widened {
-    /// The message of the `geometry.vertex-tolerance-widened` loss.
-    pub(super) fn message(&self) -> String {
-        format!(
-            "widened {} vertex tolerance(s) to each vertex's largest distance from the positions \
-             compared with it; the largest widening is {} mm",
-            self.count, self.largest
-        )
-    }
-
-    /// States each tolerance of `tolerances` on its vertex of `vertices`,
-    /// and returns the ids of the vertices it stated one on.
-    fn state<'v>(
-        &mut self,
-        vertices: &'v mut [Vertex],
-        tolerances: &BTreeMap<String, f64>,
-        linear: PositiveLength,
-    ) -> Vec<&'v str> {
-        let mut stated = Vec::new();
-        for vertex in vertices {
-            let Some(tolerance) = tolerances
-                .get(vertex.id.as_str())
-                .copied()
-                .and_then(PositiveLength::new)
-            else {
-                continue;
-            };
-            let before = vertex.tolerance.unwrap_or(linear).get();
-            vertex.tolerance = Some(tolerance);
-            self.largest = self.largest.max(tolerance.get() - before);
-            self.count += 1;
-            stated.push(vertex.id.as_str());
-        }
-        stated
-    }
-}
-
-/// Widens the tolerance of each vertex of every `Topology` of `ir` that a
-/// compared position misses, and marks the widened tolerances of the
-/// current geometry derived in `annotations`. The pass measures in a session
-/// of its own under `policy`, so a ceiling it meets refuses no part of the
-/// decode; it then widens nothing in the topology it was measuring.
+/// Widens the tolerance of each vertex of the current geometry of `ir` that
+/// a compared position misses, marks each widened tolerance derived in
+/// `annotations`, and returns the `geometry.vertex-tolerance-widened` loss.
+/// The pass measures in a session of its own under `policy`, so a ceiling
+/// it meets refuses no part of the decode: it then widens nothing and
+/// returns the `geometry.vertex-tolerance-unmeasured` loss.
 ///
 /// # Errors
 ///
@@ -114,79 +67,53 @@ pub(super) fn widen(
     ir: &mut CadIr,
     annotations: &mut Annotations,
     policy: &DecodePolicy,
-) -> Result<Option<Widened>, AnnotationFieldError> {
+) -> Result<Option<LossNote>, AnnotationFieldError> {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(&[], &arena, policy) else {
-        return Ok(None);
-    };
-    let document = ir.tolerances;
-    let mut widened = Widened {
-        count: 0,
-        largest: 0.0,
-    };
-    let mut marked = Vec::new();
-    if let Ok(tolerances) = measure(&ctx, ir, &|id: &str| !computed(annotations, id)) {
-        marked = widened
-            .state(&mut ir.geometry.vertices, &tolerances, document.linear)
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-    }
-    let deltas = ir
-        .design
-        .evaluations
-        .iter_mut()
-        .filter_map(|evaluation| {
-            evaluation
-                .content
-                .as_mut()
-                .map(|content| &mut content.delta)
-        })
-        .chain(
-            ir.process
-                .states
-                .iter_mut()
-                .filter_map(|state| state.content.as_mut().map(|content| &mut content.delta)),
-        );
-    for delta in deltas {
-        let (records, tolerances) =
-            nest_tolerances(&ctx, document, std::mem::take(&mut delta.records));
-        delta.records = records;
-        if let Some(tolerances) = tolerances {
-            widened.state(&mut delta.records.vertices, &tolerances, document.linear);
+    let measured = DecodeContext::from_root_bytes(&[], &arena, policy)
+        .and_then(|(ctx, _)| measure(&ctx, ir, &|id: &str| !computed(annotations, id)));
+    let tolerances = match measured {
+        Ok(tolerances) => tolerances,
+        Err(error) => {
+            return Ok(Some(DecodeLossCode::VertexToleranceUnmeasured.note(
+                format!(
+                "the decode wrapper's vertex tolerance pass stopped ({error}), so it widened no \
+                 vertex tolerance"
+            ),
+            )));
         }
+    };
+    let linear = ir.tolerances.linear;
+    let mut largest = 0.0_f64;
+    let mut widened = Vec::new();
+    for vertex in &mut ir.geometry.vertices {
+        let Some(tolerance) = tolerances
+            .get(vertex.id.as_str())
+            .copied()
+            .and_then(PositiveLength::new)
+        else {
+            continue;
+        };
+        let before = vertex.tolerance.unwrap_or(linear).get();
+        vertex.tolerance = Some(tolerance);
+        largest = largest.max(tolerance.get() - before);
+        widened.push(vertex.id.as_str().to_owned());
     }
-    for body in &mut ir.model.history_bodies {
-        let (_, tolerances) = nest_tolerances(&ctx, document, body.topology.to_topology());
-        if let Some(tolerances) = tolerances {
-            widened.state(&mut body.topology.vertices, &tolerances, document.linear);
-        }
-    }
-    if widened.count == 0 {
+    if widened.is_empty() {
         return Ok(None);
     }
+    widened.sort_unstable();
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    let derived = marked
+    let derived = widened
         .iter()
         .try_for_each(|id| builder.derived(id, "tolerance").map(|_| ()));
     *annotations = builder.build();
     derived?;
-    Ok(Some(widened))
-}
-
-/// The tolerances `measure` states for `geometry` checked as the geometry
-/// of a document of its own at `document`'s tolerances, every record read,
-/// with `geometry` handed back; `None` where the measure was refused.
-fn nest_tolerances(
-    ctx: &DecodeContext<'_>,
-    document: Tolerances,
-    geometry: Topology,
-) -> (Topology, Option<BTreeMap<String, f64>>) {
-    let mut alone = CadIr::empty();
-    alone.tolerances = document;
-    alone.geometry = geometry;
-    let tolerances = measure(ctx, &alone, &|_: &str| true).ok();
-    (alone.geometry, tolerances)
+    Ok(Some(DecodeLossCode::VertexToleranceWidened.note(format!(
+        "widened {} vertex tolerance(s) to each vertex's largest distance from the positions \
+         compared with it; the largest widening is {largest} mm: {}",
+        widened.len(),
+        widened.join(", ")
+    ))))
 }
 
 /// Whether the annotations mark the record computed rather than read.
