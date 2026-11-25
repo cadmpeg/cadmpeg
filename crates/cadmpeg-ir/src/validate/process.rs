@@ -46,6 +46,7 @@ pub(super) fn check_process(
     let walked = walk::walk_records(&records);
     order::check_order(&records, findings);
     references::check_references(&records, findings);
+    references::check_native_refs(&records, ids, findings);
     bindings::check_bindings(&records, &walked, findings);
     scope::check_scope(&records, &walked, findings);
     evaluations::check_evaluations(

@@ -36,8 +36,8 @@
 //! Decode reports can accompany a usable model. Untyped support carriers become
 //! opaque geometry linked to retained bytes, while their resolvable topology
 //! remains in the IR. No usable geometry yields metadata with diagnostics.
-//! Set [`DecodeOptions::depth`] to [`DecodeDepth::Container`] to omit geometry
-//! decoding explicitly.
+//! Set [`DecodeOptions::depth`] to [`DecodeDepth::Container`] to read the
+//! container only: the document then states no model record.
 //! Semantic Parasolid graph errors propagate as decode errors.
 //!
 //! [`Codec::inspect`] inventories the outer blocks, section directory, cache

@@ -1186,30 +1186,24 @@ pub(crate) fn semantic_writer_omits_subds_and_names_them() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded
-        .ir_mut()
-        .geometry
-        .subds
-        .push(cadmpeg_ir::SubdSurface {
-            id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
-            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-            source_object: None,
-            cage: cadmpeg_ir::subd::SubdCage::default(),
-            native_ref: None,
-        });
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut decoded.ir_mut(), "sldprt");
 
+    let mut bytes = Vec::new();
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .unwrap()
-        .report()
-        .clone();
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.code.local_code() == "writer.subd-omitted"
-            && loss.message.contains("test:sldprt:subd#0")
+        loss.code.local_code() == "writer.subd-omitted" && loss.message.contains(cage.subd.as_str())
     }));
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(written.ir().geometry.bodies.len(), 1);
 }
 
 #[test]

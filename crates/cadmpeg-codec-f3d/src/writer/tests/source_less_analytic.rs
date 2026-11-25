@@ -700,22 +700,27 @@ fn generated_source_less_f3d_drops_subds() {
             &[],
         )
         .unwrap();
-    source_less.geometry.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-        native_ref: None,
-    });
+    let ordinary = source_less.geometry.bodies.len();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut source_less, "f3d");
 
-    crate::test_support::assert_written_with_loss(
+    let report = crate::test_support::assert_written_with_loss(
         &source_less,
         None,
         &crate::loss::F3dLossCode::WriterSubdOmitted
             .kind()
             .to_string(),
-        "test:f3d:subd#0",
+        cage.body.as_str(),
     );
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", ordinary);
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    let written = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(written.ir().geometry.bodies.len(), ordinary);
 }
 
 #[test]

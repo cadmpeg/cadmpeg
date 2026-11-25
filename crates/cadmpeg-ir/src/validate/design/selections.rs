@@ -21,6 +21,7 @@ use crate::design::selection::{
     SelectionRule, StepRef,
 };
 use crate::document::CadIr;
+use crate::features::ConfigurationId;
 use crate::ids::ProductDefinitionId;
 use crate::native::view::NativeView;
 use crate::report::check::{Check, Finding};
@@ -499,6 +500,32 @@ pub(super) enum Stored<'a> {
     Extents(Vec<&'a Extent<'a>>),
     /// A stored evaluation, by id.
     Evaluation(&'a str),
+}
+
+impl<'a> Stored<'a> {
+    /// The configuration the state is resolved in: the scope's active
+    /// configuration for current states, the evaluation's own for a stored
+    /// evaluation.
+    pub(super) fn configuration(&self, records: &DesignRecords<'a>) -> Option<&'a str> {
+        let configuration = match self {
+            Self::Extents(extents) => extents.first().and_then(|extent| {
+                records
+                    .scopes
+                    .get(extent.scope)?
+                    .active_configuration
+                    .as_ref()
+            }),
+            Self::Evaluation(evaluation) => records
+                .ir
+                .design
+                .evaluations
+                .iter()
+                .find(|record| record.id.as_str() == *evaluation)?
+                .configuration
+                .as_ref(),
+        };
+        configuration.map(ConfigurationId::as_str)
+    }
 }
 
 /// The stored states a pick without a context resolves in (§5.8): the
