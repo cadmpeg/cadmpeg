@@ -113,6 +113,7 @@ pub enum ProcessBase {
 pub(crate) fn admit_state_chains(
     states: &[ProcessState],
     evaluations: &BTreeMap<&str, u64>,
+    cycles: evaluation::Cycles,
 ) -> Result<(), String> {
     let mut index = BTreeMap::new();
     for (at, state) in states.iter().enumerate() {
@@ -138,6 +139,7 @@ pub(crate) fn admit_state_chains(
             }) => ChainLink::Below(0),
         },
         |state| format!("process state {}", state.id.as_str()),
+        cycles,
     )?;
     Ok(())
 }

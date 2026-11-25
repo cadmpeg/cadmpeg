@@ -1288,9 +1288,17 @@ CADIR export decision: a zero half-angle cone is the cylinder over its
 cross-section, which `WR2` keeps out of `CONICAL_SURFACE`. The writer emits a
 circular section as `CYLINDRICAL_SURFACE` and an elliptical section as a
 `SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE` on the cone's placement, swept by
-a unit `VECTOR` along the axis. Both keep the cone's `(u, v)` chart. A zero
-half-angle cone whose section has a zero semi-axis, and a cone whose half-angle
-magnitude is at least `pi/2`, are refused before any byte is written.
+a unit `VECTOR` along the axis. Both keep the cone's `(u, v)` chart. The
+section radius `radius + v tan(half_angle)` repeats with period `pi` in the
+half-angle, so a half-angle `θ` states the same surface as `θ - k pi` in
+`[-pi/2, pi/2]`, in the same chart. A half-angle in `(pi/2, pi)` is written as
+the `CONICAL_SURFACE` with semi-angle `pi - θ` over the reversed axis, at
+`(-u, -v)`; the faces keep their edges, and their pcurves are written in that
+chart. A reduced half-angle of `0` is the zero half-angle cone above. A zero
+half-angle cone whose section has a zero semi-axis, and a cone whose reduced
+half-angle magnitude is `pi/2`, have no STEP surface: each face on the cone is
+left out with `geometry.unknown-surface-face-omitted`, the cone with
+`geometry.carrier-not-written`, and the rest of the file is written.
 
 A NURBS `closed` or `periodic` field uses the STEP LOGICAL domain.
 TRUE and FALSE encode the property state. UNKNOWN is a valid LOGICAL value.
@@ -1447,9 +1455,16 @@ carrier itself when the placed carrier keeps the parameterization of the
 replica: an analytic curve or surface under a proper rigid motion, and a NURBS
 carrier, a polyline or a point under any placement the writer admits. In
 parameter space, a line or NURBS pcurve is placed under any affine map and a
-conic pcurve under a proper rigid motion. Every other placement is written as
-a `CURVE_REPLICA` or `SURFACE_REPLICA` over the written basis. The half-turn
+conic pcurve under a proper rigid motion. Every other similarity is written
+as a `CURVE_REPLICA` or `SURFACE_REPLICA` over the written basis. The half-turn
 of a reversed cone chart is a proper rigid motion and follows the same rule.
+`CARTESIAN_TRANSFORMATION_OPERATOR_3D` states a similarity only. A procedural
+replica under another transform is written as its solved carrier, charged
+`geometry.procedural-reduced-to-carrier`, or as a sampled B-spline, charged
+`geometry.procedural-sampled-to-bspline`. A solved surface under another
+placement, and a replica surface with neither form, have no STEP record: each
+face on the surface is left out with `geometry.unknown-surface-face-omitted`,
+and the surface with `geometry.carrier-not-written`.
 
 ISO 10303-42 defines each surface as `σ(u,v)` with independent parameters. For
 `SURFACE_OF_LINEAR_EXTRUSION`, if the directrix is `λ(u)` and the extrusion axis
@@ -1794,7 +1809,12 @@ representations omit only the failed independent member and retain complete
 members. A solid-root transaction rejects the root. CADIR has no tolerant-point
 or partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Each surface member is a face in its own
-shell of the one sheet region. Curve-only and point-only sets remain
+shell of the one sheet region. A member that is a plane, a cylinder, or a cone
+states no boundary on a surface whose domain is unbounded, so its face is
+partial with no loop, and the loss `topology.face-boundary-unstated` names it.
+A `CURVE_BOUNDED_SURFACE` member with a boundary that does not resolve to a
+closed loop is partial with no loop on any support, and the same loss names
+that boundary. Curve-only and point-only sets remain
 standalone geometry. The writer states a region of a body that is not a
 solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the

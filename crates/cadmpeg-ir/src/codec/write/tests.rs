@@ -5,14 +5,15 @@ use crate::test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
-    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeError,
+    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::check::{Check, Finding, ValidationReport};
 use crate::report::export::FidelityResolution;
+use crate::report::strictness::{code_name, Strictness};
 use crate::report::Severity;
 use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
@@ -104,7 +105,7 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let error = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
         .unwrap_err();
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
     };
     assert_eq!(
@@ -829,4 +830,180 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
             report.findings.iter().collect::<Vec<_>>()
         );
     }
+}
+
+struct LossyEncoder(Vec<crate::report::loss::LossNote>);
+
+impl EncoderBackend for LossyEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        body.losses.clone_from(&self.0);
+        Ok(body)
+    }
+}
+
+fn empty_output() -> LossyEncoder {
+    LossyEncoder(vec![super::output_empty("the test output holds nothing")])
+}
+
+fn refused_write(error: EncodeError) -> super::StrictWriteRejection {
+    match error {
+        EncodeError::StrictRejected(rejection) => rejection,
+        other => panic!("expected a strict refusal, got {other}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_writes_a_report_with_losses() {
+    let ir = CadIr::empty();
+    let plan = empty_output()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| code_name(&loss.code) == "export:output.empty"));
+    plan.write_to(&mut Vec::new()).unwrap();
+}
+
+#[test]
+fn a_severity_floor_refuses_the_write_before_any_byte() {
+    let ir = CadIr::empty();
+    let strictness = Strictness {
+        floor: Some(Severity::Info),
+        ..Strictness::default()
+    };
+    let rejection = refused_write(
+        empty_output()
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&strictness),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
+    assert_eq!(
+        rejection.report().losses[rejection.entry()],
+        *rejection.loss()
+    );
+}
+
+#[test]
+fn a_severity_floor_above_every_loss_admits_the_write() {
+    let ir = CadIr::empty();
+    let encoder = empty_output();
+    assert!(encoder.0[0].severity < Severity::Blocking);
+    let strictness = Strictness {
+        floor: Some(Severity::Blocking),
+        ..Strictness::default()
+    };
+    encoder
+        .plan(
+            EncodeInput::new(&ir, None).with_strictness(&strictness),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_refused_code_refuses_the_write_and_another_code_admits_it() {
+    let ir = CadIr::empty();
+    let refusing = Strictness::default().with_code("export:output.empty");
+    let rejection = refused_write(
+        empty_output()
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&refusing),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
+
+    let other = Strictness::default().with_code("export:record.invalid");
+    empty_output()
+        .plan(
+            EncodeInput::new(&ir, None).with_strictness(&other),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
+    let ir = CadIr::empty();
+    let kind = crate::report::loss::LossKind::shared(
+        crate::report::loss::LossTaxonomy::TopologyNotTransferred,
+    );
+    let encoder = LossyEncoder(vec![crate::report::loss::LossNote::new(
+        kind.clone(),
+        "synthetic reject floor",
+    )]);
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    let rejection = refused_write(
+        encoder
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&pinned),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(rejection.loss().code, kind);
+
+    let unpinned = crate::report::loss::LossKind::shared(
+        crate::report::loss::LossTaxonomy::ParametricRecordOmitted,
+    );
+    assert_eq!(unpinned.strict_floor(), None);
+    LossyEncoder(vec![crate::report::loss::LossNote::new(
+        unpinned,
+        "a loss with no strict floor",
+    )])
+    .plan(
+        EncodeInput::new(&ir, None).with_strictness(&pinned),
+        TargetRequest::Inherit,
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_wrapper_charges_each_carried_error_of_the_validation() {
+    let ir = CadIr::empty();
+    let validation = validation_report(vec![
+        finding(None, "warning", Severity::Warning),
+        finding(None, "error", Severity::Error),
+    ]);
+    let plan = LossyEncoder(Vec::new())
+        .plan(
+            EncodeInput::new(&ir, None).with_validation(&validation),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let charged = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| code_name(&loss.code) == "export:record.invalid")
+        .count();
+    assert_eq!(charged, 1);
+
+    let refusing = Strictness::default().with_code("export:record.invalid");
+    let rejection = refused_write(
+        LossyEncoder(Vec::new())
+            .plan(
+                EncodeInput::new(&ir, None)
+                    .with_validation(&validation)
+                    .with_strictness(&refusing),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert!(rejection.loss().message.contains("error"));
 }

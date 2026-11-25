@@ -19,6 +19,7 @@ mod fillet_projection;
 mod fusion_circular_patterns;
 mod fusion_combine_middle_lists;
 mod fusion_combine_patterns;
+mod fusion_combine_producers;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
 mod fusion_mirror_remove;
@@ -304,8 +305,8 @@ fn f3z_pipeline_merges_three_levels_of_occurrences() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    let scope = format!("xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
-    let expected = format!("f3d:{scope}{scope}{scope}");
+    let scope = format!("role-{XREF_ROLE}/reference-0/occurrence-0");
+    let expected = format!("f3d:{scope}/xref/{scope}/xref/{scope}@");
     assert_eq!(merged.ir().geometry.bodies.len(), 1);
     assert!(merged.ir().geometry.bodies[0]
         .id
@@ -332,8 +333,11 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    assert!(merged.ir().geometry.bodies[0].id.as_str().contains(&format!(
-        "xref/role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0/"
+    assert!(merged.ir().geometry.bodies[0]
+        .id
+        .as_str()
+        .contains(&format!(
+        "role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0@"
     )));
     assert_valid(&merged);
 
@@ -496,7 +500,7 @@ fn plan(
     result: &EditableDecodeResult,
     fidelity: bool,
     request: TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     F3dCodec.plan(
         EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
         request,

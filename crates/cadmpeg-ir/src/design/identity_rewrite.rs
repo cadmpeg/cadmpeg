@@ -39,10 +39,10 @@ impl<T: Ord + RewriteIdentities> RewriteIdentities for std::collections::BTreeSe
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite structured name set")?;
         let mut values = Self::new();
@@ -71,10 +71,10 @@ impl<T, P: RewriteIdentities> RewriteIdentities for Dimension<T, P> {
         }
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Ok(match self {
             Self::Literal(value) => Self::Literal(value),
@@ -97,10 +97,10 @@ impl<T: Keyed + RewriteIdentities, O: MemberOrder> RewriteIdentities for Members
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Self::new(self.into_vec().rewrite_identities(ctx, map)?).map_err(CodecError::malformed)
     }
@@ -157,10 +157,10 @@ impl RewriteIdentities for ConfigurationRef {
             Self::Named(_) => Ok(()),
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Ok(match self {
             Self::Local(id) => Self::Local(id.rewrite_identities(ctx, map)?),
@@ -243,10 +243,10 @@ impl RewriteIdentities for Expression {
             }),
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let mut rewrite = |reference: &mut ParameterRef| -> Result<(), CodecError> {
             *reference = reference.clone().rewrite_identities(ctx, map)?;

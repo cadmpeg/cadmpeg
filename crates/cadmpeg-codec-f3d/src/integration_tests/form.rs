@@ -176,11 +176,11 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .find(|(role, reference)| {
                 form.inputs().references.iter().any(|id| {
                     id.as_str()
-                        .contains(&format!("role-{role}/reference-{reference}/occurrence-0/"))
+                        .contains(&format!("role-{role}/reference-{reference}/occurrence-0@"))
                 })
             })
             .unwrap();
-        let prefix = format!("role-{role}/reference-{reference}/occurrence-0/");
+        let prefix = format!("role-{role}/reference-{reference}/occurrence-0@");
         assert!(!form.membership_is_complete());
         assert_eq!(form.committed_cages().count(), 2);
         assert_eq!(form.referenced_cages().count(), 2);
@@ -219,10 +219,7 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .values()
             .flatten()
             .any(|record| record.id()
-                == format!(
-                    "f3d:xref/{prefix}{}",
-                    collision.strip_prefix("f3d:").unwrap()
-                )));
+                == format!("f3d:{prefix}{}", collision.strip_prefix("f3d:").unwrap())));
         let absent = form
             .inputs()
             .reference_evidence

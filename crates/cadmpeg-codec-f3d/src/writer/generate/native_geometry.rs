@@ -6221,8 +6221,12 @@ mod pcurve_chart_tests {
                 .expect("line pcurve is an admitted spring input");
             });
             let mut output = vec![0x93, 0x2a];
-            let generated = crate::writer::generate::write_new(&target, &mut output)
-                .expect("a spring whose construction cannot be written still writes");
+            let generated = crate::writer::generate::write_new(
+                &target,
+                cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
+                &mut output,
+            )
+            .expect("a spring whose construction cannot be written still writes");
             crate::F3dCodec
                 .decode(&mut Cursor::new(&output[2..]), &DecodeOptions::default())
                 .expect("the written file decodes");

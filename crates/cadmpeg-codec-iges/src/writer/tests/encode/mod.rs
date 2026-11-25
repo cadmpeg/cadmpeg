@@ -308,7 +308,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
 }
 
 #[test]
-fn encode_drops_open_shells_before_iges_5_3() {
+fn encode_writes_open_shells_before_iges_5_3_as_unjoined_trimmed_surfaces() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_non_manifold_open_shell_file()),
@@ -320,10 +320,67 @@ fn encode_drops_open_shells_before_iges_5_3() {
             .unwrap_or_else(|error| panic!("{version:?}: {error}"));
         assert_charged(
             &plan,
-            "iges/writer.face-omitted",
-            "does not define emitted entity Type 514 Form 2",
+            "iges/writer.open-shell-unjoined",
+            "defines no open shell (Type 514 Form 2)",
         );
+        let losses = &plan.report().losses;
+        assert!(
+            !losses
+                .iter()
+                .any(|loss| loss.code.to_string() == "iges/writer.face-omitted"),
+            "{version:?}: {losses:#?}"
+        );
+        let mut written = Vec::new();
+        plan.write_to(&mut written).unwrap();
+        let read = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(read.ir().geometry.faces.len(), 3, "{version:?}");
     }
+}
+
+#[test]
+fn encode_drops_only_the_open_shell_faces_before_iges_5_3_beside_a_solid() {
+    struct Unchanged;
+    impl cadmpeg_ir::document::EntityRewrite for Unchanged {
+        type Error = std::convert::Infallible;
+        fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+            &mut self,
+            entity: T,
+        ) -> Result<T, Self::Error> {
+            Ok(entity)
+        }
+    }
+    let mut ir = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+        .ir()
+        .clone();
+    let cube = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cube_body = cube.geometry.bodies[0].id.to_string();
+    ir.geometry
+        .extend_rewritten(cube.geometry, &mut Unchanged)
+        .unwrap();
+    ir.finalize();
+    let plan = plan_at(IgesVersion::V5_1, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.face-omitted",
+        "does not define emitted entity Type 514 Form 2",
+    );
+    let losses = &plan.report().losses;
+    assert!(
+        !losses.iter().any(|loss| {
+            let code = loss.code.to_string();
+            code == "iges/writer.open-shell-unjoined"
+                || code == "export/output.empty"
+                || (code == "iges/writer.body-omitted" && loss.message.contains(&cube_body))
+        }),
+        "{losses:#?}"
+    );
 }
 
 #[test]

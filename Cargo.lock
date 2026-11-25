@@ -441,6 +441,7 @@ dependencies = [
  "cadmpeg-test-support",
  "crc32fast",
  "flate2",
+ "memchr",
  "rmp",
  "roxmltree",
  "serde",
@@ -517,6 +518,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "toml",
 ]

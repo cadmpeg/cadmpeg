@@ -258,6 +258,8 @@ The sense token is relative to the native surface carrier. Decoding a reversed s
 
 An untrimmed closed analytic face stores `-1` in `chunk[4]` (first_loop) and owns no loops, coedges, edges, or vertices. Full spheres and tori use this loopless form; the closed surface carries no seam, pole, or periphery loop and no degenerate edge. A single-sided loopless face bounds the volume on one side of its closed surface, so a body whose faces are all single-sided loopless faces is a solid. A double-sided loopless face is a sheet. A `degenerate_curve` never bounds a loopless closed face; it occurs only as an edge curve at a cone apex or sphere pole of a trimmed face, or nested inside a procedural-surface construction.
 
+A face whose `chunk[4]` (first_loop) is `-1` on a plane, cylinder, or cone states no boundary, because the surface domain is unbounded. The face is stated partial with the loss `topology.face-boundary-unstated`.
+
 **CoEdge (100 B):**
 
 ```

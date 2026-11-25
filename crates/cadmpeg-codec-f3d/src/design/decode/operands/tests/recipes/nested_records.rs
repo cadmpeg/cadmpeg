@@ -1184,7 +1184,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 0,
             },
             PersistentSubentityTag {
-                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                id: "f3d:other/occurrence-0@design:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(
                     FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
                 ),
@@ -1538,7 +1538,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 1,
             },
             PersistentSubentityTag {
-                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                id: "f3d:other/occurrence-0@design:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(
                     FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
                 ),

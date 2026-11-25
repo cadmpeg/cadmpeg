@@ -18066,7 +18066,7 @@
           ]
         },
         {
-          "description": "A loop is not stated, and the source does not classify the loops.",
+          "description": "The boundary is not stated in full, and the source does not classify\nthe loops: a loop is not stated, or the source states none on a\nsurface whose domain is unbounded and the face lists none (§5.6).",
           "type": "object",
           "properties": {
             "kind": {
@@ -18088,7 +18088,7 @@
           ]
         },
         {
-          "description": "A loop is not stated, and the source classifies the loops.",
+          "description": "The boundary is not stated in full, and the source classifies the\nloops: a loop is not stated.",
           "type": "object",
           "properties": {
             "kind": {
