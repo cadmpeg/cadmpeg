@@ -4,8 +4,10 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -34,76 +36,29 @@ def command(arguments: list[str], packages: list[str], *, full: bool = False,
     return ['cargo', arguments[0], '-q', *scope, *arguments[1:]]
 
 
-# Crates whose single-process rustc RSS exceeds ~3 GiB and therefore swap
-# heavily when compiled concurrently on low-RAM runners (e.g. 7 GiB macOS).
-HEAVY_CODECS = (
-    'cadmpeg-codec-f3d',
-    'cadmpeg-codec-sldprt',
-    'cadmpeg-codec-nx',
-    'cadmpeg-codec-catia',
-    'cadmpeg-codec-creo',
-)
-
-# Lightweight and medium workspace crates that fit two concurrent rustc
-# processes comfortably inside 7 GiB RAM once cadmpeg-ir is built.
-MEDIUM_CRATES = (
-    'cadmpeg-asm',
-    'cadmpeg-parasolid',
-    'cadmpeg-measure',
-    'cadmpeg-tessellate',
-    'cadmpeg-protein',
-    'cadmpeg-test-support',
-    'cadmpeg-codec-step',
-    'cadmpeg-codec-iges',
-    'cadmpeg-codec-freecad',
-    'cadmpeg-codec-inventor',
-    'cadmpeg-codec-rhino',
-    'cadmpeg-codec-sat',
-    'cadmpeg-codec-usd',
-    'cadmpeg-codec-pvz',
-    'cadmpeg-codec-solidedge',
-    'cadmpeg-codec-edrawings',
-    'cadmpeg-codec-onshape',
-)
-
-HEAVY_CRATES = ('cadmpeg-ir', *HEAVY_CODECS)
-
-# Runners at or below this GiB ceiling pre-build heavy crates one at a time.
+# Runners at or below this GiB ceiling serialize heavy rustc invocations via
+# `ci_rustc_lock.py` instead of capping every crate to one job or splitting
+# Cargo into multiple invocations that break workspace feature unification.
 LOW_RAM_GIB = 10
-# Runners at or below this GiB ceiling cap full builds at two parallel jobs.
+# Runners at or below this GiB ceiling cap broad builds at two parallel jobs.
 BROAD_BUILD_CAP_RAM_GIB = 18
 
 
-def low_ram_prebuild_commands(arguments: list[str]) -> list[tuple[int | None, list[str]]]:
-    """Return `(jobs_override, argv)` pre-build stages for a full low-RAM nextest run.
+def low_ram_rustc_wrapper() -> Path:
+    """Return the path to the flock-based `RUSTC_WRAPPER` script."""
+    return Path(__file__).resolve().parent / 'ci_rustc_lock.py'
 
-    Each stage enables the workspace test-support features so Cargo reuses
-    every compiled artifact without rebuilding during the final `--workspace`
-    invocation.
+
+def low_ram_test_command(arguments: list[str], *, platform: str) -> list[str]:
+    """Return the full-workspace test command for a low-RAM runner.
+
+    On macOS (`darwin`), `cargo test` runs each crate's tests in-process (34
+    processes instead of 30,000+ Mach-O spawns of 300-500 MB binaries) and
+    shares `LazyLock` fixture decode caches across tests in each binary.
     """
-    extra = [arg for arg in arguments[2:] if arg not in ('--no-fail-fast', '--no-run')]
-    base = ['cargo', 'nextest', 'run', '--cargo-quiet', '--no-run']
-    stage_core = [
-        *base,
-        '-p', 'cadmpeg-core',
-        '-p', 'cadmpeg-container',
-        '--features', 'cadmpeg-core/test-support',
-        *extra,
-    ]
-    stage_ir = [*base, '-p', 'cadmpeg-ir', *extra]
-    stage_medium = [
-        *base,
-        *(item for crate in MEDIUM_CRATES for item in ('-p', crate)),
-        '--features',
-        'cadmpeg-asm/test-support,cadmpeg-measure/test-support,cadmpeg-parasolid/test-support',
-        *extra,
-    ]
-    stage_heavy = [
-        *base,
-        *(item for crate in HEAVY_CODECS for item in ('-p', crate)),
-        *extra,
-    ]
-    return [(None, stage_core), (1, stage_ir), (2, stage_medium), (1, stage_heavy)]
+    if platform == 'darwin' and arguments[:2] == ['nextest', 'run']:
+        return ['cargo', 'test', '-q', '--workspace', *arguments[2:]]
+    return command(arguments, [], full=True)
 
 
 def main() -> int:
@@ -120,25 +75,26 @@ def main() -> int:
     ram_text = os.environ.get('CI_RUNNER_RAM_GIB', '').strip()
     ram_gib = int(ram_text) if ram_text.isdigit() else None
     env: dict[str, str] | None = None
+    lock_dir: str | None = None
+    argv = command(arguments, packages, full=full, codecs=codecs)
     if full and arguments[:2] == ['nextest', 'run'] and ram_gib is not None:
         env = os.environ.copy()
         if ram_gib <= LOW_RAM_GIB:
-            for jobs, stage_cmd in low_ram_prebuild_commands(arguments):
-                stage_env = env.copy()
-                if jobs is not None:
-                    stage_env['CARGO_BUILD_JOBS'] = str(jobs)
-                rc = subprocess.run(stage_cmd, env=stage_env).returncode
-                if rc != 0:
-                    return rc
-            current_jobs = int(env.get('CARGO_BUILD_JOBS', '2'))
-            env['CARGO_BUILD_JOBS'] = str(min(current_jobs, 2))
+            if sys.platform != 'win32':
+                lock_dir = tempfile.mkdtemp(prefix='cadmpeg-rustc-lock-')
+                env['RUSTC_WRAPPER'] = str(low_ram_rustc_wrapper())
+                env['CI_RUSTC_LOCK_DIR'] = lock_dir
+            argv = low_ram_test_command(arguments, platform=sys.platform)
         elif ram_gib <= BROAD_BUILD_CAP_RAM_GIB:
             current_jobs = int(env.get('CARGO_BUILD_JOBS', '2'))
             env['CARGO_BUILD_JOBS'] = str(min(current_jobs, 2))
-    argv = command(arguments, packages, full=full, codecs=codecs)
-    if env is not None:
-        return subprocess.run(argv, env=env).returncode
-    return subprocess.run(argv).returncode
+    try:
+        if env is not None:
+            return subprocess.run(argv, env=env).returncode
+        return subprocess.run(argv).returncode
+    finally:
+        if lock_dir is not None:
+            shutil.rmtree(lock_dir, ignore_errors=True)
 
 
 if __name__ == '__main__':

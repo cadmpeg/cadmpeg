@@ -4,9 +4,9 @@
 //! These codes belong to no codec: the wrapper charges them by comparing the
 //! content classes the requested depth names with the classes the document
 //! holds, for a class a decoder states the source holds beyond the delivered
-//! depth, for the records its normalizer gave up, for an id a decoder
-//! emitted twice with different content, and for a document it took no
-//! content digest of, so every codec reports them under one namespace.
+//! depth, for the records its normalizer gave up, and for an id a decoder
+//! emitted twice with different content, so every codec reports them under
+//! one namespace.
 
 use cadmpeg_core::decode::ArenaClass;
 

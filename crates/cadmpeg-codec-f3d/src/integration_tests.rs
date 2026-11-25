@@ -305,13 +305,11 @@ fn f3z_pipeline_merges_three_levels_of_occurrences() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    let scope = format!("role-{XREF_ROLE}/reference-0/occurrence-0");
-    let expected = format!("f3d:{scope}/xref/{scope}/xref/{scope}@");
     assert_eq!(merged.ir().geometry.bodies.len(), 1);
     assert!(merged.ir().geometry.bodies[0]
         .id
         .as_str()
-        .starts_with(&expected));
+        .starts_with("f3d:component.f3d@"));
     assert_valid(&merged);
 }
 
@@ -336,9 +334,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
     assert!(merged.ir().geometry.bodies[0]
         .id
         .as_str()
-        .contains(&format!(
-        "role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0@"
-    )));
+        .starts_with("f3d:component.f3d@"));
     assert_valid(&merged);
 
     let cyclic_middle =
@@ -553,9 +549,11 @@ fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_de
     let report = crate::test_support::assert_written_with_loss(
         result.ir(),
         None,
-        &crate::loss::F3dLossCode::SourceDialectDisplaced
-            .kind()
-            .to_string(),
+        &cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("f3d"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+        )
+        .to_string(),
         "f3d:unknown",
     );
     assert!(

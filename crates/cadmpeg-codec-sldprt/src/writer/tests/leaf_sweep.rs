@@ -92,7 +92,8 @@ fn jobs(part: &DecodeResult) -> Vec<Job> {
         let Some(name) = feature.name.as_deref().filter(|name| named(name) == 1) else {
             continue;
         };
-        let wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let wire =
+            cadmpeg_core::serde_erase::to_json_value(feature.evaluation.definition()).unwrap();
         let mut found = Vec::new();
         leaves(&wire, "", &mut found);
         for (pointer, leaf_type) in found {
@@ -159,11 +160,12 @@ fn run(
             .iter_mut()
             .find(|feature| feature.name.as_deref() == Some(job.feature.as_str()))
             .unwrap();
-        let source_wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let source_wire =
+            cadmpeg_core::serde_erase::to_json_value(feature.evaluation.definition()).unwrap();
         let mut edited_wire = source_wire.clone();
         let leaf = edited_wire.pointer_mut(&job.pointer).unwrap();
         *leaf = changed(leaf);
-        let Ok(definition) = serde_json::from_value(edited_wire.clone()) else {
+        let Ok(definition) = cadmpeg_core::serde_erase::from_json_value(&edited_wire) else {
             eprintln!("{label}: not a definition");
             return Ok(Outcome::Invalid);
         };
@@ -202,7 +204,7 @@ fn run(
     let [read] = read.as_slice() else {
         return Err(format!("{label}: the feature does not read back once"));
     };
-    let read_leaf = serde_json::to_value(read.evaluation.definition())
+    let read_leaf = cadmpeg_core::serde_erase::to_json_value(read.evaluation.definition())
         .unwrap()
         .pointer(&job.pointer)
         .cloned()
@@ -331,7 +333,7 @@ fn job(part: &DecodeResult, feature: &str, selected: impl Fn(&str) -> bool) -> J
     let [found] = named(&part.ir().model.features, feature)[..] else {
         panic!("{feature} is not named once");
     };
-    let wire = serde_json::to_value(found.evaluation.definition()).unwrap();
+    let wire = cadmpeg_core::serde_erase::to_json_value(found.evaluation.definition()).unwrap();
     let mut found = Vec::new();
     leaves(&wire, "", &mut found);
     let (pointer, _) = found

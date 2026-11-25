@@ -336,7 +336,8 @@ pub(super) fn persist_decode_sidecar(
         LoadOrigin::Decoded {
             report, fidelity, ..
         }
-        | LoadOrigin::Restored { report, fidelity } => {
+        | LoadOrigin::Restored { report, fidelity }
+        | LoadOrigin::Read { report, fidelity } => {
             let mut fidelity = fidelity.as_ref().clone();
             let omitted = ir.model.omitted_record_ids();
             fidelity

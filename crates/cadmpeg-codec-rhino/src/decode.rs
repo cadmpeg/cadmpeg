@@ -5503,20 +5503,27 @@ fn stage_curve_tree_indexed(
         crate::curves::DecodedCurve::Compound {
             mut children,
             end_parameter,
+            scale,
             ..
         } => {
             crate::curves::fit_polycurve_pieces(ctx, &mut children, end_parameter, 0)?;
             let parameter_range = children.first().and_then(|(start, _)| {
                 cadmpeg_ir::topology::IncreasingParameterInterval::between(*start, end_parameter)
             });
+            let transitions = crate::curves::polycurve_transitions(ctx, &children, scale)?;
             let mut segments = Vec::new();
-            for (index, (_, child)) in children.into_iter().enumerate() {
-                segments.push(polycurve_segment(stage_curve_tree_indexed(
-                    staged,
-                    child,
-                    &format!("{path}.component-{index}"),
-                    context,
-                )?));
+            for (index, ((_, child), transition)) in
+                children.into_iter().zip(transitions).enumerate()
+            {
+                segments.push(polycurve_segment(
+                    stage_curve_tree_indexed(
+                        staged,
+                        child,
+                        &format!("{path}.component-{index}"),
+                        context,
+                    )?,
+                    transition,
+                ));
             }
             (
                 polycurve_geometry(segments).map_err(crate::curves::GeometryError::unpositioned)?,
@@ -5552,15 +5559,16 @@ fn stage_curve_tree_indexed(
     Ok(id)
 }
 
-/// One piece of a polycurve as a composite segment: the polycurve asserts
-/// no continuity where its pieces meet.
+/// One piece of a polycurve as a composite segment, entered by `transition`
+/// ([`crate::curves::polycurve_transitions`]).
 fn polycurve_segment(
     curve: cadmpeg_ir::ids::CurveId,
+    transition: cadmpeg_ir::geometry::CompositeCurveTransition,
 ) -> cadmpeg_ir::geometry::CompositeCurveSegment {
     cadmpeg_ir::geometry::CompositeCurveSegment {
         curve,
         same_sense: true,
-        transition: cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous,
+        transition,
     }
 }
 
@@ -6049,6 +6057,7 @@ fn commit_curve_tree(
         crate::curves::DecodedCurve::Compound {
             mut children,
             end_parameter,
+            scale,
             ..
         } => {
             crate::curves::fit_polycurve_pieces(ctx, &mut children, end_parameter, 0)
@@ -6056,20 +6065,27 @@ fn commit_curve_tree(
             let parameter_range = children.first().and_then(|(start, _)| {
                 cadmpeg_ir::topology::IncreasingParameterInterval::between(*start, end_parameter)
             });
+            let transitions = crate::curves::polycurve_transitions(ctx, &children, scale)
+                .map_err(|error| error.to_string())?;
             let mut segments = Vec::new();
-            for (index, (_, child)) in children.into_iter().enumerate() {
+            for (index, ((_, child), transition)) in
+                children.into_iter().zip(transitions).enumerate()
+            {
                 let child_path = format!("{}.component-{index}", source.path);
-                segments.push(polycurve_segment(commit_curve_tree(
-                    ctx,
-                    ir,
-                    annotations,
-                    child,
-                    CurveCommitSource {
-                        key: source.key,
-                        association: source.association,
-                        path: &child_path,
-                    },
-                )?));
+                segments.push(polycurve_segment(
+                    commit_curve_tree(
+                        ctx,
+                        ir,
+                        annotations,
+                        child,
+                        CurveCommitSource {
+                            key: source.key,
+                            association: source.association,
+                            path: &child_path,
+                        },
+                    )?,
+                    transition,
+                ));
             }
             (polycurve_geometry(segments)?, parameter_range)
         }

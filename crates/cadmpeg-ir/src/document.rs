@@ -705,14 +705,15 @@ macro_rules! declare_home_arenas {
             }
 
             /// States one record of each id in each sorted arena whose copies
-            /// hold one value, and returns each id whose copies differ, all of
-            /// whose copies it keeps.
-            pub(crate) fn repeated_ids(&mut self, home: &'static str) -> Vec<RepeatedId> {
+            /// hold one value, and returns each id whose copies differ, whose
+            /// copies `differing` keeps.
+            pub(crate) fn repeated_ids(&mut self, home: &'static str, differing: DifferingCopies) -> Vec<RepeatedId> {
                 let mut repeated = Vec::new();
                 $(drop_repeated_copies(
                     &mut self.$field,
                     crate::schema::ArenaRecord::record_identity,
                     &crate::give_up::Arena::Home { home, field: stringify!($field) },
+                    differing,
                     &mut repeated,
                 );)*
                 repeated
@@ -1414,7 +1415,7 @@ macro_rules! declare_document_arenas {
                         if !rewrite(&mut value) {
                             return false;
                         }
-                        let Ok(entity) = serde_json::from_value(value) else {
+                        let Ok(entity) = cadmpeg_core::serde_erase::from_json_value(&value) else {
                             return false;
                         };
                         rewritten.push(entity);
@@ -1505,13 +1506,23 @@ pub(crate) struct RepeatedId {
     pub(crate) copies: usize,
 }
 
+/// What [`drop_repeated_copies`] keeps of an id whose copies differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DifferingCopies {
+    /// Every copy, for the decode wrapper's give-up (§2.8).
+    Keep,
+    /// The first copy in arena order, as a CADIR writer states it (§3.4).
+    First,
+}
+
 /// States one record for each id of a sorted arena whose copies hold one
-/// value, and records in `repeated` each id whose copies differ, keeping
-/// every copy of it for the give-up (§2.8).
+/// value, and records in `repeated` each id whose copies differ, keeping of
+/// it the copies `differing` names.
 pub(crate) fn drop_repeated_copies<T: PartialEq>(
     records: &mut Vec<T>,
     id: impl Fn(&T) -> &str,
     arena: &crate::give_up::Arena,
+    differing: DifferingCopies,
     repeated: &mut Vec<RepeatedId>,
 ) {
     let mut run: Option<(RepeatedId, bool)> = None;
@@ -1540,7 +1551,7 @@ pub(crate) fn drop_repeated_copies<T: PartialEq>(
                 ));
             }
         }
-        later == earlier
+        differing == DifferingCopies::First || later == earlier
     });
     repeated.extend(
         run.filter(|(_, differs)| *differs)
@@ -1613,13 +1624,108 @@ macro_rules! declare_arena_name {
             }
         }
 
-        impl Arenas<'_> {
+        impl ArenaName {
+            /// The kind of the records of the arena `field` of `home`.
+            pub(crate) fn record_kind(home: &str, field: &str) -> Option<crate::schema::EntityKind> {
+                $(if home == stringify!($home) && field == stringify!($field) {
+                    return Some(<$ty as crate::schema::ArenaRecord>::KIND);
+                })*
+                None
+            }
+        }
+
+        impl<'a> Arenas<'a> {
+            /// Each record of an arena of `class`, as the give-up names it.
+            pub(crate) fn seeds_of(self, class: ArenaClass) -> Vec<crate::give_up::Seed> {
+                let mut seeds = Vec::new();
+                $(if arena_class!($class) == class {
+                    seeds.extend(self.$home.$field.iter().map(|record| crate::give_up::Seed {
+                        arena: crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) },
+                        id: crate::schema::ArenaRecord::record_identity(record).to_owned(),
+                    }));
+                })*
+                seeds
+            }
+
+            /// The ids of the records of each arena, by the arena's name, with
+            /// the kind of its records.
+            pub(crate) fn record_ids(self) -> BTreeMap<ArenaName, (crate::schema::EntityKind, std::collections::BTreeSet<&'a str>)> {
+                let mut ids = BTreeMap::new();
+                $(ids.insert(
+                    arena_name!($field, $class, $home),
+                    (
+                        <$ty as crate::schema::ArenaRecord>::KIND,
+                        self.$home.$field.iter().map(crate::schema::ArenaRecord::record_identity).collect(),
+                    ),
+                );)*
+                ids
+            }
+
+            /// The ids of `among` that a record of an arena the CADIR wire
+            /// carries has.
+            pub(crate) fn written_among<'b>(self, among: &std::collections::BTreeSet<&'b str>) -> std::collections::BTreeSet<&'b str> {
+                let mut written = std::collections::BTreeSet::new();
+                $(if !ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    written.extend(self.$home.$field.iter().filter_map(|record| {
+                        among.get(crate::schema::ArenaRecord::record_identity(record)).copied()
+                    }));
+                })*
+                written
+            }
+
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
                     return Some(arena_name!($field, $class, $home));
                 })*
                 None
+            }
+
+            /// Every registered arena of `class` that holds a record, in
+            /// registry order.
+            pub(crate) fn populated_arenas(self, class: ArenaClass) -> Vec<ArenaName> {
+                let mut arenas = Vec::new();
+                $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
+                    arenas.push(arena_name!($field, $class, $home));
+                })*
+                arenas
+            }
+
+            /// The ids of the records of the arenas of `class`. A design
+            /// scope's identity is its definition's, a model id.
+            pub(crate) fn identities_of(self, class: ArenaClass) -> std::collections::HashSet<&'a str> {
+                let mut ids = std::collections::HashSet::new();
+                $(if arena_class!($class) == class
+                    && <$ty as crate::schema::ArenaRecord>::KIND != crate::schema::EntityKind::DesignScope
+                {
+                    ids.extend(self.$home.$field.iter().map(crate::schema::ArenaRecord::record_identity));
+                })*
+                ids
+            }
+
+            /// Every registered arena of a class `scope` holds that holds a
+            /// record naming an id of `targets` other than its own.
+            pub(crate) fn naming(
+                self,
+                scope: ContentScope,
+                targets: &std::collections::HashSet<&str>,
+            ) -> std::collections::BTreeSet<ArenaName> {
+                let mut arenas = std::collections::BTreeSet::new();
+                $(if scope.holds(arena_class!($class)) {
+                    let arena = crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) };
+                    if self.$home.$field.iter().any(|record| {
+                        crate::give_up::Holder::of(
+                            &arena,
+                            crate::schema::ArenaRecord::record_identity(record),
+                            record,
+                            |text| targets.get(text).copied(),
+                        )
+                        .is_some()
+                    }) {
+                        arenas.insert(arena_name!($field, $class, $home));
+                    }
+                })*
+                arenas
             }
 
             /// Whether an arena of `class` in `home` holds a record.
@@ -2728,41 +2834,53 @@ pub struct CadIr {
     pub native: Native,
 }
 
-/// A document scope that excludes a class the document needs.
+/// A breach of the scope rules of §2.1, the detail of a part 10 finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScopeViolation {
-    /// The excluded class.
-    pub class: ArenaClass,
-    /// The first arena of `class` that holds a record, the first arena of
-    /// another class whose records reference `class`, or `None` when a class
-    /// the scope holds requires `class`.
-    pub arena: Option<ArenaName>,
+pub enum ScopeViolation {
+    /// The scope holds `held` and excludes `required`, which `held`
+    /// requires.
+    Unmet {
+        /// The held class.
+        held: ArenaClass,
+        /// The class it requires.
+        required: ArenaClass,
+    },
+    /// `arena` holds a record and the scope excludes its class.
+    Populated {
+        /// The arena.
+        arena: ArenaName,
+    },
+    /// The scope excludes `class`, and `arena`, an arena of another class,
+    /// holds a record that references it.
+    Referenced {
+        /// The excluded class.
+        class: ArenaClass,
+        /// The arena that holds the reference.
+        arena: ArenaName,
+    },
 }
 
 impl fmt::Display for ScopeViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.arena {
-            Some(arena) if arena.class() == self.class => write!(
+        match self {
+            Self::Unmet { held, required } => write!(
+                f,
+                "the document's scope holds {held} but excludes {required}, which {held} requires"
+            ),
+            Self::Populated { arena } => write!(
                 f,
                 "the document's scope excludes {} but {} arena `{arena}` holds records",
-                self.class, self.class
-            ),
-            Some(arena) => write!(
-                f,
-                "the document's scope excludes {} but {} arena `{arena}` holds a reference into it",
-                self.class,
+                arena.class(),
                 arena.class()
             ),
-            None => write!(
+            Self::Referenced { class, arena } => write!(
                 f,
-                "the document's scope excludes {}, which a class it holds requires",
-                self.class
+                "the document's scope excludes {class} but {} arena `{arena}` holds a reference into it",
+                arena.class()
             ),
         }
     }
 }
-
-impl std::error::Error for ScopeViolation {}
 
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2826,7 +2944,6 @@ impl CadIr {
         &self,
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
-        self.check_scope().map_err(serde::ser::Error::custom)?;
         if !(self.design.is_finalized()
             && self.process.is_finalized()
             && self.native.is_finalized())
@@ -2856,7 +2973,6 @@ impl CadIr {
         &self,
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
-        self.check_scope().map_err(serde::ser::Error::custom)?;
         let sorted_design;
         let design = if self.design.is_finalized() {
             &self.design
@@ -2947,7 +3063,7 @@ impl CadIr {
 impl CadIrReadWire {
     fn admit<E: serde::de::Error>(self) -> Result<CadIr, E> {
         self.admit_state_chains().map_err(E::custom)?;
-        self.try_into().map_err(E::custom)
+        Ok(self.into())
     }
 
     /// Refuses an arena whose records do not state their ids in strictly
@@ -2988,11 +3104,9 @@ fn admit_state_chains(design: &Design, process: &Process, cycles: Cycles) -> Res
     crate::process::state::admit_state_chains(&process.states, &evaluations, cycles)
 }
 
-impl TryFrom<CadIrReadWire> for CadIr {
-    type Error = ScopeViolation;
-
-    fn try_from(wire: CadIrReadWire) -> Result<Self, Self::Error> {
-        let ir = Self {
+impl From<CadIrReadWire> for CadIr {
+    fn from(wire: CadIrReadWire) -> Self {
+        Self {
             fragment: wire.fragment,
             repro: wire.repro,
             scope: wire.scope,
@@ -3003,9 +3117,7 @@ impl TryFrom<CadIrReadWire> for CadIr {
             design: wire.design,
             process: wire.process,
             native: wire.native,
-        };
-        ir.check_scope()?;
-        Ok(ir)
+        }
     }
 }
 
@@ -3227,59 +3339,67 @@ impl CadIr {
         self.scope
     }
 
-    /// Declare which neutral arena classes the document holds.
-    ///
-    /// # Errors
-    ///
-    /// Refuses, without changing the scope, a scope that holds a class
-    /// without the class it requires, or that excludes a class with a
-    /// populated arena or, for the design class, with a model record that
-    /// references it.
-    pub fn set_scope(&mut self, scope: ContentScope) -> Result<(), ScopeViolation> {
-        self.check_scope_value(scope)?;
+    /// Declare which neutral arena classes the document holds. A scope
+    /// that breaks a rule of §2.1 is set as given; validation reports each
+    /// [`ScopeViolation`].
+    pub fn set_scope(&mut self, scope: ContentScope) {
         self.scope = scope;
-        Ok(())
     }
 
-    /// Check the scope's class requirements, that every populated neutral
-    /// arena belongs to a held class, and that no model record references
-    /// the design class when the scope excludes it.
-    ///
-    /// # Errors
-    ///
-    /// Names the excluded class and its first populated arena, or the first
-    /// model arena that references it, or the excluded class that a held
-    /// class requires.
-    pub fn check_scope(&self) -> Result<(), ScopeViolation> {
-        self.check_scope_value(self.scope)
-    }
-
-    fn check_scope_value(&self, scope: ContentScope) -> Result<(), ScopeViolation> {
-        if let Some(unmet) = scope.unmet_requirement() {
-            return Err(ScopeViolation {
-                class: unmet.required,
-                arena: None,
-            });
+    /// Every breach of the scope rules of §2.1, in this order: the held
+    /// class whose required class the scope excludes; for each excluded
+    /// class, each of its arenas that holds a record; and for each excluded
+    /// class, each arena of a held class that holds a reference into it. A
+    /// record references a class where it names the id of a record of that
+    /// class; a model record also references the design class where it reads
+    /// it (§2.1). Arenas follow registry order.
+    #[must_use]
+    pub fn scope_violations(&self) -> Vec<ScopeViolation> {
+        let scope = self.scope;
+        let arenas = self.arenas();
+        let excluded: Vec<ArenaClass> = ArenaClass::ALL
+            .into_iter()
+            .filter(|class| !scope.holds(*class))
+            .collect();
+        let mut violations: Vec<ScopeViolation> = scope
+            .unmet_requirement()
+            .map(|unmet| ScopeViolation::Unmet {
+                held: unmet.held,
+                required: unmet.required,
+            })
+            .into_iter()
+            .collect();
+        for &class in &excluded {
+            violations.extend(
+                arenas
+                    .populated_arenas(class)
+                    .into_iter()
+                    .map(|arena| ScopeViolation::Populated { arena }),
+            );
         }
-        for class in ArenaClass::ALL {
-            if !scope.holds(class) {
-                if let Some(arena) = self.populated_arena(class) {
-                    return Err(ScopeViolation {
-                        class,
-                        arena: Some(arena),
-                    });
-                }
+        for &class in &excluded {
+            let targets = arenas.identities_of(class);
+            let mut referencing = if targets.is_empty() {
+                std::collections::BTreeSet::new()
+            } else {
+                arenas.naming(scope, &targets)
+            };
+            if class == ArenaClass::Design {
+                referencing.extend(
+                    design_references::holders(&self.model)
+                        .into_iter()
+                        .filter(|(arena, ids)| scope.holds(arena.class()) && !ids.is_empty())
+                        .map(|(arena, _)| arena),
+                );
             }
+            violations.extend(
+                ArenaName::ALL
+                    .iter()
+                    .filter(|arena| referencing.contains(*arena))
+                    .map(|&arena| ScopeViolation::Referenced { class, arena }),
+            );
         }
-        if !scope.holds(ArenaClass::Design) {
-            if let Some(arena) = design_references::first(&self.model) {
-                return Err(ScopeViolation {
-                    class: ArenaClass::Design,
-                    arena: Some(arena),
-                });
-            }
-        }
-        Ok(())
+        violations
     }
 
     /// The first registered arena of `class` that holds a record.
@@ -3311,22 +3431,46 @@ impl CadIr {
     /// The text is written through the same finite adapter the digest uses, so
     /// a non-finite float is refused rather than written as `null`.
     ///
+    /// §2.8 has serialization refuse no value of a checked type. A document
+    /// that holds a non-finite float or nests past a bound of §2.5 is outside
+    /// the `CadIr` type, so these refusals fall outside that rule. The CADIR
+    /// encoder is the writer that drops what CADIR cannot hold (§3.4).
+    ///
     /// # Errors
     ///
-    /// Refuses a document holding a non-finite float.
+    /// [`CanonicalJsonError::NonFinite`] for a document holding a non-finite
+    /// float, and [`CanonicalJsonError::PastBound`] for a document nesting
+    /// past a bound of §2.5.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         canonical.finalize();
-        crate::hash::finite_json::to_canonical_json_string_erased(&|serializer| {
-            canonical.serialize_erased(serializer)
+        let (bytes, measured) = crate::hash::measured_canonical_json(&canonical)?;
+        let past = measured
+            .records
+            .iter()
+            .map(|(place, bound)| {
+                let at = canonical.record_at(place).map_or_else(
+                    || "in a record".to_owned(),
+                    |seed| format!("in record {} of arena {}", seed.id, seed.arena),
+                );
+                (at, *bound)
+            })
+            .chain(measured.outside.iter().map(|(outside, bound)| {
+                (format!("outside every record ({})", outside.field), *bound)
+            }))
+            .next();
+        if let Some((at, bound)) = past {
+            return Err(CanonicalJsonError::PastBound { bound, at });
+        }
+        String::from_utf8(bytes).map_err(|error| {
+            CanonicalJsonError::Serialize(<serde_json::Error as serde::ser::Error>::custom(error))
         })
     }
 
     /// Parse canonical JSON and reject any unsupported `ir_version`, any
-    /// spelling or value [`CadIr::read`] repairs or gives up, a document whose
-    /// scope excludes a class it holds records of, or one that nests deeper
-    /// than a CADIR document's bound. Every float zero, `-0` and `-0.0`
-    /// included, reads as 0 (§2.5).
+    /// spelling or value [`CadIr::read`] repairs or gives up, or a document
+    /// that nests deeper than a CADIR document's bound. Every float zero,
+    /// `-0` and `-0.0` included, reads as 0 (§2.5).
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
@@ -3354,17 +3498,47 @@ impl CadIr {
     }
 
     /// Sorts every arena of the document's homes and native namespaces by
-    /// id, then states one record of each id whose copies hold one value.
-    /// Returns each id whose copies differ, all of whose copies stay for the
-    /// give-up (§2.8). The arenas of a state's delta are left as they are.
-    pub(crate) fn repeated_ids(&mut self) -> Vec<RepeatedId> {
+    /// id, keeping the arena order of the copies of one id, then states one
+    /// record of each id whose copies hold one value. Returns each id whose
+    /// copies differ, whose copies `differing` keeps. The arenas of a state's
+    /// delta are left as they are.
+    pub(crate) fn repeated_ids(&mut self, differing: DifferingCopies) -> Vec<RepeatedId> {
         self.finalize();
-        let mut repeated = self.geometry.repeated_ids("geometry");
-        repeated.extend(self.model.repeated_ids("model"));
-        repeated.extend(self.design.repeated_ids("design"));
-        repeated.extend(self.process.repeated_ids("process"));
-        repeated.extend(self.native.repeated_ids());
+        let mut repeated = self.geometry.repeated_ids("geometry", differing);
+        repeated.extend(self.model.repeated_ids("model", differing));
+        repeated.extend(self.design.repeated_ids("design", differing));
+        repeated.extend(self.process.repeated_ids("process", differing));
+        repeated.extend(self.native.repeated_ids(differing));
         repeated
+    }
+
+    /// Whether every arena of the document's homes and native namespaces
+    /// states its ids once each, in increasing order.
+    pub(crate) fn ids_in_order(&self) -> bool {
+        self.geometry.unordered_arena().is_none()
+            && self.model.unordered_arena().is_none()
+            && self.design.unordered_arena().is_none()
+            && self.process.unordered_arena().is_none()
+            && self.native.unordered_arena().is_none()
+    }
+
+    /// Leaves the design class out of the model (§2.1): states each model
+    /// record without its references into the design class, and returns the
+    /// ids of those records with the give-up seeds of the records whose own
+    /// target is a design record.
+    pub(crate) fn leave_design_out(&mut self) -> (Vec<String>, Vec<crate::give_up::Seed>) {
+        let (kept, left_out) = design_references::leave_out(&mut self.model);
+        let seeds = left_out
+            .into_iter()
+            .map(|(arena, id)| crate::give_up::Seed {
+                arena: crate::give_up::Arena::Home {
+                    home: arena.home().as_str(),
+                    field: arena.key(),
+                },
+                id,
+            })
+            .collect();
+        (kept, seeds)
     }
 
     /// The record at `place`, as the give-up names it.

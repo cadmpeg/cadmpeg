@@ -66,7 +66,7 @@ No CLI retry loop exists.
 - Requested depth is immutable for the session.
 - Budget fuse is sticky. `finish_session` resurfaces it.
 - `DecodeContext` is `!Sync`. Parallel work snapshots a `DecodeCheckpoint`, resumes on a private arena, and commits with `accept_trace` on the owning thread.
-- `DecodeResult::new` records `CadIr.scope` from the transfer and the request, and refuses a record in an arena whose class the scope excludes. Each requested class the scope lacks charges `decode/depth.not-delivered`.
+- `DecodeResult::new` records `CadIr.scope` from the transfer and the request. A record in an arena whose class the scope excludes stays in the document, and validation reports it. Each requested class the scope lacks charges `decode/depth.not-delivered`.
 
 | From | Event | To | Else |
 | --- | --- | --- | --- |

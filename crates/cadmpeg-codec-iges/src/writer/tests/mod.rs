@@ -65,8 +65,10 @@ use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod body_placement;
 mod cages;
 mod closed_edge_range;
+mod covered_uses;
 mod design_content;
 mod encode;
 mod exact_equivalents;
@@ -77,6 +79,7 @@ mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;
+mod revolved_restatement;
 mod roundtrip;
 
 fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
