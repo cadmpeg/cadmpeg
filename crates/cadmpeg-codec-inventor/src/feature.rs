@@ -3966,7 +3966,7 @@ fn body_result(
 
 const EXTENT_DISTANCE: u16 = 1;
 const EXTENT_SYMMETRIC_DISTANCE: u16 = 2;
-const EXTENT_THROUGH_NEXT: u16 = 4;
+const EXTENT_TO_NEXT: u16 = 4;
 const EXTENT_THROUGH_ALL: u16 = 5;
 const EXTENT_FROM_TO: u16 = 6;
 const EXTENT_TO: u16 = 7;
@@ -4014,7 +4014,7 @@ fn extrusion_side(
                 .ok()?,
             ),
         },
-        EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
+        EXTENT_TO_NEXT => LinearTermination::ToFirst {},
         EXTENT_THROUGH_ALL => LinearTermination::ThroughAll {},
         EXTENT_TO if side_has_point(source, slots) => {
             extrusion::work_point_plane(source, label, index, direction)?

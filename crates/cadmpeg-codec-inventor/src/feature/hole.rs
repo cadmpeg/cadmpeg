@@ -11,7 +11,7 @@ use cadmpeg_ir::scalar::Length;
 use super::{
     references, slot_property, target_plane, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel,
     PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex, EXTENT_DISTANCE,
-    EXTENT_THROUGH_ALL, EXTENT_THROUGH_NEXT, EXTENT_TO,
+    EXTENT_THROUGH_ALL, EXTENT_TO, EXTENT_TO_NEXT,
 };
 use crate::sketch::{PmDcSketchEntityKind, PmDcTransform};
 
@@ -29,7 +29,7 @@ pub(super) fn termination(
                 .ok()?
                 .into(),
         }),
-        EXTENT_THROUGH_NEXT => Some(LinearTermination::ThroughNext {}),
+        EXTENT_TO_NEXT => Some(LinearTermination::ThroughNext {}),
         EXTENT_THROUGH_ALL => Some(LinearTermination::ThroughAll {}),
         EXTENT_TO => {
             let PmDcFeaturePropertyKind::TerminationFlag { value: flag } =

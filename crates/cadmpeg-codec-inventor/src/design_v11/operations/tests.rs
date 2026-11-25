@@ -778,6 +778,29 @@ fn cleanup_and_boolean_tolerance_survive_projection() {
 }
 
 #[test]
+fn first_face_termination_projects_as_the_next_limit() {
+    let mut operation = extrude();
+    let LegacyOperation::Extrude { extent, .. } = &mut operation else {
+        panic!("extrude");
+    };
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::ToFirst {},
+            draft: None,
+        },
+    };
+    let mut ir = part(operation);
+    assert!(project_part(&mut ir).is_empty());
+    let FeatureOperation::Extrude(value) = &ir.design.features[0].definition.operation else {
+        panic!("the extrusion projects");
+    };
+    let Some(Span::Between { end, .. }) = &value.span else {
+        panic!("span");
+    };
+    assert_eq!(**end, Limit::Next);
+}
+
+#[test]
 fn next_material_exit_stays_native_when_v11_has_a_first_face_limit() {
     let mut operation = extrude();
     let LegacyOperation::Extrude { extent, .. } = &mut operation else {

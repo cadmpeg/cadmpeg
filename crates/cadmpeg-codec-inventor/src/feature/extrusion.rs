@@ -12,8 +12,7 @@ use super::{
     boolean, enum16, extent_target_plane, extent_target_point, extrusion_side, references,
     resolve_direction, resolve_property, ExtrusionSideSlots, PmDcFeature, PmDcFeatureEnumFamily,
     PmDcFeatureLabel, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex,
-    EXTENT_DISTANCE, EXTENT_FROM_TO, EXTENT_SYMMETRIC_DISTANCE, EXTENT_THROUGH_ALL,
-    EXTENT_THROUGH_NEXT,
+    EXTENT_DISTANCE, EXTENT_FROM_TO, EXTENT_SYMMETRIC_DISTANCE, EXTENT_THROUGH_ALL, EXTENT_TO_NEXT,
 };
 use cadmpeg_ir::math::Vector3;
 
@@ -336,7 +335,7 @@ pub(super) fn indexed_operands(
             let second_value = enum16(source, 29, PmDcFeatureEnumFamily::Extent, index)?;
             if !matches!(
                 second_value,
-                EXTENT_DISTANCE | EXTENT_THROUGH_NEXT | EXTENT_THROUGH_ALL
+                EXTENT_DISTANCE | EXTENT_TO_NEXT | EXTENT_THROUGH_ALL
             ) || extent_value == EXTENT_FROM_TO
             {
                 return None;

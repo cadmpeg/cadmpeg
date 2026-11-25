@@ -760,6 +760,40 @@ fn unrelated_and_wrong_version_extent_types_are_rejected() {
 }
 
 #[test]
+fn to_next_extent_projects_as_the_first_face_limit() {
+    let one_sided = extent_extrusion(4, false, &[], Vec::new()).expect("to next");
+    assert!(matches!(
+        extrude_definition(&one_sided).0,
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::ToFirst {},
+                draft: None,
+            }
+        }
+    ));
+    let two_sided = extent_extrusion(
+        1,
+        false,
+        &[(27, 72), (28, 71), (29, 22)],
+        vec![enum_property(22, PmDcFeatureEnumFamily::Extent, 4)],
+    )
+    .expect("to next on the second side");
+    assert!(matches!(
+        extrude_definition(&two_sided).0,
+        ExtrudeExtent::TwoSided {
+            first: ExtrudeSide {
+                termination: LinearTermination::Blind { .. },
+                ..
+            },
+            second: ExtrudeSide {
+                termination: LinearTermination::ToFirst {},
+                ..
+            },
+        }
+    ));
+}
+
+#[test]
 fn extrusion_extent_branches_project_exactly() {
     let symmetric = extent_extrusion(2, true, &[], Vec::new()).expect("symmetric distance");
     assert!(matches!(
