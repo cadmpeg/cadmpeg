@@ -261,7 +261,8 @@ impl Brep {
             face_native_keys => face, tolerant_coedge_parameters => coedge,
             tolerant_edge_tails => edge, tolerant_vertex_tails => vertex,
             mesh_surface_sentinels => surface, transform_hints => body,
-            body_native_keys => body, wire_topologies => shell);
+            body_native_keys => body, wire_topologies => shell,
+            unbounded_faces => face);
         self.asm.unknowns =
             select_rows(std::mem::take(&mut self.asm.unknowns), &reachable, |row| {
                 row.id().as_str()

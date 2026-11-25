@@ -1200,7 +1200,7 @@ fn complete_regions<'r>(ir: &'r CadIr, body: &BodyId) -> Result<Vec<&'r Region>,
 fn face_boundary(face: &cadmpeg_ir::topology::Face) -> Result<FaceBoundary<'_>, CodecError> {
     face.loops.boundary().ok_or_else(|| {
         CodecError::NotImplemented(format!(
-            "IGES writer does not write face {}, which does not state every loop",
+            "IGES writer does not write face {}, which does not state its boundary in full",
             face.id
         ))
     })

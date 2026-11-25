@@ -995,17 +995,12 @@ fn nested_plane(depth: usize) -> Value {
 }
 
 #[test]
-fn the_walk_of_the_deepest_construction_runs_on_a_small_stack() {
+fn the_walk_of_the_deepest_construction_runs_on_the_smallest_default_stack() {
     // A nested construction is four levels of JSON: inputs, input, reference
     // and construction, so no document holds a deeper nesting.
     let deepest = crate::bounds::MAX_DOCUMENT_DEPTH / 4;
     let ir = timeline(vec![feature("a", plane_datum(nested_plane(deepest)))]);
-    let findings = std::thread::Builder::new()
-        .stack_size(256 * 1024)
-        .spawn(move || findings(&ir))
-        .unwrap()
-        .join()
-        .unwrap();
+    let findings = super::fixture::on_the_smallest_default_stack(move || findings(&ir));
     assert!(
         !findings
             .iter()

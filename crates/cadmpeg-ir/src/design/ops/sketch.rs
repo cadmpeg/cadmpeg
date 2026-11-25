@@ -175,7 +175,7 @@ pub enum SolveState {
 
 /// The id, point, direction, and curve types of a sketch space. Each carries
 /// the wire traits, so every record generic over a space derives them.
-pub trait SketchSpace {
+pub trait SketchSpace: PartialEq {
     /// The id of a sketch of the space.
     type Sketch: Debug + Clone + PartialEq + Serialize + DeserializeOwned;
     /// The id of an entity of the space.
