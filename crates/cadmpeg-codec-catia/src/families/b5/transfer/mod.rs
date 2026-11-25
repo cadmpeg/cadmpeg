@@ -41,7 +41,7 @@ use pcurves::{
     nurbs_isocurve, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
     sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
-use vertices::transfer_vertex_tolerances;
+use vertices::endpoint_gate_residuals;
 
 /// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
 const POINT_TOLERANCE: f64 = 1e-3;
@@ -49,7 +49,7 @@ const POINT_TOLERANCE: f64 = 1e-3;
 /// Acceptance radius for matching one lifted support endpoint to its edge
 /// endpoint.
 ///
-/// `vertex_tolerances` holds no source-stated tolerance. Every entry is an
+/// `endpoint_gate_residuals` holds no source-stated tolerance. Every entry is an
 /// evaluation residual this decoder computed from lifted pcurve geometry, and a
 /// vertex with no entry produced no residual at all. The radius is therefore
 /// the larger of that residual and the object-stream incidence tolerance: the
@@ -161,8 +161,6 @@ struct TransferPlan {
     edge_ids: BTreeSet<u32>,
     /// Solved member order and coedge senses per loop (read by `faces`).
     loop_orientation: BTreeMap<u32, OrientedLoop>,
-    /// Endpoint tolerances keyed by vertex index (read by `vertices`).
-    vertex_tolerances: BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal>,
     /// Edges whose supports reproduce the edge endpoints (read by `edges`).
     exact_support_edges: HashSet<u32>,
     /// Edges whose supports reproduce the lifted curve (read by `edges`).
@@ -634,7 +632,7 @@ fn build_plan(
             refusal.push_b5_faces_withheld(&withheld_faces);
             return None;
         }
-        let vertex_tolerances = admitted!(transfer_vertex_tolerances(
+        let gate_residuals = admitted!(endpoint_gate_residuals(
             ctx,
             graph,
             &edge_support_plan,
@@ -646,7 +644,7 @@ fn build_plan(
             let [start, end] = graph.vertices.edge_points(edge)?;
             let tolerances = vertices.map(|vertex| {
                 endpoint_gate_radius(
-                    vertex_tolerances
+                    gate_residuals
                         .get(&vertex.combined_index(graph.vertices.raw_points().len()))
                         .copied(),
                 )
@@ -672,7 +670,7 @@ fn build_plan(
             };
             let tolerances = vertices.map(|vertex| {
                 endpoint_gate_radius(
-                    vertex_tolerances
+                    gate_residuals
                         .get(&vertex.combined_index(graph.vertices.raw_points().len()))
                         .copied(),
                 )
@@ -723,7 +721,6 @@ fn build_plan(
             edge_support_plan,
             edge_ids,
             loop_orientation,
-            vertex_tolerances,
             exact_support_edges,
             exact_support_curves,
             used_vertices,

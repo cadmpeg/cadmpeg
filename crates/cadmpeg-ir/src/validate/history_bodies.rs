@@ -43,11 +43,12 @@ fn nest_identities(geometry: &crate::document::Topology) -> Vec<&str> {
 /// A reference that leaves the nest is a failed reference check there.
 fn check_nest(
     ctx: &DecodeContext<'_>,
+    tolerances: crate::units::Tolerances,
     body: &HistoryBody,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut nested = Vec::new();
-    nested::check(ctx, body.topology.to_topology(), &mut nested)?;
+    nested::check(ctx, tolerances, body.topology.to_topology(), &mut nested)?;
     for mut finding in nested {
         finding.message = format!("history body nest: {}", finding.message);
         finding.related.insert(0, body.id.as_str().to_owned());
@@ -105,7 +106,7 @@ pub(super) fn check_history_bodies(
                 }
             }
         }
-        check_nest(ctx, body, findings)?;
+        check_nest(ctx, ir.tolerances, body, findings)?;
         let geometry = body.topology.to_topology();
         for id in nest_identities(&geometry) {
             if IdentitySet::contains(ids, id) {

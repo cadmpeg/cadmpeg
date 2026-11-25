@@ -273,7 +273,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::from([(
             110,
             B5Profile::Line {
@@ -1233,7 +1233,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     let payload = UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
@@ -1348,7 +1348,7 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     for component in components {

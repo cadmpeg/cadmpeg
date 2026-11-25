@@ -12,6 +12,14 @@
 //! missing position lies more than twice as far from it as the carrier
 //! itself does, or where that carrier distance cannot be measured: there a
 //! range is off, not the vertex.
+//!
+//! Every `Topology` of the document is measured at the document's
+//! `tolerances` (part 10, Coincidence): the current geometry, the delta of
+//! each evaluation and process state, and each history body's nest. A delta
+//! or a nest is measured on its own records, which hold the record versions
+//! of its state. Its records carry no annotation of their own, so each one
+//! counts as read, and its widened tolerances are counted in the loss but not
+//! marked derived (interim; inventory gap 20261125-V11-DECODE-REPORTS-2-1).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -19,6 +27,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget}
 use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, AnnotationFieldError, Annotations};
+use crate::document::Topology;
 use crate::eval::admission::ModelEvaluationPass;
 use crate::eval::decode::{curve_point, surface_point_solved};
 use crate::eval::finite_or_refusal;
@@ -27,7 +36,8 @@ use crate::index::ModelIndex;
 use crate::math::Point3;
 use crate::provenance::Exactness;
 use crate::scalar::PositiveLength;
-use crate::topology::IncreasingParameterInterval;
+use crate::topology::{IncreasingParameterInterval, Vertex};
+use crate::units::Tolerances;
 use crate::validate::geometry_consistency::{
     pcurve_image_comparisons, ComparedCarrier, CurveEndComparisons, VertexComparison,
 };
@@ -46,11 +56,11 @@ const CARRIER_REFINEMENTS: usize = 48;
 /// The work one NURBS surface projection may spend.
 const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 
-/// The vertices whose tolerance the pass stated, and the largest increase
+/// The number of vertex tolerances the pass stated, and the largest increase
 /// over the tolerance in force at each before.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Widened {
-    pub(super) vertices: Vec<String>,
+    pub(super) count: usize,
     pub(super) largest: f64,
 }
 
@@ -60,16 +70,42 @@ impl Widened {
         format!(
             "widened {} vertex tolerance(s) to each vertex's largest distance from the positions \
              compared with it; the largest widening is {} mm",
-            self.vertices.len(),
-            self.largest
+            self.count, self.largest
         )
+    }
+
+    /// States each tolerance of `tolerances` on its vertex of `vertices`,
+    /// and returns the ids of the vertices it stated one on.
+    fn state<'v>(
+        &mut self,
+        vertices: &'v mut [Vertex],
+        tolerances: &BTreeMap<String, f64>,
+        linear: PositiveLength,
+    ) -> Vec<&'v str> {
+        let mut stated = Vec::new();
+        for vertex in vertices {
+            let Some(tolerance) = tolerances
+                .get(vertex.id.as_str())
+                .copied()
+                .and_then(PositiveLength::new)
+            else {
+                continue;
+            };
+            let before = vertex.tolerance.unwrap_or(linear).get();
+            vertex.tolerance = Some(tolerance);
+            self.largest = self.largest.max(tolerance.get() - before);
+            self.count += 1;
+            stated.push(vertex.id.as_str());
+        }
+        stated
     }
 }
 
-/// Widens the tolerance of each vertex of `ir` that a compared position
-/// misses, and marks that tolerance derived in `annotations`. The pass
-/// measures in a session of its own under `policy`, so a ceiling it meets
-/// refuses no part of the decode; it then widens nothing.
+/// Widens the tolerance of each vertex of every `Topology` of `ir` that a
+/// compared position misses, and marks the widened tolerances of the
+/// current geometry derived in `annotations`. The pass measures in a session
+/// of its own under `policy`, so a ceiling it meets refuses no part of the
+/// decode; it then widens nothing in the topology it was measuring.
 ///
 /// # Errors
 ///
@@ -83,38 +119,74 @@ pub(super) fn widen(
     let Ok((ctx, _)) = DecodeContext::from_root_bytes(&[], &arena, policy) else {
         return Ok(None);
     };
-    let Ok(tolerances) = measure(&ctx, ir, annotations) else {
-        return Ok(None);
-    };
+    let document = ir.tolerances;
     let mut widened = Widened {
-        vertices: Vec::new(),
+        count: 0,
         largest: 0.0,
     };
-    for vertex in &mut ir.geometry.vertices {
-        let Some(&tolerance) = tolerances.get(vertex.id.as_str()) else {
-            continue;
-        };
-        let Some(stated) = PositiveLength::new(tolerance) else {
-            continue;
-        };
-        let before = vertex
-            .tolerance
-            .map_or(ir.tolerances.linear.get(), PositiveLength::get);
-        vertex.tolerance = Some(stated);
-        widened.largest = widened.largest.max(tolerance - before);
-        widened.vertices.push(vertex.id.as_str().to_owned());
+    let mut marked = Vec::new();
+    if let Ok(tolerances) = measure(&ctx, ir, &|id: &str| !computed(annotations, id)) {
+        marked = widened
+            .state(&mut ir.geometry.vertices, &tolerances, document.linear)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
     }
-    if widened.vertices.is_empty() {
+    let deltas = ir
+        .design
+        .evaluations
+        .iter_mut()
+        .filter_map(|evaluation| {
+            evaluation
+                .content
+                .as_mut()
+                .map(|content| &mut content.delta)
+        })
+        .chain(
+            ir.process
+                .states
+                .iter_mut()
+                .filter_map(|state| state.content.as_mut().map(|content| &mut content.delta)),
+        );
+    for delta in deltas {
+        let (records, tolerances) =
+            nest_tolerances(&ctx, document, std::mem::take(&mut delta.records));
+        delta.records = records;
+        if let Some(tolerances) = tolerances {
+            widened.state(&mut delta.records.vertices, &tolerances, document.linear);
+        }
+    }
+    for body in &mut ir.model.history_bodies {
+        let (_, tolerances) = nest_tolerances(&ctx, document, body.topology.to_topology());
+        if let Some(tolerances) = tolerances {
+            widened.state(&mut body.topology.vertices, &tolerances, document.linear);
+        }
+    }
+    if widened.count == 0 {
         return Ok(None);
     }
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    let marked = widened
-        .vertices
+    let derived = marked
         .iter()
         .try_for_each(|id| builder.derived(id, "tolerance").map(|_| ()));
     *annotations = builder.build();
-    marked?;
+    derived?;
     Ok(Some(widened))
+}
+
+/// The tolerances `measure` states for `geometry` checked as the geometry
+/// of a document of its own at `document`'s tolerances, every record read,
+/// with `geometry` handed back; `None` where the measure was refused.
+fn nest_tolerances(
+    ctx: &DecodeContext<'_>,
+    document: Tolerances,
+    geometry: Topology,
+) -> (Topology, Option<BTreeMap<String, f64>>) {
+    let mut alone = CadIr::empty();
+    alone.tolerances = document;
+    alone.geometry = geometry;
+    let tolerances = measure(ctx, &alone, &|_: &str| true).ok();
+    (alone.geometry, tolerances)
 }
 
 /// Whether the annotations mark the record computed rather than read.
@@ -127,14 +199,13 @@ fn computed(annotations: &Annotations, id: &str) -> bool {
     })
 }
 
-/// The tolerance each vertex states after the pass, for the vertices it
-/// widens.
+/// The tolerance each vertex of `ir`'s geometry states after the pass, for
+/// the vertices it widens, measuring only between the records `read` admits.
 fn measure(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    annotations: &Annotations,
+    read: &dyn Fn(&str) -> bool,
 ) -> Result<BTreeMap<String, f64>, CodecError> {
-    let read = |id: &str| !computed(annotations, id);
     let points: HashMap<&str, Point3> = ir
         .geometry
         .points

@@ -7,6 +7,11 @@ use super::widen;
 use crate::annotations::{AnnotationBuilder, Annotations};
 use crate::codec::loss::DecodeLossCode;
 use crate::codec::{DecodeBody, DecodeResult, Decoded, FormatId};
+use crate::design::evaluation::{
+    Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+};
+use crate::design::refs::{Evaluated, Position};
+use crate::document::Topology;
 use crate::examples::unit_cube;
 use crate::features::geometry::FinitePoint3;
 use crate::geometry::pcurve::{
@@ -32,9 +37,9 @@ fn cube_with_corner_at(corner: usize, position: Point3) -> CadIr {
     ir
 }
 
-fn vertex_tolerance(ir: &CadIr, corner: usize) -> Option<f64> {
+fn vertex_tolerance(geometry: &Topology, corner: usize) -> Option<f64> {
     let suffix = format!("vertex#{corner}");
-    ir.geometry
+    geometry
         .vertices
         .iter()
         .find(|vertex| vertex.id.as_str().ends_with(&suffix))
@@ -68,13 +73,13 @@ fn a_vertex_off_the_ends_of_its_edges_states_its_largest_distance_marked_derived
     ctx.finish_session().unwrap();
 
     let expected = 0.02 * 3.0_f64.sqrt();
-    let stated = vertex_tolerance(result.ir(), 0).unwrap();
+    let stated = vertex_tolerance(&result.ir().geometry, 0).unwrap();
     assert!(
         (stated - expected).abs() <= 16.0 * f64::EPSILON * expected,
         "{stated}"
     );
     for corner in 1..8 {
-        assert_eq!(vertex_tolerance(result.ir(), corner), None);
+        assert_eq!(vertex_tolerance(&result.ir().geometry, corner), None);
     }
     let vertex = result
         .ir()
@@ -291,8 +296,8 @@ fn a_vertex_off_its_face_surface_states_its_distance_from_the_pcurve_images() {
     let widened = widen(&mut ir, &mut annotations, &DecodePolicy::default())
         .unwrap()
         .unwrap();
-    assert_eq!(widened.vertices.len(), 1);
-    let stated = vertex_tolerance(&ir, 0).unwrap();
+    assert_eq!(widened.count, 1);
+    let stated = vertex_tolerance(&ir.geometry, 0).unwrap();
     assert!(
         (stated - 0.03).abs() <= 16.0 * f64::EPSILON * 0.03,
         "{stated}"
@@ -311,4 +316,53 @@ fn a_vertex_on_its_face_surface_keeps_its_tolerance_against_the_pcurve_images() 
         None
     );
     assert_eq!(ir, before);
+}
+
+#[test]
+fn a_state_delta_vertex_off_its_edges_ends_states_its_largest_distance() {
+    // The current geometry is the cube. An evaluation's delta restates it
+    // with corner 0 off each of its three edges' start by (0.02, 0.02, 0.02).
+    let mut ir = unit_cube().unwrap();
+    let records = cube_with_corner_at(0, Point3::new(-0.02, -0.02, -0.02)).geometry;
+    ir.design.evaluations.push(Evaluation {
+        id: "test:design:evaluation#moved"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        scope: "test:design:definition#part".to_owned().try_into().unwrap(),
+        configuration: None,
+        of: Evaluated::State(Position::Start(
+            "test:design:container#root".to_owned().try_into().unwrap(),
+        )),
+        status: EvaluationStatus::Current,
+        content: Some(StateContent {
+            base: StateBase::Empty,
+            delta: StateDelta {
+                records,
+                ..StateDelta::default()
+            },
+        }),
+        native_ref: None,
+    });
+    let mut annotations = Annotations::default();
+    let widened = widen(&mut ir, &mut annotations, &DecodePolicy::default())
+        .unwrap()
+        .unwrap();
+    assert_eq!(widened.count, 1);
+    assert_eq!(ir.geometry, unit_cube().unwrap().geometry);
+    let records = &ir.design.evaluations[0]
+        .content
+        .as_ref()
+        .unwrap()
+        .delta
+        .records;
+    let expected = 0.02 * 3.0_f64.sqrt();
+    let stated = vertex_tolerance(records, 0).unwrap();
+    assert!(
+        (stated - expected).abs() <= 16.0 * f64::EPSILON * expected,
+        "{stated}"
+    );
+    for corner in 1..8 {
+        assert_eq!(vertex_tolerance(records, corner), None);
+    }
 }

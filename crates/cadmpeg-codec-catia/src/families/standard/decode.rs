@@ -7112,7 +7112,7 @@ fn standard_native_graph_endpoint_pairs(
     let identity_points = unique_native_identity_points(
         graph.vertices.logical_vertices(),
         graph.vertices.raw_points().len(),
-        &graph.vertex_tolerances,
+        &graph.vertex_residuals,
         points,
     );
     let mut pairs = Vec::new();
