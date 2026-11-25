@@ -1084,3 +1084,113 @@ fn decode_keeps_unattached_name_property_in_native_records() {
         1
     );
 }
+
+#[test]
+fn free_carriers_state_color_blank_status_label_and_level() {
+    let blanked_line = |label: &str| OwnedTestEntity {
+        entity_type: 110,
+        form: 0,
+        label: label.into(),
+        status: "01000000",
+        parameters: "110,0.,0.,0.,1.,0.,0.;".into(),
+    };
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_directory_fields(
+                &[blanked_line("EDGE1"), blanked_line("EDGE2")],
+                &[(1, 2)],
+                &[],
+                &[(1, 5), (3, 7)],
+                &[],
+                &[],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = result.ir();
+    let curve = |object: &str| {
+        ir.geometry
+            .curves
+            .iter()
+            .find(|curve| {
+                curve
+                    .source_object
+                    .as_ref()
+                    .is_some_and(|source| source.object_id.as_str() == object)
+            })
+            .map_or_else(
+                || panic!("no curve of {object}: {:#?}", ir.geometry.curves),
+                |curve| curve.id.clone(),
+            )
+    };
+    let (colored, uncolored) = (curve("D1"), curve("D3"));
+
+    let bindings = &ir.model.appearance_bindings;
+    assert_eq!(bindings.len(), 1, "{bindings:#?}");
+    assert_eq!(
+        bindings[0].target.entity,
+        cadmpeg_ir::appearance::AppearanceTarget::Curve(colored.clone())
+    );
+    assert_eq!(bindings[0].visible, Some(false));
+    let appearance = ir
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == bindings[0].appearance)
+        .unwrap();
+    assert_eq!(appearance.base_color, standard_color(2));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::FreeGeometryBlankStatusNotStated.kind()));
+
+    let names = ir
+        .model
+        .attributes
+        .iter()
+        .map(|attribute| (attribute.target.entity.clone(), attribute.values.clone()))
+        .collect::<Vec<_>>();
+    let name = |label: &str| {
+        vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+            label.into(),
+        ))]
+    };
+    assert!(names.contains(&(
+        cadmpeg_ir::attributes::AttributeTarget::Curve(colored.clone()),
+        name("EDGE1")
+    )));
+    assert!(names.contains(&(
+        cadmpeg_ir::attributes::AttributeTarget::Curve(uncolored.clone()),
+        name("EDGE2")
+    )));
+
+    let layers = ir
+        .model
+        .presentation_layers
+        .iter()
+        .map(|layer| {
+            (
+                layer.name.as_str(),
+                layer
+                    .items
+                    .iter()
+                    .map(|item| item.entity.clone())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        layers,
+        [
+            (
+                "5",
+                vec![cadmpeg_ir::presentation::PresentationItem::Curve { curve: colored }]
+            ),
+            (
+                "7",
+                vec![cadmpeg_ir::presentation::PresentationItem::Curve { curve: uncolored }]
+            ),
+        ]
+    );
+}
