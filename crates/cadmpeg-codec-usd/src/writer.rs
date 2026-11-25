@@ -236,7 +236,7 @@ pub(crate) fn plan(
         bytes: text.into_bytes(),
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: written.census(),
         },
         write_path: WritePath::Synthesized {
             consumption: Consumption::NotConsumed,
