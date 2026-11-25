@@ -194,6 +194,8 @@ struct Tallies {
     brep_elements: BTreeMap<String, usize>,
     /// Geometry subsets of `BrepArray` prims, by prim.
     brep_subsets: BTreeMap<String, usize>,
+    /// Faces of `BrepArray` prims stated partial, with the reason.
+    unstated_boundaries: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -1755,6 +1757,15 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         format!(
             "wire edges and point shells of BrepArray prims were not transferred: {}",
             counted(&tallies.brep_elements)
+        ),
+    );
+    push(
+        UsdLossCode::TopologyFaceBoundaryUnstated,
+        !tallies.unstated_boundaries.is_empty(),
+        format!(
+            "faces of BrepArray prims do not state their boundary in full and are stated \
+             partial: {}",
+            joined(tallies.unstated_boundaries.iter().cloned())
         ),
     );
     push(
