@@ -179,3 +179,116 @@ fn another_version_other_units_and_no_object_refuse_the_read() {
         Err(ReadFailure::Malformed(_))
     ));
 }
+
+/// A given-up part retains the canonical JSON of its text in the read's
+/// fidelity, under the id of its `unknowns` stub, and the stub links to the
+/// document (§3.3).
+#[test]
+fn a_given_up_part_retains_the_canonical_json_of_its_text() {
+    let (_, mut value) = wire();
+    points(&mut value)[0]["position"] = json!("not a point");
+    let record = points(&mut value)[0].clone();
+    let read = read(serde_json::to_string_pretty(&value).unwrap().as_bytes());
+    let stubs = read.document.native_unknowns("cadir").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(stub.links.is_empty());
+    let retained = read.fidelity.retained_record(stub.id.as_str()).unwrap();
+    let text = crate::hash::finite_json::to_canonical_json_string(&record).unwrap();
+    assert_eq!(retained.data(), Some(text.as_bytes()));
+}
+
+/// Each record that needs a given-up record is dropped, transitively, and
+/// the entry that gives the record up names it (§3.3).
+#[test]
+fn a_record_that_needs_a_given_up_record_is_dropped_and_named() {
+    let (ir, mut value) = wire();
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    let needing: Vec<&str> = ir
+        .geometry
+        .vertices
+        .iter()
+        .filter(|vertex| serde_json::to_string(vertex).unwrap().contains(&point))
+        .map(|vertex| vertex.id.as_str())
+        .collect();
+    assert!(!needing.is_empty());
+    let [entry] = read.report.as_slice() else {
+        panic!("one entry: {:?}", read.report);
+    };
+    let dropped = entry
+        .message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|tail| tail.split(']').next())
+        .unwrap();
+    for vertex in needing {
+        assert!(dropped.contains(vertex), "{}", entry.message);
+        assert!(read
+            .document
+            .geometry
+            .vertices
+            .iter()
+            .all(|kept| kept.id.as_str() != vertex));
+    }
+    assert!(dropped.contains(&point), "{}", entry.message);
+}
+
+/// A record that holds an expression deeper than the bound of an expression
+/// is given up with its text retained, and the rest of the document is read
+/// (§2.5, §3.3).
+#[test]
+fn a_record_past_the_expression_bound_is_given_up() {
+    use crate::design::parameter::{DesignParameter, ParameterDefinition};
+
+    let shallow: crate::design::expr::Neutral =
+        serde_json::from_value(json!({"text": "1", "refs": [], "measures": []})).unwrap();
+    let parameter = |id: &str| DesignParameter {
+        id: crate::features::ParameterId::mint(id).unwrap(),
+        scope: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
+            .unwrap(),
+        owner: None,
+        name: None,
+        kind: crate::design::units::ValueKind::Text,
+        unit: None,
+        definition: ParameterDefinition::Expression(crate::design::expr::Expression::Neutral(
+            shallow.clone(),
+        )),
+        value: None,
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: std::collections::BTreeMap::new(),
+        source_settings: std::collections::BTreeMap::new(),
+        native_ref: None,
+    };
+    let mut ir = unit_cube().unwrap();
+    ir.design.parameters.extend([
+        parameter("synthetic:test:parameter#a-deep"),
+        parameter("synthetic:test:parameter#b-shallow"),
+    ]);
+    let mut value = serde_json::to_value(&ir).unwrap();
+    let mut deep = "1".to_owned();
+    for _ in 0..=crate::bounds::MAX_EXPRESSION_DEPTH / 6 {
+        deep = format!("sin(true or true and true == 1 + 1 * {deep})");
+    }
+    let text = &mut value["design"]["parameters"][0]["definition"]["value"]["value"]["text"];
+    assert_eq!(text, &json!("1"));
+    *text = json!(deep);
+    let record = value["design"]["parameters"][0].clone();
+    let read = read(value.to_string().as_bytes());
+
+    assert_eq!(codes(&read.report), ["decode/record.unreadable"]);
+    assert_eq!(
+        read.document.design.parameters[..],
+        ir.design.parameters[1..]
+    );
+    assert_eq!(read.document.geometry, ir.geometry);
+    let stubs = read.document.native_unknowns("cadir").unwrap();
+    let retained = read.fidelity.retained_record(stubs[0].id.as_str()).unwrap();
+    let text = crate::hash::finite_json::to_canonical_json_string(&record).unwrap();
+    assert_eq!(retained.data(), Some(text.as_bytes()));
+}

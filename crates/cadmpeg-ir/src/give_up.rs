@@ -357,6 +357,24 @@ fn mark_parents(ir: &mut CadIr, parents: &[String], marked: &mut BTreeSet<String
     }
 }
 
+/// Releases the record `id` that a read gave up before it reached the
+/// document: drops each record that needs it, transitively, and marks each
+/// record that holds it by a parent pointer or as a member (§3.3).
+///
+/// # Errors
+///
+/// A native record whose text no longer reads as an object.
+pub(crate) fn release_lost(ir: &mut CadIr, id: &str) -> Result<Released, CodecError> {
+    let mut released = Released {
+        path: id.to_owned(),
+        copies: 0,
+        dropped: BTreeSet::new(),
+        marked: BTreeSet::new(),
+    };
+    release(ir, id, &mut released)?;
+    Ok(released)
+}
+
 /// Drops, transitively, each record that needs `id`, which `ir` no longer
 /// holds, and marks each record that only lists it, recording both in
 /// `released`. An id another arena still holds names that record, so
