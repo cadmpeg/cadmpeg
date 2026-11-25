@@ -20,7 +20,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::EdgeCarrier;
 
-use super::{polygon_sheet, written};
+use super::{polygon_sheet, rectangular_nurbs_patch, written};
 use crate::loss::RhinoLossCode;
 use crate::test_support::test_archive::{
     archive, object_record, singular_seam_brep_payload, BREP_CLASS,
@@ -124,20 +124,33 @@ fn compound_edge_sheet(second_start: Point3) -> cadmpeg_ir::CadIr {
             ],
         ),
     );
+    set_compound_edge_curve(&mut ir, [0.0, 1.5, 4.0], first, second);
+    ir
+}
+
+/// Makes the curve of the first edge of `ir` a compound of `first` over
+/// `[parameters[0], parameters[1]]` and `second` over
+/// `[parameters[1], parameters[2]]`.
+fn set_compound_edge_curve(
+    ir: &mut cadmpeg_ir::CadIr,
+    parameters: [f64; 3],
+    first: Curve,
+    second: Curve,
+) {
     let construction =
         ProceduralCurveId::mint("cadir:model:procedural-curve#compound").expect("identity grammar");
     ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::Compound(
             CompoundCurveConstruction::try_new(
-                vec![0.0, 1.5, 4.0],
+                parameters.to_vec(),
                 vec![
                     CompoundComponent {
-                        parameter: 0.0,
+                        parameter: parameters[0],
                         component: first.id.clone(),
                     },
                     CompoundComponent {
-                        parameter: 1.5,
+                        parameter: parameters[1],
                         component: second.id.clone(),
                     },
                 ],
@@ -159,7 +172,6 @@ fn compound_edge_sheet(second_start: Point3) -> cadmpeg_ir::CadIr {
     };
     ir.geometry.curves.extend([first, second]);
     ir.finalize();
-    ir
 }
 
 #[test]
@@ -223,14 +235,92 @@ fn compound_edge_pieces_apart_within_the_edge_tolerance_keep_the_face() {
 }
 
 #[test]
-fn compound_edge_pieces_apart_beyond_the_edge_tolerance_leave_out_the_face() {
+fn compound_edge_pieces_apart_beyond_the_edge_tolerance_are_written_as_an_edge_each() {
     let ir = compound_edge_sheet(Point3::new(1.0, 2.0, 0.0));
 
     let (decoded, losses) = written(&ir);
-    assert!(decoded.geometry.faces.is_empty(), "{losses:?}");
+    assert_eq!(decoded.geometry.faces.len(), 1, "{losses:?}");
     assert!(
-        !omitted(&losses, "cadir:model:face#polygon").is_empty(),
+        omitted(&losses, "cadir:model:face#polygon").is_empty(),
         "{losses:?}"
+    );
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.starts_with("export/record.invalid")),
+        "{losses:?}"
+    );
+    let code = RhinoLossCode::WriterEdgeSplit.kind().to_string();
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(&code)),
+        "{losses:?}"
+    );
+    let geometry = &decoded.geometry;
+    assert_eq!(geometry.edges.len(), ir.geometry.edges.len() + 1);
+    let midpoint = Point3::new(1.0, 1.5, 0.0);
+    let vertex = geometry
+        .vertices
+        .iter()
+        .find(|vertex| {
+            geometry.points.iter().any(|point| {
+                point.id == vertex.point
+                    && point.position().get().distance(midpoint) <= EPS_COORDINATE
+            })
+        })
+        .expect("a vertex at the midpoint of the gap");
+    assert!(
+        vertex
+            .tolerance
+            .is_some_and(|tolerance| tolerance.get() >= 0.5),
+        "{vertex:?}"
+    );
+    assert_eq!(
+        geometry
+            .edges
+            .iter()
+            .filter(|edge| edge.vertices().any(|id| *id == vertex.id))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn a_gapped_compound_edge_on_a_nurbs_face_keeps_a_pcurve_on_each_piece() {
+    let mut ir = rectangular_nurbs_patch();
+    // The first edge runs from (0, 0, 0) to (3, 0, 0) over [20, 23]; its
+    // pieces leave a gap from x = 1.5 to x = 1.7 along the patch boundary.
+    let line = |id: &str, from: Point3, to: Point3| {
+        curve(id, nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![from, to]))
+    };
+    let first = line(
+        "cadir:model:curve#compound.0",
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.5, 0.0, 0.0),
+    );
+    let second = line(
+        "cadir:model:curve#compound.1",
+        Point3::new(1.7, 0.0, 0.0),
+        Point3::new(3.0, 0.0, 0.0),
+    );
+    set_compound_edge_curve(&mut ir, [20.0, 21.5, 23.0], first, second);
+
+    let (decoded, losses) = written(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 1, "{losses:?}");
+    let code = RhinoLossCode::WriterEdgeSplit.kind().to_string();
+    assert!(
+        losses.iter().any(|loss| loss.starts_with(&code)),
+        "{losses:?}"
+    );
+    let geometry = &decoded.geometry;
+    assert_eq!(geometry.edges.len(), ir.geometry.edges.len() + 1);
+    assert_eq!(geometry.coedges.len(), geometry.edges.len());
+    assert!(
+        geometry
+            .coedges
+            .iter()
+            .all(|coedge| coedge.pcurves.len() == 1),
+        "{:?}",
+        geometry.coedges
     );
 }
 

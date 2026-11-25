@@ -671,8 +671,17 @@ impl<'a> WritableModel<'a> {
             let start = resolve(&vertex_positions, ends.start.as_str())?;
             let end = resolve(&vertex_positions, ends.end.as_str())?;
             let tolerance = stated_write_tolerance(edge.tolerance, ir);
-            if !close_point(vertices[start].point, expected_start, tolerance)
-                || !close_point(vertices[end].point, expected_end, tolerance)
+            let reach = |vertex: &WritableVertex<'_>| {
+                vertex
+                    .source
+                    .tolerance
+                    .map_or(tolerance, |own| own.get().max(tolerance))
+            };
+            if !close_point(
+                vertices[start].point,
+                expected_start,
+                reach(&vertices[start]),
+            ) || !close_point(vertices[end].point, expected_end, reach(&vertices[end]))
             {
                 findings.push(record_invalid(
                     EntityKind::Edge,

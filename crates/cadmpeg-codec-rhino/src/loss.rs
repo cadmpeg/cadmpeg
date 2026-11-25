@@ -239,6 +239,9 @@ pub(crate) enum RhinoLossCode {
     /// The curve pieces of an edge are joined at the midpoint of ends that
     /// meet within the edge tolerance.
     WriterEdgeGapJoined,
+    /// An edge whose curve pieces meet farther apart than the edge tolerance
+    /// is written as one edge for each run of pieces that meet within it.
+    WriterEdgeSplit,
     /// A subdivision cage is written as a mesh of its control net, without
     /// the subdivision rule.
     WriterSubdControlMesh,
@@ -327,6 +330,7 @@ impl RhinoLossCode {
         Self::WriterEdgeUnjoined,
         Self::WriterCurveSplit,
         Self::WriterEdgeGapJoined,
+        Self::WriterEdgeSplit,
         Self::WriterSubdControlMesh,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
@@ -389,6 +393,7 @@ impl RhinoLossCode {
             Self::WriterEdgeUnjoined => "writer.edge-unjoined",
             Self::WriterCurveSplit => "writer.curve-split",
             Self::WriterEdgeGapJoined => "writer.edge-gap-joined",
+            Self::WriterEdgeSplit => "writer.edge-split",
             Self::WriterSubdControlMesh => "writer.subd-control-mesh",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
@@ -470,9 +475,10 @@ impl RhinoLossCode {
             }
             Self::WriterMeshDataOmitted => LossTaxonomy::TessellationOmitted,
             Self::WriterSubdControlMesh => LossTaxonomy::SubdOmitted,
-            Self::WriterBodySplit | Self::WriterEdgeUnjoined | Self::WriterCurveSplit => {
-                LossTaxonomy::TopologyNotTransferred
-            }
+            Self::WriterBodySplit
+            | Self::WriterEdgeUnjoined
+            | Self::WriterCurveSplit
+            | Self::WriterEdgeSplit => LossTaxonomy::TopologyNotTransferred,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -496,6 +502,7 @@ impl RhinoLossCode {
             | Self::WriterEdgeUnjoined
             | Self::WriterCurveSplit
             | Self::WriterEdgeGapJoined
+            | Self::WriterEdgeSplit
             | Self::WriterSubdControlMesh => None,
             other => other.shared_taxonomy().strict_floor(),
         }
@@ -587,6 +594,7 @@ mod tests {
                 "writer.edge-unjoined",
                 "writer.curve-split",
                 "writer.edge-gap-joined",
+                "writer.edge-split",
                 "writer.subd-control-mesh",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
@@ -637,6 +645,7 @@ mod tests {
             RhinoLossCode::WriterEdgeUnjoined,
             RhinoLossCode::WriterCurveSplit,
             RhinoLossCode::WriterEdgeGapJoined,
+            RhinoLossCode::WriterEdgeSplit,
             RhinoLossCode::WriterSubdControlMesh,
         ] {
             assert_eq!(code.severity(), cadmpeg_ir::report::Severity::Warning);

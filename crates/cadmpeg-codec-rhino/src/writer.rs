@@ -1246,6 +1246,27 @@ fn prepare_write(
                 )));
             }
         }
+        for split in &scope_findings.split {
+            let written = written_pieces[first_written..].iter().any(|piece| {
+                piece
+                    .ir
+                    .geometry
+                    .edges
+                    .iter()
+                    .any(|edge| split.pieces.iter().any(|id| edge.id.as_str() == id))
+            });
+            if written {
+                losses.push(RhinoLossCode::WriterEdgeSplit.note(format!(
+                    "edge {} of {} is written as the edges {}, one for each run of its curve \
+                     pieces that meet within the edge tolerance, with a vertex at the midpoint \
+                     of each gap; the gaps are up to {} wide",
+                    split.edge,
+                    scope.identity,
+                    split.pieces.join(", "),
+                    split.gap
+                )));
+            }
+        }
     }
     for piece in &written_pieces {
         written_carriers.extend(
