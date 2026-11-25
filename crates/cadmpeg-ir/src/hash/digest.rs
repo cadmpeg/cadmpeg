@@ -105,7 +105,8 @@ mod tests {
     #[cfg(feature = "schema")]
     #[test]
     fn digest_schema_does_not_admit_a_trailing_line_break() {
-        let schema = serde_json::to_value(schemars::schema_for!(Sha256Digest)).unwrap();
+        let schema =
+            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(Sha256Digest)).unwrap();
         assert_eq!(schema["minLength"], 64);
         assert_eq!(schema["maxLength"], 64);
         assert_eq!(schema["pattern"], "^[0-9a-f]{64}$");
@@ -134,12 +135,16 @@ mod tests {
             "é".repeat(32),
         ] {
             assert!(Sha256Digest::try_from(text.as_str()).is_err());
-            assert!(serde_json::from_value::<Sha256Digest>(serde_json::json!(text)).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<Sha256Digest>(
+                serde_json::json!(text)
+            )
+            .is_err());
         }
         let digest = Sha256Digest::from_bytes([0; 32]);
         assert_eq!(digest.as_str(), "0".repeat(64));
         assert_eq!(
-            serde_json::from_value::<Sha256Digest>(serde_json::json!(digest)).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<Sha256Digest>(serde_json::json!(digest))
+                .unwrap(),
             digest
         );
     }

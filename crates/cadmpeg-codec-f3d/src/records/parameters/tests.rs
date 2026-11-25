@@ -48,8 +48,8 @@ fn parameter_borrowed_wire_matches_owned_wire_bytes() {
     for record in [parameter(false), parameter(true)] {
         let owned = DesignParameterSerde::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -64,13 +64,13 @@ fn parameter_comment_lies_before_the_expression_and_round_trips() {
     };
     let record = parameter(true).with_comment(comment("note", 130)).unwrap();
     assert_eq!(record.comment(), Some("note"));
-    let wire = serde_json::to_value(&record).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
     assert_eq!(wire["comment"], "note");
     assert_eq!(wire["comment_offset"], 130);
-    let read: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
+    let read: DesignParameter = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(read.comment(), Some("note"));
 
-    let plain = serde_json::to_value(parameter(true)).unwrap();
+    let plain = cadmpeg_core::serde_erase::json::to_value(parameter(true)).unwrap();
     assert!(plain.get("comment").is_none() && plain.get("comment_offset").is_none());
 
     for offset in [100, 140, 150] {
@@ -80,14 +80,14 @@ fn parameter_comment_lies_before_the_expression_and_round_trips() {
     }
     assert!(parameter(true).with_comment(comment("", 130)).is_err());
     let blank = parameter(true).with_comment(comment("  ", 130)).unwrap();
-    let blank_wire = serde_json::to_value(blank).unwrap();
+    let blank_wire = cadmpeg_core::serde_erase::json::to_value(blank).unwrap();
     assert_eq!(blank_wire["comment"], "  ");
     assert_eq!(blank_wire["comment_offset"], 130);
-    let read: DesignParameter = serde_json::from_value(blank_wire).unwrap();
+    let read: DesignParameter = cadmpeg_core::serde_erase::json::from_value(blank_wire).unwrap();
     assert_eq!(read.comment(), Some("  "));
     let mut unpaired = wire;
     unpaired.as_object_mut().unwrap().remove("comment_offset");
-    assert!(serde_json::from_value::<DesignParameter>(unpaired).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameter>(unpaired).is_err());
 }
 
 #[test]
@@ -98,15 +98,15 @@ fn parameter_flags_round_trip_and_a_document_parameter_has_no_driven_flag() {
     };
     let record = parameter(true).with_flags(flags).unwrap();
     assert_eq!(record.driving(), Some(false));
-    let wire = serde_json::to_value(&record).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
     assert_eq!(
         (wire["driven"].clone(), wire["favorite"].clone()),
         (true.into(), true.into())
     );
-    let read: DesignParameter = serde_json::from_value(wire).unwrap();
+    let read: DesignParameter = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     assert_eq!(read.flags(), flags);
 
-    let plain = serde_json::to_value(parameter(true)).unwrap();
+    let plain = cadmpeg_core::serde_erase::json::to_value(parameter(true)).unwrap();
     assert!(plain.get("driven").is_none() && plain.get("favorite").is_none());
     assert_eq!(parameter(true).driving(), None);
 
@@ -116,9 +116,9 @@ fn parameter_flags_round_trip_and_a_document_parameter_has_no_driven_flag() {
         favorite: true,
     };
     assert!(parameter(false).with_flags(favorite).is_ok());
-    let mut document = serde_json::to_value(parameter(false)).unwrap();
+    let mut document = cadmpeg_core::serde_erase::json::to_value(parameter(false)).unwrap();
     document["driven"] = true.into();
-    assert!(serde_json::from_value::<DesignParameter>(document).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameter>(document).is_err());
 }
 
 #[test]
@@ -132,13 +132,13 @@ fn parameter_text_value_lies_after_the_source_kind_and_round_trips() {
     for value in ["AB", ""] {
         let record = parameter(false).with_text_value(text(value, 165)).unwrap();
         assert_eq!(record.text_value(), Some(value));
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
         assert_eq!(wire["text_value"], value);
         assert_eq!(wire["text_value_offset"], 165);
-        let read: DesignParameter = serde_json::from_value(wire).unwrap();
+        let read: DesignParameter = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
         assert_eq!(read.text_value(), Some(value));
     }
-    let plain = serde_json::to_value(parameter(false)).unwrap();
+    let plain = cadmpeg_core::serde_erase::json::to_value(parameter(false)).unwrap();
     assert!(plain.get("text_value").is_none() && plain.get("text_value_offset").is_none());
     for offset in [160, 180, 190] {
         assert!(parameter(false)
@@ -203,8 +203,8 @@ fn parameter_owner_borrowed_wire_matches_owned_wire_bytes() {
     for record in [owner(None), owner(Some(0))] {
         let owned = DesignParameterOwnerWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -225,8 +225,8 @@ fn parameter_companion_borrowed_wire_matches_owned_wire_bytes() {
     for record in [companion(false), companion(true)] {
         let owned = DesignParameterCompanionWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }

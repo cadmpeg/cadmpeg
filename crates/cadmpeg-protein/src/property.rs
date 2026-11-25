@@ -358,7 +358,8 @@ mod tests {
                 connections: vec!["target".into()],
             },
         };
-        let encoded = serde_json::to_string(&property).expect("serialize empty reference carrier");
+        let encoded = cadmpeg_core::serde_erase::json::to_string(&property)
+            .expect("serialize empty reference carrier");
         assert_eq!(
             serde_json::from_str::<DecodedProperty>(&encoded)
                 .expect("deserialize empty reference carrier"),
@@ -369,7 +370,8 @@ mod tests {
             Some(&PropertyValue::Multiple(super::RepeatedValues::default()))
         );
         assert_eq!(
-            serde_json::to_string(&property).expect("serialize empty references"),
+            cadmpeg_core::serde_erase::json::to_string(&property)
+                .expect("serialize empty references"),
             r#"{"value_offset":4,"value":{"kind":"multiple","value":[]},"connections":["target"]}"#
         );
     }
@@ -421,13 +423,15 @@ mod tests {
                 content,
             };
             assert_eq!(
-                serde_json::to_string(&property).expect("serialize decoded property"),
+                cadmpeg_core::serde_erase::json::to_string(&property)
+                    .expect("serialize decoded property"),
                 expected
             );
             let decoded: DecodedProperty =
                 serde_json::from_str(expected).expect("decode property fixture");
             assert_eq!(
-                serde_json::to_string(&decoded).expect("serialize round-trip property"),
+                cadmpeg_core::serde_erase::json::to_string(&decoded)
+                    .expect("serialize round-trip property"),
                 expected
             );
             assert_eq!(decoded.connections(), property.connections());
@@ -496,7 +500,10 @@ mod tests {
                 .expect("same carrier");
         let value = PropertyValue::Multiple(values);
         let wire = r#"{"kind":"multiple","value":[{"kind":"integer","value":1},{"kind":"integer","value":2}]}"#;
-        assert_eq!(serde_json::to_string(&value).expect("serialize"), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&value).expect("serialize"),
+            wire
+        );
         assert_eq!(
             serde_json::from_str::<PropertyValue>(wire).expect("homogeneous wire"),
             value

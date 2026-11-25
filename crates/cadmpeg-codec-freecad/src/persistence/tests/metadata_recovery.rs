@@ -83,9 +83,11 @@ fn malformed_unused_links_remain_explicitly_source_only() {
             == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
                 .note(String::new())
                 .code));
-        let wire = serde_json::to_value(&graph.properties[0]).expect("serialize");
+        let wire =
+            cadmpeg_core::serde_erase::json::to_value(&graph.properties[0]).expect("serialize");
         let property: crate::native::PropertyRecord =
-            serde_json::from_value(wire).expect("deserialize source-only property");
+            cadmpeg_core::serde_erase::json::from_value(wire)
+                .expect("deserialize source-only property");
         assert_eq!(property, graph.properties[0]);
     }
 }

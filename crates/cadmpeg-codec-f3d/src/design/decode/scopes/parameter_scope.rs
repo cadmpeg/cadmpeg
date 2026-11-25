@@ -1488,9 +1488,10 @@ fn scope_variant_json(
 ) -> Result<Option<serde_json::Value>, CodecError> {
     use serde::de::DeserializeSeed;
 
-    let Ok(bytes) = serde_json::to_vec(scope) else {
+    let Ok(text) = cadmpeg_core::serde_erase::to_json_string(scope) else {
         return Ok(None);
     };
+    let bytes = text.into_bytes();
     let mut refusal = None;
     let mut deserializer = serde_json::Deserializer::from_slice(&bytes);
     let parsed = crate::design::json_value::ValueSeed {

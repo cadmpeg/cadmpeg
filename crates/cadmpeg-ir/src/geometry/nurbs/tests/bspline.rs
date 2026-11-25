@@ -62,9 +62,13 @@ fn bspline_constructor_keeps_poles_moves_knots_and_preserves_wire() {
             [{"x": 3.0, "y": 0.0, "z": 0.0}, {"x": 4.0, "y": 0.0, "z": 0.0}]
         ]
     });
-    assert_eq!(serde_json::to_value(&surface).expect("wire"), wire);
     assert_eq!(
-        serde_json::from_value::<BsplineSurface>(wire).expect("context-free reconstruction"),
+        cadmpeg_core::serde_erase::json::to_value(&surface).expect("wire"),
+        wire
+    );
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<BsplineSurface>(wire)
+            .expect("context-free reconstruction"),
         surface
     );
 }

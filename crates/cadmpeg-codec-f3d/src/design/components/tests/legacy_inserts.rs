@@ -24,7 +24,7 @@ fn scope() -> DesignParameterScope {
         })
         .unwrap();
     if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
-        payload.unresolved_placement = Some(serde_json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":46,"value":[[0.6,-0.8,0,1],[0.8,0.6,0,2],[0,0,1,3],[0,0,0,1]]}}"#).unwrap());
+        payload.unresolved_placement = Some(cadmpeg_core::serde_erase::json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":46,"value":[[0.6,-0.8,0,1],[0.8,0.6,0,2],[0,0,1,3],[0,0,0,1]]}}"#).unwrap());
     }
     scope
 }
@@ -74,7 +74,7 @@ fn legacy_frame_assumption_requires_a_projected_occurrence() {
     assert!(inserts.unresolved_occurrences().unwrap().1.is_empty());
     assert!(inserts.losses().is_empty());
     if let DesignScopePayloadMut::ComponentInsert(payload) = omitted.payload_mut() {
-        payload.unresolved_placement = Some(serde_json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":46,"value":[[1,0,0,1e308],[0,1,0,0],[0,0,1,0],[0,0,0,1]]}}"#).unwrap());
+        payload.unresolved_placement = Some(cadmpeg_core::serde_erase::json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":46,"value":[[1,0,0,1e308],[0,1,0,0],[0,0,1,0],[0,0,0,1]]}}"#).unwrap());
     }
     let timelines = synthetic_feature_timelines(std::slice::from_ref(&omitted));
     let inserts = ComponentInserts::decide(&[omitted], &timelines, &[]);

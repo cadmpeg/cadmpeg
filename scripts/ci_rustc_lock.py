@@ -18,18 +18,43 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Crates whose single-process rustc RSS peaks near or above 4 GiB.
+# Crates whose rustc or linker RSS peaks near or above 4 GiB for both library
+# and test/binary targets, so they always run alone on 7 GiB runners.
 EXCLUSIVE_CRATES = frozenset({
     'cadmpeg_ir',
     'cadmpeg_codec_f3d',
-    'cadmpeg_codec_sldprt',
+    'cadmpeg',
+    'integration',
 })
 
-# Crates whose single-process rustc RSS peaks around 2.5-3.5 GiB.
-MEDIUM_HEAVY_CRATES = frozenset({
+# Crates whose `--test` harness compiles or links near 3.5-5 GiB RSS while
+# their `--lib` target stays around 2-2.6 GiB RSS.
+EXCLUSIVE_TEST_CRATES = frozenset({
+    'cadmpeg_codec_sldprt',
+    'cadmpeg_codec_catia',
+    'cadmpeg_codec_nx',
+})
+
+# Crates whose library build peaks around 2-2.6 GiB RSS (at most one runs
+# alongside a lightweight crate).
+MEDIUM_LIB_CRATES = frozenset({
+    'cadmpeg_codec_sldprt',
     'cadmpeg_codec_nx',
     'cadmpeg_codec_catia',
     'cadmpeg_codec_creo',
+    'cadmpeg_codec_inventor',
+})
+
+# Crates whose `--test` harness peaks around 2-3 GiB RSS (at most one runs
+# alongside a lightweight crate).
+MEDIUM_TEST_CRATES = frozenset({
+    'cadmpeg_codec_creo',
+    'cadmpeg_codec_inventor',
+    'cadmpeg_codec_rhino',
+    'cadmpeg_codec_freecad',
+    'cadmpeg_codec_step',
+    'cadmpeg_codec_iges',
+    'cadmpeg_registry',
 })
 
 
@@ -41,6 +66,19 @@ def crate_name(argv: list[str]) -> str | None:
         if arg.startswith('--crate-name='):
             return arg.split('=', 1)[1]
     return None
+
+
+def classify(argv: list[str]) -> str:
+    """Classify a rustc invocation as `exclusive`, `medium`, or `light`."""
+    name = crate_name(argv)
+    if name is None:
+        return 'light'
+    is_test = '--test' in argv
+    if name in EXCLUSIVE_CRATES or (is_test and name in EXCLUSIVE_TEST_CRATES):
+        return 'exclusive'
+    if (is_test and name in MEDIUM_TEST_CRATES) or (not is_test and name in MEDIUM_LIB_CRATES):
+        return 'medium'
+    return 'light'
 
 
 def main() -> int:
@@ -57,7 +95,8 @@ def main() -> int:
     heavy_path = lock_dir / 'cadmpeg-rustc-heavy.lock'
     medium_path = lock_dir / 'cadmpeg-rustc-medium.lock'
 
-    if name in EXCLUSIVE_CRATES:
+    tier = classify(rustc_argv[1:])
+    if tier == 'exclusive':
         # While holding LOCK_EX no other rustc runs, so clear Cargo's jobserver
         # env (whose tokens are held by blocked peer wrappers) and let LLVM
         # codegen saturate every runner core directly.
@@ -68,16 +107,13 @@ def main() -> int:
             fcntl.fcntl(heavy.fileno(), fcntl.F_SETFD, fcntl.FD_CLOEXEC)
             fcntl.flock(heavy.fileno(), fcntl.LOCK_EX)
             return subprocess.run(rustc_argv, env=env).returncode
-    if name in MEDIUM_HEAVY_CRATES:
-        env = os.environ.copy()
-        env.pop('CARGO_MAKEFLAGS', None)
-        env.pop('MAKEFLAGS', None)
+    if tier == 'medium':
         with heavy_path.open('a+') as heavy, medium_path.open('a+') as medium:
             fcntl.fcntl(heavy.fileno(), fcntl.F_SETFD, fcntl.FD_CLOEXEC)
             fcntl.fcntl(medium.fileno(), fcntl.F_SETFD, fcntl.FD_CLOEXEC)
             fcntl.flock(heavy.fileno(), fcntl.LOCK_SH)
             fcntl.flock(medium.fileno(), fcntl.LOCK_EX)
-            return subprocess.run(rustc_argv, env=env).returncode
+            return subprocess.run(rustc_argv, close_fds=False).returncode
     with heavy_path.open('a+') as heavy:
         fcntl.fcntl(heavy.fileno(), fcntl.F_SETFD, fcntl.FD_CLOEXEC)
         fcntl.flock(heavy.fileno(), fcntl.LOCK_SH)

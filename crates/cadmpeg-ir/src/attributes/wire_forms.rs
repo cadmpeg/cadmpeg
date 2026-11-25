@@ -22,7 +22,10 @@ fn read<T: DeserializeOwned>(wire: &Value) -> Result<T, CodecError> {
 /// `wire` reads, and prints back as itself.
 fn reads_back<T: DeserializeOwned + Serialize + std::fmt::Debug>(wire: &Value) -> T {
     let value = read::<T>(wire).unwrap_or_else(|error| panic!("{wire} refused: {error}"));
-    assert_eq!(&serde_json::to_value(&value).unwrap(), wire);
+    assert_eq!(
+        &cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
+        wire
+    );
     value
 }
 
@@ -133,10 +136,10 @@ fn every_value_arm_reads_back() {
 #[test]
 fn a_parameter_value_reads_back_and_an_expression_value_is_refused() {
     let value = AttributeValue::Parameter(ParameterId::mint("test:design:parameter#mass").unwrap());
-    let wire = serde_json::to_value(&value).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
     assert_eq!(reads_back::<AttributeValue>(&wire), value);
     let expression = Expression::Neutral(Neutral(Node::<ParameterRef>::Constant(Constant::Pi)));
-    read::<Expression>(&serde_json::to_value(&expression).unwrap()).unwrap();
+    read::<Expression>(&cadmpeg_core::serde_erase::json::to_value(&expression).unwrap()).unwrap();
     refused::<AttributeValue>(&json!({
         "kind": "expression",
         "value": {"path": "Length", "expression": expression}
@@ -184,7 +187,7 @@ fn json_trees_nest_to_the_document_depth_bound_on_a_default_thread() {
                 AttributeJson::Object([("k".to_owned(), tree)].into())
             }
         });
-        serde_json::to_string(&AttributeValue::Json(tree)).unwrap()
+        cadmpeg_core::serde_erase::json::to_string(&AttributeValue::Json(tree)).unwrap()
     }
     let read = |text: &str| {
         crate::design::read::from_str::<AttributeValue>(text, &ResourceLimits::desktop())
@@ -206,7 +209,7 @@ fn json_trees_nest_to_the_document_depth_bound_on_a_default_thread() {
         let deepest = deepest.clone();
         move || {
             let value = read(&deepest).unwrap();
-            let printed = serde_json::to_string(&value).unwrap();
+            let printed = cadmpeg_core::serde_erase::json::to_string(&value).unwrap();
             let cloned = value.clone();
             assert_eq!(cloned, value);
             drop(cloned);

@@ -673,14 +673,17 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
         .expect("legal revision compound loft decode")
         .into_parts()
         .0;
-    let mut wire = serde_json::to_value(&legal.geometry.procedural_surfaces[0]).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(&legal.geometry.procedural_surfaces[0]).unwrap();
     assert_eq!(wire["definition"]["construction"]["tail"]["kind"], "curve");
     wire["definition"]["construction"]["tail"]
         .as_object_mut()
         .unwrap()
         .remove("curve");
-    let error =
-        serde_json::from_value::<cadmpeg_ir::geometry::ProceduralSurface>(wire).unwrap_err();
+    let error = cadmpeg_core::serde_erase::json::from_value::<
+        cadmpeg_ir::geometry::ProceduralSurface,
+    >(wire)
+    .unwrap_err();
     assert!(error.to_string().contains("curve"), "{error}");
 }
 

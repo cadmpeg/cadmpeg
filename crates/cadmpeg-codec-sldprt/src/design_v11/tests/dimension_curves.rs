@@ -52,9 +52,9 @@ fn with_dimension_circle(center: [f64; 2], radius: f64) -> CadIr {
         .iter_mut()
         .find(|constraint| constraint.id.as_str() == DIAMETER)
         .unwrap();
-    let mut value = serde_json::to_value(&*diameter).unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&*diameter).unwrap();
     value["definition"]["entity"] = serde_json::json!(entity("built").as_str());
-    *diameter = serde_json::from_value(value).unwrap();
+    *diameter = cadmpeg_core::serde_erase::json::from_value(value).unwrap();
     set_profiles(
         &mut ir,
         &[
@@ -84,7 +84,7 @@ fn push(ir: &mut CadIr, mut value: serde_json::Value) {
     value["sketch"] = serde_json::json!(ir.model.sketches[0].id.as_str());
     ir.model
         .sketch_entities
-        .push(serde_json::from_value(value).unwrap());
+        .push(cadmpeg_core::serde_erase::json::from_value(value).unwrap());
 }
 
 /// Makes the fixture's native relation `constraint` name `key`.
@@ -95,9 +95,9 @@ fn name_by_native(ir: &mut CadIr, constraint: &str, key: &str) {
         .iter_mut()
         .find(|candidate| candidate.id.as_str() == constraint)
         .unwrap();
-    let mut value = serde_json::to_value(&*native).unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&*native).unwrap();
     value["definition"]["entities"] = serde_json::json!([entity(key).as_str()]);
-    *native = serde_json::from_value(value).unwrap();
+    *native = cadmpeg_core::serde_erase::json::from_value(value).unwrap();
 }
 
 fn construction(ir: &CadIr, key: &str) -> Option<bool> {
@@ -122,7 +122,7 @@ fn relation(ir: &CadIr, id: &str) -> serde_json::Value {
         .sketch_constraints
         .iter()
         .find(|constraint| constraint.id.as_str() == id)
-        .map(|constraint| serde_json::to_value(&constraint.relation).unwrap())
+        .map(|constraint| cadmpeg_core::serde_erase::json::to_value(&constraint.relation).unwrap())
         .unwrap()
 }
 
@@ -540,7 +540,8 @@ fn a_construction_dimension_circle_is_not_reported() {
 fn a_dimension_circle_in_an_unplaced_sketch_is_construction() {
     let mut ir = with_dimension_circle([10.0, 10.0], 3.0);
     ir.model.sketches[0].placement =
-        serde_json::from_value(serde_json::json!({"kind": "unresolved"})).unwrap();
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "unresolved"}))
+            .unwrap();
     let (_, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(construction(&ir, "built"), Some(true));
     assert!(note(&typed).contains(&entry(
@@ -560,10 +561,10 @@ fn a_dimension_arc_stays_as_decoded() {
         .iter_mut()
         .find(|candidate| candidate.id() == &entity("built"))
         .unwrap();
-    let mut value = serde_json::to_value(&*built).unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&*built).unwrap();
     value["geometry"] = serde_json::json!({"kind": "arc", "center": {"u": 10.0, "v": 10.0},
         "radius": 3.0, "start_angle": 0.0, "end_angle": std::f64::consts::PI});
-    *built = serde_json::from_value(value).unwrap();
+    *built = cadmpeg_core::serde_erase::json::from_value(value).unwrap();
     let (_, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(construction(&ir, "built"), None);
     assert!(

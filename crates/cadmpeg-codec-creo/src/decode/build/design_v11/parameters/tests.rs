@@ -68,7 +68,8 @@ fn project_with(parameter: &LegacyParameter, all: &[&LegacyParameter]) -> Design
 fn neutral_text(parameter: &DesignParameter) -> String {
     match &parameter.definition {
         ParameterDefinition::Expression(expression @ Expression::Neutral(_)) => {
-            serde_json::to_value(expression).expect("serialize")["value"]["text"]
+            cadmpeg_core::serde_erase::json::to_value(expression).expect("serialize")["value"]
+                ["text"]
                 .as_str()
                 .expect("canonical text")
                 .to_owned()

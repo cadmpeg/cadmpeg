@@ -101,13 +101,16 @@ fn document(evaluations: Vec<Evaluation>, states: Vec<ProcessState>) -> String {
     ir.design.evaluations = evaluations;
     ir.process.states = states;
     ir.finalize();
-    serde_json::to_string(&ir).unwrap()
+    cadmpeg_core::serde_erase::json::to_string(&ir).unwrap()
 }
 
 fn admitted(text: &str, limits: &ResourceLimits) {
     let back = read::from_str::<CadIr>(text, limits)
         .unwrap_or_else(|error| panic!("a chain within the ceiling is refused: {error}"));
-    assert_eq!(serde_json::to_string(&back).unwrap(), text);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&back).unwrap(),
+        text
+    );
 }
 
 fn refused_past(text: &str, limits: &ResourceLimits) {

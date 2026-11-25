@@ -46,11 +46,14 @@ fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
             wire["inputs"] = serde_json::json!(inputs);
         }
         let rule: DesignWorkPointRule =
-            serde_json::from_value(wire.clone()).expect("supported rule");
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("supported rule");
         assert_eq!(rule.reference_type(), code);
-        assert_eq!(serde_json::to_value(rule).expect("serialize rule"), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(rule).expect("serialize rule"),
+            wire
+        );
         let alias = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
-        let error = serde_json::from_value::<DesignWorkPointRule>(alias)
+        let error = cadmpeg_core::serde_erase::json::from_value::<DesignWorkPointRule>(alias)
             .expect_err("native alias rejected");
         assert!(error.to_string().contains("reference_type"));
     }
@@ -60,10 +63,10 @@ fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
         (5, vec![input.clone(), input]),
     ] {
         let wire = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
-        let rule: DesignWorkPointRule =
-            serde_json::from_value(wire.clone()).expect("unassigned native form");
+        let rule: DesignWorkPointRule = cadmpeg_core::serde_erase::json::from_value(wire.clone())
+            .expect("unassigned native form");
         assert_eq!(
-            serde_json::to_value(rule).expect("serialize native form"),
+            cadmpeg_core::serde_erase::json::to_value(rule).expect("serialize native form"),
             wire
         );
     }
@@ -83,12 +86,18 @@ fn work_point_plane_carrier_is_bound_to_its_input_frame() {
             "work_plane_scope_record_index": 20, "next_record_index": 11, "next_byte_offset": 179
         }}
     });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    let admitted: DesignWorkPointInput =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(admitted).unwrap(),
+        wire
+    );
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();
-        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignWorkPointInput>(invalid).is_err()
+        );
     }
 }
 
@@ -108,12 +117,18 @@ fn work_point_sketch_point_carrier_is_bound_to_its_input_frame() {
             "next_record_index": 11, "next_byte_offset": 191
         }}
     });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    let admitted: DesignWorkPointInput =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(admitted).unwrap(),
+        wire
+    );
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();
-        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignWorkPointInput>(invalid).is_err()
+        );
     }
 }
 
@@ -134,12 +149,16 @@ fn work_point_sketch_point_carrier_offsets_follow_its_identity_form() {
             "next_record_index": 11, "next_byte_offset": 187
         }}
     });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    let admitted: DesignWorkPointInput =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(admitted).unwrap(),
+        wire
+    );
     let mut marked = wire.clone();
     marked["carrier"]["selection"]
         .as_object_mut()
         .unwrap()
         .remove("identity_form");
-    assert!(serde_json::from_value::<DesignWorkPointInput>(marked).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignWorkPointInput>(marked).is_err());
 }

@@ -94,10 +94,10 @@ fn compact_profile_flags_are_retained_and_report_the_assumption() {
                 let profile = scope.extrude_profile().unwrap();
                 assert_eq!(profile.entity_id.as_str(), "0_172");
                 assert_eq!(profile.compact_tail_flags, Some(flags));
-                let native = serde_json::to_value(profile).unwrap();
+                let native = cadmpeg_core::serde_erase::json::to_value(profile).unwrap();
                 assert_eq!(native["compact_tail_flags"], serde_json::json!(flags));
                 let decoded: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
-                    serde_json::from_value(native).unwrap();
+                    cadmpeg_core::serde_erase::json::from_value(native).unwrap();
                 assert_eq!(decoded.compact_tail_flags, Some(flags));
             });
         }

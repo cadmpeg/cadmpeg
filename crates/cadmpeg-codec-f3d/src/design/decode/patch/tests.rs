@@ -38,7 +38,7 @@ fn source_normal_prefixes_require_the_semantic_version_and_bounded_boolean() {
         ),
     ] {
         let raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>> =
-            serde_json::from_value(serde_json::json!(hex)).unwrap();
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!(hex)).unwrap();
         assert_eq!(raw.len(), 36);
         let mut bytes = vec![0; 145];
         bytes[17..53].copy_from_slice(&raw);
@@ -124,9 +124,9 @@ fn native_normal_state_composes_with_boundaries_and_validates_its_owner_and_offs
             model_reference: 353,
         });
     }
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
     assert_eq!(
-        serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wire.clone()).unwrap(),
         scope
     );
     for field in ["kind", "surface_patch_normal"] {
@@ -136,11 +136,13 @@ fn native_normal_state_composes_with_boundaries_and_validates_its_owner_and_offs
         } else {
             serde_json::Value::Null
         };
-        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err()
+        );
     }
     let mut invalid = wire;
     invalid["surface_patch_normal"]["reversed"]["offset"] = serde_json::json!(32);
-    assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err());
 }
 
 #[test]

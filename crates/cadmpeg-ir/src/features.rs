@@ -233,12 +233,6 @@ struct FeatureReadWire {
 }
 
 impl FeatureReadWire {
-    fn deserialize_erased(
-        deserializer: cadmpeg_core::serde_erase::DeAdapter<'_, '_>,
-    ) -> Result<Self, cadmpeg_core::serde_erase::DeError> {
-        Self::deserialize(deserializer)
-    }
-
     fn into_feature(self) -> Feature {
         Feature {
             product_definition: self.product_definition,
@@ -263,11 +257,7 @@ impl<'de> Deserialize<'de> for Feature {
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(cadmpeg_core::serde_erase::deserialize_with(
-            deserializer,
-            FeatureReadWire::deserialize_erased,
-        )?
-        .into_feature())
+        Ok(FeatureReadWire::deserialize(deserializer)?.into_feature())
     }
 }
 

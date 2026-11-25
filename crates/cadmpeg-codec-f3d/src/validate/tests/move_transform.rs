@@ -220,9 +220,10 @@ fn move_prefix_validator_rejects_inconsistent_native_claims() {
         }
         assert!(!move_operation_links_hold(&changed, Some(&header)));
     }
-    let mut wire = serde_json::to_value(scope.move_operation().unwrap()).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(scope.move_operation().unwrap()).unwrap();
     wire["prefix"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<DesignMoveOperation>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignMoveOperation>(wire).is_err());
 }
 
 #[test]

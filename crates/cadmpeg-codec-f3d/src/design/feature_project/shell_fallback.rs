@@ -399,8 +399,16 @@ fn project_one(
         note(F3dLossCode::FeatureShellGroupRolesAssumed, "the removed-face and target-body groups are assumed to participate jointly in the Shell");
     }
     note(F3dLossCode::FeatureShellControlsUninterpreted, "unmapped Shell controls, tangent-chain settings and auxiliary references remain in source evidence");
-    let evidence = serde_json::json!({ "native": feature.evaluation.definition(), "scopes": scopes, "groups": groups, "owners": owners, "parameters": parameters, "readouts": feature.native_ref.as_ref().and_then(|id| readouts.get(id)) });
-    let evidence = serde_json::to_string(&evidence).map_err(CodecError::malformed)?;
+    let readouts = feature.native_ref.as_ref().and_then(|id| readouts.get(id));
+    let evidence = cadmpeg_core::serde_erase::to_json_string(&ShellEvidence {
+        groups: &groups,
+        native: feature.evaluation.definition(),
+        owners: &owners,
+        parameters: &parameters,
+        readouts: &readouts,
+        scopes: &scopes,
+    })
+    .map_err(CodecError::malformed)?;
     inputs.ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(evidence.len()),
         "retain F3D partial Shell source",
@@ -421,6 +429,16 @@ fn project_one(
             allow_self_intersections: None,
         }));
     Ok(losses)
+}
+
+#[derive(serde::Serialize)]
+struct ShellEvidence<'a, A, B, C, D, E, F> {
+    groups: &'a A,
+    native: &'a B,
+    owners: &'a C,
+    parameters: &'a D,
+    readouts: &'a E,
+    scopes: &'a F,
 }
 
 #[cfg(test)]

@@ -23,7 +23,7 @@ const FACE: &str = "sldprt:brep:face#37@block@1";
 const KEPT_FACE: &str = "sldprt:brep:face#38@block@2";
 
 fn face_binding(id: &str, face: &str, appearance: &str) -> AppearanceBinding {
-    serde_json::from_value(json!({
+    cadmpeg_core::serde_erase::json::from_value(json!({
         "id": id,
         "target": {"entity": {"kind": "face", "value": face}},
         "appearance": appearance,
@@ -33,7 +33,7 @@ fn face_binding(id: &str, face: &str, appearance: &str) -> AppearanceBinding {
 }
 
 fn appearance(id: &str) -> Appearance {
-    serde_json::from_value(json!({
+    cadmpeg_core::serde_erase::json::from_value(json!({
         "id": id,
         "schema": "entity-53",
         "base_color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
