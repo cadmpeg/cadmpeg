@@ -841,45 +841,32 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     for (face, record) in brep.faces.iter().enumerate() {
         let face_id = id::face(key, face);
         let surface = &surface_ids[&(catalog_key(record.surface.0), record.surface.1)];
-        let mut dropped = record
+        let loops: Vec<LoopId> = record
             .loops
             .iter()
-            .filter(|loop_| !written_loops.contains(&id::loop_(key, **loop_)))
-            .peekable();
-        // The source lists its outer loop first. A loop with no edge and no
-        // vertex states no boundary, so a face that drops one is partial.
-        let loops = if dropped.peek().is_some() {
-            let dropped: Vec<String> = dropped.map(ToString::to_string).collect();
-            out.unstated.push(format!(
-                "{face_id}: source loops {} state no edge or vertex the model keeps",
-                dropped.join(", ")
-            ));
-            let mut written = record.loops.iter().map(|loop_| id::loop_(key, *loop_));
-            let outer = written.next().filter(|loop_| written_loops.contains(loop_));
-            FaceLoops::PartialClassified {
-                outer,
-                inner: written
-                    .filter(|loop_| written_loops.contains(loop_))
-                    .collect(),
+            .map(|loop_| id::loop_(key, *loop_))
+            .filter(|loop_| written_loops.contains(loop_))
+            .collect();
+        // A loop with no edge and no vertex, or only degenerate edges, is not
+        // written. A face left with no loop on a closed surface is whole; on
+        // a plane, cylinder, or cone it states no extent and is partial.
+        let loops = match loops.split_first() {
+            Some((outer, inner)) => FaceLoops::classified(outer.clone(), inner.to_vec()),
+            None => {
+                let geometry = out
+                    .surfaces
+                    .iter()
+                    .find(|candidate| &candidate.id == surface)
+                    .map(|candidate| &candidate.geometry);
+                let (loops, unbounded) = FaceLoops::unspecified_on(Vec::new(), geometry);
+                if let Some(kind) = unbounded {
+                    out.unstated.push(format!(
+                        "{face_id}: no loop with an edge or vertex on a {kind}, which no face \
+                         covers whole"
+                    ));
+                }
+                loops
             }
-        } else if let Some((outer, inner)) = record.loops.split_first() {
-            FaceLoops::classified(
-                id::loop_(key, *outer),
-                inner.iter().map(|loop_| id::loop_(key, *loop_)).collect(),
-            )
-        } else {
-            let geometry = out
-                .surfaces
-                .iter()
-                .find(|candidate| &candidate.id == surface)
-                .map(|candidate| &candidate.geometry);
-            let (loops, unbounded) = FaceLoops::unspecified_on(Vec::new(), geometry);
-            if let Some(kind) = unbounded {
-                out.unstated.push(format!(
-                    "{face_id}: no loop on a {kind}, which no face covers whole"
-                ));
-            }
-            loops
         };
         let shell = face_shell[face].unwrap_or_default();
         out.faces.push(Face {

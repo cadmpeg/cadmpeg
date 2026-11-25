@@ -108,9 +108,9 @@ pub(crate) enum UsdLossCode {
     /// Geometry subsets of a `BrepArray` prim that are not `face` or `brep`
     /// subsets binding a material were not transferred.
     BrepSubsetNotTransferred,
-    /// A `BrepArray` face does not state its boundary in full: a loop of it
-    /// states no edge or vertex, or it lists no loop on a plane, cylinder,
-    /// or cone. The face is stated partial.
+    /// A `BrepArray` face on a plane, cylinder, or cone has no loop that
+    /// holds an edge or a vertex, so it states no extent. The face is stated
+    /// partial.
     TopologyFaceBoundaryUnstated,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
