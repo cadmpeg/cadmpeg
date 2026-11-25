@@ -287,6 +287,7 @@ impl<'a> UsedCarriers<'a> {
             match member {
                 ShellMember::WireEdge { id } => wire_edges.insert(id.as_str()),
                 ShellMember::FreeVertex { id } => free_vertices.insert(id.as_str()),
+                ShellMember::Subd { .. } => false,
             };
         }
         let mut curves = BTreeSet::new();

@@ -446,6 +446,22 @@ pub(super) fn check_native_links(
             }
         }
     }
+    for mesh in &ir.model.tessellations {
+        if let Some(target) = &mesh.native_ref {
+            if !resolves(target.as_str()) {
+                super::record_finding(
+                    findings,
+                    Check::NativeLinks,
+                    Severity::Error,
+                    Some(mesh.id.as_str()),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
+                );
+            }
+        }
+    }
 
     // `unknowns` has a shared identity-link contract. Other arenas own their
     // field shapes; only an array made entirely of strings follows the generic
