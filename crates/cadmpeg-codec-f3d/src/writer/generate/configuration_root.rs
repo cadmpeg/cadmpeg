@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{record_residual_unavailable, value_unwritable};
+use cadmpeg_ir::codec::write::value_unwritable;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -122,10 +122,10 @@ impl ConfigurationRoot {
             Some(class_tag) => (class_tag, None),
             None => (
                 registry.register(ROOT_TYPE, &[record_index])?,
-                record_residual_unavailable(
+                value_unwritable(
                     "F3D",
                     &format!(
-                        "writes the DesignConfigurationRoot record that names the active row of these configurations under the MetaStream type {}, with no base type, version {} and add-in {}: f3d-open-items.md DR-1063 leaves the type of the record open",
+                        "writes the MetaStream type row of the DesignConfigurationRoot record that names the active row of these configurations as type {}, with no base type, version {} and add-in {}: f3d-open-items.md DR-1063 leaves that type row open",
                         ROOT_TYPE.guid, ROOT_TYPE.version, ROOT_TYPE.module
                     ),
                     [self.configuration.as_str()],
