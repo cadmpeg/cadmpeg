@@ -16,6 +16,8 @@ pub(crate) struct LoadedDocument {
     pub(crate) input_bytes: u64,
     /// The `sidecar.stale` loss of a decode sidecar the load ignored.
     pub(crate) stale_sidecar: Option<LossNote>,
+    /// The report of the CADIR read that loaded the document.
+    pub(crate) read_report: Vec<LossNote>,
 }
 
 /// Source information attached to a loaded document.
@@ -49,6 +51,7 @@ impl LoadedDocument {
             origin: LoadOrigin::Neutral,
             input_bytes,
             stale_sidecar: None,
+            read_report: Vec::new(),
         }
     }
 
@@ -64,6 +67,7 @@ impl LoadedDocument {
             },
             input_bytes,
             stale_sidecar: None,
+            read_report: Vec::new(),
         }
     }
 
@@ -82,6 +86,7 @@ impl LoadedDocument {
             },
             input_bytes,
             stale_sidecar: None,
+            read_report: Vec::new(),
         }
     }
 
@@ -89,6 +94,13 @@ impl LoadedDocument {
     #[must_use]
     pub(crate) fn with_stale_sidecar(mut self, loss: LossNote) -> Self {
         self.stale_sidecar = Some(loss);
+        self
+    }
+
+    /// Records the report of the CADIR read that loaded the document.
+    #[must_use]
+    pub(crate) fn with_read_report(mut self, report: Vec<LossNote>) -> Self {
+        self.read_report = report;
         self
     }
 

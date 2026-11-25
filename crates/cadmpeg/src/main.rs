@@ -213,8 +213,8 @@ enum Command {
         #[arg(long, conflicts_with = "container_only")]
         full_decode: bool,
         /// Do not write if a loss at or above `--reject-lossy-floor` was
-        /// reported. `--reject-lossy=decode` judges this decode's report,
-        /// `=export` the write's, and the bare flag both. Every scope decodes
+        /// reported. `--reject-lossy=decode` judges this decode's report or
+        /// the CADIR read's, `=export` the write's, and the bare flag both. Every scope decodes
         /// the whole source, as `--full-decode` does, so a loss in its design
         /// intent counts.
         #[arg(

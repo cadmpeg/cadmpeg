@@ -1639,11 +1639,13 @@ fn an_index_has_the_followed_and_composite_coordinates() {
 
 mod assembly_rules;
 mod bounds;
+mod chain_links;
 mod forms;
 mod generators;
 mod pattern_coordinates;
 mod run_ranges;
 mod split_tools;
+mod transitions;
 
 #[test]
 fn an_assembly_feature_operation_states_no_body_operand() {

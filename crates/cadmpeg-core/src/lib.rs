@@ -12,6 +12,7 @@ pub mod error;
 pub mod io;
 pub mod iter_wire;
 pub mod printable;
+pub mod read_session;
 pub mod scan;
 pub mod tag_only;
 pub mod tagged;
