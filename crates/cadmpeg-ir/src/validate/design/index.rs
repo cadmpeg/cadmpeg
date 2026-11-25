@@ -49,7 +49,7 @@ impl<'a> StateKey<'a> {
 }
 
 /// The design records by identity, container membership, and dependencies.
-pub(super) struct DesignIndex<'a> {
+pub(in crate::validate) struct DesignIndex<'a> {
     pub(super) records: DesignRecords<'a>,
     /// The container holding each member, and the member's index in an
     /// ordered container's list.
@@ -68,7 +68,7 @@ pub(super) struct DesignIndex<'a> {
 }
 
 impl<'a> DesignIndex<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(in crate::validate) fn new(ir: &'a CadIr) -> Self {
         let design = &ir.design;
         let mut places = BTreeMap::new();
         for container in &design.containers {

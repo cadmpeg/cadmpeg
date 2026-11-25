@@ -5,11 +5,15 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
 use cadmpeg_ir::examples::{add_document_root, unit_cube};
-use cadmpeg_ir::ids::CoedgeId;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::{BodyId, CoedgeId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use serde::de::DeserializeOwned;
@@ -17,6 +21,8 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+use super::covered_uses::cube_with_pcurves;
+use crate::writer::placement::separated_bodies;
 use crate::{IgesCodec, IgesVersion};
 
 /// The kinds of record that a second body on shared geometry renames.
@@ -90,12 +96,16 @@ fn instance<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str]) -> V
     serde_json::from_value(value).expect("the renamed records deserialize")
 }
 
-/// The example cube under `first`, and a second cube body under `second` on
+/// The cube `ir` under `first`, and a second cube body under `second` on
 /// the same records of each kind outside `kinds`. The radial ring of an edge
 /// that both bodies use holds the coedges of the first body, then those of
 /// the second.
-fn shared_cubes(first: Option<Transform>, second: Option<Transform>, kinds: &[&str]) -> CadIr {
-    let mut ir = unit_cube().expect("the example cube builds");
+fn shared_cubes(
+    mut ir: CadIr,
+    first: Option<Transform>,
+    second: Option<Transform>,
+    kinds: &[&str],
+) -> CadIr {
     let geometry = &mut ir.geometry;
     geometry.bodies[0].transform = first;
     let mut bodies = instance(&geometry.bodies, kinds);
@@ -158,6 +168,27 @@ fn cube_corners() -> Vec<[f64; 3]> {
         .collect()
 }
 
+/// The faces of the body `body` of `read`.
+fn body_faces<'a>(read: &'a CadIr, body: &'a BodyId) -> impl Iterator<Item = &'a Face> {
+    let geometry = &read.geometry;
+    geometry
+        .regions
+        .iter()
+        .filter(move |region| region.body == *body)
+        .flat_map(|region| {
+            geometry
+                .shells
+                .iter()
+                .filter(move |shell| shell.region == region.id)
+        })
+        .flat_map(|shell| {
+            geometry
+                .faces
+                .iter()
+                .filter(move |face| face.shell == shell.id)
+        })
+}
+
 /// The positions of the vertices of each read-back body, by body.
 fn body_vertices(read: &CadIr) -> Vec<Vec<[f64; 3]>> {
     let geometry = &read.geometry;
@@ -165,25 +196,8 @@ fn body_vertices(read: &CadIr) -> Vec<Vec<[f64; 3]>> {
         .bodies
         .iter()
         .map(|body| {
-            let faces = geometry
-                .regions
-                .iter()
-                .filter(|region| region.body == body.id)
-                .flat_map(|region| {
-                    geometry
-                        .shells
-                        .iter()
-                        .filter(move |shell| shell.region == region.id)
-                })
-                .flat_map(|shell| {
-                    geometry
-                        .faces
-                        .iter()
-                        .filter(move |face| face.shell == shell.id)
-                })
-                .collect::<Vec<_>>();
             let mut positions = Vec::new();
-            for face in faces {
+            for face in body_faces(read, &body.id) {
                 for loop_ in geometry
                     .loops
                     .iter()
@@ -254,6 +268,7 @@ fn stretched(point: [f64; 3]) -> [f64; 3] {
 /// second stretched, and reads back each body at its own corners.
 fn placed_once_for_each_body(kinds: &[&str]) {
     let ir = shared_cubes(
+        unit_cube().expect("the example cube builds"),
         None,
         Transform::affine([
             [2.0, 0.0, 0.0, 1.0],
@@ -288,6 +303,7 @@ fn drops_only_instance_faces(kinds: &[&str]) {
     // The image of each cube corner at x = 10 leaves the finite range; the
     // instance face on the plane x = 0 keeps a finite image.
     let ir = shared_cubes(
+        unit_cube().expect("the example cube builds"),
         None,
         Transform::affine([
             [1.0e308, 0.0, 0.0, 0.0],
@@ -348,4 +364,145 @@ fn a_copied_record_with_no_placed_image_drops_only_the_faces_of_its_body() {
 #[test]
 fn a_copied_edge_or_vertex_with_no_placed_image_drops_only_the_faces_of_its_body() {
     drops_only_instance_faces(&FACE_KINDS);
+}
+
+/// The support points at the ends of the parameter curves on the faces of
+/// each read-back body, by body.
+fn body_pcurve_ends(read: &CadIr) -> Vec<Vec<[f64; 3]>> {
+    let geometry = &read.geometry;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    geometry
+        .bodies
+        .iter()
+        .map(|body| {
+            let mut positions = Vec::new();
+            for face in body_faces(read, &body.id) {
+                let support = match &geometry
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == face.surface)
+                    .expect("the face support reads back")
+                    .geometry
+                {
+                    SurfaceGeometry::Solved(solved) => solved,
+                    SurfaceGeometry::Procedural { cache, .. } => {
+                        cache.as_ref().expect("the support reads back solved")
+                    }
+                };
+                for coedge in geometry
+                    .coedges
+                    .iter()
+                    .filter(|coedge| face.loops.stated().any(|loop_| *loop_ == coedge.owner_loop))
+                {
+                    for pcurve_use in &coedge.pcurves {
+                        let pcurve = geometry
+                            .pcurves
+                            .iter()
+                            .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+                            .expect("the parameter curve reads back");
+                        for parameter in pcurve
+                            .parameter_range()
+                            .expect("a bounded parameter curve")
+                            .get()
+                        {
+                            let uv = pcurve_uv(&ctx, &pcurve.geometry, parameter)
+                                .expect("a parameter point")
+                                .get();
+                            let point = surface_point_solved(&ctx, support, uv.u, uv.v)
+                                .expect("a point on the support")
+                                .get();
+                            positions.push([point.x, point.y, point.z]);
+                        }
+                    }
+                }
+            }
+            positions
+        })
+        .collect()
+}
+
+#[test]
+fn a_parameter_curve_that_bodies_under_different_transforms_share_is_placed_once_for_each_body() {
+    let ir = shared_cubes(
+        cube_with_pcurves(false),
+        None,
+        Transform::affine([
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, -1.0],
+        ]),
+        &TOPOLOGY_KINDS,
+    );
+    let (losses, read) = written(&ir);
+    for code in [
+        "iges/writer.body-omitted",
+        "iges/writer.face-omitted",
+        "iges/writer.pcurve-omitted",
+    ] {
+        assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+    }
+    assert_eq!(read.geometry.bodies.len(), 2);
+    let corners = cube_corners();
+    let placed = corners.iter().copied().map(stretched).collect::<Vec<_>>();
+    let bodies = body_pcurve_ends(&read);
+    for body in &bodies {
+        assert_eq!(body.len(), 2 * 24, "{bodies:?}");
+    }
+    assert!(
+        bodies.iter().any(|body| holds(body, &corners)),
+        "no body's parameter curves end at the source corners: {bodies:?}"
+    );
+    assert!(
+        bodies.iter().any(|body| holds(body, &placed)),
+        "no body's parameter curves end at the placed corners: {bodies:?}"
+    );
+}
+
+#[test]
+fn the_ring_of_a_copied_edge_holds_only_the_coedges_of_its_body() {
+    let ir = shared_cubes(
+        unit_cube().expect("the example cube builds"),
+        None,
+        Transform::affine([
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, -1.0],
+        ]),
+        &FACE_KINDS,
+    );
+    let Ok(separated) = separated_bodies(&ir) else {
+        panic!("the bodies separate");
+    };
+    let coedges = &separated.geometry.coedges;
+    let instance = |coedge: &CoedgeId| coedge.as_str().ends_with("-instance");
+    for coedge in coedges {
+        let mut ring = vec![coedge];
+        loop {
+            let next = coedges
+                .iter()
+                .find(|record| record.id == ring[ring.len() - 1].radial_next)
+                .expect("the radial ring resolves");
+            if next.id == coedge.id {
+                break;
+            }
+            assert!(
+                ring.len() < coedges.len(),
+                "the radial ring of {} never closes",
+                coedge.id
+            );
+            ring.push(next);
+        }
+        assert_eq!(ring.len(), 2, "{ring:#?}");
+        for member in &ring {
+            assert_eq!(member.edge, coedge.edge, "{ring:#?}");
+            assert_eq!(instance(&member.id), instance(&coedge.id), "{ring:#?}");
+        }
+    }
+    let edges = coedges
+        .iter()
+        .map(|coedge| coedge.edge.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(edges.len(), 24);
 }

@@ -488,8 +488,7 @@
           "value": {
             "code": "geometry.exact-undecoded",
             "kind": "geometry_not_transferred",
-            "namespace": "pvz",
-            "strict_floor": "warning"
+            "namespace": "pvz"
           }
         },
         "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
@@ -537,8 +536,7 @@
           "value": {
             "code": "tessellation.edges-not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "pvz",
-            "strict_floor": "warning"
+            "namespace": "pvz"
           }
         },
         "message": "edge tessellation was decoded but not transferred: 1 edge polylines with 2 points and 1 segments, 1 edge index tables, and other records none; the model carries no edge display polylines (PVZ-16)",

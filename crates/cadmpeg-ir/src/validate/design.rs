@@ -23,10 +23,10 @@ mod fit;
 #[cfg(test)]
 pub(crate) mod fixture;
 mod folds;
-mod index;
+pub(super) mod index;
 mod joins;
 mod linkage;
-mod matching;
+pub(super) mod matching;
 mod materials;
 mod membership;
 mod names;
@@ -43,7 +43,7 @@ pub(super) mod resolved;
 pub(super) mod selections;
 mod sheet_metal;
 mod sheets;
-mod states;
+pub(super) mod states;
 mod target_states;
 mod tolerances;
 mod walk;
@@ -66,6 +66,7 @@ use crate::report::{
 
 use super::record_finding;
 use index::DesignIndex;
+use matching::Matchers;
 use records::MemberKey;
 use walk::{BoundDimension, Collect, ConstructionView, SelectionView, Walk};
 
@@ -116,23 +117,23 @@ struct Held<'a> {
 /// container, position, evaluation, current-geometry, configuration,
 /// parameter, expression, program, dimension, cache, name, selection, and
 /// construction rules, and the rules of the feature vocabulary.
-pub(super) fn check_design(
+pub(super) fn check_design<'a>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    ir: &'a CadIr,
     ids: &ModelIndex<'_>,
+    matchers: &Matchers<'a>,
     findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+) -> Result<DesignIndex<'a>, CodecError> {
+    let mut index = DesignIndex::new(ir);
     if ir.design.is_empty() {
         linkage::check_scope(ir, findings);
         linkage::check_identities(ir, findings);
         tolerances::check_definition_general_tolerances(ir, findings);
         if !ir.process.parameters.is_empty() {
-            let records = records::DesignRecords::new(ir);
-            expressions::check_process_parameters(&records, findings);
+            expressions::check_process_parameters(&index.records, findings);
         }
-        return Ok(());
+        return Ok(index);
     }
-    let mut index = DesignIndex::new(ir);
     let records = &index.records;
     linkage::check_linkage(records, ids, findings);
     containers::check_containers(records, findings);
@@ -155,19 +156,18 @@ pub(super) fn check_design(
     dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     sheet_metal::check(&index, findings);
-    let states = states::States::new(ir);
-    membership::check(&index, &states, findings);
-    joins::check(&index, &states, findings);
-    let matchers = matching::Matchers::new(&states);
-    names::check(ctx, &index, &states, &held, findings)?;
-    selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
+    let states = matchers.states();
+    membership::check(&index, states, findings);
+    joins::check(&index, states, findings);
+    names::check(ctx, &index, states, &held, findings)?;
+    selections::check(ctx, &index, matchers, &held, ids.native_view(), findings)?;
     selections::check_template_inputs(&index.records, &held, findings);
     constructions::check(&index, &held, findings);
-    folds::check(&index, &matchers, &held, findings);
-    picked::check(&index, &matchers, findings);
+    folds::check(&index, matchers, &held, findings);
+    picked::check(&index, matchers, findings);
     sheets::check(&index, findings);
-    materials::check(&index, &matchers, findings);
-    Ok(())
+    materials::check(&index, matchers, findings);
+    Ok(index)
 }
 
 /// Walks every design record that can hold a selection, a construction, or a

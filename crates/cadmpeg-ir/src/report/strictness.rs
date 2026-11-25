@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_core::text::NonBlankString;
 
-use super::loss::{LossKind, LossNote};
+use super::loss::{LossKind, LossNote, BARE_SHARED_CODES};
 use super::Severity;
 
 /// The report entries on which a caller refuses an operation.
@@ -61,16 +61,6 @@ impl Strictness {
     }
 }
 
-/// Shared codes that §3.2 spells without a namespace, whichever codec
-/// charges them.
-const BARE_SHARED_CODES: [&str; 5] = [
-    "record.unreadable",
-    "sidecar.stale",
-    "geometry.vertex-tolerance-widened",
-    "target.source-dialect-displaced",
-    "target.request-displaced",
-];
-
 /// Namespaces whose codes §3.2 spells `namespace:code`.
 const COLON_NAMESPACES: [&str; 2] = ["export", "measure"];
 
@@ -79,9 +69,8 @@ const COLON_NAMESPACES: [&str; 2] = ["export", "measure"];
 /// these names.
 ///
 /// - an `export` or `measure` code is `export:code` or `measure:code`;
-/// - a shared code §3.2 spells bare (`record.unreadable`, `sidecar.stale`,
-///   `geometry.vertex-tolerance-widened`, `target.source-dialect-displaced`,
-///   `target.request-displaced`) is that code, whichever namespace holds it;
+/// - a shared code §3.2 spells bare ([`BARE_SHARED_CODES`]) is that code,
+///   whichever namespace holds it;
 /// - every other code is `namespace/code`: `decode/depth.not-delivered`,
 ///   `read/spelling.normalized`, `iges/global.metadata-field-unusable`, and
 ///   `shared/<taxonomy>` for a code of the shared taxonomy.
@@ -91,7 +80,7 @@ pub fn code_name(kind: &LossKind) -> String {
     let code = kind.local_code();
     if COLON_NAMESPACES.contains(&namespace) {
         format!("{namespace}:{code}")
-    } else if BARE_SHARED_CODES.contains(&code) {
+    } else if BARE_SHARED_CODES.iter().any(|(shared, _)| *shared == code) {
         code.to_owned()
     } else {
         format!("{namespace}/{code}")

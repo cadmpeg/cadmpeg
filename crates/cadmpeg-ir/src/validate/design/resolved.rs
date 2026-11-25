@@ -869,7 +869,7 @@ fn check_stored_bodies(
     let FeatureOperation::Stored {
         bodies: Some(bodies),
         ..
-    } = &index.definition_in(feature, configuration).operation
+    } = &index.definition_in(feature, configuration, None).operation
     else {
         return;
     };

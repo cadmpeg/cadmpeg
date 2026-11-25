@@ -39,6 +39,28 @@ fn canonical_text_reads_with_an_empty_report() {
     assert!(read.report.is_empty(), "{:?}", read.report);
 }
 
+/// A scope that breaks a rule of §2.1 is read and written as stated; the
+/// breach is a part 10 finding (§3.3).
+#[test]
+fn a_scope_that_breaks_its_rules_is_read_as_written() {
+    let (_, mut value) = wire();
+    for scope in [
+        json!({"model": false, "design": true, "process": false}),
+        json!({"model": true, "design": false, "process": true}),
+        json!({"model": false, "design": false, "process": false}),
+    ] {
+        value["scope"] = scope.clone();
+        let read = read(value.to_string().as_bytes());
+        assert!(read.report.is_empty(), "{:?}", read.report);
+        assert_eq!(serde_json::to_value(read.document.scope()).unwrap(), scope);
+        assert!(!read.document.scope_violations().is_empty());
+        assert_eq!(
+            serde_json::to_value(&read.document).unwrap()["scope"],
+            scope
+        );
+    }
+}
+
 #[test]
 fn an_arena_out_of_order_is_sorted_and_the_strict_reader_refuses_it() {
     let (ir, mut value) = wire();

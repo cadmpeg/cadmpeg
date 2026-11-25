@@ -2781,8 +2781,7 @@
           "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES entity type 510 form 1 geometry was not projected: face loop is missing",
@@ -2800,8 +2799,7 @@
           "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid",

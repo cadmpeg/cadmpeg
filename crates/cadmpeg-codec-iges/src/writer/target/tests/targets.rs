@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Resolution of a write request against the source: the synthesis catalog, the
-//! preservation path, and the two refusals.
+//! Resolution of a write request against the source: the synthesis catalog and
+//! the preservation path.
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
@@ -9,7 +9,7 @@ use crate::test_support::plan_at;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 use crate::IgesVersion;
-use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::target::{target_loss_kind, TargetRequest, SOURCE_DIALECT_DISPLACED};
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::{EncodeError, Encoder};
 use cadmpeg_ir::codec::DecodeOptions;
@@ -113,12 +113,12 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
         .any(|loss| loss.code == IgesLossCode::PreservedSourceUnavailable.kind()));
 }
 
-/// A dialect this codec reads but cannot write refuses under `Inherit` once its
-/// retained image is gone. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is, and the
-/// refusal names both the source's dialect and the escape.
+/// A dialect this codec reads but cannot write is written as the catalog
+/// default under `Inherit` once its retained image is gone (§3.4, Refusals).
+/// The report names the default, `iges/target.source-dialect-displaced` names
+/// both dialects, and the output decodes back as the default.
 #[test]
-fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
+fn inherit_writes_a_source_dialect_the_writer_cannot_synthesize_as_the_default() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(point_file_at_version_flag(1)),
@@ -137,35 +137,54 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         Some("iges:1.0-fixed-ascii".to_owned())
     );
 
-    let error = inherit(decoded.ir(), None).expect_err("1.0 is not a synthesis target");
-    let EncodeError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "iges");
+    let plan = inherit(decoded.ir(), None).expect("1.0 is written as the catalog default");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("iges:1.0-fixed-ascii")
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("iges:5.3-fixed-ascii".to_owned())
     );
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "iges:5.3-fixed-ascii"),
-        "{:?}",
-        refusal.available()
+    let displacement = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("iges"),
+                    SOURCE_DIALECT_DISPLACED,
+                )
+        })
+        .expect("the source dialect displacement is charged");
+    assert!(displacement.message.contains("iges:1.0-fixed-ascii"));
+    assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("write");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("decode output");
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
+            .map(ToString::to_string),
+        Some("iges:5.3-fixed-ascii".to_owned())
     );
 }
 
-/// The same source is writable the moment the caller names a target the writer
-/// has: an explicit request is always the escape from an inherit refusal.
+/// The same source written at an explicit catalog row states that row and
+/// charges the displacement of the source's dialect.
 #[test]
 fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
     let decoded = IgesCodec
@@ -196,11 +215,11 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         ),
         &FidelityResolution::NotProvided {}
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind()));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == target_loss_kind(
+            cadmpeg_ir::loss_namespace!("iges"),
+            SOURCE_DIALECT_DISPLACED
+        )));
     assert!(plan
         .report()
         .losses
