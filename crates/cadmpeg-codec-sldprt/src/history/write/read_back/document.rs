@@ -18,7 +18,9 @@
 //! The native namespaces are left out: they are the encoding, and every
 //! written byte moves their payloads and offsets.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::hash::Hasher;
 
 use cadmpeg_ir::document::CadIr;
@@ -91,7 +93,13 @@ impl Document {
     /// The records of `ir`, with the arenas the wire omits; `None` when it
     /// does not serialize.
     pub(crate) fn of(ir: &CadIr) -> Option<Self> {
-        let Value::Object(mut root) = serde_json::to_value(ir).ok()? else {
+        let neutral = ir.to_neutral_json_value().ok()?;
+        Self::from_neutral_value(ir, neutral)
+    }
+
+    /// Builds a [`Document`] from an already-serialized neutral JSON value of `ir`.
+    pub(crate) fn from_neutral_value(ir: &CadIr, neutral: Value) -> Option<Self> {
+        let Value::Object(mut root) = neutral else {
             return None;
         };
         let Value::Object(omitted) = ir.model.omitted_arenas_value().ok()? else {
@@ -311,14 +319,9 @@ impl Pairing {
     }
 }
 
-/// How a pairing round pairs records whose content agrees.
+/// How a fallback pairing round pairs records whose content differs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Round {
-    /// One record on each side.
-    Unique,
-    /// As many on each side, in arena order; the first arena with such a
-    /// group only.
-    Ties,
     /// One record on each side with a name and owner.
     Names,
     /// As many records with no name on each side whose ids have one native
@@ -368,7 +371,11 @@ pub(crate) fn pair(stated: &Document, written: &Document) -> Pairing {
         });
     }
     loop {
-        let bound = [Round::Unique, Round::Ties, Round::Names, Round::Forms]
+        let bound = pair_unique_or_ties(stated, written, &mut open, &mut pairing);
+        if bound > 0 {
+            continue;
+        }
+        let bound = [Round::Names, Round::Forms]
             .into_iter()
             .map(|round| pair_round(stated, written, &mut open, &mut pairing, round))
             .find(|bound| *bound > 0);
@@ -376,6 +383,86 @@ pub(crate) fn pair(stated: &Document, written: &Document) -> Pairing {
             return pairing;
         }
     }
+}
+
+type DigestGroups = BTreeMap<u64, (Vec<usize>, Vec<usize>)>;
+
+/// Runs `Round::Unique` across all open arenas, and if nothing binds, applies
+/// `Round::Ties` to the already-computed digest groups without re-hashing.
+fn pair_unique_or_ties(
+    stated: &Document,
+    written: &Document,
+    open: &mut BTreeMap<&str, (Vec<usize>, Vec<usize>)>,
+    pairing: &mut Pairing,
+) -> usize {
+    let mut bound = 0;
+    let mut cached_groups: Vec<(&str, DigestGroups)> = Vec::new();
+    for (&arena, (stated_open, written_open)) in open.iter_mut() {
+        if stated_open.is_empty() || written_open.is_empty() {
+            continue;
+        }
+        let (left, right) = (&stated.arenas[arena], &written.arenas[arena]);
+        let mut groups = BTreeMap::<u64, (Vec<usize>, Vec<usize>)>::new();
+        for &index in stated_open.iter() {
+            groups
+                .entry(digest(&left[index], Side::Stated, pairing))
+                .or_default()
+                .0
+                .push(index);
+        }
+        for &index in written_open.iter() {
+            groups
+                .entry(digest(&right[index], Side::Written, pairing))
+                .or_default()
+                .1
+                .push(index);
+        }
+        let mut paired = Vec::new();
+        for (lefts, rights) in groups.values() {
+            if lefts.len() == 1 && rights.len() == 1 {
+                paired.push((lefts[0], rights[0]));
+            }
+        }
+        for &(index, other) in &paired {
+            pairing.bind(arena, (index, &left[index]), (other, &right[other]));
+        }
+        if !paired.is_empty() {
+            let paired_left: HashSet<usize> = paired.iter().map(|&(index, _)| index).collect();
+            let paired_right: HashSet<usize> = paired.iter().map(|&(_, index)| index).collect();
+            stated_open.retain(|index| !paired_left.contains(index));
+            written_open.retain(|index| !paired_right.contains(index));
+            bound += paired.len();
+        } else if bound == 0 {
+            cached_groups.push((arena, groups));
+        }
+    }
+    if bound > 0 {
+        return bound;
+    }
+    for (arena, groups) in cached_groups {
+        let Some((stated_open, written_open)) = open.get_mut(arena) else {
+            continue;
+        };
+        let (left, right) = (&stated.arenas[arena], &written.arenas[arena]);
+        let mut paired = Vec::new();
+        for (lefts, rights) in groups.values() {
+            if lefts.len() == rights.len() && lefts.len() > 1 {
+                paired.extend(lefts.iter().copied().zip(rights.iter().copied()));
+            }
+        }
+        if paired.is_empty() {
+            continue;
+        }
+        for &(index, other) in &paired {
+            pairing.bind(arena, (index, &left[index]), (other, &right[other]));
+        }
+        let paired_left: HashSet<usize> = paired.iter().map(|&(index, _)| index).collect();
+        let paired_right: HashSet<usize> = paired.iter().map(|&(_, index)| index).collect();
+        stated_open.retain(|index| !paired_left.contains(index));
+        written_open.retain(|index| !paired_right.contains(index));
+        return paired.len();
+    }
+    0
 }
 
 /// Pairs the open records whose content agrees under `round`; the number
@@ -396,7 +483,7 @@ fn pair_round(
         let key = |side: Side, record: &Record| -> Option<u64> {
             match round {
                 Round::Names => record.name().map(|name| {
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    let mut hasher = cadmpeg_core::finite_json::ContentHasher::new();
                     hasher.write(name.as_bytes());
                     hasher.write_u8(0xff);
                     if let Some(owner) = record.owner() {
@@ -404,14 +491,13 @@ fn pair_round(
                     }
                     hasher.finish()
                 }),
-                Round::Unique | Round::Ties => Some(digest(record, side, pairing)),
                 Round::Forms => record
                     .name()
                     .is_none()
                     .then(|| record.id.as_deref().and_then(native_form))
                     .flatten()
                     .map(|form| {
-                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                        let mut hasher = cadmpeg_core::finite_json::ContentHasher::new();
                         hasher.write(form.as_bytes());
                         hasher.finish()
                     }),
@@ -431,8 +517,7 @@ fn pair_round(
         let mut paired = Vec::new();
         for (lefts, rights) in groups.values() {
             let agrees = match round {
-                Round::Unique | Round::Names => lefts.len() == 1 && rights.len() == 1,
-                Round::Ties => lefts.len() == rights.len() && lefts.len() > 1,
+                Round::Names => lefts.len() == 1 && rights.len() == 1,
                 Round::Forms => lefts.len() == rights.len(),
             };
             if agrees {
@@ -442,12 +527,13 @@ fn pair_round(
         for &(index, other) in &paired {
             pairing.bind(arena, (index, &left[index]), (other, &right[other]));
         }
-        stated_open.retain(|index| !paired.iter().any(|(paired, _)| paired == index));
-        written_open.retain(|index| !paired.iter().any(|(_, paired)| paired == index));
-        bound += paired.len();
-        if round == Round::Ties && bound > 0 {
-            break;
+        if !paired.is_empty() {
+            let paired_left: HashSet<usize> = paired.iter().map(|&(index, _)| index).collect();
+            let paired_right: HashSet<usize> = paired.iter().map(|&(_, index)| index).collect();
+            stated_open.retain(|index| !paired_left.contains(index));
+            written_open.retain(|index| !paired_right.contains(index));
         }
+        bound += paired.len();
     }
     bound
 }
@@ -456,7 +542,7 @@ fn pair_round(
 /// own id, paired ids and the shape of unpaired ids replaced, and fractional
 /// numbers to nine significant digits.
 fn digest(record: &Record, side: Side, pairing: &Pairing) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = cadmpeg_core::finite_json::ContentHasher::new();
     feed(
         &record.value,
         record.id.as_deref(),
@@ -465,6 +551,20 @@ fn digest(record: &Record, side: Side, pairing: &Pairing) -> u64 {
         &mut hasher,
     );
     hasher.finish()
+}
+
+/// Quantizes a finite float to 27 mantissa bits (~8.1 significant decimal
+/// digits, ~7.5e-9 relative precision) for content-hash grouping during
+/// read-back pairing without invoking decimal formatting.
+fn quantized_float_bits(real: f64) -> u64 {
+    if real == 0.0 || (real.is_finite() && real.abs() < f64::MIN_POSITIVE) {
+        0
+    } else if !real.is_finite() {
+        real.to_bits()
+    } else {
+        let bits = real.to_bits();
+        bits.checked_add(1_u64 << 24).unwrap_or(bits) & !((1_u64 << 25) - 1)
+    }
 }
 
 fn feed(value: &Value, own: Option<&str>, side: Side, pairing: &Pairing, hasher: &mut impl Hasher) {
@@ -483,9 +583,8 @@ fn feed(value: &Value, own: Option<&str>, side: Side, pairing: &Pairing, hasher:
                 hasher.write_u64(integer);
             } else {
                 let real = number.as_f64().unwrap_or_default();
-                let real = if real == 0.0 { 0.0 } else { real };
                 hasher.write_u8(4);
-                hasher.write(format!("{real:.8e}").as_bytes());
+                hasher.write_u64(quantized_float_bits(real));
             }
         }
         Value::String(text) => {
@@ -503,15 +602,26 @@ fn feed(value: &Value, own: Option<&str>, side: Side, pairing: &Pairing, hasher:
         Value::Object(entries) => {
             hasher.write_u8(7);
             hasher.write_usize(entries.len());
-            let mut keyed = entries
-                .iter()
-                .map(|(key, value)| (relabel_text(key, own, side, pairing), value))
-                .collect::<Vec<_>>();
-            keyed.sort_by(|left, right| left.0.cmp(&right.0));
-            for (key, value) in keyed {
-                hasher.write(key.as_bytes());
-                hasher.write_u8(0xff);
-                feed(value, own, side, pairing, hasher);
+            let needs_relabel = entries
+                .keys()
+                .any(|key| key_relabels(key, own, side, pairing));
+            if needs_relabel {
+                let mut keyed = entries
+                    .iter()
+                    .map(|(key, value)| (relabel_text(key, own, side, pairing), value))
+                    .collect::<Vec<_>>();
+                keyed.sort_by(|left, right| left.0.cmp(&right.0));
+                for (key, value) in keyed {
+                    hasher.write(key.as_bytes());
+                    hasher.write_u8(0xff);
+                    feed(value, own, side, pairing, hasher);
+                }
+            } else {
+                for (key, value) in entries {
+                    hasher.write(key.as_bytes());
+                    hasher.write_u8(0xff);
+                    feed(value, own, side, pairing, hasher);
+                }
             }
         }
     }
@@ -527,17 +637,33 @@ fn feed_text(
     hasher.write(relabel_text(text, own, side, pairing).as_bytes());
 }
 
+fn key_relabels(text: &str, own: Option<&str>, side: Side, pairing: &Pairing) -> bool {
+    own == Some(text)
+        || (side == Side::Written && pairing.written.contains_key(text))
+        || (text.starts_with("sldprt:") && pairing.label(side, text).is_none())
+}
+
 /// `text` as two documents compare it: the record's own id as `@self`, a
 /// paired id as its stated id, an unpaired native reference in its
 /// [`native_form`], and any other text as it is.
-fn relabel_text(text: &str, own: Option<&str>, side: Side, pairing: &Pairing) -> String {
+fn relabel_text<'a>(
+    text: &'a str,
+    own: Option<&str>,
+    side: Side,
+    pairing: &'a Pairing,
+) -> Cow<'a, str> {
     if own == Some(text) {
-        return "@self".to_owned();
+        return Cow::Borrowed("@self");
     }
     if let Some(label) = pairing.label(side, text) {
-        return label.to_owned();
+        return Cow::Borrowed(label);
     }
-    native_form(text).unwrap_or_else(|| text.to_owned())
+    if text.starts_with("sldprt:") {
+        if let Some(form) = native_form(text) {
+            return Cow::Owned(form);
+        }
+    }
+    Cow::Borrowed(text)
 }
 
 /// The form of native reference `text`, with each run of digits of its
@@ -625,7 +751,7 @@ fn rename_references(value: &mut Value, old: &str, new: &str) {
 /// the record's own id kept.
 fn relabel(value: &Value, side: Side, pairing: &Pairing) -> Value {
     match value {
-        Value::String(text) => Value::String(relabel_text(text, None, side, pairing)),
+        Value::String(text) => Value::String(relabel_text(text, None, side, pairing).into_owned()),
         Value::Array(items) => Value::Array(
             items
                 .iter()
@@ -636,7 +762,7 @@ fn relabel(value: &Value, side: Side, pairing: &Pairing) -> Value {
             let mut relabelled = serde_json::Map::new();
             for (key, value) in entries {
                 // Two keys of one form stay two entries.
-                let mut key = relabel_text(key, None, side, pairing);
+                let mut key = relabel_text(key, None, side, pairing).into_owned();
                 while relabelled.contains_key(&key) {
                     key.push('\'');
                 }
@@ -659,9 +785,10 @@ pub(crate) fn agree(stated: &Value, written: &Value, pairing: &Pairing) -> bool 
 /// where they agree.
 pub(crate) fn disagreement(stated: &Value, written: &Value, pairing: &Pairing) -> Option<String> {
     let mut changed = Vec::new();
-    leaves(
-        Some(&relabel(stated, Side::Stated, pairing)),
-        Some(&relabel(written, Side::Written, pairing)),
+    leaves_paired(
+        Some(stated),
+        Some(written),
+        pairing,
         &mut String::new(),
         &mut changed,
     );
@@ -692,6 +819,7 @@ pub(crate) fn reported_form(id: &str) -> String {
 }
 
 /// One difference between two decodes of one part.
+#[derive(Clone)]
 pub(crate) struct Difference {
     pub(crate) arena: String,
     /// The stated record's id; for an added record, its written id paired
@@ -705,6 +833,7 @@ pub(crate) struct Difference {
 }
 
 /// What differs about one record.
+#[derive(Clone)]
 pub(crate) enum Change {
     /// The written document has no record for it.
     Removed,
@@ -804,13 +933,16 @@ pub(crate) fn differences(
                 });
             }
         }
+        let mut pointer = String::new();
         for &(index, other) in pairs {
             let (record, read) = (&left[index], &right[other]);
             let mut changed = Vec::new();
-            leaves(
-                Some(&relabel(&record.value, Side::Stated, pairing)),
-                Some(&relabel(&read.value, Side::Written, pairing)),
-                &mut String::new(),
+            pointer.clear();
+            leaves_paired(
+                Some(&record.value),
+                Some(&read.value),
+                pairing,
+                &mut pointer,
                 &mut changed,
             );
             differences.extend(
@@ -835,6 +967,115 @@ pub(crate) fn differences(
 
 type Leaf = (String, Option<Value>, Option<Value>);
 
+fn push_pointer_key(pointer: &mut String, key: &str) {
+    pointer.push('/');
+    if key.contains('~') || key.contains('/') {
+        for character in key.chars() {
+            match character {
+                '~' => pointer.push_str("~0"),
+                '/' => pointer.push_str("~1"),
+                other => pointer.push(other),
+            }
+        }
+    } else {
+        pointer.push_str(key);
+    }
+}
+
+fn push_pointer_index(pointer: &mut String, index: usize) {
+    pointer.push('/');
+    if write!(pointer, "{index}").is_err() {
+        pointer.push_str(&index.to_string());
+    }
+}
+
+/// Pushes each leaf at which `stated` and `written` disagree under `pairing`,
+/// borrowing both trees without cloning agreeing records.
+fn leaves_paired(
+    stated: Option<&Value>,
+    written: Option<&Value>,
+    pairing: &Pairing,
+    pointer: &mut String,
+    out: &mut Vec<Leaf>,
+) {
+    match (stated, written) {
+        (Some(Value::String(left)), Some(Value::String(right))) => {
+            let left_rel = relabel_text(left, None, Side::Stated, pairing);
+            let right_rel = relabel_text(right, None, Side::Written, pairing);
+            if left_rel != right_rel {
+                out.push((
+                    pointer.clone(),
+                    Some(Value::String(left_rel.into_owned())),
+                    Some(Value::String(right_rel.into_owned())),
+                ));
+            }
+        }
+        (Some(Value::Object(left)), Some(Value::Object(right))) => {
+            let relabels = left
+                .keys()
+                .any(|key| key_relabels(key, None, Side::Stated, pairing))
+                || right
+                    .keys()
+                    .any(|key| key_relabels(key, None, Side::Written, pairing));
+            if relabels {
+                let left_rel = relabel(&Value::Object(left.clone()), Side::Stated, pairing);
+                let right_rel = relabel(&Value::Object(right.clone()), Side::Written, pairing);
+                leaves(Some(&left_rel), Some(&right_rel), pointer, out);
+                return;
+            }
+            let same_keys = left.len() == right.len()
+                && left
+                    .keys()
+                    .zip(right.keys())
+                    .all(|(left_key, right_key)| left_key == right_key);
+            if same_keys {
+                for ((key, left_value), (_, right_value)) in left.iter().zip(right.iter()) {
+                    let length = pointer.len();
+                    push_pointer_key(pointer, key);
+                    leaves_paired(Some(left_value), Some(right_value), pairing, pointer, out);
+                    pointer.truncate(length);
+                }
+            } else {
+                for key in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
+                    let length = pointer.len();
+                    push_pointer_key(pointer, key);
+                    leaves_paired(left.get(key), right.get(key), pairing, pointer, out);
+                    pointer.truncate(length);
+                }
+            }
+        }
+        (Some(Value::Array(left)), Some(Value::Array(right))) if left.len() == right.len() => {
+            for (index, (left, right)) in left.iter().zip(right).enumerate() {
+                let length = pointer.len();
+                push_pointer_index(pointer, index);
+                leaves_paired(Some(left), Some(right), pairing, pointer, out);
+                pointer.truncate(length);
+            }
+        }
+        (
+            Some(left @ (Value::Null | Value::Bool(_) | Value::Number(_))),
+            Some(right @ (Value::Null | Value::Bool(_) | Value::Number(_))),
+        ) => {
+            if cadmpeg_ir::compare::values_agree(left, right).is_err() {
+                out.push((pointer.clone(), Some(left.clone()), Some(right.clone())));
+            }
+        }
+        (Some(left), Some(right)) => {
+            let left_rel = relabel(left, Side::Stated, pairing);
+            let right_rel = relabel(right, Side::Written, pairing);
+            if cadmpeg_ir::compare::values_agree(&left_rel, &right_rel).is_err() {
+                out.push((pointer.clone(), Some(left_rel), Some(right_rel)));
+            }
+        }
+        (None, None) => {}
+        (left, right) => out.push((
+            pointer.clone(),
+            left.map(|value| relabel(value, Side::Stated, pairing)),
+            right.map(|value| relabel(value, Side::Written, pairing)),
+        )),
+    }
+}
+
 /// Pushes each leaf at which `stated` and `written` disagree.
 fn leaves(
     stated: Option<&Value>,
@@ -846,8 +1087,7 @@ fn leaves(
         (Some(Value::Object(left)), Some(Value::Object(right))) => {
             for key in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
                 let length = pointer.len();
-                pointer.push('/');
-                pointer.push_str(&key.replace('~', "~0").replace('/', "~1"));
+                push_pointer_key(pointer, key);
                 leaves(left.get(key), right.get(key), pointer, out);
                 pointer.truncate(length);
             }
@@ -855,8 +1095,7 @@ fn leaves(
         (Some(Value::Array(left)), Some(Value::Array(right))) if left.len() == right.len() => {
             for (index, (left, right)) in left.iter().zip(right).enumerate() {
                 let length = pointer.len();
-                pointer.push('/');
-                pointer.push_str(&index.to_string());
+                push_pointer_index(pointer, index);
                 leaves(Some(left), Some(right), pointer, out);
                 pointer.truncate(length);
             }

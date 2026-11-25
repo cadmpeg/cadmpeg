@@ -13,7 +13,7 @@ macro_rules! scalar {
     ($($owner:ty),*) => {$(
         impl RewriteIdentities for $owner {
             fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> { Ok(()) }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, _ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> { Ok(self) }
+            fn rewrite_identities(self, _ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_>) -> Result<Self, CodecError> { Ok(self) }
         }
     )*};
 }
@@ -38,10 +38,10 @@ impl RewriteIdentities for WireMembers {
             Self::Vertex(vertex) => vertex.visit_identity_references(ctx, visitor),
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite ASM wire members")?;
 
@@ -64,10 +64,10 @@ impl RewriteIdentities for FaceSidedness {
             .visit("face-sidedness", self.record_index, visitor)?;
         self.face.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite ASM face sidedness")?;
 

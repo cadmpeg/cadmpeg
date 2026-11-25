@@ -61,13 +61,13 @@ fn numerical_audit_pcurve_keeps_large_finite_direction_and_magnitude() {
     let mut emitter = crate::writer::Emitter::new();
     let line = LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0e200, 0.0)).unwrap();
     assert!(super::pcurve(&mut emitter, &PcurveGeometry::Line(line)).is_some());
-    let lines = emitter.into_lines().expect("finite reals");
+    let lines = emitter.into_lines();
     assert!(lines
         .iter()
         .any(|line| line.contains("DIRECTION('',(1.,0.))")));
     assert!(lines.iter().any(|line| line.contains(&format!(
         "VECTOR('',#2,{})",
-        crate::writer::Emitter::new().real(1.0e200)
+        crate::writer::Emitter::real(1.0e200)
     ))));
     let mut emitter = crate::writer::Emitter::new();
     let line = LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(f64::MAX, f64::MAX)).unwrap();
@@ -89,15 +89,15 @@ fn conical_surface_emits_a_positive_half_angle_and_reversed_axis() {
     .unwrap();
     let mut emitter = crate::writer::Emitter::new();
     assert!(surface(&mut emitter, &SolvedSurfaceGeometry::Cone(cone)).is_some());
-    let lines = emitter.into_lines().expect("finite reals");
+    let lines = emitter.into_lines();
     let emitted = lines
         .iter()
         .find(|line| line.contains("CONICAL_SURFACE("))
         .expect("the cone emits a CONICAL_SURFACE carrier");
     assert!(emitted.ends_with(&format!(
         ",{},{});",
-        crate::writer::Emitter::new().real(5.0),
-        crate::writer::Emitter::new().real(0.715_584_993_317_674_8)
+        crate::writer::Emitter::real(5.0),
+        crate::writer::Emitter::real(0.715_584_993_317_674_8)
     )));
     assert!(lines
         .iter()
@@ -243,7 +243,7 @@ fn a_direction_whose_length_overflows_keeps_its_orientation() {
         cadmpeg_ir::units::DirectionAboveEpsilon::new(Vector3::new(1.3e308, 1.3e308, 0.0))
             .expect("finite nonzero direction");
     super::direction(&mut emitter, direction);
-    let lines = emitter.into_lines().expect("finite reals");
+    let lines = emitter.into_lines();
     let [line] = lines.as_slice() else {
         panic!("one DIRECTION record: {lines:?}");
     };
@@ -268,25 +268,23 @@ fn a_zero_vector_cannot_be_emitted_as_a_direction() {
     assert!(cadmpeg_ir::units::DirectionAboveEpsilon::new(Vector3::new(0.0, 0.0, 0.0)).is_none());
 }
 
-/// The section written for one transformation operator over `rows`.
-fn operator_section(rows: [[f64; 4]; 3]) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+/// The section written for one transformation operator over `rows`, or
+/// `None` where no operator was written.
+fn operator_section(rows: [[f64; 4]; 3]) -> Option<Vec<String>> {
     let transform = Transform::affine(rows).expect("affine transform");
     let mut emitter = crate::writer::Emitter::new();
-    super::transformation_operator(&mut emitter, transform);
-    emitter.into_lines()
+    super::transformation_operator(&mut emitter, transform)?;
+    Some(emitter.into_lines())
 }
 
-/// A transform with no `CARTESIAN_TRANSFORMATION_OPERATOR_3D` statement
-/// refuses the section.
-fn assert_operator_is_refused(rows: [[f64; 4]; 3]) {
-    let written = operator_section(rows);
-    let Err(error) = written else {
-        panic!("{written:?}");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-        "{error}"
-    );
+/// A transform with no `CARTESIAN_TRANSFORMATION_OPERATOR_3D` statement has
+/// no operator, and nothing is written for it.
+fn assert_no_operator(rows: [[f64; 4]; 3]) {
+    let transform = Transform::affine(rows).expect("affine transform");
+    assert!(!super::states_similarity(&transform));
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(super::transformation_operator(&mut emitter, transform).is_none());
+    assert!(emitter.into_lines().is_empty());
 }
 
 /// `CARTESIAN_TRANSFORMATION_OPERATOR_3D` states a similarity: three axis
@@ -307,33 +305,33 @@ fn a_transformation_operator_states_a_similarity() {
     );
 }
 
-/// A shear is refused, where it was written as the rotation of its
+/// A shear has no operator, where it was written as the rotation of its
 /// normalized columns.
 #[test]
-fn a_transformation_operator_refuses_a_shear() {
-    assert_operator_is_refused([
+fn a_shear_has_no_transformation_operator() {
+    assert_no_operator([
         [1.0, 0.5, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
     ]);
 }
 
-/// A non-uniform scale is refused, where it was written with the scale of
-/// its first column.
+/// A non-uniform scale has no operator, where it was written with the scale
+/// of its first column.
 #[test]
-fn a_transformation_operator_refuses_a_non_uniform_scale() {
-    assert_operator_is_refused([
+fn a_non_uniform_scale_has_no_transformation_operator() {
+    assert_no_operator([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 3.0, 0.0, 0.0],
         [0.0, 0.0, 2.0, 0.0],
     ]);
 }
 
-/// A zero column is refused, where it was written as the direction
+/// A zero column has no operator, where it was written as the direction
 /// `(0,0,1)`.
 #[test]
-fn a_transformation_operator_refuses_a_zero_column() {
-    assert_operator_is_refused([
+fn a_zero_column_has_no_transformation_operator() {
+    assert_no_operator([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
@@ -349,7 +347,7 @@ fn rigid_placements_are_written_into_their_carriers() {
     let emit = |write: &dyn Fn(&mut crate::writer::Emitter) -> Option<crate::writer::Ref>| {
         let mut e = crate::writer::Emitter::new();
         write(&mut e).expect("carrier is writable");
-        e.into_lines().expect("finite reals").join("\n")
+        e.into_lines().join("\n")
     };
     // A quarter turn about z, then a move to (10, 20, 30).
     let turn = Transform::affine([

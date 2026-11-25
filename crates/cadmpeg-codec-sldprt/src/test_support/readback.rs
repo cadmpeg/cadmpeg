@@ -37,19 +37,37 @@ pub(crate) enum EntryChange {
 /// Every record of `stated` that `written` does not state the same way.
 pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
     let left = Document::of(stated).expect("the stated document serializes");
-    let right = Document::of(written).expect("the written document serializes");
-    let pairing = pair(&left, &right);
+    diff_with_left(stated, &left, written)
+}
+
+/// Every record of `stated` (with precomputed [`Document`] `left`) that
+/// `written` does not state the same way.
+pub(crate) fn diff_with_left(stated: &CadIr, left: &Document, written: &CadIr) -> Vec<Entry> {
+    let written_neutral = written
+        .to_neutral_json_value()
+        .expect("the written document serializes");
+    let right = Document::from_neutral_value(written, written_neutral.clone())
+        .expect("the written document serializes");
+    let pairing = pair(left, &right);
     let mut renames = pairing.renames().clone();
     for id in right.ids().filter(|id| id.starts_with("sldprt:")) {
         if !renames.contains_key(id) {
             renames.insert(id.to_owned(), format!("{id}:written"));
         }
     }
-    let renamed = edited_json(written, &mut |value| rename(value, &renames), &|id| {
-        renames.get(id).cloned().unwrap_or_else(|| id.to_owned())
-    });
-    let renamed_records = Document::of(&renamed).expect("the renamed document serializes");
+    let renamed = apply_edited_json(
+        written,
+        written_neutral,
+        &mut |value| rename(value, &renames),
+        &|id| renames.get(id).cloned().unwrap_or_else(|| id.to_owned()),
+    );
     let diff = cadmpeg_ir::diff::diff(stated, &renamed);
+    let has_added = diff
+        .per_arena
+        .iter()
+        .any(|arena| !matches!(arena.kind, ArenaKind::Native { .. }) && !arena.added.is_empty());
+    let renamed_records =
+        has_added.then(|| Document::of(&renamed).expect("the renamed document serializes"));
     let mut entries = Vec::new();
     for arena in diff.per_arena {
         if matches!(arena.kind, ArenaKind::Native { .. }) {
@@ -62,9 +80,14 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
             change,
             content: None,
         };
-        entries.extend(arena.added.into_iter().map(|id| Entry {
-            content: renamed_records.find(&id).map(content),
-            ..entry(id, EntryChange::Added)
+        entries.extend(arena.added.into_iter().map(|id| {
+            Entry {
+                content: renamed_records
+                    .as_ref()
+                    .and_then(|records| records.find(&id))
+                    .map(content),
+                ..entry(id, EntryChange::Added)
+            }
         }));
         entries.extend(
             arena
@@ -184,11 +207,17 @@ fn rename(value: &mut Value, renames: &HashMap<String, String>) {
         }
         Value::Array(items) => items.iter_mut().for_each(|item| rename(item, renames)),
         Value::Object(entries) => {
-            let taken = std::mem::take(entries);
-            for (key, mut item) in taken {
-                rename(&mut item, renames);
-                let key = renames.get(&key).cloned().unwrap_or(key);
-                entries.insert(key, item);
+            if entries.keys().any(|key| renames.contains_key(key.as_str())) {
+                let taken = std::mem::take(entries);
+                for (key, mut item) in taken {
+                    rename(&mut item, renames);
+                    let key = renames.get(&key).cloned().unwrap_or(key);
+                    entries.insert(key, item);
+                }
+            } else {
+                for item in entries.values_mut() {
+                    rename(item, renames);
+                }
             }
         }
         _ => {}
@@ -198,7 +227,6 @@ fn rename(value: &mut Value, renames: &HashMap<String, String>) {
 /// What `part` reads back as when the semantic writer writes it with no
 /// edit: the differences every edited write of it has as well.
 pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::sync::Mutex;
 
     static BASELINES: Mutex<Vec<(String, Vec<Entry>)>> = Mutex::new(Vec::new());
@@ -230,9 +258,8 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
         &mut bytes,
     )
     .map(|_| {
-        let written = crate::SldprtCodec
-            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-            .expect("the unedited write decodes");
+        let written =
+            crate::decode::decode_for_read_back(&bytes).expect("the unedited write decodes");
         diff(part.ir(), written.ir())
     })
     .unwrap_or_default();
@@ -329,14 +356,25 @@ pub(crate) fn edited_json(
     edit: &mut dyn FnMut(&mut Value),
     id: &dyn Fn(&str) -> String,
 ) -> CadIr {
-    let mut value = serde_json::to_value(ir).expect("the document serializes");
+    let value = serde_json::to_value(ir).expect("the document serializes");
+    apply_edited_json(ir, value, edit, id)
+}
+
+fn apply_edited_json(
+    ir: &CadIr,
+    mut value: Value,
+    edit: &mut dyn FnMut(&mut Value),
+    id: &dyn Fn(&str) -> String,
+) -> CadIr {
     edit(&mut value);
     let mut edited = CadIr::from_projection(value).expect("the edited document reads");
     macro_rules! arenas {
         ($($arena:ident),*) => {$(
-            let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
-            edit(&mut value);
-            edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+            if !ir.model.$arena.is_empty() {
+                let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
+                edit(&mut value);
+                edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+            }
         )*};
     }
     arenas!(
