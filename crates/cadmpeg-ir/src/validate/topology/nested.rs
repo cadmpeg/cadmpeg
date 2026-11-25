@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -9,12 +11,14 @@ use crate::validate::geometry_consistency::check_edge_endpoint_consistency;
 use crate::validate::identity_order::check_identity_and_order;
 use crate::validate::referential_integrity::check_typed_references;
 
-/// The rules of one nested topology, checked as the geometry of a document
-/// of its own at its document's `tolerances` (part 10, Coincidence).
+/// Checks `geometry` as a model of its own at its document's `tolerances`
+/// (part 10, Coincidence). `file_keys` are the keys of the `File`
+/// definitions of the document that holds it.
 pub(in crate::validate) fn check(
     ctx: &DecodeContext<'_>,
     tolerances: Tolerances,
     geometry: Topology,
+    file_keys: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("nested topology validation")?;
@@ -22,7 +26,7 @@ pub(in crate::validate) fn check(
     nest.tolerances = tolerances;
     nest.geometry = geometry;
     let index = ModelIndex::build(&nest);
-    check_identity_and_order(&index, findings)?;
+    check_identity_and_order(&index, file_keys, findings)?;
     super::check_references(ctx, &nest, &index, findings)?;
     check_typed_references(ctx, &nest, &index, findings)?;
     super::graphs::check_coedge_pairing(&nest, findings)?;
@@ -46,9 +50,50 @@ mod tests {
             &ctx,
             crate::units::Tolerances::default(),
             crate::document::Topology::default(),
+            &std::collections::BTreeSet::new(),
             &mut Vec::new(),
         )
         .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn a_nest_reads_the_file_keys_of_the_document_that_holds_it() {
+        let topology = crate::document::Topology {
+            bodies: vec![crate::topology::Body {
+                unstated: None,
+                id: "f3d:member.f3d@brep:entity#1".try_into().unwrap(),
+                kind: crate::topology::BodyKind::Solid,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+                native_ref: None,
+            }],
+            ..crate::document::Topology::default()
+        };
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let unqualified = |file_keys: &std::collections::BTreeSet<&str>| {
+            let mut findings = Vec::new();
+            super::check(
+                &ctx,
+                crate::units::Tolerances::default(),
+                topology.clone(),
+                file_keys,
+                &mut findings,
+            )
+            .unwrap();
+            findings
+                .iter()
+                .filter(|finding| {
+                    finding.rule.as_str() == "products.entity-id-scope-key-names-no-file"
+                })
+                .count()
+        };
+        assert_eq!(
+            unqualified(&std::collections::BTreeSet::from(["member.f3d"])),
+            0
+        );
+        assert_eq!(unqualified(&std::collections::BTreeSet::new()), 1);
     }
 }

@@ -2,7 +2,7 @@
 //! History bodies: producer and consumer features, and the closure of each
 //! nest under the topology checks.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -45,10 +45,17 @@ fn check_nest(
     ctx: &DecodeContext<'_>,
     tolerances: crate::units::Tolerances,
     body: &HistoryBody,
+    file_keys: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut nested = Vec::new();
-    nested::check(ctx, tolerances, body.topology.to_topology(), &mut nested)?;
+    nested::check(
+        ctx,
+        tolerances,
+        body.topology.to_topology(),
+        file_keys,
+        &mut nested,
+    )?;
     for mut finding in nested {
         finding.message = format!("history body nest: {}", finding.message);
         finding.related.insert(0, body.id.as_str().to_owned());
@@ -72,6 +79,7 @@ pub(super) fn check_history_bodies(
         .iter()
         .map(|feature| feature.id.as_str())
         .collect();
+    let file_keys = super::products::decode_set::file_keys(ir);
     let mut owners = HashSet::new();
     for body in &ir.model.history_bodies {
         let owner = body.id.as_str();
@@ -106,7 +114,7 @@ pub(super) fn check_history_bodies(
                 }
             }
         }
-        check_nest(ctx, ir.tolerances, body, findings)?;
+        check_nest(ctx, ir.tolerances, body, &file_keys, findings)?;
         let geometry = body.topology.to_topology();
         for id in nest_identities(&geometry) {
             if IdentitySet::contains(ids, id) {
