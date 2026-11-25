@@ -23,7 +23,7 @@ use cadmpeg_ir::geometry::sampled::GeometryLayoutError;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -67,6 +67,64 @@ struct Owned<'ir> {
     edges: BTreeSet<&'ir str>,
     vertices: BTreeSet<&'ir str>,
     coedges: BTreeSet<&'ir str>,
+    loops: BTreeSet<&'ir str>,
+    shells: BTreeSet<&'ir str>,
+}
+
+impl<'ir> Owned<'ir> {
+    const fn arena(&self, arena: Arena) -> &BTreeSet<&'ir str> {
+        match arena {
+            Arena::Point => &self.points,
+            Arena::Surface => &self.surfaces,
+            Arena::Curve => &self.curves,
+            Arena::Vertex => &self.vertices,
+            Arena::Edge => &self.edges,
+            Arena::Coedge => &self.coedges,
+            Arena::Loop => &self.loops,
+            Arena::Face => &self.faces,
+            Arena::Shell => &self.shells,
+        }
+    }
+}
+
+/// The arenas of the records that a body owns.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Arena {
+    Point,
+    Surface,
+    Curve,
+    Vertex,
+    Edge,
+    Coedge,
+    Loop,
+    Face,
+    Shell,
+}
+
+impl Arena {
+    /// The arenas whose records bodies under different transforms can
+    /// share, each after the arenas whose records it references.
+    const SHAREABLE: [Self; 5] = [
+        Self::Point,
+        Self::Surface,
+        Self::Curve,
+        Self::Vertex,
+        Self::Edge,
+    ];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Point => "point",
+            Self::Surface => "surface",
+            Self::Curve => "curve",
+            Self::Vertex => "vertex",
+            Self::Edge => "edge",
+            Self::Coedge => "coedge",
+            Self::Loop => "loop",
+            Self::Face => "face",
+            Self::Shell => "shell",
+        }
+    }
 }
 
 fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
@@ -74,6 +132,7 @@ fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
     let mut owned = Owned::default();
     for region in geometry.stated_body_regions(&body.id) {
         for shell_id in region.stated_shells() {
+            owned.shells.insert(shell_id.as_str());
             for shell in geometry.shells.iter().filter(|shell| shell.id == *shell_id) {
                 for member in &shell.members {
                     match member {
@@ -95,6 +154,7 @@ fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
                     .stated()
                     .filter_map(|id| geometry.loops.iter().find(|loop_| loop_.id == *id))
                 {
+                    owned.loops.insert(loop_.id.as_str());
                     owned
                         .vertices
                         .extend(loop_.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
@@ -215,10 +275,13 @@ impl<'ir> Placements<'ir> {
     }
 }
 
-/// The document with a copy, for each body, of each point, curve and surface
-/// that the body shares with a body under another transform, and the body's
-/// references moved to its copies. Fails naming a vertex, edge, coedge,
-/// face or composite curve that two such bodies share.
+/// The document with a copy, for each body, of each point, surface, curve,
+/// vertex and edge that the body shares with a body under another transform,
+/// and of each shared record that references such a copy, with the body's
+/// references moved to its copies. The first body that owns a record keeps
+/// it. Each copy is keyed by its body, so a copy that has no placed image
+/// names only the faces of that body. Fails naming a coedge, loop, face or
+/// shell that two bodies share and whose references move.
 fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
     let bodies = ir
         .geometry
@@ -229,149 +292,261 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
     if bodies.iter().all(|(_, transform, _)| transform.is_none()) {
         return Ok(Cow::Borrowed(ir));
     }
-    let mut owners = BTreeMap::<(&str, &str), Option<Transform>>::new();
-    let mut topology = BTreeMap::<(&'static str, String), BTreeSet<&str>>::new();
-    let mut copies = Vec::new();
-    for (body, transform, owned) in &bodies {
-        let mut shared = BTreeMap::new();
-        for (arena, ids) in [
-            ("point", &owned.points),
-            ("curve", &owned.curves),
-            ("surface", &owned.surfaces),
-        ] {
-            for id in ids {
-                match owners.get(&(arena, *id)) {
-                    None => {
-                        owners.insert((arena, *id), *transform);
+    let mut first = BTreeMap::<(Arena, &str), (usize, Option<Transform>)>::new();
+    for (position, (_, transform, owned)) in bodies.iter().enumerate() {
+        for arena in Arena::SHAREABLE {
+            for id in owned.arena(arena) {
+                first.entry((arena, *id)).or_insert((position, *transform));
+            }
+        }
+    }
+    let curves = ir
+        .geometry
+        .curves
+        .iter()
+        .map(|curve| (curve.id.as_str(), curve))
+        .collect::<BTreeMap<_, _>>();
+    let vertices = ir
+        .geometry
+        .vertices
+        .iter()
+        .map(|vertex| (vertex.id.as_str(), vertex))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect::<BTreeMap<_, _>>();
+    // The shareable records that a shareable record references.
+    let references = |arena: Arena, id: &str| match arena {
+        Arena::Curve => match curves.get(id).and_then(|curve| curve.geometry.solved()) {
+            Some(SolvedCurveGeometry::Composite { segments, .. }) => segments
+                .iter()
+                .map(|segment| (Arena::Curve, segment.curve.as_str()))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        },
+        Arena::Vertex => vertices
+            .get(id)
+            .map(|vertex| vec![(Arena::Point, vertex.point.as_str())])
+            .unwrap_or_default(),
+        Arena::Edge => edges
+            .get(id)
+            .map(|edge| {
+                edge.curve()
+                    .map(|curve| (Arena::Curve, curve.as_str()))
+                    .into_iter()
+                    .chain(
+                        edge.vertices()
+                            .map(|vertex| (Arena::Vertex, vertex.as_str())),
+                    )
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let mut plans = Vec::new();
+    for (position, (body, transform, owned)) in bodies.iter().enumerate() {
+        let mut copies = Copies::default();
+        loop {
+            let mut grew = false;
+            for arena in Arena::SHAREABLE {
+                for id in owned.arena(arena) {
+                    if copies.of(arena, id).is_some() {
+                        continue;
                     }
-                    Some(first) if first != transform => {
-                        let copy = format!(
-                            "iges:writer:{arena}#{}@{}",
-                            id.replace('#', "/"),
-                            body.id.as_str().replace('#', "/")
-                        );
-                        shared.insert(*id, copy);
+                    let Some(&(owner, owner_transform)) = first.get(&(arena, *id)) else {
+                        continue;
+                    };
+                    if owner == position {
+                        continue;
                     }
-                    Some(_) => {}
+                    if owner_transform != *transform
+                        || references(arena, id)
+                            .into_iter()
+                            .any(|(arena, id)| copies.of(arena, id).is_some())
+                    {
+                        copies.insert(arena, id, body.id.as_str());
+                        grew = true;
+                    }
                 }
             }
-        }
-        for (arena, ids) in [
-            ("vertex", &owned.vertices),
-            ("edge", &owned.edges),
-            ("coedge", &owned.coedges),
-            ("face", &owned.faces),
-            ("curve", &owned.curves),
-        ] {
-            for id in ids {
-                topology
-                    .entry((arena, (*id).to_owned()))
-                    .or_default()
-                    .insert(body.id.as_str());
+            if !grew {
+                break;
             }
         }
-        if !shared.is_empty() {
-            copies.push((body.id.as_str(), owned, shared));
+        if !copies.is_empty() {
+            plans.push((position, copies));
         }
     }
-    if copies.is_empty() {
+    if plans.is_empty() {
         return Ok(Cow::Borrowed(ir));
     }
+    let copied_edges = plans
+        .iter()
+        .flat_map(|(_, copies)| copies.sources(Arena::Edge))
+        .collect::<BTreeSet<_>>();
     let mut separated = ir.clone();
-    let geometry = &mut separated.geometry;
-    for (body, owned, shared) in copies {
+    for (position, copies) in &plans {
+        let (body, _, owned) = &bodies[*position];
+        let body = body.id.as_str();
         let failure = |record: &str, reason: &str| {
             naming(record)(CodecError::NotImplemented(format!(
                 "IGES writer places the transform of body {body} into its geometry, and {reason}"
             )))
         };
-        let exclusive = |arena: &'static str, id: &str| {
-            topology
-                .get(&(arena, id.to_owned()))
-                .is_none_or(|owners| owners.len() == 1)
-        };
         let invalid = |id: &str| failure(id, &format!("the copy of {id} has no valid identity"));
-        for point in ir
-            .geometry
-            .points
-            .iter()
-            .filter(|point| shared.contains_key(point.id.as_str()))
-        {
-            let mut copy = point.clone();
-            copy.id = PointId::try_from(shared[point.id.as_str()].clone())
-                .map_err(|_| invalid(point.id.as_str()))?;
-            geometry.points.push(copy);
-        }
-        for curve in ir
-            .geometry
-            .curves
-            .iter()
-            .filter(|curve| shared.contains_key(curve.id.as_str()))
-        {
-            let mut copy = curve.clone();
-            copy.id = CurveId::try_from(shared[curve.id.as_str()].clone())
-                .map_err(|_| invalid(curve.id.as_str()))?;
-            geometry.curves.push(copy);
-        }
-        for surface in ir
-            .geometry
-            .surfaces
-            .iter()
-            .filter(|surface| shared.contains_key(surface.id.as_str()))
-        {
-            let mut copy = surface.clone();
-            copy.id = SurfaceId::try_from(shared[surface.id.as_str()].clone())
-                .map_err(|_| invalid(surface.id.as_str()))?;
-            geometry.surfaces.push(copy);
-        }
-        let moved = |arena: &'static str,
-                     record: &str,
-                     reference: &str|
-         -> Result<Option<String>, Unwritten> {
-            let Some(copy) = shared.get(reference) else {
-                return Ok(None);
-            };
-            if !exclusive(arena, record) {
-                return Err(failure(
-                    record,
-                    &format!("{arena} {record} is shared with a body under another transform"),
-                ));
-            }
-            Ok(Some(copy.clone()))
+        // Whether the body moves the references of the record `id`: its own
+        // copy, or a record that it owns first.
+        let moves = |arena: Arena, id: &str| {
+            copies.is_copy(id)
+                || owned.arena(arena).get(id).is_some_and(|id| {
+                    first
+                        .get(&(arena, *id))
+                        .is_some_and(|(owner, _)| owner == position)
+                })
         };
-        for vertex in geometry
-            .vertices
-            .iter_mut()
-            .filter(|vertex| owned.vertices.contains(vertex.id.as_str()))
-        {
-            if let Some(copy) = moved("vertex", vertex.id.as_str(), vertex.point.as_str())? {
-                vertex.point = PointId::try_from(copy).map_err(|_| invalid(vertex.id.as_str()))?;
+        let exclusive = |arena: Arena, id: &str| {
+            bodies
+                .iter()
+                .filter(|(_, _, owned)| owned.arena(arena).contains(id))
+                .count()
+                == 1
+        };
+        let geometry = &mut separated.geometry;
+        for point in &ir.geometry.points {
+            if let Some(copy) = copies.of(Arena::Point, point.id.as_str()) {
+                let mut point = point.clone();
+                point.id = PointId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
+                geometry.points.push(point);
             }
         }
-        for edge in geometry
-            .edges
-            .iter_mut()
-            .filter(|edge| owned.edges.contains(edge.id.as_str()))
-        {
-            let Some(curve) = edge.curve() else {
+        for surface in &ir.geometry.surfaces {
+            if let Some(copy) = copies.of(Arena::Surface, surface.id.as_str()) {
+                let mut surface = surface.clone();
+                surface.id = SurfaceId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
+                geometry.surfaces.push(surface);
+            }
+        }
+        for curve in &ir.geometry.curves {
+            if let Some(copy) = copies.of(Arena::Curve, curve.id.as_str()) {
+                let mut curve = curve.clone();
+                curve.id = CurveId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
+                geometry.curves.push(curve);
+            }
+        }
+        for vertex in &ir.geometry.vertices {
+            if let Some(copy) = copies.of(Arena::Vertex, vertex.id.as_str()) {
+                let mut vertex = vertex.clone();
+                vertex.id = VertexId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
+                geometry.vertices.push(vertex);
+            }
+        }
+        for edge in &ir.geometry.edges {
+            if let Some(copy) = copies.of(Arena::Edge, edge.id.as_str()) {
+                let mut edge = edge.clone();
+                edge.id = EdgeId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
+                geometry.edges.push(edge);
+            }
+        }
+        let point_copy = |id: &PointId| {
+            copies
+                .of(Arena::Point, id.as_str())
+                .map(|copy| PointId::try_from(copy.to_owned()).map_err(|_| invalid(copy)))
+                .transpose()
+        };
+        let curve_copy = |id: &CurveId| {
+            copies
+                .of(Arena::Curve, id.as_str())
+                .map(|copy| CurveId::try_from(copy.to_owned()).map_err(|_| invalid(copy)))
+                .transpose()
+        };
+        let vertex_copy = |id: &VertexId| {
+            copies
+                .of(Arena::Vertex, id.as_str())
+                .map(|copy| VertexId::try_from(copy.to_owned()).map_err(|_| invalid(copy)))
+                .transpose()
+        };
+        let edge_copy = |id: &EdgeId| {
+            copies
+                .of(Arena::Edge, id.as_str())
+                .map(|copy| EdgeId::try_from(copy.to_owned()).map_err(|_| invalid(copy)))
+                .transpose()
+        };
+        for vertex in &mut geometry.vertices {
+            if !moves(Arena::Vertex, vertex.id.as_str()) {
                 continue;
-            };
-            if let Some(copy) = moved("edge", edge.id.as_str(), curve.as_str())? {
-                let copy = CurveId::try_from(copy).map_err(|_| invalid(edge.id.as_str()))?;
+            }
+            if let Some(copy) = point_copy(&vertex.point)? {
+                vertex.point = copy;
+            }
+        }
+        for edge in &mut geometry.edges {
+            if !moves(Arena::Edge, edge.id.as_str()) {
+                continue;
+            }
+            if let Some(copy) = edge.curve().map(&curve_copy).transpose()?.flatten() {
                 edge.map_curve(|_| copy);
             }
+            if let Some(ends) = &mut edge.ends {
+                if let Some(copy) = vertex_copy(&ends.start)? {
+                    ends.start = copy;
+                }
+                if let Some(copy) = vertex_copy(&ends.end)? {
+                    ends.end = copy;
+                }
+            }
         }
+        for curve in &mut geometry.curves {
+            if !moves(Arena::Curve, curve.id.as_str()) {
+                continue;
+            }
+            let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+                &mut curve.geometry
+            else {
+                continue;
+            };
+            for segment in segments.iter_mut() {
+                if let Some(copy) = curve_copy(&segment.curve)? {
+                    segment.curve = copy;
+                }
+            }
+        }
+        // A coedge, loop, face or shell is not copied: one that another body
+        // also owns keeps the references of the body that owns it first.
+        let unmoved = |arena: Arena, id: &str| {
+            failure(
+                id,
+                &format!(
+                    "{} {id} is shared with a body under another transform",
+                    arena.name()
+                ),
+            )
+        };
         for coedge in geometry
             .coedges
             .iter_mut()
             .filter(|coedge| owned.coedges.contains(coedge.id.as_str()))
         {
-            let Some(use_curve) = &mut coedge.use_curve else {
+            let edge = edge_copy(&coedge.edge)?;
+            let use_curve = coedge
+                .use_curve
+                .as_ref()
+                .map(|use_curve| curve_copy(&use_curve.curve))
+                .transpose()?
+                .flatten();
+            if edge.is_none() && use_curve.is_none() {
                 continue;
-            };
-            if let Some(copy) = moved("coedge", coedge.id.as_str(), use_curve.curve.as_str())? {
-                use_curve.curve =
-                    CurveId::try_from(copy).map_err(|_| invalid(coedge.id.as_str()))?;
+            }
+            if !exclusive(Arena::Coedge, coedge.id.as_str()) {
+                return Err(unmoved(Arena::Coedge, coedge.id.as_str()));
+            }
+            if let Some(edge) = edge {
+                coedge.edge = edge;
+            }
+            if let (Some(copy), Some(use_curve)) = (use_curve, &mut coedge.use_curve) {
+                use_curve.curve = copy;
             }
         }
         for face in geometry
@@ -379,52 +554,168 @@ fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
             .iter_mut()
             .filter(|face| owned.faces.contains(face.id.as_str()))
         {
-            if let Some(copy) = moved("face", face.id.as_str(), face.surface.as_str())? {
-                face.surface = SurfaceId::try_from(copy).map_err(|_| invalid(face.id.as_str()))?;
+            if let Some(copy) = copies.of(Arena::Surface, face.surface.as_str()) {
+                if !exclusive(Arena::Face, face.id.as_str()) {
+                    return Err(unmoved(Arena::Face, face.id.as_str()));
+                }
+                face.surface = SurfaceId::try_from(copy.to_owned()).map_err(|_| invalid(copy))?;
             }
         }
-        // Each composite of the body by its identity in the separated
-        // document, with the identity of its source record.
-        let composites = owned
-            .curves
-            .iter()
-            .filter(|id| !shared.contains_key(**id))
-            .map(|id| ((*id).to_owned(), (*id).to_owned()))
-            .chain(
-                shared
-                    .iter()
-                    .map(|(source, copy)| (copy.clone(), (*source).to_owned())),
-            )
-            .collect::<BTreeMap<_, _>>();
-        for curve in &mut geometry.curves {
-            let Some(source) = composites.get(curve.id.as_str()) else {
+        for loop_ in geometry
+            .loops
+            .iter_mut()
+            .filter(|loop_| owned.loops.contains(loop_.id.as_str()))
+        {
+            if loop_
+                .vertices()
+                .all(|vertex| copies.of(Arena::Vertex, vertex.as_str()).is_none())
+            {
                 continue;
-            };
-            let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
-                &mut curve.geometry
-            else {
-                continue;
-            };
-            let own_copy = shared.contains_key(source.as_str());
-            for segment in segments.iter_mut() {
-                let Some(copy) = shared.get(segment.curve.as_str()) else {
-                    continue;
-                };
-                if !own_copy && !exclusive("curve", source.as_str()) {
-                    return Err(failure(
-                        source.as_str(),
-                        &format!(
-                            "composite curve {source} is shared with a body under another \
-                             transform"
-                        ),
-                    ));
+            }
+            if !exclusive(Arena::Loop, loop_.id.as_str()) {
+                return Err(unmoved(Arena::Loop, loop_.id.as_str()));
+            }
+            let id = loop_.id.as_str().to_owned();
+            match &mut loop_.boundary {
+                LoopBoundary::Vertex { vertex, .. } => {
+                    if let Some(copy) = vertex_copy(vertex)? {
+                        *vertex = copy;
+                    }
                 }
-                segment.curve =
-                    CurveId::try_from(copy.clone()).map_err(|_| invalid(source.as_str()))?;
+                LoopBoundary::Ring(ring) => {
+                    let mut vertex_uses = ring.vertex_uses().to_vec();
+                    for vertex_use in &mut vertex_uses {
+                        if let Some(copy) = vertex_copy(&vertex_use.vertex)? {
+                            vertex_use.vertex = copy;
+                        }
+                    }
+                    *ring = LoopRing::new(ring.coedges().to_vec(), vertex_uses)
+                        .map_err(|error| failure(&id, &format!("loop {id} is invalid: {error}")))?;
+                }
+            }
+        }
+        for shell in geometry
+            .shells
+            .iter_mut()
+            .filter(|shell| owned.shells.contains(shell.id.as_str()))
+        {
+            let copies_member = shell.members.iter().any(|member| match member {
+                ShellMember::WireEdge { id } => copies.of(Arena::Edge, id.as_str()).is_some(),
+                ShellMember::FreeVertex { id } => copies.of(Arena::Vertex, id.as_str()).is_some(),
+                ShellMember::Subd { .. } => false,
+            });
+            if !copies_member {
+                continue;
+            }
+            if !exclusive(Arena::Shell, shell.id.as_str()) {
+                return Err(unmoved(Arena::Shell, shell.id.as_str()));
+            }
+            for member in &mut shell.members {
+                match member {
+                    ShellMember::WireEdge { id } => {
+                        if let Some(copy) = edge_copy(id)? {
+                            *id = copy;
+                        }
+                    }
+                    ShellMember::FreeVertex { id } => {
+                        if let Some(copy) = vertex_copy(id)? {
+                            *id = copy;
+                        }
+                    }
+                    ShellMember::Subd { .. } => {}
+                }
             }
         }
     }
+    if !copied_edges.is_empty() {
+        radial_rings_by_edge(ir, &mut separated, &copied_edges);
+    }
     Ok(Cow::Owned(separated))
+}
+
+/// Moves the radial ring of each coedge whose source edge is in `edges` to
+/// the coedges of its separated edge, in their source ring order.
+fn radial_rings_by_edge(ir: &CadIr, separated: &mut CadIr, edges: &BTreeSet<&str>) {
+    let source = ir
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<BTreeMap<_, _>>();
+    let placed_edges = separated
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| {
+            (
+                coedge.id.as_str().to_owned(),
+                coedge.edge.as_str().to_owned(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for coedge in &mut separated.geometry.coedges {
+        let Some(origin) = source.get(coedge.id.as_str()) else {
+            continue;
+        };
+        if !edges.contains(origin.edge.as_str()) {
+            continue;
+        }
+        let mut next = &origin.radial_next;
+        for _ in 0..source.len() {
+            if *next == coedge.id
+                || placed_edges.get(next.as_str()).map(String::as_str) == Some(coedge.edge.as_str())
+            {
+                coedge.radial_next = next.clone();
+                break;
+            }
+            let Some(record) = source.get(next.as_str()) else {
+                break;
+            };
+            next = &record.radial_next;
+        }
+    }
+}
+
+/// The copies of the shareable records of one body, by arena and source.
+#[derive(Default)]
+struct Copies<'ir> {
+    by_arena: BTreeMap<Arena, BTreeMap<&'ir str, String>>,
+    ids: BTreeSet<String>,
+}
+
+impl<'ir> Copies<'ir> {
+    fn insert(&mut self, arena: Arena, id: &'ir str, body: &str) {
+        let copy = format!(
+            "iges:writer:{}#{}@{}",
+            arena.name(),
+            id.replace('#', "/"),
+            body.replace('#', "/")
+        );
+        self.ids.insert(copy.clone());
+        self.by_arena.entry(arena).or_default().insert(id, copy);
+    }
+
+    fn of(&self, arena: Arena, id: &str) -> Option<&str> {
+        self.by_arena
+            .get(&arena)
+            .and_then(|copies| copies.get(id))
+            .map(String::as_str)
+    }
+
+    fn is_copy(&self, id: &str) -> bool {
+        self.ids.contains(id)
+    }
+
+    fn sources(&self, arena: Arena) -> impl Iterator<Item = &'ir str> + '_ {
+        self.by_arena
+            .get(&arena)
+            .into_iter()
+            .flat_map(|copies| copies.keys().copied())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
 }
 
 /// The cylinder, cone, sphere and torus supports of bodies that the writer
