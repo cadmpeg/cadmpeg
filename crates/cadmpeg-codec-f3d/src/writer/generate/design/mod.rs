@@ -233,6 +233,9 @@ pub(super) struct NeutralDesign<'a> {
     /// The scope's geometry feature, written as a timeline item in place of
     /// the Base Feature where the rows of [`item::plan`] allow it.
     item: Decision<'a>,
+    /// The stateful features after the timeline marker, rolled back with
+    /// their definitions, in timeline order.
+    rolled: Vec<Item<'a>>,
     /// The position in `sketches.items` of the first `Sketch` item after the
     /// timeline marker; `sketches.items.len()` where the marker stands after
     /// the last item.
@@ -312,6 +315,16 @@ pub(super) fn plan<'a>(
             None => decide(whole),
         }
     };
+    let (rolled_items, rolled_reasons) = rolled_back_items(
+        target,
+        scope,
+        &features,
+        rolled,
+        &sketches,
+        &mut parameters,
+        item.item()
+            .map_or(Some(ordinal), |item| item.next_ordinal(ordinal)),
+    );
     let rolled_back = features[rolled..].iter().copied().collect::<BTreeSet<_>>();
     let marker = sketches
         .items
@@ -320,10 +333,16 @@ pub(super) fn plan<'a>(
         .unwrap_or(sketches.items.len());
     let written_marker = features.get(rolled).copied().map(|before| Marker {
         before,
-        first_item: sketches.items.get(marker).is_some_and(|planned| {
-            planned.feature == before && !sketches.planes.iter().any(|plane| plane.first == marker)
-        }),
+        first_item: match rolled_items.first() {
+            Some(first) if first.after() <= marker => first.feature() == before,
+            _ => sketches.items.get(marker).is_some_and(|planned| {
+                planned.feature == before
+                    && !sketches.planes.iter().any(|plane| plane.first == marker)
+            }),
+        },
     });
+    let writes_rolled =
+        |feature: &FeatureId| rolled_items.iter().any(|item| item.feature() == feature);
     let written = parameters.written().collect::<BTreeSet<_>>();
     let mut owned = BTreeMap::<&FeatureId, Vec<String>>::new();
     for parameter in &target.design.parameters {
@@ -338,11 +357,18 @@ pub(super) fn plan<'a>(
     }
     let unwritten = features
         .iter()
-        .filter(|feature| !sketches.writes(feature) && !item.writes(feature))
+        .filter(|feature| {
+            !sketches.writes(feature) && !item.writes(feature) && !writes_rolled(feature)
+        })
         .map(|feature| {
             let mut notes = Vec::new();
             if rolled_back.contains(*feature) {
-                notes.push("it follows the timeline marker".to_owned());
+                notes.push(match rolled_reasons.get(*feature) {
+                    Some(reason) => format!(
+                        "it follows the timeline marker, and the writer writes no rolled-back item for it: {reason}"
+                    ),
+                    None => "it follows the timeline marker".to_owned(),
+                });
             }
             if let Some(reason) = sketches.unwritten.get(*feature) {
                 notes.push(format!("its sketch {reason}"));
@@ -380,7 +406,7 @@ pub(super) fn plan<'a>(
         "writes these features after the timeline marker, rolled back with their definitions and without their states",
         features[rolled..]
             .iter()
-            .filter(|feature| sketches.writes(feature))
+            .filter(|feature| sketches.writes(feature) || writes_rolled(feature))
             .map(ToString::to_string),
     ));
     losses.extend(unwritten_records(target, scope, written_marker));
@@ -390,10 +416,52 @@ pub(super) fn plan<'a>(
         parameters,
         sketches,
         item,
+        rolled: rolled_items,
         marker,
         base_feature,
         losses,
     }))
+}
+
+/// The stateful features from position `rolled` of `features`, the scope's
+/// features in timeline order, that the writer writes after the timeline
+/// marker with their definitions, with the reason for each it does not
+/// write. Their parameters take the source ordinals from `ordinal`; `None`
+/// where the item's parameters take the last.
+fn rolled_back_items<'a>(
+    target: &'a CadIr,
+    scope: &'a DesignScope,
+    features: &[&'a FeatureId],
+    rolled: usize,
+    sketches: &SketchPlan<'a>,
+    parameters: &mut ParameterPlan,
+    ordinal: Option<u32>,
+) -> (Vec<Item<'a>>, BTreeMap<&'a FeatureId, &'static str>) {
+    let mut items = Vec::new();
+    let mut reasons = BTreeMap::new();
+    let mut ordinal = ordinal;
+    for (position, feature) in features.iter().enumerate().skip(rolled) {
+        if target.is_stateless(feature, None).unwrap_or(false) {
+            continue;
+        }
+        let planned = ordinal
+            .ok_or("its parameters exceed the source ordinals")
+            .and_then(|next| {
+                item::rolled_back(
+                    target, scope, features, position, sketches, parameters, next,
+                )
+            });
+        match planned {
+            Ok(planned) => {
+                ordinal = ordinal.and_then(|next| planned.next_ordinal(next));
+                items.push(planned);
+            }
+            Err(reason) => {
+                reasons.insert(*feature, reason);
+            }
+        }
+    }
+    (items, reasons)
 }
 
 /// The timeline marker the history-true form writes.
@@ -495,12 +563,14 @@ impl NeutralDesign<'_> {
             self.parameters.written_count(),
             &self.sketches,
             item,
+            &self.rolled,
         )?;
         let timeline_value = roster::ContextValue::of(
             self.parameters.names(),
             &self.sketches.items,
             &self.sketches.planes,
             item,
+            &self.rolled,
         );
         let ctx = roster::Context {
             marker: self.marker,

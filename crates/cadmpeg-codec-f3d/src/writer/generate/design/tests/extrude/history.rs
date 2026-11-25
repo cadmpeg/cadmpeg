@@ -15,7 +15,7 @@ use crate::loss::F3dLossCode;
 
 use super::super::sketch::{feature, feature_id};
 use super::super::write_bytes_as;
-use super::{blind, kinds, loss, sketch_and_extrude, EVALUATION_MISSING, EXTRUDE};
+use super::{blind, extrude, kinds, loss, sketch_and_extrude, EVALUATION_MISSING, EXTRUDE};
 
 /// The decoded rollback of the one decoded timeline, and its members.
 fn decoded_rollback(decoded: &CadIr) -> (Option<Rollback>, Vec<Member>) {
@@ -147,4 +147,58 @@ fn a_run_whose_feature_has_no_state_writes_the_geometry_true_form() {
         )),
         "{missing}"
     );
+}
+
+#[test]
+fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let second = feature(
+        "second",
+        FeatureOperation::Extrude(Box::new(extrude(blind()))),
+    );
+    let second_id = second.id.clone();
+    ir.design.features.push(second);
+    let Some(Container::Ordered {
+        members, rollback, ..
+    }) = ir.design.containers.first_mut()
+    else {
+        panic!("the cube's timeline");
+    };
+    members.insert(2, Member::Feature(second_id.clone()));
+    *rollback = Some(Rollback::Before(Member::Feature(second_id.clone())));
+    ir.design.scopes[0].current[0].at = Position::After(Member::Feature(
+        FeatureId::mint(EXTRUDE).expect("identity grammar"),
+    ));
+
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(rollback, Some(Rollback::Before(members[2].clone())));
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    let mut features = decoded.model.features.iter().collect::<Vec<_>>();
+    features.sort_by_key(|feature| feature.ordinal);
+    let names = features
+        .iter()
+        .filter_map(|feature| feature.name.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["Sketch 1", "Extrude 1", "Extrude 2"]);
+    let missing = loss(&report, EVALUATION_MISSING);
+    let rolled = missing
+        .iter()
+        .find(|message| message.contains("after the timeline marker, rolled back"))
+        .unwrap_or_else(|| panic!("{missing:#?}"));
+    assert!(rolled.contains(second_id.as_str()), "{rolled}");
+    assert!(
+        missing
+            .iter()
+            .all(|message| !message.contains("writes no rolled-back item")),
+        "{missing:#?}"
+    );
+    let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+    assert!(residual.contains("DR-1032"), "{residual}");
 }

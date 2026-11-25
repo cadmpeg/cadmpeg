@@ -164,6 +164,33 @@ impl ResultRecords {
     }
 }
 
+/// Where an item stands in the timeline: its first persistent identity, its
+/// family ordinal and, for an item after the timeline marker, its
+/// rolled-back body.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::writer::generate::design) struct Place {
+    pub(in crate::writer::generate::design) identity: u64,
+    /// The item's ordinal among the items of its family, from `1`.
+    pub(in crate::writer::generate::design) ordinal: u32,
+    pub(in crate::writer::generate::design) rolled: Option<RolledBody>,
+}
+
+/// The result body of an item after the timeline marker (f3d.md §3.1,
+/// "Records of a rolled-back Extrude"): a body-reference record that no
+/// body-map pair binds, its Scene node, box and auxiliary record, and its
+/// hidden browser node.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::writer::generate::design) struct RolledBody {
+    pub(in crate::writer::generate::design) reference: u32,
+    pub(in crate::writer::generate::design) scene: [u32; 3],
+    pub(in crate::writer::generate::design) node: u32,
+}
+
+/// The GUID of the browser node `node` of a rolled-back body.
+pub(super) fn rolled_node_guid(ctx: &Context<'_>, node: u32) -> String {
+    ctx.values.lower_guid(&format!("rolled-body-node-{node}"))
+}
+
 /// A record-index source for an item's records: each call takes the index
 /// after the last from `next` and pushes the record's type row to `rows`.
 pub(super) fn allocator<'r>(
@@ -242,9 +269,13 @@ pub(super) struct Swept<'a> {
     pub(super) sketch_records: &'a SketchRecords,
     /// The browser node of the result body and its GUID.
     pub(super) node: u32,
-    node_guid: &'a str,
+    node_guid: String,
     /// The scope's first persistent identity `E`.
     identity: u64,
+    /// The item's ordinal among the items of its family, from `1`.
+    ordinal: u32,
+    /// Whether the item stands after the timeline marker.
+    rolled_back: bool,
     /// The timestamp of every record-timestamp table entry.
     pub(super) stamp: u64,
     /// The asset GUID of the profile selection and its identities.
@@ -255,14 +286,14 @@ pub(super) struct Swept<'a> {
 }
 
 impl<'a> Swept<'a> {
-    /// The writer of the `family` item with scope `scope` after `preceding`
-    /// timeline items, whose profile lies on sketch `sketch`.
+    /// The writer of the `family` item with scope `scope` at `place`, whose
+    /// profile lies on sketch `sketch`.
     pub(super) fn new(
         ctx: &'a Context<'a>,
         family: &'a str,
         scope: &'a ScopeRecords,
         sketch: usize,
-        preceding: usize,
+        place: &Place,
     ) -> Result<Self, CodecError> {
         let missing_sketch = || CodecError::malformed(format_args!("{family} sketch {sketch}"));
         let planned = ctx.sketches.get(sketch).ok_or_else(missing_sketch)?;
@@ -272,14 +303,20 @@ impl<'a> Swept<'a> {
             .items
             .get(sketch)
             .ok_or_else(missing_sketch)?;
-        let (body, roster_body) = ctx
-            .roster
-            .bodies
-            .first()
-            .zip(ctx.bodies.first())
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("the {family} design has no body"))
-            })?;
+        let (node, node_guid) = match place.rolled {
+            Some(rolled) => (rolled.node, rolled_node_guid(ctx, rolled.node)),
+            None => {
+                let (body, roster_body) = ctx
+                    .roster
+                    .bodies
+                    .first()
+                    .zip(ctx.bodies.first())
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!("the {family} design has no body"))
+                    })?;
+                (body.node, roster_body.node_guid.clone())
+            }
+        };
         Ok(Self {
             ctx,
             family,
@@ -288,9 +325,11 @@ impl<'a> Swept<'a> {
             sketch_index: sketch,
             sketch: planned,
             sketch_records,
-            node: body.node,
-            node_guid: &roster_body.node_guid,
-            identity: persistent_id(preceding)?,
+            node,
+            node_guid,
+            identity: place.identity,
+            ordinal: place.ordinal,
+            rolled_back: place.rolled.is_some(),
             stamp: ctx.values.stamps.scope,
             asset: crate::manifest::GENERATED_ASSET_FOLDER_GUID,
             context: ctx.values.lower_guid("component-a"),
@@ -300,27 +339,33 @@ impl<'a> Swept<'a> {
     /// The end of the scope frame: the current history state, the family
     /// name, the 78-byte item tail and the paired record; then the scope's
     /// record-timestamp table, which lists the start record `start`, and its
-    /// item-tail companion.
+    /// item-tail companion. An item after the timeline marker names no
+    /// history state and has no current result.
     pub(super) fn tail(&self, out: &mut DesignRecords, start: u32) -> Result<(), CodecError> {
         let scope = self.scope;
-        // The 78-byte item tail: family ordinal 1, no label, state bytes
-        // `00 00 00`, the preceding state, the evaluation values, `s0 = s1 =
-        // 0`.
-        out.u32(HEAD_STATE)
+        let ([current, preceding], flag) = if self.rolled_back {
+            ([0, 0], 1)
+        } else {
+            ([HEAD_STATE, ROOT_STATE], 0)
+        };
+        // The 78-byte item tail: the family ordinal, no label, state bytes
+        // `00 00 00`, the preceding state, the evaluation values, `s0` and
+        // `s1`.
+        out.u32(current)
             .lp_utf16(self.family)?
-            .u32(1)
+            .u32(self.ordinal)
             .u32(0)
             .u32(0)
             .u32(0)
             .zeros(3)
             .reference(scope.tracked)
             .byte(0)
-            .u32(ROOT_STATE)
+            .u32(preceding)
             .u32(EPOCH)
             .f64(DURATION)
             .u32(EPOCH)
             .reference(scope.companion)
-            .raw(&[1, 0, 0])
+            .raw(&[1, flag, flag])
             .reference(scope.stamps)
             .zeros(2);
         self.paired(out, scope.record);
@@ -575,7 +620,7 @@ impl<'a> Swept<'a> {
         let text = sorted.concat();
         out.record(&classes.body, records.body)
             .zeros(11)
-            .lp_utf16(self.node_guid)?
+            .lp_utf16(&self.node_guid)?
             .u32(0)
             .u32(1)
             .lp_ascii(&text)?

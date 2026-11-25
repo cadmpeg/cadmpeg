@@ -99,15 +99,6 @@ fn persistent_id(items: usize) -> Result<u64, CodecError> {
         .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
 }
 
-/// The next value of the persistent-identity counter after `items` `Sketch`
-/// and `WorkPlane` items and the `Base Feature`, or the geometry item with
-/// its two identities.
-pub(super) fn next_identity(items: usize, item: bool) -> Result<u64, CodecError> {
-    persistent_id(items)?
-        .checked_add(if item { 2 } else { 1 })
-        .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
-}
-
 /// The bodies of `target`'s B-rep stream as one `Base Feature` after
 /// `items` `Sketch` and `WorkPlane` items stores them.
 pub(super) fn plan(target: &CadIr, items: usize) -> Result<BaseFeaturePlan<'_>, CodecError> {
@@ -334,7 +325,7 @@ impl BaseFeaturePlan<'_> {
             sketches: &[],
             planes: &[],
             persistent_id: self.persistent_id,
-            item: None,
+            geometry: Vec::new(),
             context_value: 0,
         };
         writer.timeline(&mut out)?;
@@ -379,10 +370,9 @@ impl BaseFeaturePlan<'_> {
         out: &mut DesignRecords,
     ) -> Result<(), CodecError> {
         let mut indices = Indices::roster();
-        let item = ctx
+        let geometry = ctx
             .roster
-            .item
-            .as_ref()
+            .geometry()
             .map(|records| {
                 let profile = ctx
                     .roster
@@ -399,8 +389,8 @@ impl BaseFeaturePlan<'_> {
                     })?;
                 Ok::<_, CodecError>(GeometryItem { records, profile })
             })
-            .transpose()?;
-        if item.is_some() {
+            .collect::<Result<Vec<_>, _>>()?;
+        if ctx.roster.item.is_some() {
             indices.item = None;
         }
         let classes = Classes::of(ctx)?;
@@ -429,7 +419,7 @@ impl BaseFeaturePlan<'_> {
             persistent_id: persistent_id(
                 ctx.roster.sketches.items.len() + ctx.roster.planes.len(),
             )?,
-            item,
+            geometry,
             context_value: ctx.timeline_value.value(),
         };
         writer.timeline(out)?;
@@ -698,8 +688,9 @@ struct Writer<'a> {
     planes: &'a [PlaneRecords],
     /// The `Base Feature` scope's persistent identity.
     persistent_id: u64,
-    /// The geometry item written in place of the `Base Feature`.
-    item: Option<GeometryItem<'a>>,
+    /// The geometry items in timeline order: the item written in place of
+    /// the `Base Feature`, then the items after the timeline marker.
+    geometry: Vec<GeometryItem<'a>>,
     /// The timeline context value.
     context_value: u64,
 }
@@ -721,14 +712,14 @@ impl Writer<'_> {
     /// The `Sketch`, `WorkPlane` and geometry items in timeline order.
     fn items(&self) -> Vec<TimelineItem<'_>> {
         let mut items = Vec::with_capacity(self.sketches.len() + self.planes.len() + 1);
+        let geometry = |position: usize| {
+            self.geometry
+                .iter()
+                .filter(move |item| item.records.after() == position)
+                .map(TimelineItem::Geometry)
+        };
         for (position, sketch) in self.sketches.iter().enumerate() {
-            if let Some(item) = self
-                .item
-                .as_ref()
-                .filter(|item| item.records.after() == position)
-            {
-                items.push(TimelineItem::Geometry(item));
-            }
+            items.extend(geometry(position));
             items.extend(
                 self.planes
                     .iter()
@@ -737,13 +728,7 @@ impl Writer<'_> {
             );
             items.push(TimelineItem::Sketch(sketch));
         }
-        if let Some(item) = self
-            .item
-            .as_ref()
-            .filter(|item| item.records.after() == self.sketches.len())
-        {
-            items.push(TimelineItem::Geometry(item));
-        }
+        items.extend(geometry(self.sketches.len()));
         items
     }
 }
@@ -834,23 +819,40 @@ impl Writer<'_> {
         members
     }
 
-    /// The timeline context: the browser nodes of the result bodies, the
-    /// family counter, context value `0`, the component link, the seven
-    /// context records, and the component aggregate after the paired header.
+    /// The timeline context: the browser nodes of the result bodies and of
+    /// the rolled-back bodies, the family counters, the context value, the
+    /// component link, the seven context records, and the component
+    /// aggregate after the paired header.
     fn context(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let indices = self.indices;
+        let nodes = self
+            .bodies
+            .iter()
+            .map(|body| body.node)
+            .chain(
+                self.geometry
+                    .iter()
+                    .filter_map(|item| item.records.place.rolled.map(|body| body.node)),
+            )
+            .collect::<Vec<_>>();
         out.record(&self.classes.context, indices.context)
             .zeros(10)
-            .u32(count(self.bodies.len())?);
-        for body in self.bodies {
-            out.reference(body.node);
+            .u32(count(nodes.len())?);
+        for node in nodes {
+            out.reference(node);
         }
-        let mut counters = Vec::new();
+        let mut counters = Vec::<(&str, u64)>::new();
         if indices.item.is_some() {
             counters.push((FAMILY_COUNTER, 1));
         }
-        if let Some(item) = &self.item {
-            counters.push((item.records.counter(), 1));
+        for item in &self.geometry {
+            match counters
+                .iter_mut()
+                .find(|(name, _)| *name == item.records.counter())
+            {
+                Some((_, value)) => *value += 1,
+                None => counters.push((item.records.counter(), 1)),
+            }
         }
         if !self.sketches.is_empty() {
             counters.push((
@@ -1206,7 +1208,7 @@ impl Writer<'_> {
                     .collect(),
             ));
         }
-        if self.item.is_none() {
+        if self.geometry.is_empty() {
             inputs.sort_by_key(|&(record, _)| record);
         }
         dependents.sort_by_key(|&(record, _)| record);
