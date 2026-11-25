@@ -407,6 +407,8 @@ CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that
 uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
 face incidence and native orientation remain in the native shape record, with
 `fcstd/topology.non-boundary-incidence-retained`.
+A face with no boundary wire on a plane, cylinder, or cone states no boundary; its neutral face is
+partial (CADIR §5.6), with `fcstd/topology.face-boundary-unstated`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`

@@ -1320,6 +1320,9 @@ pub(crate) enum F3dLossCode {
     GeometryNotTransferred,
     /// B-rep topology graph was not built from the container.
     TopologyNotTransferred,
+    /// A face states no loop on a plane, cylinder, or cone; the face is
+    /// stated partial.
+    TopologyFaceBoundaryUnstated,
     /// No ASM BREP stream was found or selected as the document geometry stream.
     MissingGeometryStream,
     /// An `XREF` path cycles through a member already on the resolution stack.
@@ -2219,6 +2222,7 @@ impl F3dLossCode {
         Self::MaterialNotTransferred,
         Self::GeometryNotTransferred,
         Self::TopologyNotTransferred,
+        Self::TopologyFaceBoundaryUnstated,
         Self::MissingGeometryStream,
         Self::XrefCycle,
         Self::XrefMemberMissing,
@@ -3455,6 +3459,7 @@ impl F3dLossCode {
             Self::MaterialNotTransferred => "material.not-transferred",
             Self::GeometryNotTransferred => "geometry.not-transferred",
             Self::TopologyNotTransferred => "topology.not-transferred",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::MissingGeometryStream => "container.missing-geometry-stream",
             Self::XrefCycle => "xref.cycle",
             Self::XrefMemberMissing => "xref.member-missing",
@@ -4344,7 +4349,8 @@ impl F3dLossCode {
             | Self::UnindexedRecordsRetained
             | Self::BodyDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameAmbiguous
-            | Self::WorkPlaneDisplayNameUndecoded => Severity::Warning,
+            | Self::WorkPlaneDisplayNameUndecoded
+            | Self::TopologyFaceBoundaryUnstated => Severity::Warning,
         }
     }
 
@@ -5182,6 +5188,7 @@ impl F3dLossCode {
             | Self::BlendSupportPartial => LossTaxonomy::ProceduralReduced,
             Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
@@ -6096,6 +6103,7 @@ mod tests {
                 "material.not-transferred",
                 "geometry.not-transferred",
                 "topology.not-transferred",
+                "topology.face-boundary-unstated",
                 "container.missing-geometry-stream",
                 "xref.cycle",
                 "xref.member-missing",

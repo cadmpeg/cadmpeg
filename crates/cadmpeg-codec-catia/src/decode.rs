@@ -3795,6 +3795,7 @@ fn decode_result(
     )?;
     body.losses
         .extend(crate::design_v11::state_unproduced(&mut ir));
+    crate::assemble::state_loopless_faces(&mut ir, &mut body.losses);
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {

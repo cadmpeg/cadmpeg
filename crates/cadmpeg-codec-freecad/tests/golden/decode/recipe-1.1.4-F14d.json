@@ -2716,7 +2716,21 @@
       },
       "kind": "classified"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.face-boundary-unstated",
+            "kind": "topology_not_transferred",
+            "namespace": "fcstd",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "payload fcstd:native:shape-payload#DatumPlane:Shape:DatumPlane.Shape.brp face shape 1 states no boundary wire on a plane, which no face covers whole: face fcstd:model:face#DatumPlane:Shape:DatumPlane.Shape.brp:1%40location1 is stated partial",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
