@@ -110,6 +110,23 @@ pub(crate) fn measured_content_digest(
     (digest, measured)
 }
 
+/// The canonical JSON of `ir`, with each record it holds past a bound of
+/// §2.5. The walk admits every depth.
+pub(crate) fn measured_canonical_json(
+    ir: &CadIr,
+) -> Result<(Vec<u8>, crate::bounds::Measured), CanonicalJsonError> {
+    let mut bytes = Vec::new();
+    let mut measure = crate::bounds::Measure::new(&mut bytes);
+    let written = finite_json::write_canonical_json_erased(
+        finite_json::admission::CanonicalAdmission::unlimited(),
+        &mut measure,
+        &|serializer| ir.serialize_erased(serializer),
+    );
+    let measured = measure.finish();
+    written?;
+    Ok((bytes, measured))
+}
+
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,

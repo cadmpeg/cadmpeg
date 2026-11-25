@@ -81,7 +81,7 @@ def low_ram_prebuild_commands(arguments: list[str]) -> list[tuple[int | None, li
     every compiled artifact without rebuilding during the final `--workspace`
     invocation.
     """
-    extra = [arg for arg in arguments[2:] if arg != '--no-fail-fast']
+    extra = [arg for arg in arguments[2:] if arg not in ('--no-fail-fast', '--no-run')]
     base = ['cargo', 'nextest', 'run', '--cargo-quiet', '--no-run']
     stage_core = [
         *base,
