@@ -374,23 +374,14 @@ impl ProfileIndex<'_> {
                 (name.naming_type == i64::from(link.entity_type)).then_some(name.associative_id)
             })
             .collect::<Option<Vec<_>>>()?;
-        // When no edge name selects a curve link, the names are those of the
-        // generated faces and each edge selects the whole curve it runs along.
-        let named = names
-            .iter()
-            .any(|name| self.curves.contains_key(&(token, sketch_ordinal, *name)));
         let mut curves: Vec<(i64, SweepCurve)> = Vec::new();
         let mut owners: Vec<(i64, &SketchEntityId)> = Vec::new();
         for (edge, name) in wire.edges.iter().zip(&names) {
-            let piece = if named {
-                let id = self
-                    .curves
-                    .get(&(token, sketch_ordinal, *name))?
-                    .as_deref()?;
-                Piece::new(&frame, self.by_id.get(id)?, edge)?
-            } else {
-                self.whole_piece(&frame, sketch, edge)?
-            };
+            let id = self
+                .curves
+                .get(&(token, sketch_ordinal, *name))?
+                .as_deref()?;
+            let piece = Piece::new(&frame, self.by_id.get(id)?, edge)?;
             let entity = piece.entity;
             if entity.sketch != sketch.id || entity.construction {
                 return None;
