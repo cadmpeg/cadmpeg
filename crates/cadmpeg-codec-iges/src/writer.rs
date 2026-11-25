@@ -164,6 +164,7 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 mod degrade;
 use degrade::{named, naming, Unwritten};
 mod exact;
+mod placement;
 mod rational_support;
 pub(crate) mod target;
 mod unjoined;
@@ -474,17 +475,17 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     let mut range_losses = Vec::new();
     let ranged = state_open_edge_ranges(lowered.as_ref(), &mut range_losses)?;
     let brep = has_brep_topology(ranged.as_ref());
-    let planar = if brep {
-        Cow::Borrowed(ranged.as_ref())
+    let dissimilar = placement::dissimilar_supports(ranged.as_ref());
+    let admitted = |surface: &str| !brep || dissimilar.contains(surface);
+    let stated = exact::state_pcurves(ranged.as_ref(), admitted);
+    let restated = rational_support::rational_analytic_supports(stated.as_ref(), admitted)?;
+    let (placed, placement_losses) = placement::placed_bodies(restated.as_ref())?;
+    let oriented = if brep {
+        Cow::Borrowed(placed.as_ref())
     } else {
-        exact::state_plane_pcurves(ranged.as_ref())
+        exact::forward_supports(placed.as_ref())
     };
-    let restated = if brep {
-        Cow::Borrowed(planar.as_ref())
-    } else {
-        rational_support::rational_analytic_supports(planar.as_ref())?
-    };
-    let ir = restated.as_ref();
+    let ir = oriented.as_ref();
     let index = TopologyIndex::new(ir);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
@@ -494,6 +495,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     let unbounded_analytic = validate_analytic_surface_context(ir)?;
     let mut losses = partial_losses;
     losses.extend(range_losses);
+    losses.extend(placement_losses);
     losses.extend(unbounded_analytic);
     losses.extend(procedural_reduction_losses(ir)?);
     losses.extend(native_record_losses(ir));
@@ -3349,15 +3351,9 @@ fn validate_trimmed_sheet_topology<'a>(
         }
         named(body.id.as_str(), || {
             let regions = complete_regions(ir, &body.id)?;
-            let ([region], BodyKind::Sheet, false) = (
-                &regions[..],
-                body.kind,
-                body.transform.is_some_and(|transform| {
-                    transform != cadmpeg_ir::transform::Transform::identity()
-                }),
-            ) else {
+            let ([region], BodyKind::Sheet) = (&regions[..], body.kind) else {
                 return Err(CodecError::NotImplemented(format!(
-                    "IGES semantic writer only encodes identity single-face sheet body {}",
+                    "IGES semantic writer only encodes single-face sheet body {}",
                     body.id
                 ))
                 .into());
@@ -3420,7 +3416,7 @@ fn validate_trimmed_sheet_topology<'a>(
         named(face.id.as_str(), || {
             if face.sense != Sense::Forward {
                 return Err(CodecError::NotImplemented(format!(
-                    "IGES Type 144 output cannot encode reversed face sense {}",
+                    "IGES Type 144 output cannot encode reversed face sense {}; the writer reverses the sense only by exchanging the parameters of a plane or B-spline support whose parameter curves are lines or B-spline curves",
                     face.id
                 ))
                 .into());
@@ -3529,7 +3525,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     }
                     if trimmed && coedge.pcurves.is_empty() {
                         return Err(CodecError::NotImplemented(format!(
-                            "IGES Type 144 requires parameter curves for every coedge ({}); the writer computes them only on a plane support, from a line, conic, polyline or NURBS edge curve in that plane",
+                            "IGES Type 144 requires parameter curves for every coedge ({}); the writer computes them on a plane support from a line, conic, polyline or NURBS edge curve in that plane, and on a cylinder, cone, sphere or torus support from an edge line or circle that lies on one parameter line of the support, in loops that close in the parameter plane",
                             loop_.id
                         ))
                         .into());
@@ -5332,24 +5328,6 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
 /// missing. Model content the file has no place for is not refused: the
 /// coverage declares it `Omitted`, and the export wrapper charges it.
 fn reject_unsupported_model(ir: &CadIr) -> Result<(), Unwritten> {
-    for body in &ir.geometry.bodies {
-        let Some(transform) = body
-            .transform
-            .filter(|transform| *transform != cadmpeg_ir::transform::Transform::identity())
-        else {
-            continue;
-        };
-        let reason = if body.kind != BodyKind::Solid || is_decoder_free_geometry_body(body) {
-            "IGES states a body transform only as a Type 124 on a Type 186 solid"
-        } else if rigid_placement(transform).is_none() {
-            "IGES Type 124 Forms 0 and 1 state only a rigid body transform"
-        } else {
-            continue;
-        };
-        return Err(naming(body.id.as_str())(CodecError::NotImplemented(
-            format!("{reason} ({})", body.id),
-        )));
-    }
     for vertex in &ir.geometry.vertices {
         if !ir
             .geometry

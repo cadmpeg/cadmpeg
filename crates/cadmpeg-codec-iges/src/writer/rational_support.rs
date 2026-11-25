@@ -22,11 +22,16 @@ use std::f64::consts::TAU;
 /// restated as the rational B-spline surface that equals it over the domain
 /// its faces' parameter curves bound, and those curves restated on it. A
 /// support whose parameter curves are not all isoparametric stays analytic.
-pub(super) fn rational_analytic_supports(ir: &CadIr) -> Result<Cow<'_, CadIr>, CodecError> {
+/// Only the supports that `admit` names are restated.
+pub(super) fn rational_analytic_supports(
+    ir: &CadIr,
+    admit: impl Fn(&str) -> bool,
+) -> Result<Cow<'_, CadIr>, CodecError> {
     let forms = ir
         .geometry
         .surfaces
         .iter()
+        .filter(|surface| admit(surface.id.as_str()))
         .filter_map(|surface| match &surface.geometry {
             SurfaceGeometry::Solved(geometry) => {
                 Some((surface.id.as_str(), Revolved::of(geometry)?))
@@ -99,11 +104,11 @@ fn pcurve_ends(ir: &CadIr) -> Result<BTreeMap<&str, [Point2; 2]>, CodecError> {
 }
 
 /// An analytic surface as `O + ρ(v)(cos u X + k sin u Y) + h(v) Z`.
-struct Revolved {
+pub(super) struct Revolved {
     origin: Point3,
     x_axis: Vector3,
     y_axis: Vector3,
-    z_axis: Vector3,
+    pub(super) z_axis: Vector3,
     profile: Profile,
 }
 
@@ -115,7 +120,7 @@ enum Profile {
 }
 
 impl Revolved {
-    fn of(geometry: &SolvedSurfaceGeometry) -> Option<Self> {
+    pub(super) fn of(geometry: &SolvedSurfaceGeometry) -> Option<Self> {
         let (origin, frame, profile) = match geometry {
             SolvedSurfaceGeometry::Cylinder(cylinder) => (
                 cylinder.origin(),
@@ -162,6 +167,43 @@ impl Revolved {
             z_axis,
             profile,
         })
+    }
+}
+
+impl Revolved {
+    /// The parameters of `point` on the surface, with the azimuth in
+    /// `(-π, π]`. Absent on the axis.
+    pub(super) fn parameters(&self, point: Point3) -> Option<Point2> {
+        let offset = Vector3::new(
+            point.x - self.origin.x,
+            point.y - self.origin.y,
+            point.z - self.origin.z,
+        );
+        let (x, y, h) = (
+            offset.dot(self.x_axis),
+            offset.dot(self.y_axis),
+            offset.dot(self.z_axis),
+        );
+        match self.profile {
+            Profile::Ruled {
+                radius,
+                slope,
+                ratio,
+            } => {
+                let rho = slope.mul_add(h, radius);
+                (rho != 0.0).then(|| Point2::new((y / (ratio * rho)).atan2(x / rho), h))
+            }
+            Profile::Circular { offset, radius } => {
+                let rho = x.hypot(y);
+                (rho != 0.0)
+                    .then(|| Point2::new(y.atan2(x), (h / radius).atan2((rho - offset) / radius)))
+            }
+        }
+    }
+
+    /// Whether the second parameter is an angle, which a torus states.
+    pub(super) fn v_periodic(&self) -> bool {
+        matches!(self.profile, Profile::Circular { offset, .. } if offset != 0.0)
     }
 }
 

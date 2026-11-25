@@ -162,6 +162,9 @@ loss_codes! {
     /// An open shell was written as unjoined trimmed surfaces for a version
     /// that defines no open shell.
     WriterOpenShellUnjoined => "writer.open-shell-unjoined",
+    /// A solid was written as unjoined trimmed surfaces for a version that
+    /// defines no manifold solid B-rep.
+    WriterSolidUnjoined => "writer.solid-unjoined",
     /// An open edge with no stated range was written over one of several
     /// ranges its vertices bound, or between its vertices' feet on its curve.
     WriterEdgeRangeAssumed => "writer.edge-range-assumed",
@@ -234,6 +237,7 @@ impl IgesLossCode {
             | Self::WriterBodyVisibilityNotRepresented
             | Self::WriterEdgeRangeAssumed
             | Self::WriterOpenShellUnjoined
+            | Self::WriterSolidUnjoined
             | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
             Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
@@ -246,7 +250,8 @@ impl IgesLossCode {
             Self::WriterSupportEdgeNotRepresented
             | Self::WriterFaceOmitted
             | Self::WriterBodyOmitted
-            | Self::WriterOpenShellUnjoined => LossTaxonomy::TopologyNotTransferred,
+            | Self::WriterOpenShellUnjoined
+            | Self::WriterSolidUnjoined => LossTaxonomy::TopologyNotTransferred,
             Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::VertexToleranceWidened
             | Self::OccurrenceExpansionOutputTruncated
@@ -406,6 +411,7 @@ mod tests {
                 "writer.face-omitted",
                 "writer.body-omitted",
                 "writer.open-shell-unjoined",
+                "writer.solid-unjoined",
                 "writer.edge-range-assumed",
                 "geometry.vertex-tolerance-widened",
                 "projection.invalid",

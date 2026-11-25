@@ -1177,10 +1177,20 @@ pub(super) fn project(
                 let face_definition = &faces[&face_sequence];
                 let surface_id =
                     crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
+                // A Type 142 reads a procedural support by its solved form;
+                // an edge-use parameter curve reads it the same way.
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.geometry.surfaces.get(*position))
-                    .map(|surface| &surface.geometry)
+                    .map(|surface| match &surface.geometry {
+                        cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+                            cache: Some(solved),
+                            ..
+                        } => std::borrow::Cow::Owned(
+                            cadmpeg_ir::geometry::SurfaceGeometry::Solved(solved.clone()),
+                        ),
+                        geometry => std::borrow::Cow::Borrowed(geometry),
+                    })
                 else {
                     valid = false;
                     break;
@@ -1246,7 +1256,7 @@ pub(super) fn project(
                                 &SurfaceSupport {
                                     sequence: face_definition.surface,
                                     id: &surface_id,
-                                    geometry: support_geometry,
+                                    geometry: &support_geometry,
                                     factor,
                                 },
                                 PcurveEndpointCheck {
@@ -1351,7 +1361,7 @@ pub(super) fn project(
                             &SurfaceSupport {
                                 sequence: face_definition.surface,
                                 id: &surface_id,
-                                geometry: support_geometry,
+                                geometry: &support_geometry,
                                 factor,
                             },
                             PcurveEndpointCheck {
