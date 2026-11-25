@@ -325,7 +325,7 @@ fn drop_unreferenced(out: &mut CadIr, removed: &[Json]) -> Result<(), CodecError
 }
 
 fn to_json<T: serde::Serialize>(record: &T) -> Result<Json, CodecError> {
-    serde_json::to_value(record).map_err(CodecError::malformed)
+    cadmpeg_core::serde_erase::to_json_value(record).map_err(CodecError::malformed)
 }
 
 /// Every string a JSON value holds.

@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use super::{to_canonical_json_string, to_json_value, CanonicalJsonError};
+use super::{
+    to_canonical_json_string, to_compact_canonical_json_string, to_json_value, CanonicalJsonError,
+};
 
 #[derive(Serialize)]
 struct Scalars {
@@ -115,4 +117,21 @@ fn canonical_text_still_refuses_a_non_finite_float_after_a_value_walk() {
         Err(CanonicalJsonError::NonFinite { .. })
     ));
     assert_eq!(to_canonical_json_string(&-0.0f64).unwrap(), "0.0");
+}
+
+#[test]
+fn compact_canonical_text_is_the_compact_serde_text() {
+    let value = json!({
+        "text": "a \"quoted\" word, a \\ and a line\nbreak: [ { } ]",
+        "nested": [[1, 2.5, []], {"empty": {}, "key with space": null}],
+        "flag": true
+    });
+    assert_eq!(
+        to_compact_canonical_json_string(&value).unwrap(),
+        serde_json::to_string(&value).unwrap()
+    );
+    assert!(matches!(
+        to_compact_canonical_json_string(&f64::NAN),
+        Err(CanonicalJsonError::NonFinite { .. })
+    ));
 }

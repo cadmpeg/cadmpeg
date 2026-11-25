@@ -108,9 +108,9 @@ fn reads(expression: &Value) -> bool {
     if expression.get("kind").and_then(Value::as_str) != Some("neutral") {
         return true;
     }
-    expression
-        .get("value")
-        .is_some_and(|wire| serde_json::from_value::<Neutral<Value>>(wire.clone()).is_ok())
+    expression.get("value").is_some_and(|wire| {
+        cadmpeg_core::serde_erase::from_json_value::<Neutral<Value>>(wire).is_ok()
+    })
 }
 
 /// The rewrite of the records that name an id of `gone`.
@@ -139,9 +139,16 @@ impl<'a> Restate<'a> {
             schema,
             gone,
             past_the_bound: false,
-            dialect: ExpressionDialect::of_codec(codec, process)
-                .and_then(|dialect| serde_json::to_value(dialect).ok()),
-            native: serde_json::to_value(PickTarget::Native { within: None }).ok()?,
+            dialect: ExpressionDialect::of_codec(codec, process).and_then(|dialect| {
+                cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                    serde::Serialize::serialize(&dialect, adapter)
+                })
+                .ok()
+            }),
+            native: cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                serde::Serialize::serialize(&PickTarget::Native { within: None }, adapter)
+            })
+            .ok()?,
         })
     }
 
@@ -332,14 +339,17 @@ impl<'a> Restate<'a> {
     /// Restates `items`, the picks of an `Unordered` member list, in the
     /// order of their identity keys, and returns whether no two share one.
     fn sort_picks(items: &mut Vec<Value>) -> bool {
-        let Ok(picks) = serde_json::from_value::<Vec<Picked>>(Value::Array(std::mem::take(items)))
-        else {
+        let Ok(picks) = cadmpeg_core::serde_erase::from_json_value::<Vec<Picked>>(&Value::Array(
+            std::mem::take(items),
+        )) else {
             return false;
         };
         let Ok(members) = Members::<Picked, Unordered>::new(picks) else {
             return false;
         };
-        match serde_json::to_value(members) {
+        match cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+            serde::Serialize::serialize(&members, adapter)
+        }) {
             Ok(Value::Array(sorted)) => {
                 *items = sorted;
                 true
@@ -421,11 +431,14 @@ impl<'a> Restate<'a> {
             .filter(|cache| !names(cache, self.gone))
             .map(|cache| serde_json::json!({"kind": "unknown", "cache": cache}))
             .filter(|unknown| {
-                let unknown = unknown.clone();
                 if carrier == PROCEDURAL_CURVE {
-                    serde_json::from_value::<ProceduralCurveDefinition>(unknown).is_ok()
+                    cadmpeg_core::serde_erase::from_json_value::<ProceduralCurveDefinition>(unknown)
+                        .is_ok()
                 } else {
-                    serde_json::from_value::<ProceduralSurfaceDefinition>(unknown).is_ok()
+                    cadmpeg_core::serde_erase::from_json_value::<ProceduralSurfaceDefinition>(
+                        unknown,
+                    )
+                    .is_ok()
                 }
             });
         *value = cached.unwrap_or(bare);

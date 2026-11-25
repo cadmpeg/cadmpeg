@@ -312,7 +312,7 @@ fn state(configuration: Option<&str>, at: Position) -> StateRef {
 /// ratios; combined fit designations; and `Other` texts that name arms.
 fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
         definition: id("definition", "part"),
