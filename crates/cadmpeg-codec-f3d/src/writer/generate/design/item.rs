@@ -199,8 +199,9 @@ pub(super) struct Run<'a, 'p> {
 /// The decision for the run's features in timeline order: every stateful
 /// feature of the run, each written as an item with its state, where each
 /// is of a family the writer writes as an item and each after the first
-/// makes a new body (f3d.md §3.1, "History states"). `failure` is the error
-/// of an earlier attempt to write the items. A written item whose parameter
+/// makes a new body (f3d.md §3.1, "History states"). `failure` is why an
+/// earlier attempt could not write the items, with the feature it concerns
+/// where it names one. A written item whose parameter
 /// binds a user parameter takes that parameter out of `parameters`; the
 /// items' parameters take the source ordinals from `ordinal`. The
 /// `BaseFeature` decision names the first typed feature, and the later
@@ -211,7 +212,7 @@ pub(super) fn plan<'a>(
     run: Run<'a, '_>,
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
-    failure: Option<&str>,
+    failure: Option<(String, Option<&FeatureId>)>,
     ordinal: u32,
 ) -> Decision<'a> {
     let features = run.features;
@@ -232,11 +233,9 @@ pub(super) fn plan<'a>(
         cause: cause.filter(|cause| *cause != feature),
         reason,
     };
-    if let Some(failure) = failure {
-        return base(
-            None,
-            format!("the writer cannot write its records ({failure})"),
-        );
+    if let Some((failure, cause)) = failure {
+        let cause = cause.and_then(|cause| features.iter().copied().find(|at| *at == cause));
+        return base(cause, failure);
     }
     let mut chain = Vec::with_capacity(stateful.len());
     for &(position, feature) in &stateful {
