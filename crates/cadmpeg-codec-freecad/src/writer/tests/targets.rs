@@ -9,7 +9,6 @@ use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DE
 use crate::writer::target::UNCARRIED_DIGEST;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::DecodeDepth;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::codec::write::{EncodeError, Encoder};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
@@ -254,20 +253,14 @@ fn inherit_preserves_an_unknown_schema_declaration_exactly() {
     assert_eq!(primary.declared()["schema_version"], "04");
 }
 
-/// The canonical §8.2 case, in its refusing half: a schema-2 source whose
-/// retained document graph cannot be written back is refused, not quietly
-/// rewritten as schema 4.
-///
-/// There is no fall-through to the catalog default. The refusal names the
-/// source's own dialect and the catalog, so the caller can reach the file
-/// with an explicit `--to` from the message alone.
+/// The retained `Document.xml` is the baseline: a schema-2 source whose
+/// `document` record is gone still holds the bytes, which state its
+/// declaration, so the write preserves schema 2 entry for entry.
 #[test]
-fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
+fn inherit_writes_a_schema_two_source_without_its_document_record() {
+    let source = schema_two_archive();
     let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(schema_two_archive()),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .expect("decode schema 2");
     let (mut ir, _, _) = decoded.into_parts();
     ir.native
@@ -279,34 +272,87 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         )
         .expect("drop the document record");
 
-    let error = inherit(&ir, None).expect_err("a schema-2 source with no baseline is refused");
-    let EncodeError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
+    let mut written = Vec::new();
+    let report = inherit(&ir, None)
+        .expect("the retained Document.xml declares schema 2")
+        .write_to(&mut written)
+        .expect("write the retained archive");
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
+    );
+    assert_eq!(entry_payloads(&written), entry_payloads(&source));
+}
+
+/// The source bytes are the `fcstd` archive entries the document holds,
+/// whatever format `ir.source` names. A document read from another format
+/// that holds them is written as the schema its `Document.xml` declares, and
+/// `target.request-displaced` names both where the request names another.
+#[test]
+fn an_explicit_target_writes_fcstd_entries_under_a_source_of_another_format() {
+    let step_source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("step:ap242"),
+        )),
+        std::collections::BTreeMap::new(),
+    ));
+    let explicit = |ir: &CadIr| {
+        Encoder::plan(
+            &FcstdCodec,
+            EncodeInput::new(ir, None),
+            TargetRequest::Explicit("fcstd:schema-4"),
+        )
     };
-    assert_eq!(refusal.format(), "fcstd");
+
+    let mut schema_four = CORE_DESIGN.ir().clone();
+    schema_four.source.clone_from(&step_source);
+    let mut written = Vec::new();
+    explicit(&schema_four)
+        .expect("the retained Document.xml declares schema 4")
+        .write_to(&mut written)
+        .expect("write the retained archive");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("fcstd:schema-2")
+        entry_payloads(&written),
+        entry_payloads(CORE_DESIGN_PRODUCT)
     );
+
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(schema_two_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema 2");
+    let mut schema_two = decoded.ir().clone();
+    schema_two.source = step_source;
+    let plan = explicit(&schema_two).expect("the retained Document.xml declares schema 2");
     assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
-        "inherited_unavailable"
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
     );
+    let charged: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .map(|loss| (loss.code.local_code(), loss.message.as_str()))
+        .collect();
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(*code, "target.request-displaced");
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "fcstd:schema-4"),
-        "{:?}",
-        refusal.available()
+        message.contains("fcstd:schema-4") && message.contains("fcstd:schema-2"),
+        "{message}"
     );
 }
 
@@ -648,15 +694,13 @@ fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
 }
 
 /// The writer patches retained native records only, so a neutral edit has no
-/// serializer. It is refused rather than written as the unedited source.
+/// serializer. The file holds the document as the source stores it, and the
+/// report names the document, since the digest does not isolate the edited
+/// record (§3.4, Paths item 4).
 #[test]
-fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
+fn a_neutral_edit_is_left_as_stored_and_reported() {
     let decoded = &*CORE_DESIGN;
-    let mut control = Vec::new();
-    inherit(decoded.ir(), Some(decoded.source_fidelity()))
-        .expect("an unedited document is preserved")
-        .write_to(&mut control)
-        .expect("write control");
+    let (_, control) = patched(decoded.ir(), Some(decoded.source_fidelity()));
     assert_eq!(
         entry_payloads(&control),
         entry_payloads(CORE_DESIGN_PRODUCT)
@@ -672,20 +716,15 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
         "{} renamed",
         body.name.as_deref().unwrap_or("body")
     ));
-    let Err(EncodeError::Backend(CodecError::NotImplemented(message))) =
-        inherit(&edited, Some(decoded.source_fidelity()))
-    else {
-        panic!("a neutral edit must be refused");
-    };
-    assert!(
-        message.contains("neutral or uncarried native edits"),
-        "{message}"
+    let (report, bytes) = patched(&edited, Some(decoded.source_fidelity()));
+    assert_eq!(bytes, control);
+    assert_eq!(
+        export_losses(&report),
+        [("edit.dropped", cadmpeg_ir::report::Severity::Error)]
     );
-
-    let mut rewritten = Vec::new();
-    inherit(decoded.ir(), Some(decoded.source_fidelity()))
-        .expect("the unedited document is still preserved")
-        .write_to(&mut rewritten)
-        .expect("write unedited");
-    assert_eq!(rewritten, control);
+    let document = crate::native::native_id("document", "0");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(document.as_str())));
 }
