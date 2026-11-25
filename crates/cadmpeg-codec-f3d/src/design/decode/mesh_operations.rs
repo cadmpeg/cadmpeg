@@ -443,6 +443,41 @@ impl<'a> MeshOperationRecords<'a> {
         Ok(record)
     }
 
+    /// The mesh-body record that the mesh operation member `index` names.
+    pub(crate) fn member_body_reference(&self, index: u32) -> Result<u32, MeshOperationFraming> {
+        let record = self.source_record(
+            index,
+            "source member record",
+            "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2",
+            "6144EA59-3ACA-4172-9F14-A6531E94D69B",
+        )?;
+        Cursor {
+            bytes: record,
+            at: member::BODY_REFERENCE,
+            deviations: Vec::new(),
+        }
+        .reference("source member body reference")
+    }
+
+    /// The mesh body that `member` names, when `member` is a mesh operation
+    /// member whose reference names a mesh-body record.
+    pub(crate) fn member_body(&self, member: u32) -> Result<u32, MeshOperationFraming> {
+        let body = self.member_body_reference(member)?;
+        self.mesh_body_record(body)?;
+        Ok(body)
+    }
+
+    fn mesh_body_record(&self, index: u32) -> Result<View<'a>, MeshOperationFraming> {
+        self.record(
+            index,
+            "source body record",
+            "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
+            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            "ParaMesh",
+            None,
+        )
+    }
+
     pub(crate) fn group_bodies(
         &self,
         ctx: &DecodeContext<'_>,
@@ -514,31 +549,10 @@ impl<'a> MeshOperationRecords<'a> {
                     }
                 };
                 *member = index;
-                let read = (|| {
-                    let record = self.source_record(
-                        index,
-                        "source member record",
-                        "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2",
-                        "6144EA59-3ACA-4172-9F14-A6531E94D69B",
-                    )?;
-                    Cursor {
-                        bytes: record,
-                        at: member::BODY_REFERENCE,
-                        deviations: Vec::new(),
-                    }
-                    .reference("source member body reference")
-                })();
-                match read {
+                match self.member_body_reference(index) {
                     Ok(index) => {
                         *body = index;
-                        if let Err(error) = self.record(
-                            index,
-                            "source body record",
-                            "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
-                            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
-                            "ParaMesh",
-                            None,
-                        ) {
+                        if let Err(error) = self.mesh_body_record(index) {
                             failure.get_or_insert(error);
                         }
                     }

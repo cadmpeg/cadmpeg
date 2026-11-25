@@ -369,6 +369,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
                 "test:model:tessellation#a-body".into(),
             ],
         )]),
+        tessellations_by_body: std::collections::HashMap::new(),
     };
 
     let archive = crate::test_support::zip_test::synthetic_f3d(false);

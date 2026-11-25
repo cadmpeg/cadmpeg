@@ -2598,6 +2598,18 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
 
+### DR-1062. State of a removed mesh body
+
+**Question.** Which state does the stored mesh of a body that a `MeshRemove` removes hold: the state after its `Base Mesh Feature`, or the state at the `MeshRemove` input?
+
+**Known.** After a `MeshRemove`, the mesh collection lists no body. The `Base Mesh Feature` scope still lists the mesh-body record, the `MeshRemove` source member names the same record, and the `.paramesh` container of the body decodes. A mesh body that the collection lists holds the current placement, which includes each later `Modify` of the body.
+
+**Need.** A save that inserts a mesh, moves it with `Modify` by a known distance, and removes it with `MeshRemove`, with the stored mesh-body matrix compared against the inserted and the moved placements.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the `MeshImport` source native and reports `feature.mesh-import-tessellations-unresolved` and `mesh.container-unjoined`.
+
 ### DR-473. Geometry states of mesh operation scopes
 
 **Question.** Which tessellation does each output-geometry and input-geometry reference of a mesh operation scope select?
@@ -2638,7 +2650,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which source member tail fields select face groups or subsets of a mesh body?
 
-**Known.** A source member contains a body reference followed by selection fields. The decoder retains the body reference as an input-local body selection.
+**Known.** A source member contains a body reference followed by selection fields. A `Modify` body group can list the same member record. The decoder retains the body reference as an input-local body selection; in a `Modify` body group it selects the tessellation of the mesh body.
 
 **Need.** Controlled saves with whole-body and face-group selections changed independently.
 
