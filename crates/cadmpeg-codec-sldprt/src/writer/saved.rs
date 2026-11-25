@@ -7,17 +7,17 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
-use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::{edit_dropped_note, EncodeInput};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{ArenaName, CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::schema::EntityKind;
 
 use crate::design_v11::parameters::LITERAL_UNITS;
 use crate::history::literals::{dimension_display, parse_parameter_literal};
-use crate::loss::SldprtLossCode;
 
 /// `input`'s part with the history arenas the CADIR wire omits restored
 /// from its retained source, where it was read from CADIR JSON and `target`
@@ -69,45 +69,39 @@ pub(crate) fn restore(
     }
 }
 
-/// One loss per kind of design record that holds an edit the restored
-/// history arenas cannot state, naming each such edit by its path.
+/// One `export:edit.dropped` loss per arena of design records that holds an
+/// edit the restored history arenas cannot state, naming each such edit by
+/// its path.
 fn unwritten_losses(unwritten: &[String]) -> Vec<LossNote> {
-    let mut parameters = Vec::new();
-    let mut features = Vec::new();
-    let mut others = Vec::new();
+    let mut arenas: Vec<(EntityKind, Vec<&str>)> = Vec::new();
     for path in unwritten {
-        if path.starts_with("design.parameters[") {
-            parameters.push(path.as_str());
-        } else if path.starts_with("design.features[") {
-            features.push(path.as_str());
-        } else {
-            others.push(path.as_str());
+        let kind = ArenaName::ALL
+            .iter()
+            .zip(EntityKind::ALL)
+            .find(|(arena, _)| {
+                path.strip_prefix(arena.as_str())
+                    .is_some_and(|rest| rest.starts_with('['))
+            })
+            .map_or(EntityKind::DesignScope, |(_, kind)| kind);
+        match arenas.iter_mut().find(|(seen, _)| *seen == kind) {
+            Some((_, paths)) => paths.push(path),
+            None => arenas.push((kind, vec![path])),
         }
     }
-    [
-        (
-            SldprtLossCode::WriterParameterEditUnwritten,
-            "parameters",
-            parameters,
-        ),
-        (
-            SldprtLossCode::WriterFeatureEditUnwritten,
-            "features",
-            features,
-        ),
-        (SldprtLossCode::WriterDesignEditUnwritten, "records", others),
-    ]
-    .into_iter()
-    .filter(|(_, _, paths)| !paths.is_empty())
-    .map(|(code, records, paths)| {
-        code.note(format!(
-            "the document was read from CADIR, and the feature history of its retained source \
-             part cannot state these edits of its design {records}, so the output keeps the \
-             stored state: {}",
-            paths.join("; ")
-        ))
-    })
-    .collect()
+    arenas
+        .into_iter()
+        .map(|(kind, paths)| {
+            edit_dropped_note(
+                kind,
+                format!(
+                    "the document was read from CADIR, and the feature history of its retained \
+                     source part cannot state these edits of its design records, so the output \
+                     keeps the stored state: {}",
+                    paths.join("; ")
+                ),
+            )
+        })
+        .collect()
 }
 
 /// The text of a `Keywords` dimension or equation.

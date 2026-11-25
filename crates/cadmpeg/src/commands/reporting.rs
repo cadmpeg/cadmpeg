@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Human-readable and JSON command-report rendering.
 
+use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -267,12 +268,7 @@ pub(super) fn print_export_emission(
     if !emission.report.losses.is_empty() {
         writeln!(writer, "{} export losses:", emission.report.format())?;
         for loss in &emission.report.losses {
-            // The note above prints the patch-declined reason once.
-            let message = if declined == Some(loss.message.as_str()) {
-                "the patch-declined reason above"
-            } else {
-                &loss.message
-            };
+            let message = without_declined_reason(&loss.message, declined);
             writeln!(
                 writer,
                 "  [{}/{}] {message}",
@@ -282,6 +278,17 @@ pub(super) fn print_export_emission(
         }
     }
     Ok(())
+}
+
+/// `message` with each restatement of the patch-declined `declined` reason,
+/// which the synthesis note prints, replaced by a reference to that note.
+fn without_declined_reason<'a>(message: &'a str, declined: Option<&str>) -> Cow<'a, str> {
+    match declined {
+        Some(reason) if !reason.is_empty() && message.contains(reason) => {
+            Cow::Owned(message.replace(reason, "the patch declined for the reason above"))
+        }
+        _ => Cow::Borrowed(message),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -551,6 +558,28 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn a_loss_prints_the_patch_declined_reason_by_reference() {
+        let reason = "the patch of the document refuses it (an edit)";
+        assert_eq!(
+            super::without_declined_reason(reason, Some(reason)),
+            "the patch declined for the reason above"
+        );
+        assert_eq!(
+            super::without_declined_reason(
+                &format!("because {reason}, and its synthesis writes no history record: a"),
+                Some(reason)
+            ),
+            "because the patch declined for the reason above, and its synthesis writes no \
+             history record: a"
+        );
+        assert_eq!(
+            super::without_declined_reason("an unrelated loss", Some(reason)),
+            "an unrelated loss"
+        );
+        assert_eq!(super::without_declined_reason(reason, None), reason);
     }
 
     #[test]

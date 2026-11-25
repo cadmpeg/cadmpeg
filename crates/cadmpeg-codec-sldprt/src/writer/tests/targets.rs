@@ -42,9 +42,12 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
     let mut written = Vec::new();
     let dialect = crate::writer::write_semantic_with_records(
         &ir,
-        &fidelity.annotations,
-        &fidelity.codec_digests,
-        &records,
+        crate::writer::Retained {
+            annotations: &fidelity.annotations,
+            digests: &fidelity.codec_digests,
+            records: &records,
+        },
+        &[],
         &[],
         cadmpeg_core::decode::ResourceLimits::desktop(),
         &mut written,

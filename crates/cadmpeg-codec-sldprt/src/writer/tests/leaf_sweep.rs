@@ -182,7 +182,7 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
     let unwritten = report
         .losses
         .iter()
-        .filter(|loss| loss.code == SldprtLossCode::WriterFeatureEditUnwritten.kind())
+        .filter(|loss| crate::test_support::is_edit_dropped(&loss.code))
         .filter(|loss| loss.message.contains(feature_id.as_str()))
         .count();
     let stale = report
