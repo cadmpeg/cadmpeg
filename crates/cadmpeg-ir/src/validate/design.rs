@@ -21,7 +21,7 @@ pub(super) mod evaluations;
 pub(super) mod expressions;
 mod fit;
 #[cfg(test)]
-pub(super) mod fixture;
+pub(crate) mod fixture;
 mod folds;
 mod index;
 mod joins;

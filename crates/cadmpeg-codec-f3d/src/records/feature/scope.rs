@@ -629,7 +629,8 @@ impl DesignScopeTailFlags {
                 "{subject} stores {bytes}; a state byte that is not zero is read as set (open item DR-1032)"
             ))
         });
-        let active = (self.no_result && !self.suppressed()).then(|| {
+        let assumed = self.unevaluated || !self.rolled_back;
+        let active = (self.no_result && assumed && !self.suppressed()).then(|| {
             let code = if self.unevaluated {
                 F3dLossCode::FeatureUnevaluatedStateAssumed
             } else {

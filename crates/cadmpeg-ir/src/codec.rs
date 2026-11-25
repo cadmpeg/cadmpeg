@@ -260,7 +260,8 @@ impl DecodeResult {
 
     /// Finalizes backend output with classification, depth, normalization, and
     /// the caller's strict-loss policy without computing canonical JSON
-    /// content or omitted-arena digests.
+    /// content or omitted-arena digests. The digest walk finds the records
+    /// past the CADIR bounds, so this path gives up none of them.
     ///
     /// Intended for internal read-back validation that inspects only `ir()`
     /// and discards `source_fidelity().content_digest`.
@@ -281,9 +282,9 @@ impl DecodeResult {
         record_digests: bool,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
-        result.give_up_repeated_ids();
+        result.give_up_repeated_ids(ctx, format)?;
         if record_digests {
-            result.record_content_digest(ctx.policy())?;
+            result.record_content_digest(ctx, format)?;
             result.record_omitted_arenas_baseline(ctx.policy());
         }
         if result.report().format() != format.as_str() {
@@ -405,47 +406,88 @@ impl DecodeResult {
 
     /// States one copy of each id a decoder emitted more than once in one
     /// arena where the copies hold one value, and none where they differ
-    /// (§2.8), charging one `decode/id.repeated` loss per such id that names
-    /// it, the arena, and the number of copies.
-    fn give_up_repeated_ids(&mut self) {
-        for repeated in self.ir.drop_repeated_ids() {
-            self.report
-                .losses
-                .push(DecodeLossCode::IdRepeated.note(format!(
-                    "the decoder emitted {} {} times in arena {}, and the copies differ, so the \
-                 document states none of them; dropped=[{}]",
-                    repeated.id, repeated.copies, repeated.arena, repeated.id
-                )));
+    /// (§2.8): the id is given up as a part (§3.3), and one
+    /// `decode/id.repeated` loss names it, the arena, the number of copies,
+    /// its stub, and the records its give-up drops and marks.
+    fn give_up_repeated_ids(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        format: FormatId,
+    ) -> Result<(), CodecError> {
+        let repeated = self.ir.repeated_ids(crate::document::DifferingCopies::Keep);
+        if repeated.is_empty() {
+            return Ok(());
         }
+        let copies: std::collections::BTreeMap<crate::give_up::Seed, usize> = repeated
+            .into_iter()
+            .map(|repeated| {
+                (
+                    crate::give_up::Seed {
+                        arena: repeated.arena,
+                        id: repeated.id,
+                    },
+                    repeated.copies,
+                )
+            })
+            .collect();
+        let losses = crate::give_up::give_up(
+            ctx,
+            &mut self.ir,
+            &mut self.source_fidelity,
+            format.as_str(),
+            copies.keys().cloned().collect(),
+            |seed, released, retained| {
+                DecodeLossCode::IdRepeated.note(format!(
+                    "the decoder emitted {} {} times in arena {}, and the copies differ, so the \
+                     document states none of them; record={}; {}",
+                    seed.id,
+                    copies.get(seed).copied().unwrap_or_default(),
+                    seed.arena,
+                    retained.stub,
+                    released.tail(&[&seed.id])
+                ))
+            },
+        )?;
+        self.report.losses.extend(losses);
+        Ok(())
     }
 
     /// Records the SHA-256 of the canonical JSON of the document the decode
     /// returns as the sidecar's `content_digest` (§3.1, Rule B). The digest
-    /// walks the document in a session of its own under `policy`, the
-    /// decode's, so a ceiling it meets refuses no part of the decode. A
-    /// document with no canonical JSON states no digest, so every writer reads
-    /// it as edited, and a `decode/content-digest.unavailable` Warning says why.
+    /// walks the document in a session of its own under the decode's
+    /// policy, with a recursion ceiling of at least
+    /// [`crate::bounds::DIGEST_WALK_DEPTH`], so a ceiling it meets refuses no
+    /// part of the decode. The records it gives up retain their text in
+    /// `ctx`, the decode's session.
     ///
     /// The same walk finds each record the decoder stated past a bound of
-    /// §2.5, which §2.8 states none of. Each such record is given up, with a
-    /// `decode/record.unreadable` Error that names it, and the document is
-    /// digested again without it. A procedural construction whose carrier is
-    /// given up goes with it. Other records that reference a given-up record
-    /// keep the reference (interim: the shared give-up pass of §2.8 does not
-    /// exist yet). The walk admits at least
-    /// [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
+    /// §2.5, which §2.8 states none of. Each expression past the bound of an
+    /// expression is stated `Source` with no tokens, the form §3.3 gives an
+    /// expression of which nothing is read, with a `decode/record.unreadable`
+    /// Error that names its record. Each other such record is given up as a
+    /// part (§3.3), with a `decode/record.unreadable` Error that names it and
+    /// the records its give-up drops and marks, and the document is digested
+    /// again without it. Each value outside every record past a bound is
+    /// stated as the value it takes when unstated, with a
+    /// `decode/record.unreadable` Error that names its field. The walk admits
+    /// at least [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
     /// recursion ceiling, so that it digests a document within the bound and
     /// writes the first container past it before it is refused. A refused
     /// walk stops in the record it was refused in, so the wrapper walks again
     /// after each give-up.
-    fn record_content_digest(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
+    fn record_content_digest(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        format: FormatId,
+    ) -> Result<(), CodecError> {
         let policy = DecodePolicy {
             limits: ResourceLimits {
-                max_recursion_depth: policy
+                max_recursion_depth: ctx
+                    .policy()
                     .limits
                     .max_recursion_depth
                     .max(crate::bounds::DIGEST_WALK_DEPTH),
-                ..policy.limits
+                ..ctx.policy().limits
             },
         };
         let walk = |ir: &CadIr| {
@@ -454,86 +496,142 @@ impl DecodeResult {
             Ok::<_, CodecError>(crate::hash::measured_content_digest(&ctx, ir))
         };
         let (mut digest, mut measured) = walk(&self.ir)?;
-        while self.give_up_records_past_the_bounds(std::mem::take(&mut measured.records)) {
+        if self.restate_expressions_past_the_bound(&measured.records) {
             (digest, measured) = walk(&self.ir)?;
         }
-        if let Some(bound) = measured.outside {
+        while self.give_up_records_past_the_bounds(ctx, format, &measured.records)? {
+            (digest, measured) = walk(&self.ir)?;
+        }
+        if !measured.outside.is_empty() {
+            for unstated in crate::bounds::unstate_outside(&mut self.ir, &measured.outside)? {
+                self.report.losses.push(
+                    DecodeLoss::new(
+                        crate::unknown::part::record_unreadable_kind(),
+                        format!(
+                            "the decode wrapper states {} ({})",
+                            unstated.what, unstated.field
+                        ),
+                    )
+                    .with_severity(crate::report::Severity::Error),
+                );
+            }
+            (digest, measured) = walk(&self.ir)?;
+            while self.give_up_records_past_the_bounds(ctx, format, &measured.records)? {
+                (digest, measured) = walk(&self.ir)?;
+            }
+        }
+        if let Some(bound) = measured.outside.values().next() {
+            let fields: std::collections::BTreeSet<&str> = measured
+                .outside
+                .keys()
+                .map(|outside| outside.field.as_str())
+                .collect();
             self.report.losses.push(
                 DecodeLoss::new(
                     crate::unknown::part::record_unreadable_kind(),
                     format!(
-                        "the document {} outside every record, which the decode wrapper keeps",
-                        bound.describe()
+                        "the document {} outside every record ({}), which the decode wrapper \
+                         keeps",
+                        bound.describe(),
+                        fields.into_iter().collect::<Vec<_>>().join(", ")
                     ),
                 )
                 .with_severity(crate::report::Severity::Error),
             );
         }
-        match digest.map_err(CodecError::from) {
-            Ok(digest) => self.source_fidelity.content_digest = Some(digest),
-            Err(error) => {
-                self.source_fidelity.content_digest = None;
-                self.report
-                    .losses
-                    .push(DecodeLossCode::ContentDigestUnavailable.note(format!(
-                        "the decode wrapper took no content digest of the document ({error}), \
-                         so a writer reads the document as edited and replays no source file"
-                    )));
-            }
-        }
+        self.source_fidelity.content_digest = Some(digest.map_err(CodecError::from)?);
         Ok(())
     }
 
-    /// Gives up each record of `records`, last first in each arena so the
-    /// places of the others hold, and returns whether it gave up any. The
-    /// document writes each arena in identity order, so the arenas are put in
-    /// that order first.
-    fn give_up_records_past_the_bounds(
+    /// States `Source` with no tokens each expression past its bound in the
+    /// records of `records` that pass that bound, the partial form §3.3 gives
+    /// an expression, so that each such record and each record that needs it
+    /// stays, and returns whether it restated one. Each restated record
+    /// charges one `decode/record.unreadable` Error that names it.
+    fn restate_expressions_past_the_bound(
         &mut self,
-        records: std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+        records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
     ) -> bool {
-        if records.is_empty() {
+        if !records
+            .values()
+            .any(|bound| *bound == crate::bounds::Bound::Expression)
+        {
             return false;
         }
         self.ir.finalize();
-        let mut gave_up = false;
-        for (place, bound) in records.into_iter().rev() {
-            let Some((id, dropped)) = self.ir.remove_record(&place) else {
-                continue;
-            };
-            gave_up = true;
-            // Dropped constructions move the places of their arena, so the
-            // next walk finds the records still past a bound.
-            let moved = !dropped.is_empty();
-            let arena = match &place {
-                crate::bounds::Place::Home { home, arena, .. } => format!("{home}.{arena}"),
-                crate::bounds::Place::Native { codec, arena, .. } => {
-                    format!("native.{codec}.{arena}")
-                }
-            };
+        let seeds: Vec<crate::give_up::Seed> = records
+            .iter()
+            .filter(|(_, bound)| **bound == crate::bounds::Bound::Expression)
+            .filter_map(|(place, _)| self.ir.record_at(place))
+            .collect();
+        let restated = crate::give_up::restate_past_the_bound(&mut self.ir, &seeds);
+        for seed in &restated {
             self.report.losses.push(
                 DecodeLoss::new(
                     crate::unknown::part::record_unreadable_kind(),
                     format!(
-                        "record {id} of arena {arena} {}, so the decode wrapper gave it up{}",
-                        bound.describe(),
-                        if dropped.is_empty() {
-                            String::new()
-                        } else {
-                            format!(
-                                " with the constructions it owned; dropped=[{}]",
-                                dropped.join(", ")
-                            )
-                        }
+                        "record {} of arena {} {}, so the decode wrapper states each such \
+                         expression Source with no tokens",
+                        seed.id,
+                        seed.arena,
+                        crate::bounds::Bound::Expression.describe()
                     ),
                 )
                 .with_severity(crate::report::Severity::Error),
             );
-            if moved {
-                break;
-            }
         }
-        gave_up
+        !restated.is_empty()
+    }
+
+    /// Gives up each record of `records` as a part (§3.3) and returns
+    /// whether it gave up any. The places index the arenas in identity
+    /// order, so the arenas are put in that order first.
+    fn give_up_records_past_the_bounds(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        format: FormatId,
+        records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    ) -> Result<bool, CodecError> {
+        if records.is_empty() {
+            return Ok(false);
+        }
+        self.ir.finalize();
+        let bounds: std::collections::BTreeMap<crate::give_up::Seed, String> = records
+            .iter()
+            .filter_map(|(place, bound)| {
+                self.ir
+                    .record_at(place)
+                    .map(|seed| (seed, bound.describe()))
+            })
+            .collect();
+        let losses = crate::give_up::give_up(
+            ctx,
+            &mut self.ir,
+            &mut self.source_fidelity,
+            format.as_str(),
+            bounds.keys().cloned().collect(),
+            |seed, released, retained| {
+                DecodeLoss::new(
+                    crate::unknown::part::record_unreadable_kind(),
+                    format!(
+                        "part {} path={:?} length={} record={}: record {} of arena {} {}, so the \
+                         decode wrapper gave it up; {}",
+                        seed.arena.kind(),
+                        released.path,
+                        retained.length,
+                        retained.stub,
+                        seed.id,
+                        seed.arena,
+                        bounds.get(seed).map_or("", String::as_str),
+                        released.tail(&[&seed.id])
+                    ),
+                )
+                .with_severity(crate::report::Severity::Error)
+            },
+        )?;
+        let gave_up = !losses.is_empty();
+        self.report.losses.extend(losses);
+        Ok(gave_up)
     }
 
     /// Borrow the finalized IR.

@@ -60,6 +60,7 @@ pub mod eval;
 pub mod examples;
 pub mod features;
 pub mod geometry;
+pub(crate) mod give_up;
 pub mod hash;
 pub mod history_body;
 

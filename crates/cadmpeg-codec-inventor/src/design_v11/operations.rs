@@ -29,6 +29,8 @@ pub(super) fn project(
     if ir.model.product_definitions.is_empty() {
         return Ok(());
     }
+    // One arrangement per sketch serves every feature that cuts it.
+    let arrangements = selections::trimmed::Arrangements::default();
     for source in &ir.model.features {
         if !projects(source.evaluation.definition().operation()) {
             continue;
@@ -44,7 +46,11 @@ pub(super) fn project(
         ctx.charge_entities(1, "project Inventor v11 operation")?;
         let (definition, reason) = definition(
             source,
-            ir.model.sketches.as_slice(),
+            selections::SketchData {
+                sketches: ir.model.sketches.as_slice(),
+                entities: ir.model.sketch_entities.as_slice(),
+                arrangements: Some(&arrangements),
+            },
             &ir.model.feature_input_topologies,
             &ir.model.features,
         )?;
@@ -80,7 +86,7 @@ fn projects(operation: &LegacyOperation) -> bool {
 
 fn definition(
     source: &cadmpeg_ir::features::Feature,
-    sketches: &[cadmpeg_ir::sketches::Sketch],
+    sketches: selections::SketchData<'_>,
     inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
     features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(FeatureDefinition, Option<&'static str>), CodecError> {
@@ -126,7 +132,7 @@ type Projected<T> = Result<T, &'static str>;
 
 fn typed(
     operation: &LegacyOperation,
-    sketches: &[cadmpeg_ir::sketches::Sketch],
+    sketches: selections::SketchData<'_>,
     inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
     features: &[cadmpeg_ir::features::Feature],
 ) -> Projected<FeatureOperation> {

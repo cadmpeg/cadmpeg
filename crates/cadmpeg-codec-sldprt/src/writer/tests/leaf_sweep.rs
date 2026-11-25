@@ -92,7 +92,8 @@ fn jobs(part: &DecodeResult) -> Vec<Job> {
         let Some(name) = feature.name.as_deref().filter(|name| named(name) == 1) else {
             continue;
         };
-        let wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let wire =
+            cadmpeg_core::serde_erase::to_json_value(feature.evaluation.definition()).unwrap();
         let mut found = Vec::new();
         leaves(&wire, "", &mut found);
         for (pointer, leaf_type) in found {
@@ -140,9 +141,15 @@ enum Outcome {
 }
 
 /// Edits one leaf, writes, and reads the output back with the full decoder.
-/// `baseline` is [`readback::baseline`] of `part`. `Err` describes a save
-/// that is refused, carries a false note, or changes what it did not edit.
-fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, String> {
+/// `baseline` is [`readback::baseline`] of `part`, and `part_doc` is the
+/// precomputed read-back document of `part`. `Err` describes a save that is
+/// refused, carries a false note, or changes what it did not edit.
+fn run(
+    part: &DecodeResult,
+    part_doc: &crate::history::write::read_back::document::Document,
+    baseline: &[Entry],
+    job: &Job,
+) -> Result<Outcome, String> {
     let label = format!("{} {}", job.feature, job.pointer);
     let mut decoded = EditableDecodeResult::from(part.clone());
     let (source_wire, edited_wire, feature_id) = {
@@ -153,11 +160,12 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
             .iter_mut()
             .find(|feature| feature.name.as_deref() == Some(job.feature.as_str()))
             .unwrap();
-        let source_wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let source_wire =
+            cadmpeg_core::serde_erase::to_json_value(feature.evaluation.definition()).unwrap();
         let mut edited_wire = source_wire.clone();
         let leaf = edited_wire.pointer_mut(&job.pointer).unwrap();
         *leaf = changed(leaf);
-        let Ok(definition) = serde_json::from_value(edited_wire.clone()) else {
+        let Ok(definition) = cadmpeg_core::serde_erase::from_json_value(&edited_wire) else {
             eprintln!("{label}: not a definition");
             return Ok(Outcome::Invalid);
         };
@@ -196,7 +204,7 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
     let [read] = read.as_slice() else {
         return Err(format!("{label}: the feature does not read back once"));
     };
-    let read_leaf = serde_json::to_value(read.evaluation.definition())
+    let read_leaf = cadmpeg_core::serde_erase::to_json_value(read.evaluation.definition())
         .unwrap()
         .pointer(&job.pointer)
         .cloned()
@@ -235,7 +243,10 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
             ));
         }
         let differences = readback::unnamed(
-            readback::beyond(readback::diff(part.ir(), written.ir()), baseline),
+            readback::beyond(
+                readback::diff_with_left(part.ir(), part_doc, written.ir()),
+                baseline,
+            ),
             &messages,
         )
         .into_iter()
@@ -262,6 +273,8 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
 /// the count of each outcome.
 fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
     let jobs = jobs(part);
+    let part_doc =
+        crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
     let baseline = readback::baseline(part);
     let next = AtomicUsize::new(0);
     let results = Mutex::new((Vec::new(), [0_usize; 3]));
@@ -273,7 +286,7 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
                 let Some(job) = jobs.get(index) else {
                     break;
                 };
-                let result = run(part, &baseline, job);
+                let result = run(part, &part_doc, &baseline, job);
                 let mut results = results.lock().unwrap();
                 match result {
                     Ok(Outcome::Invalid) => results.1[0] += 1,
@@ -320,7 +333,7 @@ fn job(part: &DecodeResult, feature: &str, selected: impl Fn(&str) -> bool) -> J
     let [found] = named(&part.ir().model.features, feature)[..] else {
         panic!("{feature} is not named once");
     };
-    let wire = serde_json::to_value(found.evaluation.definition()).unwrap();
+    let wire = cadmpeg_core::serde_erase::to_json_value(found.evaluation.definition()).unwrap();
     let mut found = Vec::new();
     leaves(&wire, "", &mut found);
     let (pointer, _) = found
@@ -337,10 +350,13 @@ fn job(part: &DecodeResult, feature: &str, selected: impl Fn(&str) -> bool) -> J
 /// no `Depth` parameter is added beside it.
 #[test]
 fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
-    let job = job(ftc_06(), "Boss-Extrude1", |pointer| {
+    let part = ftc_06();
+    let part_doc =
+        crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
+    let job = job(part, "Boss-Extrude1", |pointer| {
         pointer.ends_with("/length") && !pointer.contains("second")
     });
-    let outcome = run(ftc_06(), &readback::baseline(ftc_06()), &job);
+    let outcome = run(part, &part_doc, &readback::baseline(part), &job);
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",
@@ -354,10 +370,13 @@ fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
 /// the source.
 #[test]
 fn a_linear_pattern_first_direction_edit_is_carried() {
-    let job = job(ftc_08(), "LPattern1", |pointer| {
+    let part = ftc_08();
+    let part_doc =
+        crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
+    let job = job(part, "LPattern1", |pointer| {
         pointer.ends_with("/pattern/direction/y")
     });
-    let outcome = run(ftc_08(), &readback::baseline(ftc_08()), &job);
+    let outcome = run(part, &part_doc, &readback::baseline(part), &job);
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",

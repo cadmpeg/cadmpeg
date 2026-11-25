@@ -4,7 +4,15 @@ use cadmpeg_ir::design::names::NativeNameValue;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
 use cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect;
+use cadmpeg_ir::sketches::Sketch;
 use serde_json::{json, Value};
+
+fn sketch_data(sketches: &[Sketch]) -> SketchData<'_> {
+    SketchData {
+        sketches,
+        ..SketchData::default()
+    }
+}
 
 fn source(kind: &str, value: &Value) -> LegacyOperation {
     serde_json::from_value(json!({"kind": kind, "value": value}))
@@ -35,7 +43,7 @@ fn attached_plate_requires_a_separate_plate_contract() {
                     "thickness":2.0,"side":side,"attachment":attachment
                 }),
             );
-            assert!(operation(&value, &[], &[])
+            assert!(operation(&value, SketchData::default(), &[])
                 .expect("sheet-metal family")
                 .is_err());
         }
@@ -54,7 +62,7 @@ fn attached_bend_requires_plate_relief_and_transition_operands() {
             "transition":{"form":"style_default","radius":6.0}
         }),
     );
-    assert!(operation(&value, &[], &[])
+    assert!(operation(&value, SketchData::default(), &[])
         .expect("sheet-metal family")
         .is_err());
 }
@@ -67,7 +75,7 @@ fn unchanged_corner_requires_a_geometry_preserving_contract() {
             "bend":"inventor:design:feature#bend","effect":"unchanged"
         }),
     );
-    assert!(operation(&value, &[], &[])
+    assert!(operation(&value, SketchData::default(), &[])
         .expect("sheet-metal family")
         .is_err());
 }
@@ -138,7 +146,7 @@ fn attached_history_preserves_order_states_and_distinct_lengths() {
         feature("bend", bend.clone()),
     ];
     let sketches = [sketch];
-    let FeatureOperation::SheetMetal(value) = operation(&plate, &sketches, &features)
+    let FeatureOperation::SheetMetal(value) = operation(&plate, sketch_data(&sketches), &features)
         .expect("sheet-metal family")
         .expect("attached plate")
     else {
@@ -174,7 +182,7 @@ fn attached_history_preserves_order_states_and_distinct_lengths() {
             .expect("historical state and edge key")
         ))
     );
-    let FeatureOperation::SheetMetal(value) = operation(&bend, &sketches, &features)
+    let FeatureOperation::SheetMetal(value) = operation(&bend, sketch_data(&sketches), &features)
         .expect("sheet-metal family")
         .expect("attached bend")
     else {
@@ -224,7 +232,7 @@ fn attached_history_preserves_order_states_and_distinct_lengths() {
         &json!({"bend":"inventor:design:feature#bend","effect":"unchanged"}),
     );
     assert!(
-        matches!(operation(&corner, &sketches, &features), Some(Ok(FeatureOperation::SheetMetal(value))) if matches!(value.kind, SheetMetalKind::UnchangedCorner { .. }))
+        matches!(operation(&corner, sketch_data(&sketches), &features), Some(Ok(FeatureOperation::SheetMetal(value))) if matches!(value.kind, SheetMetalKind::UnchangedCorner { .. }))
     );
 }
 

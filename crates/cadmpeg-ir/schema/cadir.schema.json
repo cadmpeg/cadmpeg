@@ -58745,7 +58745,7 @@
       ]
     },
     "Statement": {
-      "description": "One neutral statement of a program.\n\nStatement nesting has no ceiling of its own; the JSON depth limit bounds\nit.",
+      "description": "One neutral statement of a program.",
       "oneOf": [
         {
           "description": "Assigns a value to a parameter the program assigns.",

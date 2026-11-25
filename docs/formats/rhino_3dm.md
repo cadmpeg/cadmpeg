@@ -3014,20 +3014,28 @@ not assigned the current layout by CADIR; its containing object remains a
 retained native record with an unsupported-version loss. This is an admission
 decision, not a claim that the OpenNURBS reader rejects the bytes.
 
-CADIR emits one compound procedural-curve record for the polycurve and one
-neutral carrier curve for each child. Child geometry is converted to
+CADIR emits one composite curve for the polycurve and one neutral carrier
+curve for each child. The composite's parameter range is `[t[0], t[n]]`. Each
+segment keeps the direction of its child. Each child carrier takes its
+polycurve interval as its parameter domain: a NURBS child by an affine map of
+its knots, and a child of another form by its exact NURBS form. A child whose
+domain equals its interval keeps its form. Child geometry is converted to
 millimetres; child and polycurve parameters, the reserved values, and the
-reserved bounds are not converted. The parent retains the source object
-record. A bounded child gap is represented by the midpoint join repair and
-emits its geometry warning; a malformed child or parameter array does not
-enter the typed compound record.
+reserved bounds are not scaled. A segment after the first states the
+`continuous` transition where the end point of the previous child and the
+start point of its own child are coincident (point coincidence of §16, on the
+coordinates in file units); the first segment, and a segment after a gap, state
+`discontinuous`. The composite keeps each child as stored, gaps included. The
+parent retains the source object record. A malformed child or parameter array
+does not enter the typed composite curve.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
 lower degree are elevated to the maximum segment degree. At each join, the last
 control point of the accumulated curve and the first control point of the next
-segment move to their midpoint. The first control point of the next segment is
-then omitted. The appended knots are translated by the difference between the
+segment move to their midpoint, and a join of two distinct points emits the
+`curve.polycurve-join-gap` warning. The first control point of the next segment
+is then omitted. The appended knots are translated by the difference between the
 accumulated end parameter and the next segment start parameter. The internal
 join has `degree` equal knots. The result has this identity:
 
@@ -3699,6 +3707,23 @@ color-presence byte and, when nonzero, one `ON_Color` per face.
 The `reversed surface` field states whether the face normal is opposite to the
 surface normal. A region face-side direction identifies the side that contains
 the region and does not replace the face orientation.
+
+The trims of an outer loop run counterclockwise in the surface parameters,
+about the surface normal, on a face of either `reversed surface` value. A trim
+taken in its face's sense runs in its stored direction on a face with
+`reversed surface` 0 and in the opposite direction on a face with
+`reversed surface` 1. Two trims that share an edge run in opposite directions
+along it when each is taken in its face's sense. Where exactly one of the two
+faces has `reversed surface` 1, the two stored trims run in the same direction
+along the edge.
+
+A trim uses its C2 curve over the proxy domain, in the C2 curve's direction
+when `proxy reversed` is 0 and in the opposite direction when it is 1. A
+CADIR loop runs about the face normal. On a face with `reversed surface` 1,
+CADIR states each loop with the trims in reverse order and each coedge in the
+direction opposite to its trim. Each pcurve use states the proxy domain in
+decreasing order when exactly one of `proxy reversed` and `reversed surface`
+is 1, and in increasing order otherwise.
 
 Negative material channels map to zero. A vertex, edge, trim, loop, or face
 array position is authoritative and replaces a disagreeing stored positional

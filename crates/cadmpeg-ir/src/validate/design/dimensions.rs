@@ -407,7 +407,7 @@ pub(super) fn from_cache<T: Bound>(value: &ParameterValue, negated: bool) -> Opt
         (ParameterValue::Text(text), false) => Json::String(text.clone()),
         (ParameterValue::Text(_), true) => return None,
     };
-    serde_json::from_value::<T>(wire).ok()
+    cadmpeg_core::serde_erase::from_json_value::<T>(&wire).ok()
 }
 
 /// A bound dimension's parameter has the kind its value type takes, a cached

@@ -20,7 +20,7 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::fmt::{self, Write as _};
+use std::fmt::Write as _;
 use std::hash::Hasher;
 
 use cadmpeg_ir::document::CadIr;
@@ -93,7 +93,13 @@ impl Document {
     /// The records of `ir`, with the arenas the wire omits; `None` when it
     /// does not serialize.
     pub(crate) fn of(ir: &CadIr) -> Option<Self> {
-        let Value::Object(mut root) = ir.to_neutral_json_value().ok()? else {
+        let neutral = ir.to_neutral_json_value().ok()?;
+        Self::from_neutral_value(ir, neutral)
+    }
+
+    /// Builds a [`Document`] from an already-serialized neutral JSON value of `ir`.
+    pub(crate) fn from_neutral_value(ir: &CadIr, neutral: Value) -> Option<Self> {
+        let Value::Object(mut root) = neutral else {
             return None;
         };
         let Value::Object(omitted) = ir.model.omitted_arenas_value().ok()? else {
@@ -547,33 +553,17 @@ fn digest(record: &Record, side: Side, pairing: &Pairing) -> u64 {
     hasher.finish()
 }
 
-/// Fixed-capacity stack buffer for formatting floats without heap allocation.
-struct StackBuf {
-    bytes: [u8; 32],
-    len: usize,
-}
-
-impl StackBuf {
-    const fn new() -> Self {
-        Self {
-            bytes: [0; 32],
-            len: 0,
-        }
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
-    }
-}
-
-impl fmt::Write for StackBuf {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        let raw = text.as_bytes();
-        let end = self.len.checked_add(raw.len()).ok_or(fmt::Error)?;
-        let slot = self.bytes.get_mut(self.len..end).ok_or(fmt::Error)?;
-        slot.copy_from_slice(raw);
-        self.len = end;
-        Ok(())
+/// Quantizes a finite float to 27 mantissa bits (~8.1 significant decimal
+/// digits, ~7.5e-9 relative precision) for content-hash grouping during
+/// read-back pairing without invoking decimal formatting.
+fn quantized_float_bits(real: f64) -> u64 {
+    if real == 0.0 || (real.is_finite() && real.abs() < f64::MIN_POSITIVE) {
+        0
+    } else if !real.is_finite() {
+        real.to_bits()
+    } else {
+        let bits = real.to_bits();
+        bits.checked_add(1_u64 << 24).unwrap_or(bits) & !((1_u64 << 25) - 1)
     }
 }
 
@@ -593,14 +583,8 @@ fn feed(value: &Value, own: Option<&str>, side: Side, pairing: &Pairing, hasher:
                 hasher.write_u64(integer);
             } else {
                 let real = number.as_f64().unwrap_or_default();
-                let real = if real == 0.0 { 0.0 } else { real };
                 hasher.write_u8(4);
-                let mut buf = StackBuf::new();
-                if write!(&mut buf, "{real:.8e}").is_ok() {
-                    hasher.write(buf.as_bytes());
-                } else {
-                    hasher.write(format!("{real:.8e}").as_bytes());
-                }
+                hasher.write_u64(quantized_float_bits(real));
             }
         }
         Value::String(text) => {

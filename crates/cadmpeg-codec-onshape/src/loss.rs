@@ -23,6 +23,17 @@ pub(super) enum OnshapeLossCode {
     EdgeGeometryUnsampled,
     StepUnreadable,
     RollbackUnread,
+    AssemblyReferenceUnresolved,
+    AssemblyRecordUnsupported,
+    AssemblyRecordRepeated,
+    AssemblyInstancesMissing,
+    MateUnsupported,
+    MateLimitsUnresolved,
+    AssemblyFeatureUnsupported,
+    MateFrameAssumed,
+    MateFrameUnresolved,
+    MateWorkLimited,
+    MateDiagnosticsAggregated,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -46,6 +57,17 @@ impl OnshapeLossCode {
             Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
             Self::RollbackUnread => "history.rollback-unread",
+            Self::AssemblyReferenceUnresolved => "assembly.reference-unresolved",
+            Self::AssemblyRecordUnsupported => "assembly.record-unsupported",
+            Self::AssemblyRecordRepeated => "assembly.record-repeated",
+            Self::AssemblyInstancesMissing => "assembly.instances-missing",
+            Self::MateUnsupported => "assembly.mate-unsupported",
+            Self::MateLimitsUnresolved => "assembly.mate-limits-unresolved",
+            Self::AssemblyFeatureUnsupported => "assembly.feature-unsupported",
+            Self::MateFrameAssumed => "assembly.mate-frame-assumed",
+            Self::MateFrameUnresolved => "assembly.mate-frame-unresolved",
+            Self::MateWorkLimited => "assembly.mate-work-limited",
+            Self::MateDiagnosticsAggregated => "assembly.mate-diagnostics-aggregated",
         }
     }
     pub(super) fn matches(self, note: &LossNote) -> bool {
@@ -58,6 +80,13 @@ impl OnshapeLossCode {
                 self.code(),
                 match self {
                     Self::StepUnreadable => LossTaxonomy::GeometryNotTransferred,
+                    Self::AssemblyReferenceUnresolved | Self::AssemblyInstancesMissing => {
+                        LossTaxonomy::AssemblyComponentsExternal
+                    }
+                    Self::AssemblyRecordRepeated => LossTaxonomy::ObjectRecordsUntransferred,
+                    Self::AssemblyRecordUnsupported => {
+                        LossTaxonomy::AssemblyPlacementsNotTransferred
+                    }
                     Self::EmptyMember | Self::MemberTooLarge | Self::MemberUnreadable => {
                         LossTaxonomy::MetadataNotTransferred
                     }

@@ -285,10 +285,12 @@ fn decided(ir: &CadIr) -> Result<usize, String> {
         .expect("a plan")
         .expect("a design scope");
     match design.item {
-        Decision::Item(Item::Revolve(plan)) => {
-            Ok(plan.result.as_ref().map_or(0, |result| result.sides.len()))
-        }
-        Decision::Item(Item::Extrude(_)) => Err("an Extrude".to_owned()),
+        Decision::Items(items) => match items.as_slice() {
+            [Item::Revolve(plan)] => {
+                Ok(plan.result.as_ref().map_or(0, |result| result.sides.len()))
+            }
+            other => Err(format!("{other:?}")),
+        },
         Decision::BaseFeature { reason, .. } => Err(reason),
         Decision::None => Err("no item".to_owned()),
     }
@@ -803,9 +805,12 @@ fn planned_angle(ir: &CadIr) -> Result<OwnedParameter, String> {
         .expect("a plan")
         .expect("a design scope");
     match design.item {
-        Decision::Item(Item::Revolve(plan)) => Ok(plan.angle.clone()),
+        Decision::Items(items) => match items.as_slice() {
+            [Item::Revolve(plan)] => Ok(plan.angle.clone()),
+            other => Err(format!("{other:?}")),
+        },
         Decision::BaseFeature { reason, .. } => Err(reason),
-        other => Err(format!("{other:?}")),
+        Decision::None => Err("no item".to_owned()),
     }
 }
 

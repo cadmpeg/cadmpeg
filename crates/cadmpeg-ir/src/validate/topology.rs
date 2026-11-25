@@ -3168,6 +3168,7 @@ fn check_feature_references(
             })
             .map(|candidate| candidate.id.as_str()),
     );
+    let file_keys = crate::validate::products::decode_set::file_keys(ir);
     let mut feature_ordinals = std::collections::BTreeSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -4205,6 +4206,7 @@ fn check_feature_references(
             FeatureOperation::DatumAxis { axis } => datums::validate(
                 ctx,
                 ids,
+                &file_keys,
                 feature,
                 axis,
                 ir.tolerances.linear.get(),

@@ -18,14 +18,14 @@ use cadmpeg_ir::features::sheet_metal_forms::{
 };
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
-use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::units::UnitVector3;
 
+use super::selections::SketchData;
 use super::{selections, swept, Projected};
 
 pub(super) fn operation(
     value: &LegacyOperation,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
     features: &[old::Feature],
 ) -> Option<Projected<FeatureOperation>> {
     let kind = match value {
@@ -80,6 +80,7 @@ pub(super) fn operation(
                 PlanarProfileRef::Sketch(id)
                 | PlanarProfileRef::SketchRegions { sketch: id, .. }
                     if sketches
+                        .sketches
                         .iter()
                         .any(|sketch| &sketch.id == id && !sketch.profiles.is_empty()) => {}
                 _ => return Err("the attached plate closed sketch profile is unresolved"),
@@ -193,7 +194,7 @@ pub(super) fn operation(
 
 fn contour(
     value: &old::sheet_metal::SheetMetalContourFlangeConstruction,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
 ) -> Projected<SheetMetalKind> {
     if value.neutral_factor.is_some() {
         return Err(
@@ -213,6 +214,7 @@ fn contour(
         return Err("the contour profile has no oriented sketch plane");
     };
     let (_, normal, _) = sketches
+        .sketches
         .iter()
         .find(|item| &item.id == sketch)
         .and_then(|item| item.placement.resolved())

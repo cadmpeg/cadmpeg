@@ -212,7 +212,7 @@ fn archive_session_repeated_member_refuses_at_the_original_entity_charge() {
         },
         ..DecodeOptions::default()
     };
-    let operation = "F3Z repeated member occurrences and joints";
+    let operation = "F3Z repeated member occurrences";
     let error = cadmpeg_core::decode::test_support::at_charge(
         ResourceDimension::Entities,
         operation,
