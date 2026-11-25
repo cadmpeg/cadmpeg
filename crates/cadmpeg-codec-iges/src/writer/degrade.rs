@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::without_faces_and_bodies;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::ShellMember;
 use cadmpeg_ir::CadIr;
@@ -238,8 +239,20 @@ impl Culprits {
     }
 }
 
+/// The faces of `ir` that use the record `id`.
+pub(super) fn face_users(ir: &CadIr, id: &str) -> BTreeSet<String> {
+    Uses::new(ir)
+        .faces
+        .get(id)
+        .into_iter()
+        .flatten()
+        .map(|face| (*face).to_owned())
+        .collect()
+}
+
 /// For each record id, the faces and the bodies that use it. A body uses the
-/// records of the faces in its shells.
+/// records of the faces in its shells, and a composite curve uses its
+/// segments.
 struct Uses<'ir> {
     faces: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
     bodies: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
@@ -268,12 +281,34 @@ impl<'ir> Uses<'ir> {
             .iter()
             .map(|vertex| (vertex.id.as_str(), vertex))
             .collect::<BTreeMap<_, _>>();
+        let curves = geometry
+            .curves
+            .iter()
+            .map(|curve| (curve.id.as_str(), curve))
+            .collect::<BTreeMap<_, _>>();
+        let curve_records = |id: &'ir str, records: &mut Vec<&'ir str>| {
+            let mut pending = vec![id];
+            let mut seen = BTreeSet::new();
+            while let Some(id) = pending.pop() {
+                if !seen.insert(id) {
+                    continue;
+                }
+                records.push(id);
+                if let Some(SolvedCurveGeometry::Composite { segments, .. }) =
+                    curves.get(id).and_then(|curve| curve.geometry.solved())
+                {
+                    pending.extend(segments.iter().map(|segment| segment.curve.as_str()));
+                }
+            }
+        };
         let edge_records = |id: &'ir str, records: &mut Vec<&'ir str>| {
             records.push(id);
             let Some(edge) = edges.get(id).copied() else {
                 return;
             };
-            records.extend(edge.curve().map(cadmpeg_ir::ids::CurveId::as_str));
+            if let Some(curve) = edge.curve() {
+                curve_records(curve.as_str(), records);
+            }
             for vertex in edge.vertices() {
                 records.push(vertex.as_str());
                 records.extend(
@@ -314,7 +349,9 @@ impl<'ir> Uses<'ir> {
                         continue;
                     };
                     records.extend(coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()));
-                    records.extend(coedge.use_curve.iter().map(|use_| use_.curve.as_str()));
+                    if let Some(use_curve) = &coedge.use_curve {
+                        curve_records(use_curve.curve.as_str(), &mut records);
+                    }
                     edge_records(coedge.edge.as_str(), &mut records);
                 }
             }
