@@ -2,11 +2,11 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
-    edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
-    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
-    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
-    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, edge_param_range,
+    edge_vertices, face_components, face_sense, hatch_plane_transform, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, DecodeContext, ObjectDisplay, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
@@ -731,22 +731,6 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
     };
     assert_eq!(edge_param_range(&reversed), [3.0, 7.0]);
     assert_eq!(edge_vertices(&reversed, &resolved), [1, 0]);
-}
-
-#[test]
-fn coedge_and_edge_proxy_reversals_are_independent() {
-    for trim_reversed in [false, true] {
-        for edge_proxy_reversed in [false, true] {
-            assert_eq!(
-                coedge_sense(trim_reversed, edge_proxy_reversed),
-                if trim_reversed ^ edge_proxy_reversed {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                }
-            );
-        }
-    }
 }
 
 #[test]

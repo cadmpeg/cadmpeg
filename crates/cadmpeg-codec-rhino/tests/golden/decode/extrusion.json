@@ -36,11 +36,15 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
           "pcurves": [
             {
+              "parameter_range": [
+                4.0,
+                0.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0"
             }
           ],
           "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
-          "sense": "forward"
+          "sense": "reversed"
         }
       ],
       "curves": [

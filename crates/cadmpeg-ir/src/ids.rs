@@ -1302,7 +1302,7 @@ macro_rules! id_type {
         pub struct $name($crate::ids::Identity);
 
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
-            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
             }
 
@@ -1311,8 +1311,7 @@ macro_rules! id_type {
                     $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
                 })
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
         }
@@ -1416,8 +1415,7 @@ macro_rules! local_id_type {
             fn visit_local_members(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 visitor(&self.0)
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("typed rewrite tuple")?;
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
@@ -1596,10 +1594,10 @@ impl NativeId {
 }
 
 impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_native_value(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: &mut serde_json::Value,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         <Identity as crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(
             ctx, value, map,
@@ -1614,10 +1612,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map)
             .map(Self)

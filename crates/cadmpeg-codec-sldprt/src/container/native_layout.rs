@@ -114,38 +114,44 @@ fn tail_tiles(bytes: &[u8], end: usize, root: usize, count: u16) -> bool {
         return false;
     };
     let mut cells = Vec::new();
-    for marker in first..=last_marker {
-        if bytes.get(marker..marker + MARKER.len()) != Some(MARKER.as_slice())
-            || View::u16_le_at(bytes, marker + named::EXTRA_LEN) != Some(0)
-        {
-            continue;
+    let scan_end = last_marker
+        .checked_add(MARKER.len())
+        .map_or(bytes.len(), |end| end.min(bytes.len()));
+    if first < scan_end {
+        for rel in memchr::memmem::find_iter(&bytes[first..scan_end], &MARKER) {
+            let marker = first + rel;
+            if marker > last_marker || View::u16_le_at(bytes, marker + named::EXTRA_LEN) != Some(0)
+            {
+                continue;
+            }
+            let Some(length) = View::u32_le_at(bytes, marker + named::L).filter(|n| *n > 0) else {
+                continue;
+            };
+            if length.checked_mul(2) != View::u32_le_at(bytes, marker + named::TWO_L)
+                || Some(length / 2) != View::u32_le_at(bytes, marker + named::HALF_L)
+            {
+                continue;
+            }
+            let Some(name_len) =
+                View::u16_le_at(bytes, marker + named::NAME_LEN).filter(|n| *n > 0)
+            else {
+                continue;
+            };
+            let Some(record_end) = marker
+                .checked_add(named::LEN)
+                .and_then(|n| n.checked_add(usize::from(name_len)))
+            else {
+                continue;
+            };
+            if bytes
+                .get(marker + named::LEN..record_end)
+                .and_then(nibble_swap_name)
+                .is_none()
+            {
+                continue;
+            }
+            cells.push((marker, index_from_u32(length), record_end));
         }
-        let Some(length) = View::u32_le_at(bytes, marker + named::L).filter(|n| *n > 0) else {
-            continue;
-        };
-        if length.checked_mul(2) != View::u32_le_at(bytes, marker + named::TWO_L)
-            || Some(length / 2) != View::u32_le_at(bytes, marker + named::HALF_L)
-        {
-            continue;
-        }
-        let Some(name_len) = View::u16_le_at(bytes, marker + named::NAME_LEN).filter(|n| *n > 0)
-        else {
-            continue;
-        };
-        let Some(record_end) = marker
-            .checked_add(named::LEN)
-            .and_then(|n| n.checked_add(usize::from(name_len)))
-        else {
-            continue;
-        };
-        if bytes
-            .get(marker + named::LEN..record_end)
-            .and_then(nibble_swap_name)
-            .is_none()
-        {
-            continue;
-        }
-        cells.push((marker, index_from_u32(length), record_end));
     }
     let strides: BTreeSet<_> = cells
         .iter()
@@ -295,37 +301,43 @@ pub(crate) fn source_envelope(
         return Ok(None);
     };
     let mut declared = false;
-    for start in outer_hdr::LEN..=last_central {
-        if bytes
-            .get(start + central::VERSION_NEEDED..start + central::VERSION_NEEDED + MARKER.len())
-            != Some(MARKER.as_slice())
-            || View::u16_le_at(bytes, start + central::VERSION_MADE_BY) != Some(0)
-        {
-            continue;
-        }
-        let Some(relative) =
-            View::u32_le_at(bytes, start + central::LOCAL_OFFSET).map(index_from_u32)
-        else {
-            continue;
-        };
-        if relative
-            .checked_add(outer_hdr::LEN)
-            .and_then(|offset| offset.checked_add(4))
-            .is_some_and(|offset| {
-                offset < start
-                    && (blocks.iter().any(|block| block.offset == offset)
-                        || unreadable.iter().any(|(frame, _)| *frame == offset))
-            })
-        {
-            declared = true;
+    let marker_start = outer_hdr::LEN + central::VERSION_NEEDED;
+    let marker_end = last_central
+        .checked_add(central::VERSION_NEEDED + MARKER.len())
+        .map_or(bytes.len(), |end| end.min(bytes.len()));
+    if marker_start < marker_end {
+        for rel in memchr::memmem::find_iter(&bytes[marker_start..marker_end], &MARKER) {
+            let start = outer_hdr::LEN + rel;
+            if start > last_central
+                || View::u16_le_at(bytes, start + central::VERSION_MADE_BY) != Some(0)
+            {
+                continue;
+            }
+            let Some(relative) =
+                View::u32_le_at(bytes, start + central::LOCAL_OFFSET).map(index_from_u32)
+            else {
+                continue;
+            };
+            if relative
+                .checked_add(outer_hdr::LEN)
+                .and_then(|offset| offset.checked_add(4))
+                .is_some_and(|offset| {
+                    offset < start
+                        && (blocks.iter().any(|block| block.offset == offset)
+                            || unreadable.iter().any(|(frame, _)| *frame == offset))
+                })
+            {
+                declared = true;
+                break;
+            }
         }
     }
     let mut selected = None;
     let last_root = bytes.len().checked_sub(eocd::LEN).ok_or_else(malformed)?;
     for root in outer_hdr::LEN..=last_root {
-        if View::u16_le_at(bytes, root + eocd::DISK_NUMBER) != Some(0)
-            || View::u16_le_at(bytes, root + eocd::CENTRAL_DISK) != Some(0)
-            || View::u16_le_at(bytes, root + eocd::COMMENT_LEN) != Some(0)
+        let record = &bytes[root..root + eocd::LEN];
+        if record[eocd::DISK_NUMBER..eocd::CENTRAL_DISK + 2] != [0, 0, 0, 0]
+            || record[eocd::COMMENT_LEN..eocd::COMMENT_LEN + 2] != [0, 0]
         {
             continue;
         }

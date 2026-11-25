@@ -280,32 +280,77 @@ impl SldprtCodec {
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
+        let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::default());
+        let baseline_key = image.map(|_| {
+            let mut key_bytes = Vec::new();
+            for record in records {
+                key_bytes.extend_from_slice(record.id.as_str().as_bytes());
+                key_bytes.push(0);
+                if let Some(data) = record.data {
+                    key_bytes.extend_from_slice(
+                        &cadmpeg_core::decode::u64_from_index(data.len()).to_le_bytes(),
+                    );
+                    key_bytes.extend_from_slice(
+                        cadmpeg_ir::hash::digest::Sha256Digest::digest(data)
+                            .as_str()
+                            .as_bytes(),
+                    );
+                }
+                key_bytes.push(1);
+            }
+            for (name, digest) in digests {
+                key_bytes.extend_from_slice(name.as_str().as_bytes());
+                key_bytes.push(0);
+                key_bytes.extend_from_slice(digest.as_str().as_bytes());
+                key_bytes.push(1);
+            }
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&key_bytes)
+        });
         let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
-            writer::write_semantic_with_records(
+            let mut cache = writer::SemanticWriteCache {
+                source_baseline: shared_cache.borrow().source_baseline.clone(),
+                native: writer::CachedNative::Unloaded,
+            };
+            let source_digests = if source.source_fidelity.codec_digests.is_empty() {
+                digests
+            } else {
+                &source.source_fidelity.codec_digests
+            };
+            let result = writer::write_semantic_with_records_cached(
                 &source.ir,
                 &source.source_fidelity.annotations,
-                &source.source_fidelity.codec_digests,
+                source_digests,
                 records,
-                &[],
-                &[],
+                writer::HistoryEdits {
+                    withheld: &[],
+                    shaped: &[],
+                },
+                &mut cache,
                 &mut bytes,
             )
-            .ok()?;
+            .ok();
+            let mut shared = shared_cache.borrow_mut();
+            if shared.source_baseline.is_none() {
+                shared.source_baseline = cache.source_baseline;
+            }
+            result?;
             (image != Some(bytes.as_slice())).then_some(bytes)
         };
         let ((bytes, output), read_back) = history::write::read_back::write_until_read_back(
             ir,
             digests,
+            baseline_key,
             &mut |withheld| {
                 let mut bytes = Vec::new();
-                let output = writer::write_semantic_with_records(
+                let mut cache = shared_cache.borrow_mut();
+                let output = writer::write_semantic_with_records_cached(
                     ir,
                     annotations,
                     digests,
                     records,
-                    withheld,
-                    shaped,
+                    writer::HistoryEdits { withheld, shaped },
+                    &mut cache,
                     &mut bytes,
                 )?;
                 Ok((bytes, output))
@@ -324,16 +369,25 @@ impl SldprtCodec {
             losses,
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
-        let native = ir
-            .native
-            .namespace("sldprt")
-            .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
-            .transpose()?;
+        let shared = shared_cache.into_inner();
+        let native = match shared.native {
+            writer::CachedNative::Loaded(loaded) => loaded,
+            writer::CachedNative::Unloaded => ir
+                .native
+                .namespace("sldprt")
+                .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
+                .transpose()?,
+        };
+        let source = shared
+            .source_baseline
+            .as_deref()
+            .map(|decoded| history::write::brep_agreement::Source::Decoded(&decoded.ir))
+            .or_else(|| image.map(history::write::brep_agreement::Source::Image));
         let stale_solid = history::write::brep_agreement::agreement(
             ir,
             digests,
             native.as_ref(),
-            image.map(history::write::brep_agreement::Source::Image),
+            source,
             &written,
             &read_back.misread,
         )?

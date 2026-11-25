@@ -3870,6 +3870,29 @@ class SetSpelling:
             canonical_path(match.group("path")).rsplit("::", 1)[-1]
             for match in DESERIALIZE_CALL_RE.finditer(body)
         ]
+        if not read:
+            erased = re.findall(
+                r"\bcadmpeg_core\s*::\s*serde_erase\s*::\s*deserialize_with\s*\("
+                r"[^,]+,\s*(?P<path>(?:::)?(?:[A-Za-z_]\w*\s*::\s*)*[A-Za-z_]\w*)"
+                r"\s*::\s*deserialize_erased\s*,?\s*\)",
+                body,
+            )
+            if erased:
+                source = SOURCE_POLICY.mask_rust_non_code(read_source(reader.path))
+                verified = []
+                for path in erased:
+                    wire = canonical_path(path).rsplit("::", 1)[-1]
+                    # Confirm `impl <Wire> { fn deserialize_erased(...) { Self::deserialize(...) } }`
+                    # in the same file before accepting the erased delegation.
+                    if re.search(
+                        rf"\bimpl\b[^{{]*\b{re.escape(wire)}\b[^{{]*\{{"
+                        rf"[^}}]*\bfn\s+deserialize_erased\b[^{{]*\{{"
+                        rf"\s*Self\s*::\s*deserialize\s*\(\s*deserializer\s*\)\s*\}}",
+                        source,
+                    ):
+                        verified.append(wire)
+                if len(verified) == len(erased):
+                    read = verified
         return bool(read) and all(
             name in self.declared and name not in SPELLED_TYPES | SEQUENCE_TYPES
             for name in read
