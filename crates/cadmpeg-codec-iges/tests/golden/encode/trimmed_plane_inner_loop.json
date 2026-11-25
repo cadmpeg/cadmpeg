@@ -59,8 +59,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D11) was withheld because its parameter-space carrier has no exported owner",
@@ -72,8 +71,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D5) was withheld because its parameter-space carrier has no exported owner",

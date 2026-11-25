@@ -504,32 +504,16 @@ impl RhinoLossCode {
         }
     }
 
-    /// Strict floor pinned from this local code (independent of taxonomy remap).
-    ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection. `ObjectFramingUndecodable` pins Warning above
-    /// its `DecodeDiagnostic` taxonomy (which is otherwise tolerable). The
-    /// writer codes pin none, as the format specification states none.
+    /// The strict floor `rhino_3dm.md` §21 states: a given-up framed object
+    /// record pins Warning.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::IntegrityFailure | Self::ObjectFramingUndecodable => Some(Severity::Warning),
-            Self::SourceWriterStampUnverified
-            | Self::WriterRecordOmitted
-            | Self::WriterBodySplit
-            | Self::WriterEdgeUnjoined
-            | Self::WriterCurveSplit
-            | Self::WriterEdgeGapJoined
-            | Self::WriterEdgeSplit
-            | Self::WriterSubdControlMesh
-            | Self::WriterTsplineReduced
-            | Self::WriterSubdContentOmitted
-            | Self::WriterValueOmitted
-            | Self::WriterAttributesOmitted => None,
-            other => other.shared_taxonomy().strict_floor(),
+            Self::ObjectFramingUndecodable => Some(Severity::Warning),
+            _ => None,
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         cadmpeg_ir::report::loss::NamespacedLossKind::new(
@@ -705,17 +689,18 @@ mod tests {
         );
     }
 
+    /// `rhino_3dm.md` §21 states a strict floor for an undecodable object
+    /// framing and for no other code.
     #[test]
-    fn missing_writer_stamp_does_not_trigger_document_dialect_strictness() {
-        assert_eq!(
-            RhinoLossCode::SourceWriterStampUnverified
-                .kind()
-                .strict_floor(),
-            None
-        );
-        assert_eq!(
-            RhinoLossCode::SourceDialectUnverified.kind().strict_floor(),
-            Some(cadmpeg_ir::report::Severity::Warning)
-        );
+    fn only_an_undecodable_object_framing_pins_a_strict_floor() {
+        for code in RhinoLossCode::ALL {
+            let expected = match code {
+                RhinoLossCode::ObjectFramingUndecodable => {
+                    Some(cadmpeg_ir::report::Severity::Warning)
+                }
+                _ => None,
+            };
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+        }
     }
 }

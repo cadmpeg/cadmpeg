@@ -100,8 +100,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D1) has no exported owner and was withheld",
@@ -113,8 +112,7 @@
           "value": {
             "code": "output.empty",
             "kind": "no_exportable_solids",
-            "namespace": "export",
-            "strict_floor": "warning"
+            "namespace": "export"
           }
         },
         "message": "the written IGES file holds no entity: the document states no geometry this writer encodes",

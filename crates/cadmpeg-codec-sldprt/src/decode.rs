@@ -1347,7 +1347,9 @@ pub(crate) fn append_design_losses(
     let incomplete_body_selection = |selection: &BodySelection| match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
         BodySelection::Historical { bodies, .. } => bodies.is_empty(),
-        BodySelection::ResolvedSet { .. } | BodySelection::HistoricalSet { .. } => false,
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::GeneratedSet { .. } => false,
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,

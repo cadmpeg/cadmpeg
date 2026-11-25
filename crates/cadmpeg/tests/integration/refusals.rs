@@ -12,7 +12,7 @@ use crate::support::fixture;
 #[cfg(all(feature = "creo", any(feature = "step", feature = "iges")))]
 use crate::support::geometryless_creo;
 #[cfg(feature = "rhino")]
-use crate::support::minimal_rhino_archive;
+use crate::support::rhino_archive_with_unreadable_point;
 
 #[test]
 fn garbage_reports_supported_formats() {
@@ -105,7 +105,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
 #[test]
 fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
     let dir = tempdir().unwrap();
-    let input = minimal_rhino_archive(dir.path(), "undeclared.3dm", "100");
+    let input = rhino_archive_with_unreadable_point(dir.path(), "unreadable.3dm");
 
     for (command, extra) in [
         ("dump", Vec::<&str>::new()),
@@ -136,7 +136,7 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .iter()
             .any(|loss| {
                 loss["code"]["value"]["namespace"] == "rhino"
-                    && loss["code"]["value"]["code"] == "source.dialect-unverified"
+                    && loss["code"]["value"]["code"] == "object.framing-undecodable"
             }));
     }
 }

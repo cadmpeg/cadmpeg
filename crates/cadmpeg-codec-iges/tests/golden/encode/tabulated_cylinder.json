@@ -66,8 +66,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D1) has no exported owner and was withheld",

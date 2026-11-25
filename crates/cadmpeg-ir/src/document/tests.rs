@@ -20,6 +20,7 @@ use crate::{diff, CadIr};
 
 mod append;
 mod feature_parents;
+mod scope;
 mod unknowns;
 
 #[test]
@@ -815,8 +816,29 @@ fn a_document_with_records_of_an_excluded_class_reads_and_names_each_arena() {
         scopes.to_string(),
         "the document's scope excludes design but design arena `design.scopes` holds records"
     );
+    let mut container: Vec<ScopeViolation> = [
+        "bodies",
+        "regions",
+        "shells",
+        "faces",
+        "loops",
+        "coedges",
+        "edges",
+        "vertices",
+        "points",
+        "surfaces",
+        "curves",
+        "product_definitions",
+    ]
+    .into_iter()
+    .map(|arena| ScopeViolation::Populated {
+        arena: ArenaName::parse(arena).unwrap(),
+    })
+    .collect();
+    assert_eq!(container[0], bodies);
+    container.push(scopes);
     for (scope, expected) in [
-        (ContentScope::container(), vec![bodies, scopes]),
+        (ContentScope::container(), container),
         (ContentScope::geometry(), vec![scopes]),
         (ContentScope::design(), vec![]),
     ] {
@@ -824,11 +846,7 @@ fn a_document_with_records_of_an_excluded_class_reads_and_names_each_arena() {
         let read = CadIr::from_json(&json).unwrap();
         assert_eq!(read.scope(), scope);
         assert_eq!(serde_json::from_str::<CadIr>(&json).unwrap(), read);
-        let violations = read.scope_violations();
-        for violation in &expected {
-            assert!(violations.contains(violation), "{violations:?}");
-        }
-        assert_eq!(violations.is_empty(), expected.is_empty(), "{violations:?}");
+        assert_eq!(read.scope_violations(), expected);
     }
 }
 
