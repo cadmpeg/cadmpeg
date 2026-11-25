@@ -69,13 +69,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Writing uses the FCStd native document graph on `CadIr`
-(`ir.native["fcstd"]`), not `SourceFidelity`. `Encoder::plan` ignores
-`fidelity` and returns `NotConsumed` when one is supplied. Retained
-schema-4/file-1 documents regenerate while preserving unedited XML records and
-named side entries. Checked leaf property edits and side-entry replacements
-update the native graph in place. `FcstdDocumentBuilder` builds source-less
-application graphs for the same write envelope. Unsupported schema or file
-targets are refused.
+(`ir.native["fcstd"]`). `Encoder::plan` reads only the uncarried codec digest
+from `fidelity` and returns `NotConsumed`. The writer patches the retained
+`Document.xml` and repacks the retained side entries; it preserves unedited XML
+records and named side entries and writes the band the retained `Document.xml`
+declares. Checked leaf property edits and side-entry replacements update the
+native graph in place. `FcstdDocumentBuilder` builds a schema-4 document from
+typed objects, properties, and side entries by assembling an archive and
+decoding it, so the document holds retained entries the writer patches. A
+document that holds no retained `Document.xml` is refused with
+`UnsupportedTarget`.
 
 ## Data model
 

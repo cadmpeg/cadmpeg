@@ -518,10 +518,34 @@ fn an_explicit_replay_row_of_another_schema_writes_the_declared_schema() {
     );
 }
 
-/// A document of another source format that holds `fcstd` archive entries is
-/// written under `Inherit` as the schema its retained `Document.xml`
-/// declares. The request names no row and the source records no `fcstd`
-/// dialect, so the report charges no target loss.
+/// A schema-3 source is written as schema 3, under `Inherit` and under an
+/// explicit `fcstd:schema-3`, and charges no target loss.
+#[test]
+fn a_schema_three_source_is_written_as_schema_three() {
+    let ir = FcstdCodec
+        .decode(
+            &mut Cursor::new(rewrite_schema_version(CORE_DESIGN_PRODUCT, "3")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema 3")
+        .ir()
+        .clone();
+    for request in [
+        TargetRequest::Inherit,
+        TargetRequest::Explicit("fcstd:schema-3"),
+    ] {
+        assert_eq!(
+            write_and_read_dialect(&ir, request),
+            ("fcstd:schema-3".to_owned(), vec![])
+        );
+    }
+}
+
+/// A document of another source format, or of none, that holds `fcstd`
+/// archive entries is written under `Inherit` as the schema its retained
+/// `Document.xml` declares. That schema is not the newest row `Inherit`
+/// resolved to, so the one target loss is `target.source-dialect-displaced`
+/// naming both.
 #[test]
 fn inherit_writes_fcstd_entries_under_a_source_of_another_format_as_their_schema() {
     let mut ir = FcstdCodec
@@ -538,9 +562,31 @@ fn inherit_writes_fcstd_entries_under_a_source_of_another_format_as_their_schema
         )),
         std::collections::BTreeMap::new(),
     ));
-    assert_eq!(
-        write_and_read_dialect(&ir, TargetRequest::Inherit),
-        ("fcstd:schema-2".to_owned(), vec![])
+    let (read, charged) = write_and_read_dialect(&ir, TargetRequest::Inherit);
+    assert_eq!(read, "fcstd:schema-2");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.source-dialect-displaced");
+    assert!(
+        message.contains("source is step")
+            && message.contains("resolved to fcstd:schema-4")
+            && message.contains("written as fcstd:schema-2"),
+        "{message}"
+    );
+
+    ir.source = None;
+    let (read, charged) = write_and_read_dialect(&ir, TargetRequest::Inherit);
+    assert_eq!(read, "fcstd:schema-2");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.source-dialect-displaced");
+    assert!(
+        message.contains("records no source")
+            && message.contains("resolved to fcstd:schema-4")
+            && message.contains("written as fcstd:schema-2"),
+        "{message}"
     );
 }
 
@@ -858,6 +904,61 @@ fn a_document_whose_digest_does_not_compute_is_patched_and_reported_unverified()
             .and_then(|source| source.dialect())
             .map(|dialect| dialect.dialect().to_string()),
         Some("fcstd:schema-4".to_owned())
+    );
+}
+
+/// The caller's limits reach every parse of the write. A native record nested
+/// past the default recursion ceiling stops the uncarried digest, so under
+/// the default limits the write is refused with `ResourceLimit`. Under a
+/// caller ceiling above the default the digest computes, and the record,
+/// which the writer has no serializer for, is reported with the document.
+#[test]
+fn a_caller_limit_above_the_default_is_honoured() {
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_recursion_depth *= 4;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy { limits },
+    )
+    .expect("an empty root fits");
+    let mut nested = serde_json::json!("leaf");
+    for _ in 0..256 {
+        nested = serde_json::json!([nested]);
+    }
+    let mut ir = CORE_DESIGN.ir().clone();
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+        .set_arena(
+            &ctx,
+            "nested",
+            &[serde_json::json!({
+                "id": crate::native::native_id("nested", "deep"),
+                "value": nested,
+            })],
+        )
+        .expect("set the nested arena");
+    let fidelity = Some(CORE_DESIGN.source_fidelity());
+
+    let refused = inherit(&ir, fidelity).expect_err("the default ceiling runs out");
+    assert!(
+        matches!(refused, EncodeError::ResourceLimit(_)),
+        "{refused}"
+    );
+
+    let mut bytes = Vec::new();
+    let report = Encoder::plan(
+        &FcstdCodec,
+        EncodeInput::new(&ir, fidelity).with_limits(limits),
+        TargetRequest::Inherit,
+    )
+    .expect("the caller's ceiling admits the document")
+    .write_to(&mut bytes)
+    .expect("the patch writes");
+    assert_eq!(
+        export_losses(&report),
+        [("edit.dropped", cadmpeg_ir::report::Severity::Error)]
     );
 }
 

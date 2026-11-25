@@ -167,8 +167,9 @@ fn a_repeated_entry_name_is_written_once_and_reported() {
     );
 }
 
-/// An entry the document no longer holds is left out of the archive, and the
-/// report names the ledger span of its ZIP member.
+/// An entry the document no longer holds is left out of the archive. The
+/// report names each property that names it, and no ledger span of its ZIP
+/// member, since those properties account for the member.
 #[test]
 fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let decoded = FcstdCodec
@@ -201,7 +202,7 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let omitted = export_messages(&report, "native.records-omitted");
     for id in &payload_spans {
         assert!(
-            omitted.iter().any(|message| message.contains(id.as_str())),
+            omitted.iter().all(|message| !message.contains(id.as_str())),
             "{id}: {omitted:?}"
         );
     }
@@ -561,9 +562,13 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .and_then(cadmpeg_ir::SourceMeta::dialect)
         .expect("decoded FCStd source is classified")
         .dialect();
-    let resolution = retained_baseline(decoded.ir(), source_dialect)
-        .expect("the retained Document.xml reads")
-        .expect("the decoded schema-4 baseline is preserved");
+    let resolution = retained_baseline(
+        decoded.ir(),
+        source_dialect,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .expect("the retained Document.xml reads")
+    .expect("the decoded schema-4 baseline is preserved");
     crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);

@@ -73,8 +73,8 @@ fn the_stored_document_empties_the_file_name_of_a_removed_entry() {
 /// A removed optional entry whose property the patch cannot write, because
 /// its span no longer holds its stored text, leaves the property as stored.
 /// The patched document reads back with the entry unresolved, the property
-/// still names the entry, and `export:native.records-omitted` names the
-/// property; no edit is reported dropped.
+/// still names the entry, and the one `export:native.records-omitted` line
+/// names the property; no edit is reported dropped.
 #[test]
 fn a_property_left_as_stored_names_its_removed_optional_entry_as_omitted() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"/></Property></Properties></Object></ObjectData></Document>"#;
@@ -117,12 +117,8 @@ fn a_property_left_as_stored_names_its_removed_optional_entry_as_omitted() {
             && loss.message.contains(payload.id.as_str())
     }));
     let omitted = export_messages(&report, "native.records-omitted");
-    let naming = omitted
-        .iter()
-        .filter(|message| message.contains(payload.id.as_str()))
-        .collect::<Vec<_>>();
-    let [message] = naming.as_slice() else {
-        panic!("expected one omitted line naming the property, got {omitted:?}");
+    let [message] = omitted.as_slice() else {
+        panic!("expected one omitted line, naming the property, got {omitted:?}");
     };
     assert!(
         message.contains("names its entry as the source stores it")
@@ -130,6 +126,79 @@ fn a_property_left_as_stored_names_its_removed_optional_entry_as_omitted() {
         "{message}"
     );
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
+}
+
+/// The ids of the ledger spans that hold the compressed payload of member
+/// `name`.
+fn payload_spans(ir: &cadmpeg_ir::CadIr, name: &str) -> Vec<String> {
+    native_arena::<ArchiveSpan>(ir, "physical_ledger")
+        .into_iter()
+        .filter(|span| matches!(&span.role, ArchiveSpanRole::CompressedPayload(member) if member == name))
+        .map(|span| span.id)
+        .collect()
+}
+
+/// Each member the output no longer holds is named on one
+/// `export:native.records-omitted` line. The property that names a member
+/// accounts for it, so no ledger span of that member is named; a member that
+/// no property names is named by its ledger span.
+#[test]
+fn a_removed_member_is_named_on_one_line() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"/></Property></Properties></Object></ObjectData></Document>"#;
+    let mut ir = decode(&archive_entries(&[
+        ("Document.xml", xml.as_bytes()),
+        ("Payload.bin", b"payload"),
+        ("Extra.bin", b"extra"),
+    ]));
+    let (named_spans, unnamed_spans) = (
+        payload_spans(&ir, "Payload.bin"),
+        payload_spans(&ir, "Extra.bin"),
+    );
+    assert!(!named_spans.is_empty() && !unnamed_spans.is_empty());
+    let mut entries = native_arena::<EntryRecord>(&ir, "entries");
+    entries.retain(|entry| entry.name() == "Document.xml");
+    replace_arena(&mut ir, "entries", &entries);
+    let payload = properties_naming(&ir, "Payload.bin")
+        .pop()
+        .expect("Payload names its entry");
+    assert!(properties_naming(&ir, "Extra.bin").is_empty());
+
+    let (report, bytes, _) = write_and_read_back(&ir);
+    let payloads = archive_payloads(&bytes);
+    assert!(!payloads.contains_key("Payload.bin") && !payloads.contains_key("Extra.bin"));
+    let omitted = export_messages(&report, "native.records-omitted");
+    assert_eq!(omitted.len(), 2, "{omitted:?}");
+    let property_lines = omitted
+        .iter()
+        .filter(|message| message.contains(payload.id.as_str()))
+        .collect::<Vec<_>>();
+    let [property_line] = property_lines.as_slice() else {
+        panic!("expected one line naming the property, got {omitted:?}");
+    };
+    assert!(property_line.contains("names no entry"), "{property_line}");
+    for span in &named_spans {
+        assert!(
+            omitted
+                .iter()
+                .all(|message| !message.contains(span.as_str())),
+            "{span}: {omitted:?}"
+        );
+    }
+    let span_lines = omitted
+        .iter()
+        .filter(|message| {
+            unnamed_spans
+                .iter()
+                .any(|span| message.contains(span.as_str()))
+        })
+        .collect::<Vec<_>>();
+    let [span_line] = span_lines.as_slice() else {
+        panic!("expected one line naming a span of the unnamed member, got {omitted:?}");
+    };
+    assert!(
+        span_line.contains("has no archive entry record"),
+        "{span_line}"
+    );
 }
 
 /// A `Document.xml` entry edited so that no property span holds its stored

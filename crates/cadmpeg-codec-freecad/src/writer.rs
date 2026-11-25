@@ -12,6 +12,7 @@ pub(crate) mod target;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{Seek, SeekFrom, Write};
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, evaluation_stale, native_records_omitted};
 use cadmpeg_ir::native::NativeNamespace;
@@ -77,6 +78,7 @@ fn recover(error: CodecError) -> Result<(), CodecError> {
 
 /// The records of `arena` that read as `T`, and the ids of those that do not.
 fn read_arena<T: DeserializeOwned>(
+    ctx: &DecodeContext<'_>,
     namespace: &NativeNamespace,
     arena: &str,
 ) -> Result<(Vec<T>, Vec<String>), CodecError> {
@@ -88,7 +90,7 @@ fn read_arena<T: DeserializeOwned>(
         .map(cadmpeg_ir::native::NativeRecord::id);
     let mut read = Vec::new();
     let mut unreadable = Vec::new();
-    for (id, record) in ids.zip(namespace.arena_iter_as::<T>(arena)) {
+    for (id, record) in ids.zip(namespace.arena_iter_as_for_decode::<T>(ctx, arena)) {
         match record {
             Ok(record) => read.push(record),
             Err(error) => {
@@ -112,17 +114,30 @@ fn write_seekable(
     let namespace = resolution.namespace();
     let entries = resolution.entries();
     let mut omitted = resolution.omitted().clone();
+    let policy = DecodePolicy {
+        limits: resolution.limits(),
+    };
+    let arena = DecodeArena::new();
+    let (records, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let (physical_ledger, unreadable_spans) =
-        read_arena::<ArchiveSpan>(namespace, "physical_ledger")?;
+        read_arena::<ArchiveSpan>(&records, namespace, "physical_ledger")?;
     for id in unreadable_spans {
         omitted.push(UNREADABLE_SPAN, id);
     }
-    let (objects, unreadable_objects) = read_arena::<ObjectRecord>(namespace, "objects")?;
+    let (objects, unreadable_objects) = read_arena::<ObjectRecord>(&records, namespace, "objects")?;
     let (extensions, unreadable_extensions) =
-        read_arena::<ExtensionRecord>(namespace, "extensions")?;
+        read_arena::<ExtensionRecord>(&records, namespace, "extensions")?;
     let (properties, unreadable_properties) =
-        read_arena::<PropertyRecord>(namespace, "properties")?;
+        read_arena::<PropertyRecord>(&records, namespace, "properties")?;
+    let written = written_document(resolution, &objects, &extensions, &properties)?;
+    for id in written.unheld {
+        omitted.push(UNHELD_PAYLOAD, id);
+    }
+    for id in written.named {
+        omitted.push(NAMED_PAYLOAD, id);
+    }
     let mut omitted_members = resolution.omitted_members().clone();
+    omitted_members.extend(written.members);
     for span in &physical_ledger {
         if let ArchiveSpanRole::CompressedPayload(name) = &span.role {
             if name != "Document.xml"
@@ -132,13 +147,6 @@ fn write_seekable(
                 omitted.push(UNREAD_PAYLOAD, span.id.clone());
             }
         }
-    }
-    let written = written_document(resolution, &objects, &extensions, &properties)?;
-    for id in written.unheld {
-        omitted.push(UNHELD_PAYLOAD, id);
-    }
-    for id in written.named {
-        omitted.push(NAMED_PAYLOAD, id);
     }
     let mut dropped = written.dropped;
     dropped.extend(unreadable_objects);
@@ -244,6 +252,8 @@ struct WrittenDocument {
     /// Properties written as the source stores them, naming an archive entry
     /// the output does not hold.
     named: BTreeSet<String>,
+    /// The archive members that `unheld` and `named` name.
+    members: HashSet<String>,
 }
 
 impl WrittenDocument {
@@ -269,6 +279,7 @@ impl WrittenDocument {
             stale,
             unheld: unheld.emptied,
             named: unheld.named,
+            members: unheld.members,
         }
     }
 }
@@ -284,6 +295,8 @@ struct Unheld {
     emptied: BTreeSet<String>,
     /// Properties written as stored.
     named: BTreeSet<String>,
+    /// The archive members the properties in `unheld` name.
+    members: HashSet<String>,
 }
 
 impl Unheld {
@@ -302,6 +315,13 @@ impl Unheld {
             .intersection(as_stored)
             .cloned()
             .collect::<BTreeSet<_>>();
+        let members = originals
+            .iter()
+            .filter(|property| unheld.contains(&property.id))
+            .flat_map(PropertyRecord::side_entries)
+            .filter(|name| removed.contains(name.as_str()))
+            .cloned()
+            .collect();
         let expected = written
             .iter()
             .zip(originals)
@@ -320,6 +340,7 @@ impl Unheld {
             expected,
             emptied: unheld.difference(as_stored).cloned().collect(),
             named,
+            members,
         }
     }
 }
@@ -451,6 +472,7 @@ fn stored_document(
         stale: BTreeSet::new(),
         unheld: BTreeSet::new(),
         named: BTreeSet::new(),
+        members: HashSet::new(),
     })
 }
 
@@ -505,7 +527,7 @@ fn with_touches(
     if resolution.vocabulary() == Vocabulary::Features {
         Ok(Some(xml))
     } else {
-        patch_object_touches(&xml, marked)
+        patch_object_touches(&xml, marked, resolution.limits())
     }
 }
 
@@ -555,10 +577,11 @@ fn read_back(
     resolution: &Resolution<'_>,
     resolve: bool,
 ) -> Result<Option<Graph>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)?;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: resolution.limits(),
+    };
+    let (ctx, _) = DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)?;
     let graph = crate::container::admit_document(&ctx, xml.as_bytes()).and_then(|admitted| {
         let mut graph = crate::persistence::parse_document(&admitted, resolution.vocabulary())?;
         if !resolve {
@@ -763,11 +786,11 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
 fn patch_object_touches(
     source: &str,
     objects: &[ObjectRecord],
+    limits: ResourceLimits,
 ) -> Result<Option<String>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let arena = DecodeArena::new();
     let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
+        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy { limits })?;
     let xml = match ctx.parse_xml(source, "FreeCAD object declarations") {
         Ok(xml) => xml,
         Err(error) => return recover(error).map(|()| None),

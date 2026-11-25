@@ -226,8 +226,10 @@ fn write_request_inherit_with_no_default_takes_the_newest_row() {
 }
 
 /// An `Inherit` request names no row, so a written row other than the one
-/// resolution chose charges only `target.source-dialect-displaced` for a
-/// source that records no dialect, and nothing for a source of another format.
+/// resolution chose charges only `target.source-dialect-displaced`: for a
+/// source that records no dialect, a source of another format, and no
+/// source, each naming the written row, and the resolved row where the
+/// source records none of this format.
 #[test]
 fn an_inherit_write_of_another_row_charges_only_the_source_code() {
     let row = Some(WrittenRow {
@@ -253,7 +255,40 @@ fn an_inherit_write_of_another_row_charges_only_the_source_code() {
     let foreign = catalog_write_ir(Some(("other", Some("other:only"))));
     let resolved =
         resolve_write_request(&foreign, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
-    assert_eq!(charged(&resolved, true, row), ("test:old".into(), vec![]));
+    assert_eq!(
+        charged(&resolved, true, row.clone()),
+        (
+            "test:old".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document's source is other, which records no test dialect; Inherit \
+                 resolved to test:new, and the file is written as test:old; the stored \
+                 envelope decides the row"
+                    .to_owned()
+            )]
+        )
+    );
+
+    let sourceless = catalog_write_ir(None);
+    let resolved =
+        resolve_write_request(&sourceless, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(
+        charged(&resolved, true, row),
+        (
+            "test:old".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document records no source; Inherit resolved to test:new, and the file \
+                 is written as test:old; the stored envelope decides the row"
+                    .to_owned()
+            )]
+        )
+    );
+    assert_eq!(
+        charged(&resolved, true, None),
+        ("test:new".into(), vec![]),
+        "the resolved row written charges nothing"
+    );
 }
 
 /// §3.2 pins a strict floor only where it states one with the code, and it

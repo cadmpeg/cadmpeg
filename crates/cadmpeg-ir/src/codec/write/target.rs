@@ -238,9 +238,10 @@ impl<'a> ResolvedWrite<'a> {
     /// off-catalog source was written as [`Self::synthesized_row`]. `row` is the
     /// row the writer states it wrote instead, if any. A named row that the
     /// file is not charges `target.request-displaced`; a recorded same-format
-    /// dialect that the file is not, or a same-format source that records no
-    /// dialect, charges `target.source-dialect-displaced`. An `Inherit` request
-    /// names no row, so it charges only the source code.
+    /// dialect that the file is not, a same-format source that records no
+    /// dialect, or a row the writer states in place of the row an `Inherit`
+    /// request resolved to, charges `target.source-dialect-displaced`. An
+    /// `Inherit` request names no row, so it charges only the source code.
     fn written(
         &self,
         format: LossNamespace<'_>,
@@ -257,8 +258,9 @@ impl<'a> ResolvedWrite<'a> {
         };
         let (written, reason) = match row {
             Some(row) if row.target != planned => (row.target, Some(row.reason)),
-            _ => (planned, None),
+            _ => (planned.clone(), None),
         };
+        let restated = written != planned;
         let because = reason.map_or_else(String::new, |reason| format!("; {reason}"));
         let requested = match &self.target {
             ResolvedTarget::Explicit {
@@ -297,6 +299,21 @@ impl<'a> ResolvedWrite<'a> {
                 "the {} source records no dialect; the file is written as \
                  {written}{because}",
                 format.as_str()
+            )),
+            ResolvedTarget::Default {
+                source: DefaultSource::ForeignFormat(other),
+                ..
+            } if restated => Some(format!(
+                "the document's source is {other}, which records no {} dialect; Inherit \
+                 resolved to {planned}, and the file is written as {written}{because}",
+                format.as_str()
+            )),
+            ResolvedTarget::Default {
+                source: DefaultSource::NoSource,
+                ..
+            } if restated => Some(format!(
+                "the document records no source; Inherit resolved to {planned}, and the file \
+                 is written as {written}{because}"
             )),
             ResolvedTarget::Explicit { .. } | ResolvedTarget::Default { .. } => None,
         };
