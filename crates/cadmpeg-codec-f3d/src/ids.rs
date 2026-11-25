@@ -52,24 +52,22 @@ pub(crate) fn member_definition_id(
     placing: Option<&str>,
     key: &str,
 ) -> Result<cadmpeg_ir::ids::ProductDefinitionId, cadmpeg_ir::ids::IdentityError> {
-    let local = format!("xref:{MEMBER_DEFINITION_KIND}#{key}");
+    let local = format!("{MEMBER_DEFINITION_SCOPE}{key}");
     cadmpeg_ir::ids::ProductDefinitionId::mint(match placing {
         Some(placing) => format!("{SCHEME_PREFIX}{placing}@{local}"),
         None => format!("{SCHEME_PREFIX}{local}"),
     })
 }
 
-/// The kind of an archive member's `File` definition.
-const MEMBER_DEFINITION_KIND: &str = "product-definition";
+/// The scope and kind of an archive member's `File` definition, up to its
+/// key.
+pub(crate) const MEMBER_DEFINITION_SCOPE: &str = "xref:product-definition#";
 
 /// The definition key of the archive member whose `File` definition `id` is.
 pub(crate) fn member_definition_key(id: &str) -> Option<&str> {
     let local = id.strip_prefix(SCHEME_PREFIX)?;
     let local = local.split_once('@').map_or(local, |(_, local)| local);
-    local
-        .strip_prefix("xref:")?
-        .strip_prefix(MEMBER_DEFINITION_KIND)?
-        .strip_prefix('#')
+    local.strip_prefix(MEMBER_DEFINITION_SCOPE)
 }
 
 /// Whether `id` is a record of an archive member, or the `File` definition
