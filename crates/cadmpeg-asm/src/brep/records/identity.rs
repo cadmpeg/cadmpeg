@@ -153,8 +153,8 @@ mod tests {
         for namespace in [
             "f3d:asm",
             "sat:asm",
-            "f3d:xref/role-part/reference-1/occurrence-0/asm",
-            "f3d:xref/role-part/reference-1/occurrence-0/xref/child/asm",
+            "f3d:role-part/reference-1/occurrence-0@asm",
+            "f3d:role-part/reference-1/occurrence-0/xref/child@asm",
             "custom-format:native%20scope",
         ] {
             let id = format!("{namespace}:{kind}#1");
