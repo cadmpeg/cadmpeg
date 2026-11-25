@@ -91,7 +91,7 @@ fn a_rigidly_placed_sheet_is_written_at_its_placed_position() {
 }
 
 #[test]
-fn a_scaled_body_is_omitted_while_other_records_are_written() {
+fn a_stretched_body_is_written_with_its_placement_applied() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -99,9 +99,52 @@ fn a_scaled_body_is_omitted_while_other_records_are_written() {
     ]);
     ir.geometry.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
-            [2.0, 0.0, 0.0, 0.0],
-            [0.0, 2.0, 0.0, 0.0],
-            [0.0, 0.0, 2.0, 0.0],
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 3.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 5.0],
+        ])
+        .expect("finite rows"),
+    );
+    let body = ir.geometry.bodies[0].id.as_str().to_owned();
+
+    let (decoded, losses) = written(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 1, "{losses:?}");
+    assert!(decoded.geometry.bodies[0].transform.is_none());
+    for expected in [
+        Point3::new(1.0, 0.0, 5.0),
+        Point3::new(5.0, 0.0, 5.0),
+        Point3::new(1.0, 6.0, 5.0),
+    ] {
+        assert!(
+            decoded.geometry.points.iter().any(|point| {
+                Point3::distance(point.position().get(), expected) < EPS_COORDINATE
+            }),
+            "{expected:?}: {:?}",
+            decoded.geometry.points
+        );
+    }
+    assert!(
+        !has_loss(
+            &losses,
+            &RhinoLossCode::WriterRecordOmitted.kind().to_string(),
+            &body
+        ),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn a_body_with_a_singular_placement_is_omitted_while_other_records_are_written() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    ir.geometry.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
         ])
         .expect("finite rows"),
     );

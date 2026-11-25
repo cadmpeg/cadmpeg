@@ -87,7 +87,7 @@ fn active_site_copy_refuses_retained_limit() {
         ResourceDimension::RetainedBytes,
         "retain SLDPRT active site",
         |limit| {
-            let mut limited = options;
+            let mut limited = options.clone();
             limited.policy.limits.max_retained_bytes = limit;
             SldprtCodec
                 .decode(&mut Cursor::new(&source), &limited)

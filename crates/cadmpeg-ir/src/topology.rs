@@ -10,6 +10,7 @@
 
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NonEmptyMembers;
+use crate::geometry::SurfaceGeometry;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SubdId, SurfaceId, VertexId,
@@ -766,12 +767,15 @@ pub enum FaceLoops {
         /// Inner loops in source order.
         inner: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source does not classify the loops.
+    /// The boundary is not stated in full, and the source does not classify
+    /// the loops: a loop is not stated, or the source states none on a
+    /// surface whose domain is unbounded and the face lists none (§5.6).
     PartialUnspecified {
         /// The loops stated, in source order.
         loops: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source classifies the loops.
+    /// The boundary is not stated in full, and the source classifies the
+    /// loops: a loop is not stated.
     PartialClassified {
         /// The outer loop, where it is stated.
         #[serde(
@@ -854,6 +858,30 @@ impl FaceLoops {
         Self::Unspecified { loops: ids }
     }
 
+    /// The loops a source states for a face, in source order, where it does
+    /// not classify them, on `surface`. A face whose source states no loop on
+    /// a solved surface whose domain is unbounded (a plane, a cylinder, or a
+    /// cone, through every placement) has no extent to state, so it is stated
+    /// in its partial form with no loop (§5.6, Faces and loops), and the
+    /// second value names that surface for the
+    /// `topology.face-boundary-unstated` loss the decoder charges naming the
+    /// face. A procedural surface has the domain its construction gives it,
+    /// so a face on one keeps its unclassified form.
+    #[must_use]
+    pub fn unspecified_on(
+        loops: Vec<LoopId>,
+        surface: Option<&SurfaceGeometry>,
+    ) -> (Self, Option<&'static str>) {
+        let unbounded = match surface {
+            Some(SurfaceGeometry::Solved(solved)) => solved.plane_cylinder_or_cone(),
+            Some(SurfaceGeometry::Procedural { .. }) | None => None,
+        };
+        match unbounded {
+            Some(kind) if loops.is_empty() => (Self::PartialUnspecified { loops }, Some(kind)),
+            _ => (Self::unspecified(loops), None),
+        }
+    }
+
     /// Classified loops. Loop order is outer then inner.
     #[must_use]
     pub const fn classified(outer: LoopId, inner: Vec<LoopId>) -> Self {
@@ -882,7 +910,9 @@ impl FaceLoops {
         }
     }
 
-    /// Whether a loop of the face is not stated.
+    /// Whether the face's boundary is not stated in full: a loop of it is not
+    /// stated, or its source states none on a surface whose domain is
+    /// unbounded (§5.6).
     #[must_use]
     pub const fn is_partial(&self) -> bool {
         matches!(

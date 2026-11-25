@@ -275,3 +275,31 @@ fn nist_ctc_01_transfers_feature_control_frames_and_datums() {
             .all(|(annotation, ..)| !annotation.targets.is_empty()));
     }
 }
+
+/// The annotations are model records: a geometry-depth decode states the same
+/// PMI as the full decode.
+#[test]
+fn nist_ctc_01_states_its_annotations_at_geometry_depth() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/inventor/INV_nist_ctc_01_asme1_2021.ipt");
+    let bytes = std::fs::read(path).expect("read Inventor specimen");
+    let geometry = InventorCodec
+        .decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("decode Inventor specimen at geometry depth");
+    assert_eq!(
+        geometry.report().depth(),
+        cadmpeg_core::decode::DecodeDepth::Geometry
+    );
+    assert_eq!(geometry.ir().model.pmi.len(), 24);
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+        &InventorCodec,
+        &[("nist_ctc_01", bytes)],
+    );
+    assert_eq!(summary.cut, 1, "{summary:?}");
+}

@@ -835,7 +835,7 @@ fn invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<LossNo
 #[cfg(test)]
 pub(crate) fn decode_with_test_occurrence_limits(
     bytes: &[u8],
-    options: DecodeOptions,
+    options: &DecodeOptions,
     output_limit: usize,
     depth_limit: usize,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
@@ -887,7 +887,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
             depth_limit,
         },
         &mut std::io::Cursor::new(bytes),
-        &options,
+        options,
     )
 }
 
