@@ -35,10 +35,13 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
+/// `posed` holds the occurrence-placement records that an admitted direct
+/// operation table names; a compact legacy carrier needs one.
 pub(super) fn exact_component_insert_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    posed: &std::collections::HashSet<u64>,
 ) -> Result<Option<DesignComponentInsertConstruction>, CodecError> {
     let parsed = (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
@@ -66,6 +69,16 @@ pub(super) fn exact_component_insert_construction(
                         Some(transform_at),
                         View::u64_le_at(bytes, start + 25)?,
                     )
+                }
+                (frame @ (393 | 399), _) => {
+                    carrier_form = InsertCarrierForm::LegacyTypedPlacement;
+                    let (transform, transform_at, occurrence_identity) = exact_matrix_insert_scope(
+                        bytes,
+                        start,
+                        relation_record_index,
+                        frame == 393,
+                    )?;
+                    (transform, Some(transform_at), occurrence_identity)
                 }
                 (381, _)
                     if bytes.get(start + 11..start + 20)? == [0; 9]
@@ -205,18 +218,23 @@ pub(super) fn exact_component_insert_construction(
                 typed_component_insert_relation(bytes, relation_at, start, scope.record_index)?;
             let carrier_at =
                 unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-            let (role, role_offset, carrier_transform_offset) =
-                match crate::xref::repeated_target_component_insert(
+            let (role, role_offset, carrier_placement) =
+                match crate::xref::repeated_target_component_insert_carrier(
                     bytes,
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                    transform.into(),
                 ) {
                     Ok(Some(value)) => value,
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
+            // The carrier states the current placement of the occurrence and
+            // the scope its insertion frame. A carrier that stores another
+            // matrix keeps it; only an equal matrix is the repeated location.
+            let carrier_transform_offset = carrier_placement
+                .filter(|(_, matrix)| *matrix == <[[f64; 4]; 4]>::from(transform))
+                .map(|(offset, _)| offset);
             (
                 carrier_record_index,
                 vec![(role, role_offset, carrier_transform_offset)],
@@ -368,6 +386,13 @@ pub(super) fn exact_component_insert_construction(
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
                 )
             } else if carrier_form == InsertCarrierForm::LegacyTypedPlacement {
+                // The compact envelope stores the insertion frame; only a
+                // direct operation table states the occurrence's pose.
+                if crate::xref::compact_legacy_placement(bytes.get(carrier_at..relation_at)?)
+                    && !posed.contains(&u64::from(carrier_record_index))
+                {
+                    return None;
+                }
                 let (role, role_offset, carrier_transform_offset) =
                     crate::xref::legacy_typed_component_insert_carrier(
                         bytes,
@@ -1433,6 +1458,27 @@ fn unique_indexed_record_before(
         return None;
     };
     Some(*at)
+}
+
+/// The occurrence-placement records that the admitted direct operation tables
+/// of one Design stream name.
+pub(super) fn operation_table_targets(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
+) -> std::collections::HashSet<u64> {
+    crate::xref::operation_pose::direct_table_targets(stream_types.iter().filter_map(
+        |(&entity, &(type_guid, version))| {
+            if !type_guid.eq_ignore_ascii_case(crate::xref::operation_pose::TYPE_GUID) {
+                return None;
+            }
+            let [at] = records.offsets(u32::try_from(entity).ok()?) else {
+                return None;
+            };
+            let end = next_indexed_record_offset(bytes, at + 1).unwrap_or(bytes.len());
+            Some((version, bytes.get(*at..end)?))
+        },
+    ))
 }
 
 #[cfg(test)]

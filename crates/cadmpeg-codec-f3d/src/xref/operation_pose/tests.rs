@@ -639,3 +639,27 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
         .iter()
         .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
 }
+
+#[test]
+fn direct_table_targets_follow_the_zero_run_of_each_version() {
+    let two = frame(2, true);
+    let six = frame(6, false);
+    assert_eq!(
+        direct_table_targets([(0, two.as_slice())]),
+        std::collections::HashSet::from([10])
+    );
+    for version in 1..=3 {
+        assert_eq!(
+            direct_table_targets([(version, six.as_slice())]),
+            std::collections::HashSet::from([10])
+        );
+        assert!(direct_table_targets([(version, two.as_slice())]).is_empty());
+    }
+    let four = path_ordinal_frame(&[10], 1, &[1]);
+    assert_eq!(
+        direct_table_targets([(4, four.as_slice())]),
+        std::collections::HashSet::from([10])
+    );
+    assert!(direct_table_targets([(4, six.as_slice()), (3, four.as_slice())]).is_empty());
+    assert!(direct_table_targets([(0, six.as_slice()), (5, six.as_slice())]).is_empty());
+}

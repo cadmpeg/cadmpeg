@@ -673,7 +673,8 @@ fn local_occurrence_paths_belong_to_the_local_component_decoder() {
         .collect();
     assert!(!local_records.is_empty());
     let (placements, failures) =
-        super::occurrence_placements_with_failures(&bulk, &local_records, None, None).unwrap();
+        super::occurrence_placements_with_failures(&bulk, &local_records, None, None, None)
+            .unwrap();
     assert!(placements.is_empty());
     assert!(failures.is_empty());
     let mut root = Vec::new();
@@ -688,7 +689,7 @@ fn local_occurrence_paths_belong_to_the_local_component_decoder() {
         end: root.len(),
     }];
     let (placements, failures) =
-        super::occurrence_placements_with_failures(&root, &records, None, None).unwrap();
+        super::occurrence_placements_with_failures(&root, &records, None, None, None).unwrap();
     assert!(placements.is_empty());
     assert!(failures.is_empty());
 }
@@ -1170,6 +1171,7 @@ fn malformed_legacy_typed_placement_reports_its_role() {
         &super::indexed_records(&bytes),
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -1222,7 +1224,7 @@ fn malformed_role_placement_is_retained_as_a_decode_failure() {
     let records = super::indexed_records(&bytes);
 
     let (placements, failures) =
-        super::occurrence_placements_with_failures(&bytes, &records, None, None).unwrap();
+        super::occurrence_placements_with_failures(&bytes, &records, None, None, None).unwrap();
 
     assert!(placements.is_empty());
     assert_eq!(failures.len(), 1);
@@ -1551,14 +1553,31 @@ fn exact_component_insert_carriers_precede_structured_placements() {
         "role",
     );
     assert_eq!(selected.len(), 2);
-    assert_eq!(selected[0].transform, Some(direct));
-    assert_eq!(selected[0].carrier_record_index, 23);
-    assert_eq!(selected[0].owner, structured.owner);
-    assert_eq!(selected[0].occurrence_guid, structured.occurrence_guid);
-    assert_eq!(selected[0].frame_bytes, structured.frame_bytes);
+    // The carrier stores a placement other than the insertion frame.
+    assert_eq!(selected[0], structured);
     assert_eq!(selected[1], other);
     assert_eq!(
-        super::superseded_placement_count(&[(23, direct)], &[structured, other], "role"),
+        super::superseded_placement_count(
+            &[(23, direct)],
+            &[structured.clone(), other.clone()],
+            "role"
+        ),
+        0
+    );
+    let equal = OccurrencePlacement {
+        transform: Some(direct),
+        ..structured.clone()
+    };
+    let selected = super::occurrence_transforms_with_precedence(
+        vec![(23, direct), (23, direct), (24, direct)],
+        &[equal.clone(), other.clone()],
+        "role",
+    );
+    assert_eq!(selected.len(), 2);
+    assert_eq!(selected[0], equal);
+    assert_eq!(selected[1], other);
+    assert_eq!(
+        super::superseded_placement_count(&[(23, direct)], &[equal, other], "role"),
         1
     );
     assert_eq!(
@@ -1966,3 +1985,5 @@ mod legacy_path_pose;
 mod reference_rows;
 
 mod compact_generation;
+
+mod compact_legacy_placement;

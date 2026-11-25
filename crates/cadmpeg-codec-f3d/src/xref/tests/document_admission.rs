@@ -254,7 +254,7 @@ fn inconsistent_legacy_target_fields_retain_the_role_as_a_placement_failure() {
         bytes[positions[1] + field] += 1;
         let records = super::super::typed_occurrence_placement_records(&bytes, &meta).unwrap();
         let (placements, failures) =
-            super::super::occurrence_placements_with_failures(&bytes, &records, None, None)
+            super::super::occurrence_placements_with_failures(&bytes, &records, None, None, None)
                 .unwrap();
         assert!(placements.is_empty());
         assert_eq!(failures.len(), 1);

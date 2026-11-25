@@ -16,7 +16,7 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
 const ROOT_COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
-const TYPE_GUID: &str = "549FBB80-B890-473E-A5C0-415D3D9BF4E6";
+pub(crate) const TYPE_GUID: &str = "549FBB80-B890-473E-A5C0-415D3D9BF4E6";
 const POSE_TRANSLATION_MM: f64 = 1.0e-4;
 const POSE_ROTATION: f64 = 1.0e-9;
 
@@ -80,6 +80,19 @@ pub(super) fn parse(body: &[u8]) -> Option<DirectPose> {
         .filter_map(|form| parse_form(body, form));
     let result = matches.next()?;
     matches.next().is_none().then_some(result)
+}
+
+pub(crate) fn direct_table_targets<'a>(
+    tables: impl IntoIterator<Item = (u32, &'a [u8])>,
+) -> std::collections::HashSet<u64> {
+    tables
+        .into_iter()
+        .filter_map(|(version, body)| {
+            let form = TableForm::of_version(version)?;
+            parse(body).filter(|_| parse_form(body, form).is_some())
+        })
+        .map(|pose| pose.target_record_index)
+        .collect()
 }
 
 fn parse_form(body: &[u8], form: TableForm) -> Option<DirectPose> {
@@ -742,11 +755,20 @@ pub(crate) fn project_in_members(
                 .is_some_and(|o| !agree(*transform, o.transform.unwrap_or_default()))
         })
         .count();
+    let identity = Transform::identity().rows();
+    let mut left_identity = 0;
     for (i, transform) in placed {
         if let Some(o) = ir.model.occurrences.get_mut(i) {
+            if super::is_document_definition(&o.prototype)
+                && o.transform.unwrap_or_default().rows() == identity
+                && transform.rows() != identity
+            {
+                left_identity += 1;
+            }
             o.transform = Some(transform);
         }
     }
+    crate::design::assembly::release_joint_placed(losses, left_identity);
     let ns = ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d"));
     for name in ["xref_references", "design_component_occurrences"] {
         if let Some(records) = ns.arenas_mut().get_mut(name) {
