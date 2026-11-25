@@ -375,6 +375,7 @@ impl<'a> F3zSession<'a> {
             ctx.with_arena(&arena, |local| {
                 let mut decoded =
                     crate::decode::decode_archive_member(local, scan, &self.archive.layers)?;
+                crate::cam::project::scope(local, &mut decoded.ir, id)?;
                 let mut identity_changed = false;
                 for definition in &mut decoded.ir.model.product_definitions {
                     use cadmpeg_ir::products::Storage;

@@ -424,6 +424,11 @@ impl MergeSession<'_, '_> {
                     label,
                     reference.relative_path.as_str(),
                 )?;
+                for setup in &mut component_ir.process.setups {
+                    if setup.scope == crate::tree::file_root_id() {
+                        setup.scope = definition.clone();
+                    }
+                }
                 append_feature_history(&parent_ir.model, &mut component_ir.model)?;
                 let targets = native_record_targets(&component_ir.native, &occurrence);
                 let mut member_parts = std::collections::BTreeSet::new();
@@ -477,6 +482,26 @@ impl MergeSession<'_, '_> {
                         child_table
                     },
                 };
+                for setup in &mut component_ir.process.setups {
+                    setup.scope = scope.rewrite(setup.scope.clone())?;
+                }
+                parent_ir
+                    .process
+                    .setups
+                    .append(&mut component_ir.process.setups);
+                parent_ir
+                    .process
+                    .operations
+                    .append(&mut component_ir.process.operations);
+                parent_ir
+                    .process
+                    .tools
+                    .append(&mut component_ir.process.tools);
+                parent_ir
+                    .process
+                    .parameters
+                    .append(&mut component_ir.process.parameters);
+                crate::cam::project::merge_native(&mut parent_ir.native, &mut component_ir.native);
                 extend_native(
                     self.ctx,
                     &mut parent_ir.native,

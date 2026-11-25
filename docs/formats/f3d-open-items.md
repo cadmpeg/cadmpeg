@@ -4224,3 +4224,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+
+### DR-1070. Numbered stock-box origin selectors
+
+**Question.** Which stock-box point does each numbered `wcs_origin_boxPoint` selector identify?
+
+**Known.** A setup object has `strategy="setup"` and a `Parameters` collection. Its `wcs_origin_mode` parameter stores `stockPoint`; its `wcs_origin_boxPoint` parameter stores a numbered selector. `job_stockMode` selects the stock rule, and `job_stockOffsetSides`, `job_stockOffsetTop`, and `job_stockOffsetBottom` store relative box offsets. The stock rule and model bounds determine the box extents.
+
+**Need.** Save a box-shaped model with a relative stock box. Select each stock-box point as the WCS origin in successive saves. Compare `wcs_origin_boxPoint`, stock parameters, and resolved setup frames.

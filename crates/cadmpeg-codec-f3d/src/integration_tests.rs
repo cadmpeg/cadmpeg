@@ -744,3 +744,5 @@ mod stale_region_certificate;
 mod move_face;
 
 mod form;
+
+mod cam;

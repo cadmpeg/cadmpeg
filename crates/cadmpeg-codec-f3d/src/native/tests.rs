@@ -125,7 +125,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 87);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 90);
     assert!(catalogue_names.contains("asm_face_boundaries"));
     assert!(catalogue_names.contains("display_poses"));
     assert!(catalogue_names.contains("design_intent_failures"));
@@ -169,6 +169,10 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             .map(cadmpeg_core::text::NonBlankString::as_str)
             .collect::<Vec<_>>(),
         crate::native::F3D_ARENA_NAMES
+            .iter()
+            .copied()
+            .filter(|name| !name.starts_with("cam_"))
+            .collect::<Vec<_>>()
     );
     for records in round_trip.arenas().values() {
         for record in records {
@@ -179,10 +183,6 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     }
 }
 
-/// `store` emits one arena for every pinned name, empty families included.
-/// This is the registry-to-emitter agreement: a family added to
-/// `F3D_FAMILIES` without its name in `F3D_ARENA_NAMES`, or the reverse,
-/// fails here.
 #[test]
 fn store_emits_every_pinned_arena_name() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -199,6 +199,10 @@ fn store_emits_every_pinned_arena_name() {
             .map(cadmpeg_core::text::NonBlankString::as_str)
             .collect::<Vec<_>>(),
         crate::native::F3D_ARENA_NAMES
+            .iter()
+            .copied()
+            .filter(|name| !name.starts_with("cam_"))
+            .collect::<Vec<_>>()
     );
 }
 

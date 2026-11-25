@@ -205,3 +205,25 @@ vendor. See the [clean-room and legal policy][legal].
 The native `f3d.display_poses` arena retains root-design scene override rows. Each record has `stream`, `byte_offset` relative to that stream, an alternating component-definition/carrier `path`, a row-major 4×4 `transform` in millimetres, and `binding`. A bound row has `binding = {"state":"bound","occurrence":"…"}`. Ambiguous and unbound rows have their respective state and carry no occurrence id. Neutral occurrence transforms retain their stored-pose projection. Consumers can select either pose source.
 
 Binding runs after archive composition. Synthetic member roots can share the placing occurrence's path; their rows retain an ambiguous state. Member scene states remain separate from the root design's displayed state. The reader reports counted grammar refusals once per stream and counted ambiguous or unbound rows after binding.
+
+## Manufacture definitions
+
+The reader reads Iron.Document XML under plain and bracketed Toolpath workspace
+paths. Parent-linked object records and nested sections supply setups and ordered
+operations. The process arenas hold setups, operations, tools, and parameters.
+The native `cam_setups`, `cam_operations`, and `cam_tools` arenas retain the ordered
+source definitions, stock and WCS parameters, tool and holder attributes,
+selection XML, record byte ranges, strategy names, and computed-path validity.
+F3Z members have separate CAM identity namespaces and source member paths.
+
+Parameters keep their source expressions as Fusion CAM expression tokens.
+Unclassified numbers keep their source numeric value. Native parameter records
+keep the exact evaluated text and XML spelling. Face strategies map to plane
+milling. Feeds convert from millimetres per minute to millimetres per second;
+spindle speeds convert from revolutions per minute to radians per second.
+
+Malformed XML produces `cam.document-unreadable`; resource refusals propagate.
+Named losses record assumed section ownership, synthesized setups, repeated tool
+bindings, and tool-number bindings. Native geometry selections produce
+`cam.selection-unresolved`. Computed motions, NC code, machine definitions,
+slice data, and simulation results remain in the retained archive.
