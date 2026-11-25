@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::text::NonBlankString;
+
 use super::super::fixture::{self, design_findings};
 use crate::design::construction::{kinds, Construction};
 use crate::design::dimension::Dimension;
@@ -18,7 +20,9 @@ use crate::design::ops::sheet_metal::{
     BendSet, BendSpec, Convert, ConvertBend, ConvertFrom, Flange, FlangeWidth, SheetMetal,
     SheetMetalKind, StampForm, StampOutline, VertexBend,
 };
-use crate::design::ops::surface::{Extend, ExtendLimit, Patch, PatchBounds, PatchEdge, Unsew};
+use crate::design::ops::surface::{
+    Extend, ExtendLimit, ImplicitSection, ImplicitSweep, Patch, PatchBounds, PatchEdge, Unsew,
+};
 use crate::design::ops::swept::{
     Guide, Loft, LoftShape, Revolve, SpineLimits, Sweep, SweepControls, SweepSection,
 };
@@ -176,10 +180,21 @@ fn level(ir: &CadIr, z: f64) -> usize {
     faces.position(|face| face.id == record.face).unwrap()
 }
 
+/// Makes `geometry` the surface of face `index`.
+fn set_surface(ir: &mut CadIr, index: usize, geometry: SolvedSurfaceGeometry) {
+    let surface = ir.geometry.faces[index].surface.clone();
+    let record = ir
+        .geometry
+        .surfaces
+        .iter_mut()
+        .find(|record| record.id == surface)
+        .unwrap();
+    record.geometry = SurfaceGeometry::Solved(geometry);
+}
+
 /// Makes the bottom face's surface the cylinder of radius 5 about the
 /// vertical axis through the cube's middle.
 fn curve_bottom(ir: &mut CadIr) {
-    let surface = ir.geometry.faces[bottom(ir)].surface.clone();
     let cylinder = CylinderSurface::try_new(
         Point3::new(5.0, 5.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -187,19 +202,12 @@ fn curve_bottom(ir: &mut CadIr) {
         5.0,
     )
     .unwrap();
-    let record = ir
-        .geometry
-        .surfaces
-        .iter_mut()
-        .find(|record| record.id == surface)
-        .unwrap();
-    record.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder));
+    set_surface(ir, bottom(ir), SolvedSurfaceGeometry::Cylinder(cylinder));
 }
 
 /// Makes the surface of face `index` the sphere of `radius` about the
 /// cube's middle.
 fn sphere_face(ir: &mut CadIr, index: usize, radius: f64) {
-    let surface = ir.geometry.faces[index].surface.clone();
     let sphere = SphereSurface::try_new(
         Point3::new(5.0, 5.0, 5.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -207,13 +215,7 @@ fn sphere_face(ir: &mut CadIr, index: usize, radius: f64) {
         radius,
     )
     .unwrap();
-    let record = ir
-        .geometry
-        .surfaces
-        .iter_mut()
-        .find(|record| record.id == surface)
-        .unwrap();
-    record.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere));
+    set_surface(ir, index, SolvedSurfaceGeometry::Sphere(sphere));
 }
 
 fn set_kind(ir: &mut CadIr, kind: BodyKind) {
@@ -703,9 +705,9 @@ fn a_patch_support_face_meets_its_boundary_curve() {
     assert!(ruled(&ir, rule).is_empty());
 }
 
-#[test]
-fn a_patch_support_on_a_sphere_meets_its_boundary_curve() {
-    let rule = "design.patch-support-face-off-curve";
+/// The cube with a patch whose curve is a top edge, supported by the bottom
+/// face, and the index of that face.
+fn top_on_floor() -> (CadIr, usize) {
     let mut ir = fixture::document();
     let top = level_edges(&ir, 10.0)[0];
     let floor = bottom(&ir);
@@ -719,6 +721,13 @@ fn a_patch_support_on_a_sphere_meets_its_boundary_curve() {
             }),
         }])
     });
+    (ir, floor)
+}
+
+#[test]
+fn a_patch_support_on_a_sphere_meets_its_boundary_curve() {
+    let rule = "design.patch-support-face-off-curve";
+    let (mut ir, floor) = top_on_floor();
     // A top edge comes within 50^0.5 of the cube's middle at its midpoint,
     // and its ends lie 75^0.5 from it.
     sphere_face(&mut ir, floor, 50.0_f64.sqrt());
@@ -982,5 +991,47 @@ fn a_spine_limit_resolves_to_a_point_or_a_plane() {
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
+#[test]
+fn a_curved_spine_limit_off_the_spine_is_reported_once() {
+    let mut ir = fixture::document();
+    let three = bottom_edges(&ir)[..3].to_vec();
+    let top = level(&ir, 10.0);
+    with(&mut ir, |ir| spine_sweep(ir, &three, face(ir, top)));
+    // The sphere lies 50^0.5 - 1 or more from each bottom edge.
+    sphere_face(&mut ir, top, 1.0);
+    let resolves = "design.spine-limit-resolves-no-point-or-plane";
+    assert_eq!(ruled(&ir, resolves).len(), 1);
+    assert!(ruled(&ir, "design.spine-limit-off-spine").is_empty());
+}
+
+#[test]
+fn a_spine_limit_without_a_spine_resolves_to_a_point_or_a_plane() {
+    let spineless = |start: EntityRef| {
+        FeatureOperation::ImplicitSweep(Box::new(ImplicitSweep {
+            section: ImplicitSection::Native(NonBlankString::new("section").unwrap()),
+            spine: None,
+            limits: SpineLimits {
+                start: Some(current(vec![start])),
+                end: None,
+            },
+            solution: None,
+            corner: None,
+            output: SolidOutput {
+                body: None,
+                boolean: None,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let rule = "design.spine-limit-resolves-no-point-or-plane";
+    let mut ir = fixture::document();
+    with(&mut ir, |ir| spineless(face(ir, bottom(ir))));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| spineless(edge(ir, 0)));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
 mod operands;
+mod separation;
 mod sketch_profiles;

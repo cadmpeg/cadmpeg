@@ -2,15 +2,16 @@
 //! Lower bounds, in model coordinates, on how far an edge's curve lies from
 //! a face's surface or from a point (§10: in-IR arithmetic).
 //!
-//! A carrier is read with the rigid placements that put it in the model:
-//! its body's and those of each `Transformed` carrier it nests in. Each
-//! bound holds for the whole carrier, so it holds for the face or edge on
-//! it. A line edge with two ends reaches only between them; a NURBS curve
-//! or surface whose weights share one sign lies in the convex hull of its
-//! poles, and so in their box. A carrier that is placed by a map that is not
-//! rigid, a cone, a NURBS whose weights change sign, and every other carrier
-//! give no bound, and the rule that reads them is not checked there (§10,
-//! Partial statements).
+//! The carriers read are the ones the §10 rows on patch supports and spine
+//! limits name (Surfacing, wireframe, forms, and sheet metal): planes,
+//! cylinders, cones, spheres, tori, and NURBS surfaces whose weights share
+//! one sign; line edges between two vertices, circles, and NURBS curves whose
+//! weights share one sign; each placed by rigid maps, its body's and those of
+//! each `Transformed` carrier it nests in. Each bound holds for the whole
+//! carrier, so it holds for the face or edge on it. A NURBS curve or surface
+//! whose weights share one sign lies in the convex hull of its poles, and so
+//! in their box. An elliptic cone lies between the circular cones of its
+//! minor and major sections.
 
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -169,6 +170,16 @@ enum Sheet {
         axis: Vector3,
         radius: f64,
     },
+    /// The points at `scale` times `|radius + slope * h|` from the axis at
+    /// height `h`, for some `scale` in `[inner, outer]`.
+    Cone {
+        origin: Point3,
+        axis: Vector3,
+        radius: f64,
+        slope: f64,
+        inner: f64,
+        outer: f64,
+    },
     /// The points at `radius` from the center.
     Sphere {
         center: Point3,
@@ -207,6 +218,17 @@ impl Sheet {
                 axis: vector(*cylinder.frame().axis().as_raw())?,
                 radius: cylinder.radius().get(),
             },
+            SolvedSurfaceGeometry::Cone(cone) => {
+                let ratio = cone.ratio().get();
+                Self::Cone {
+                    origin: point(cone.origin().get())?,
+                    axis: vector(*cone.frame().axis().as_raw())?,
+                    radius: cone.radius().get(),
+                    slope: cone.half_angle().get().tan(),
+                    inner: ratio.min(1.0),
+                    outer: ratio.max(1.0),
+                }
+            }
             SolvedSurfaceGeometry::Sphere(sphere) => Self::Sphere {
                 center: point(sphere.center().get())?,
                 radius: sphere.radius().get().abs(),
@@ -244,6 +266,30 @@ impl Sheet {
                 axis,
                 radius,
             } => (point.vector_from(origin).cross(axis).norm() - radius).abs(),
+            Self::Cone {
+                origin,
+                axis,
+                radius,
+                slope,
+                inner,
+                outer,
+            } => {
+                let offset = point.vector_from(origin);
+                let across = offset.cross(axis).norm();
+                let section = (radius + slope * offset.dot(axis)).abs();
+                // The distance, in the point's meridian plane, to the two
+                // generator lines of the circular cone of `scale`.
+                let to = |scale: f64| {
+                    (scale * section - across).abs() / (scale * slope).portable_hypot(1.0)
+                };
+                if across > outer * section {
+                    to(outer)
+                } else if across < inner * section {
+                    to(inner)
+                } else {
+                    0.0
+                }
+            }
             Self::Sphere { center, radius } => (point.distance(center) - radius).abs(),
             Self::Torus {
                 center,

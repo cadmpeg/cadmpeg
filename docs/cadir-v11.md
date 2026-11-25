@@ -5252,11 +5252,11 @@ Validation uses reference lookup and in-IR arithmetic and never refuses a decode
 - A `Constrained` step has at least one mate, each of the kinds `Coincident`, `Parallel`, `Perpendicular`, `Tangent`, `Concentric`, `Distance`, or `Angle`, whose first connector picks a moved body. `Graft.body` picks one solid body, and `Graft.sheet` sheet bodies or faces.
 
 **Surfacing, wireframe, forms, and sheet metal (§6.6).**
-- `PatchBounds::Loops.outer` is nonempty; every inner loop is nonempty; where the anchored state exists, each loop's curves form one closed chain, and each condition's support faces meet the boundary curve.
+- `PatchBounds::Loops.outer` is nonempty; every inner loop is nonempty; where the anchored state exists, each loop's curves form one closed chain, and each condition's support faces meet the boundary curve. In-IR arithmetic bounds the distance of a face from a curve, and this rule and the spine-limit rule below apply, where the surface is a plane, cylinder, cone, sphere, torus, or NURBS surface whose weights share one sign, the curve is a line edge between two vertices, a circle, or a NURBS curve whose weights share one sign, and rigid maps place both.
 - `Patch.planar = Some(true)` holds only where every condition is absent or `Free`.
 - `Knit.elements` holds at least two picks when `Named`, unless `output.solid` is `IfClosed` or `CapPlanarOpenings`. `Knit.federation`'s seeds pick elements of the knit's result. `Unsew.edges` picks at least one edge, each an edge that two faces of one sheet body share, and the picked edges divide that sheet into two pieces.
 - A literal `ExtendLimit::Distance` is positive. `LineLength::UpTo` and `ExtendLimit::UpTo` select points, faces, or planes.
-- `ImplicitSweep.solution` is at least 1. `SpineLimits` targets are points or planes on the spine, where the state exists.
+- `ImplicitSweep.solution` is at least 1. `SpineLimits` targets are points or planes on the spine, where the state exists and the distance bound of the patch-support rule above reads the target and the spine.
 - `BoundaryFill.cells` is nonempty; each cell selection is nonempty.
 - An `ImplicitSection::Conic` has two to five guides, and a `parameter` only with two; a literal parameter lies strictly between 0 and 1. `ExtendLimit::Natural` occurs only where `edges` picks loops of faces or wire edges. A `Knit.healing` occurs only with a `tolerance`. A `Bend` states at most one of `angle` and `flat_length`; each `Connect` edge selection picks one edge. `Extrude.sheet_cut` occurs only in an extrude that cuts a sheet-metal body.
 - `SplineCurve.points` has at least two points, three when `closed` is `Some(true)`.

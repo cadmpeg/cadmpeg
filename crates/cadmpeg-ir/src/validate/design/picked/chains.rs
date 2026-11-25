@@ -278,7 +278,7 @@ impl<'a> Probe<'_, 'a> {
                     self.wall(profile, &sweep.output);
                 }
                 self.path(&sweep.path, "Sweep.path");
-                self.spine_limits(&sweep.path, &sweep.limits);
+                self.spine_limits(Some(&sweep.path), &sweep.limits);
                 for guide in &sweep.guides {
                     self.path(&guide.path, "SweepGuide.path");
                 }
@@ -314,9 +314,7 @@ impl<'a> Probe<'_, 'a> {
                 }
             }
             FeatureOperation::ImplicitSweep(sweep) => {
-                if let Some(spine) = &sweep.spine {
-                    self.spine_limits(spine, &sweep.limits);
-                }
+                self.spine_limits(sweep.spine.as_ref(), &sweep.limits);
             }
             FeatureOperation::Extend(extend) => {
                 if let Some(ExtendLimit::Natural) = extend.limit {
@@ -537,8 +535,12 @@ impl<'a> Probe<'_, 'a> {
     /// states such a kind is judged by its kind (`ops::swept`). A face is off
     /// the spine where a bound shows every spine edge apart from it, and a
     /// vertex that ends no spine edge where a bound shows it apart from every
-    /// one.
-    fn spine_limits<O: MemberOrder>(&mut self, spine: &'a Selection<O>, limits: &'a SpineLimits) {
+    /// one. A face that is no plane is reported once, as no plane.
+    fn spine_limits<O: MemberOrder>(
+        &mut self,
+        spine: Option<&'a Selection<O>>,
+        limits: &'a SpineLimits,
+    ) {
         let mut off = BTreeSet::new();
         let mut shapeless = BTreeSet::new();
         for target in [&limits.start, &limits.end].into_iter().flatten() {
@@ -562,10 +564,14 @@ impl<'a> Probe<'_, 'a> {
                 }
             }
         }
-        for target in [&limits.start, &limits.end].into_iter().flatten() {
-            if target.at != spine.at {
-                continue;
-            }
+        let spine_targets = spine.into_iter().flat_map(|spine| {
+            [&limits.start, &limits.end]
+                .into_iter()
+                .flatten()
+                .filter(move |target| target.at == spine.at)
+                .map(move |target| (spine, target))
+        });
+        for (spine, target) in spine_targets {
             for state in self.states(&spine.at) {
                 let Some(topology) = state.matcher.topology() else {
                     continue;
@@ -578,7 +584,7 @@ impl<'a> Probe<'_, 'a> {
                     .flatten()
                 {
                     let separate = match entity {
-                        Entity::Face(face) => path
+                        Entity::Face(face) if !shapeless.contains(face) => path
                             .iter()
                             .all(|&edge| apart(topology, face, edge, self.linear) == Some(true))
                             .then_some(face),
@@ -596,7 +602,7 @@ impl<'a> Probe<'_, 'a> {
                             });
                             (!ends && far).then_some(vertex)
                         }
-                        Entity::Body(_) | Entity::Edge(_) | Entity::Other => None,
+                        Entity::Face(_) | Entity::Body(_) | Entity::Edge(_) | Entity::Other => None,
                     };
                     off.extend(separate);
                 }
