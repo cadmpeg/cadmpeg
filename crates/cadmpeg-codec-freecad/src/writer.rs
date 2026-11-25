@@ -206,7 +206,10 @@ fn entry_order<'e>(
         }
     }
     let mut ordered = entries.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|entry| offsets.get(entry.name()).copied().unwrap_or(u64::MAX));
+    ordered.sort_by_key(|entry| {
+        let offset = offsets.get(entry.name()).copied();
+        (offset.is_none(), offset)
+    });
     ordered
 }
 
