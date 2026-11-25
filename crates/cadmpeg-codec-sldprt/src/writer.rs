@@ -101,6 +101,15 @@ pub(crate) struct SemanticOutput {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
+/// What a write keeps from its source decode: the annotations and codec
+/// digests the decode recorded, and the source records the write may retain.
+#[derive(Clone, Copy)]
+pub(crate) struct Retained<'a> {
+    pub(crate) annotations: &'a Annotations,
+    pub(crate) digests: &'a CodecDigests,
+    pub(crate) records: &'a [SourceRecord<'a>],
+}
+
 /// Lazy cache for the decoded SLDPRT native namespace across read-back retries.
 #[derive(Default)]
 pub(crate) enum CachedNative {
@@ -136,9 +145,11 @@ pub(crate) fn write_semantic_with_records(
     let mut cache = SemanticWriteCache::default();
     write_semantic_with_records_cached(
         ir,
-        annotations,
-        digests,
-        retained_records,
+        Retained {
+            annotations,
+            digests,
+            records: retained_records,
+        },
         withheld,
         shaped,
         &mut cache,
@@ -146,17 +157,19 @@ pub(crate) fn write_semantic_with_records(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn write_semantic_with_records_cached(
     ir: &CadIr,
-    annotations: &Annotations,
-    digests: &CodecDigests,
-    retained_records: &[SourceRecord<'_>],
+    retained: Retained<'_>,
     withheld: &[(cadmpeg_ir::features::FeatureId, String)],
     shaped: &[crate::history::write::brep_agreement::ShapingEdit],
     cache: &mut SemanticWriteCache,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let Retained {
+        annotations,
+        digests,
+        records: retained_records,
+    } = retained;
     let source_baseline = &mut cache.source_baseline;
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =

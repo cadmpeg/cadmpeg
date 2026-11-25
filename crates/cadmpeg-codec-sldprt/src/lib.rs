@@ -319,9 +319,11 @@ impl SldprtCodec {
             };
             let result = writer::write_semantic_with_records_cached(
                 &source.ir,
-                &source.source_fidelity.annotations,
-                source_digests,
-                records,
+                writer::Retained {
+                    annotations: &source.source_fidelity.annotations,
+                    digests: source_digests,
+                    records,
+                },
                 &[],
                 &[],
                 &mut cache,
@@ -344,9 +346,11 @@ impl SldprtCodec {
                 let mut cache = shared_cache.borrow_mut();
                 let output = writer::write_semantic_with_records_cached(
                     ir,
-                    annotations,
-                    digests,
-                    records,
+                    writer::Retained {
+                        annotations,
+                        digests,
+                        records,
+                    },
                     withheld,
                     shaped,
                     &mut cache,
