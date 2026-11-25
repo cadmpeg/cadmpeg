@@ -573,9 +573,9 @@ fn rhino_word_5_is_refused_with_the_encoder_catalog() {
 /// The same Creo file loses content on both sides, and the two scopes name
 /// different stages for it: `decode` reports what the reader could not carry,
 /// `export` what the writer will not emit. Both are negative verdicts, so both
-/// exit 1 rather than 2: `strict_decode_rejected` and `strict_export_rejected`. A file that loses nothing,
-/// written to the row it names, is written under every scope, which is what
-/// proves the scope is a predicate and not a switch that refuses on sight.
+/// exit 1 rather than 2: `strict_decode_rejected` and `strict_export_rejected`. A file that loses nothing is written under every
+/// scope, which is what proves the scope is a predicate and not a switch that
+/// refuses on sight.
 #[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn reject_lossy_scopes_select_which_losses_refuse() {
@@ -621,13 +621,10 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["kind"], "native");
     let losses = report["export"]["losses"].as_array().unwrap();
-    assert_eq!(losses.len(), 3);
+    assert_eq!(losses.len(), 2);
     assert!(losses
         .iter()
         .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
-    assert!(losses
-        .iter()
-        .any(|loss| loss["code"]["value"]["code"] == "target.source-dialect-displaced"));
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &{
         let mut cube = unit_cube().expect("unit cube fixture is admitted");
@@ -641,13 +638,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     ] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args([
-                "convert",
-                lossless.to_str().unwrap(),
-                "--to",
-                "step:ap214",
-                scope,
-            ])
+            .args(["convert", lossless.to_str().unwrap(), "-f", "step", scope])
             .assert()
             .success();
     }
@@ -658,6 +649,66 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("invalid value"));
+}
+
+/// A `convert` that names no target takes the catalog default where the
+/// document's source is of another format or absent. That loses nothing, so
+/// `--reject-lossy` at floor Warning writes the file, and the report charges
+/// no `target.source-dialect-displaced`.
+#[cfg(feature = "step")]
+#[test]
+fn a_cross_format_convert_that_names_no_target_is_not_refused() {
+    let dir = tempdir().unwrap();
+    let foreign = {
+        let mut cube = unit_cube().expect("unit cube fixture is admitted");
+        cadmpeg_ir::examples::add_document_root(&mut cube);
+        cube.source = Some(cadmpeg_ir::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "iges:5.3-fixed-ascii"
+                )),
+            ),
+            std::collections::BTreeMap::new(),
+        ));
+        cube
+    };
+    let source_less = {
+        let mut cube = unit_cube().expect("unit cube fixture is admitted");
+        cadmpeg_ir::examples::add_document_root(&mut cube);
+        cube.source = None;
+        cube
+    };
+    for (name, ir) in [("foreign", foreign), ("source-less", source_less)] {
+        let input = fixture(dir.path(), &format!("{name}.cadir.json"), &ir);
+        let output = dir.path().join(format!("{name}.step"));
+        let report = dir.path().join(format!("{name}.json"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--reject-lossy=export",
+                "--reject-lossy-floor=warning",
+                "--report",
+                report.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        assert_eq!(
+            report["export"]["identity"]["target"], "step:ap214",
+            "{name}"
+        );
+        let losses = report["export"]["losses"].as_array().unwrap();
+        assert!(
+            losses
+                .iter()
+                .all(|loss| loss["code"]["value"]["code"] != "target.source-dialect-displaced"),
+            "{name}: {losses:?}"
+        );
+    }
 }
 
 #[test]

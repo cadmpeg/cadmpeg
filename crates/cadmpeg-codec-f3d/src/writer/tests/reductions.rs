@@ -35,15 +35,10 @@ fn source_less(smbh: &[u8]) -> CadIr {
     ir
 }
 
-/// Writes `ir`, which records no source, to the catalog row it names, so
-/// that a write which drops nothing reports no loss.
 fn write(ir: &CadIr) -> (ExportReport, CadIr) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
-        )
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
     let decoded = F3dCodec

@@ -18,14 +18,20 @@ use cadmpeg_core::CodecError;
 /// whole catalog.
 /// Preservation is input-conditioned — replaying a retained baseline
 /// reproduces dialects no encoder could synthesize for arbitrary input — so it
-/// is asked for by [`TargetRequest::Inherit`], never by a catalog entry.
+/// is asked for by [`TargetRequest::Inherit`] or [`TargetRequest::Unnamed`],
+/// never by a catalog entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetRequest<'a> {
-    /// Preserve the source's dialect. The same-format default.
+    /// A request that names no target. Where the document's source is of
+    /// this format it inherits; otherwise it takes the catalog default
+    /// without a loss (§3.4).
+    Unnamed,
+    /// Preserve the source's dialect. A source of another format, or none,
+    /// gives nothing to inherit: the request takes the catalog default and
+    /// charges `target.source-dialect-displaced` (§3.4).
     Inherit,
-    /// A synthesis target from [`crate::codec::write::Encoder::targets`]: an
-    /// explicit target flag, or the catalog default for a cross-format
-    /// conversion.
+    /// A synthesis target from [`crate::codec::write::Encoder::targets`],
+    /// named by the caller.
     Explicit(&'a str),
 }
 
@@ -114,9 +120,9 @@ pub enum ResolvedTarget<'a> {
         /// The recorded same-format source dialect this row preserves.
         source: DialectId,
     },
-    /// Inheritance with no recorded same-format dialect took the catalog
-    /// default, or the newest catalog row where the catalog declares no
-    /// default.
+    /// A request with no recorded same-format dialect to inherit took the
+    /// catalog default, or the newest catalog row where the catalog declares
+    /// no default.
     Default {
         /// Position of `entry` in the encoder's declared catalog.
         index: usize,
@@ -124,6 +130,9 @@ pub enum ResolvedTarget<'a> {
         entry: &'static TargetDescriptor,
         /// Why no source dialect could be inherited.
         source: DefaultSource,
+        /// The caller asked to inherit ([`TargetRequest::Inherit`]) rather
+        /// than naming no target.
+        inherit: bool,
     },
     /// Inheritance of a recorded same-format dialect that is not on the
     /// catalog; only verbatim replay can realize it.
@@ -236,9 +245,11 @@ impl<'a> ResolvedWrite<'a> {
     /// row the writer states it wrote instead, if any. A named row that the
     /// file is not charges `target.request-displaced`; a recorded same-format
     /// dialect that the file is not, a same-format source that records no
-    /// dialect, and an `Inherit` request from a source of another format or
-    /// from none, charge `target.source-dialect-displaced`. An `Inherit`
-    /// request names no row, so it charges only the source code.
+    /// dialect, an `Inherit` request from a source of another format or from
+    /// none, and a row the writer states in place of the row a request that
+    /// names no target resolved to, charge `target.source-dialect-displaced`.
+    /// An `Inherit` or unnamed request names no row, so it charges only the
+    /// source code.
     fn written(
         &self,
         format: LossNamespace<'_>,
@@ -258,10 +269,16 @@ impl<'a> ResolvedWrite<'a> {
             _ => (planned.clone(), None),
         };
         let because = reason.map_or_else(String::new, |reason| format!("; {reason}"));
-        let inherited = if written == planned {
-            format!("the file is written as {written}")
-        } else {
-            format!("Inherit resolved to {planned}, and the file is written as {written}{because}")
+        let restated = written != planned;
+        let resolved = |request: &str| {
+            if restated {
+                format!(
+                    "{request} resolved to {planned}, and the file is written as \
+                     {written}{because}"
+                )
+            } else {
+                format!("the file is written as {written}")
+            }
         };
         let requested = match &self.target {
             ResolvedTarget::Explicit {
@@ -303,16 +320,22 @@ impl<'a> ResolvedWrite<'a> {
             )),
             ResolvedTarget::Default {
                 source: DefaultSource::ForeignFormat(other),
+                inherit,
                 ..
-            } => Some(format!(
-                "the document's source is {other}, which records no {} dialect; {inherited}",
-                format.as_str()
+            } if *inherit || restated => Some(format!(
+                "the document's source is {other}, which records no {} dialect; {}",
+                format.as_str(),
+                resolved(request_name(*inherit))
             )),
             ResolvedTarget::Default {
                 source: DefaultSource::NoSource,
+                inherit,
                 ..
-            } => Some(format!("the document records no source; {inherited}")),
-            ResolvedTarget::Explicit { .. } => None,
+            } if *inherit || restated => Some(format!(
+                "the document records no source; {}",
+                resolved(request_name(*inherit))
+            )),
+            ResolvedTarget::Explicit { .. } | ResolvedTarget::Default { .. } => None,
         };
         let losses = requested
             .map(|message| target_loss(format, REQUEST_DISPLACED, message))
@@ -496,7 +519,8 @@ pub trait TargetDomain: domain_sealed::Sealed {
 
 /// The neutral representation has no dialect catalog or target identity.
 ///
-/// An encoder in this domain takes [`TargetRequest::Inherit`] only and every
+/// An encoder in this domain takes [`TargetRequest::Unnamed`] and
+/// [`TargetRequest::Inherit`] only, and every
 /// export it plans reports no target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DialectFree;
@@ -515,7 +539,7 @@ impl TargetDomain for DialectFree {
         format: FormatId,
     ) -> Result<(), CodecError> {
         match request {
-            TargetRequest::Inherit => Ok(()),
+            TargetRequest::Unnamed | TargetRequest::Inherit => Ok(()),
             TargetRequest::Explicit(id) => Err(TargetRefusal::unknown_explicit(
                 id,
                 TargetCatalog::empty(format.as_str()),
@@ -580,6 +604,15 @@ impl TargetDomain for Catalog {
     }
 }
 
+/// How a report message names a request that resolved to a default row.
+const fn request_name(inherit: bool) -> &'static str {
+    if inherit {
+        "Inherit"
+    } else {
+        "the request, which names no target,"
+    }
+}
+
 fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
     let Some(source) = ir.source.as_ref() else {
         return SourceIdentity::Other(DefaultSource::NoSource);
@@ -611,10 +644,11 @@ fn resolve_write_request<'a>(
     let format = catalog.namespace();
     let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
     let source = source_identity(ir, format);
-    let default = |source: DefaultSource| ResolvedTarget::Default {
+    let default = |source: DefaultSource, inherit: bool| ResolvedTarget::Default {
         index,
         entry,
         source,
+        inherit,
     };
     let target = match request {
         TargetRequest::Explicit(requested) => {
@@ -640,9 +674,14 @@ fn resolve_write_request<'a>(
                 displaced,
             }
         }
-        TargetRequest::Inherit => match source {
-            SourceIdentity::Other(source) => default(source),
-            SourceIdentity::Unrecorded => default(DefaultSource::UnrecordedDialect),
+        TargetRequest::Unnamed | TargetRequest::Inherit => match source {
+            SourceIdentity::Other(source) => {
+                default(source, matches!(request, TargetRequest::Inherit))
+            }
+            SourceIdentity::Unrecorded => default(
+                DefaultSource::UnrecordedDialect,
+                matches!(request, TargetRequest::Inherit),
+            ),
             SourceIdentity::Recorded(source) => match catalog.find(source.as_str()) {
                 Some((index, entry)) => ResolvedTarget::Inherited {
                     index,

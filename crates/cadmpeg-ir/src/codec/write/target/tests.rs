@@ -504,3 +504,60 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
         )
     );
 }
+
+/// A request that names no target takes the catalog default without a loss
+/// where the source is of another format or absent, and inherits where it is
+/// of this format: a recorded catalog dialect writes as itself, and a source
+/// that records no dialect is charged. A row the writer states in place of
+/// the default is charged, naming both rows.
+#[test]
+fn an_unnamed_request_inherits_only_from_a_source_of_this_format() {
+    for ir in [
+        catalog_write_ir(None),
+        catalog_write_ir(Some(("other", Some("other:only")))),
+    ] {
+        let resolved = resolve_write_request(&ir, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG)
+            .expect("an unnamed request resolves");
+        assert_eq!(charged(&resolved, true, None), ("test:new".into(), vec![]));
+    }
+
+    let recorded = catalog_write_ir(Some(("test", Some("test:old"))));
+    let resolved =
+        resolve_write_request(&recorded, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(charged(&resolved, false, None), ("test:old".into(), vec![]));
+
+    let unrecorded = catalog_write_ir(Some(("test", None)));
+    let resolved =
+        resolve_write_request(&unrecorded, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(
+        charged(&resolved, true, None),
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the test source records no dialect; the file is written as test:new".to_owned()
+            )]
+        )
+    );
+
+    let foreign = catalog_write_ir(Some(("other", Some("other:only"))));
+    let resolved =
+        resolve_write_request(&foreign, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+    let row = WrittenRow {
+        target: cadmpeg_core::dialect_id!("test:old"),
+        reason: "the stored envelope decides the row".into(),
+    };
+    assert_eq!(
+        charged(&resolved, true, Some(row)),
+        (
+            "test:old".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document's source is other, which records no test dialect; the request, \
+                 which names no target, resolved to test:new, and the file is written as \
+                 test:old; the stored envelope decides the row"
+                    .to_owned()
+            )]
+        )
+    );
+}

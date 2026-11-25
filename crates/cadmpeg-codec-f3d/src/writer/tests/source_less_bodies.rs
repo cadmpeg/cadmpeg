@@ -101,10 +101,7 @@ fn generated_source_less_writes_an_empty_display_name_as_no_name() {
 
     let mut encoded = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(&source_less, None),
-            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
-        )
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("an empty display name writes");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
