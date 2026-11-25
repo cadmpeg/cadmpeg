@@ -66,7 +66,7 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
             assert!(merged.ir().geometry.bodies[0]
                 .id
                 .as_str()
-                .contains("reference-1/occurrence-0@"));
+                .starts_with("f3d:child.f3d@"));
         }
         for code in [
             crate::loss::F3dLossCode::XrefTableUndecoded,

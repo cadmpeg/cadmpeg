@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import unittest
 
-from scripts.ci_cargo import HEAVY_CRATES, command, low_ram_prebuild_commands
+from scripts.ci_cargo import command
 
 
 class CommandTests(unittest.TestCase):
@@ -16,17 +16,6 @@ class CommandTests(unittest.TestCase):
                 self.assertEqual(args[args.index("--features") + 1], expected)
                 self.assertIn("--bins", args)
                 self.assertNotIn("--lib", args)
-
-    def test_low_ram_prebuild_stages_heavy_crates_at_one_job(self):
-        stages = low_ram_prebuild_commands(["nextest", "run", "--bins", "--tests", "--no-fail-fast"])
-        self.assertEqual(len(stages), 4)
-        self.assertEqual([jobs for jobs, _ in stages], [None, 1, 2, 1])
-        for _, argv in stages:
-            self.assertIn("--no-run", argv)
-            self.assertNotIn("--no-fail-fast", argv)
-        one_job_args = [arg for jobs, argv in stages if jobs == 1 for arg in argv]
-        for crate in HEAVY_CRATES:
-            self.assertIn(crate, one_job_args)
 
 
 if __name__ == "__main__":

@@ -54,7 +54,6 @@ impl Uuid {
     }
 
     /// Inverse of [`Uuid::from_wire`].
-    #[cfg(test)]
     pub(crate) fn to_wire(self) -> [u8; uuid_wire::LEN] {
         let mut wire = [0; uuid_wire::LEN];
         for index in 0..4 {
