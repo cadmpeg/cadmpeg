@@ -179,7 +179,7 @@ fn archive_of_two_designs() -> CadIr {
             id: format!("test:model:feature#{ordinal}").try_into().unwrap(),
             ordinal,
             name: None,
-            suppressed: None,
+            suppressed: Some(false),
             dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
@@ -241,6 +241,51 @@ fn each_design_of_an_archive_is_written_with_its_own_features() {
             .all(|loss| loss.code.local_code() != "writer.feature-result-absent"),
         "{:?}",
         report.losses
+    );
+}
+
+#[test]
+fn a_feature_whose_result_body_the_output_does_not_hold_is_left_out_and_named() {
+    let mut ir = archive_of_two_designs();
+    let root = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap()
+        .id
+        .clone();
+    ir.model
+        .product_definitions
+        .retain(|stated| stated.id == root);
+    ir.model.product_definitions[0].occurrences.clear();
+    ir.model.occurrences.clear();
+    let part_bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .filter(|body| body.id.as_str().contains(":part:"))
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    ir.geometry
+        .bodies
+        .retain(|body| !part_bodies.contains(&body.id));
+    for feature in &mut ir.model.features {
+        feature.product_definition = Some(root.clone());
+    }
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).unwrap();
+    assert_eq!(decoded_faces(&bytes).0, 1);
+    let absent = report
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "writer.feature-result-absent")
+        .unwrap_or_else(|| panic!("{:?}", report.losses));
+    assert!(
+        absent.message.contains("test:model:feature#1"),
+        "{}",
+        absent.message
     );
 }
 
