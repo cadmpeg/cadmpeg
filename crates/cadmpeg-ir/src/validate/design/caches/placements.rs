@@ -101,7 +101,8 @@ fn check_transformation(
         warning(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.transformation-resolved-not-steps-composed",
                 "a Transformation's resolved is not its steps composed, {:?}",
                 composed.affine_rows()
             ),
@@ -195,7 +196,7 @@ fn check_place(
         warning(
             findings,
             holder,
-            format_args!(
+            crate::rule!("design.transform-occurrence-not-place-placement-resolved", 
                 "the transform of occurrence {} is not its Place.placement's resolved composed with its scale",
                 place.occurrence.as_str()
             ),
@@ -257,7 +258,7 @@ fn check_mirror(
             warning(
                 findings,
                 holder,
-                format_args!(
+                crate::rule!("design.transform-mirror-result-not-seed-placement", 
                     "the transform of mirror result {} is not its seed's placement reflected across the plane",
                     result.occurrence.as_str()
                 ),
@@ -318,7 +319,8 @@ fn check_containers(index: &DesignRecords<'_>, within: Within, findings: &mut Ve
                 warning(
                     findings,
                     id.as_str(),
-                    format_args!(
+                    crate::rule!(
+                        "design.body-does-not-container-placement-transform",
                         "body {} does not have the container's placement as its transform",
                         body.id.as_str()
                     ),

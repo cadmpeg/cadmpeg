@@ -11,7 +11,7 @@
 use crate::document::CadIr;
 use crate::index::identities::IdentitySet;
 use crate::report::{
-    check::{Check, Finding, ValidationReport},
+    check::{Check, Finding, Ruled, ValidationReport},
     loss::LossNote,
     Severity,
 };
@@ -63,7 +63,7 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
     check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
-    check_shell_connectivity, check_wire_topology,
+    check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
 use topology::procedural_owners::check_procedural_owners;
 use topology::{
@@ -75,15 +75,15 @@ fn record_finding(
     check: Check,
     severity: Severity,
     entity: Option<&str>,
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
-    let message = std::fmt::format(message);
     let entity = entity.map(str::to_owned);
     findings.push(Finding {
         related: Vec::new(),
         check,
+        rule: message.rule.clone(),
         severity,
-        message,
+        message: std::fmt::format(message.message),
         entity,
     });
 }
@@ -94,12 +94,13 @@ fn record_related_finding(
     severity: Severity,
     entity: &str,
     related: &[&str],
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
     let mut finding = Finding {
         check,
+        rule: message.rule.clone(),
         severity,
-        message: std::fmt::format(message),
+        message: std::fmt::format(message.message),
         entity: Some(entity.to_owned()),
         related: Vec::new(),
     };
@@ -203,11 +204,12 @@ fn check_topology_rules(
     check_child_list_reciprocity(ir, findings);
     check_closed_edges(ir, findings);
     check_shell_connectivity(ir, findings);
+    check_solid_edge_uses(ir, findings);
     check_partial_topology(ir, findings);
     check_wire_topology(ir, findings);
     if reach.ir.fragment {
         record_finding(findings, Check::FragmentSkipped, Severity::Info, None,
-            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
+            crate::rule!("validate.skipped-carrier-reachability-document-wide-ownership", "skipped carrier_reachability: document-wide ownership requires a complete document"));
     } else {
         check_carrier_reachability(ctx, reach, &ir.geometry, findings)?;
     }
@@ -385,6 +387,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
             .map(crate::ids::UnknownId::as_str),
         &mut report.findings,
     )?;
+    products::decode_set::check_file_digests(ir, source_fidelity, &mut report.findings);
     Ok(report)
 }
 
@@ -412,7 +415,7 @@ mod tests {
                 crate::report::check::Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 entity,
-                format_args!("unresolved reference {}", 7),
+                crate::rule!("test.unresolved-reference", "unresolved reference {}", 7),
             );
         }
         assert_eq!(findings.len(), 2);

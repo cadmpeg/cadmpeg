@@ -1156,3 +1156,573 @@ pub(crate) use assembly::{
 
 mod flange;
 pub(crate) use flange::{flange_document, FlangeSpec};
+
+pub(crate) fn with_partitions(streams: &[Vec<u8>]) -> Vec<u8> {
+    let fat = 2 + 8 * streams.len();
+    let mut file = vec![0u8; (fat + 2) * 512];
+    let base = compound();
+    file[..512].copy_from_slice(&base[..512]);
+    put_u32(&mut file, 76, u32::try_from(fat).unwrap());
+    let directory = &mut file[512..1536];
+    for entry in directory.chunks_exact_mut(128) {
+        entry[68..80].fill(255);
+    }
+    entry(directory, 0, "Root Entry", 5, 1, None);
+    directory[80..96].copy_from_slice(&PART.to_bytes());
+    entry(directory, 1, "PSMroots", 2, u32::MAX, None);
+    put_u32(directory, 128 + 72, 3);
+    entry(directory, 2, "JSitesList", 2, u32::MAX, None);
+    put_u32(directory, 384 + 72, 2);
+    entry(directory, 3, "PARASOLID", 1, 4, None);
+    for (index, stream) in streams.iter().enumerate() {
+        assert!(stream.len() <= 4096);
+        let slot = 4 + index;
+        entry(
+            directory,
+            slot,
+            &format!("STREAM{index}.P_B"),
+            2,
+            u32::MAX,
+            Some(2 + 8 * index),
+        );
+        if index + 1 < streams.len() {
+            put_u32(directory, slot * 128 + 72, u32::try_from(slot + 1).unwrap());
+        }
+    }
+    for (index, stream) in streams.iter().enumerate() {
+        let start = (3 + 8 * index) * 512;
+        file[start..start + stream.len()].copy_from_slice(stream);
+    }
+    let table = &mut file[(fat + 1) * 512..(fat + 2) * 512];
+    table.fill(255);
+    put_u32(table, 0, 1);
+    put_u32(table, 4, 0xffff_fffe);
+    for index in 0..streams.len() {
+        for sector in 2 + index * 8..10 + index * 8 {
+            put_u32(
+                table,
+                sector * 4,
+                if sector == 9 + index * 8 {
+                    0xffff_fffe
+                } else {
+                    u32::try_from(sector + 1).unwrap()
+                },
+            );
+        }
+    }
+    put_u32(table, fat * 4, 0xffff_fffd);
+    file
+}
+
+fn entry(
+    directory: &mut [u8],
+    index: usize,
+    value: &str,
+    kind: u8,
+    child: u32,
+    sector: Option<usize>,
+) {
+    let bytes = &mut directory[index * 128..(index + 1) * 128];
+    name(bytes, value);
+    bytes[66] = kind;
+    bytes[67] = 1;
+    put_u32(bytes, 76, child);
+    put_u32(
+        bytes,
+        116,
+        sector.map_or(0xffff_fffe, |value| u32::try_from(value).unwrap()),
+    );
+    bytes[120..128].copy_from_slice(&(if sector.is_some() { 4096u64 } else { 0 }).to_le_bytes());
+}
+
+pub(crate) fn sphere_partition() -> Vec<u8> {
+    let description = b": TRANSMIT FILE (partition)";
+    let schema = b"SCH_999_13006";
+    let mut bytes = b"PS".to_vec();
+    bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(description);
+    bytes.extend_from_slice(&u32::try_from(schema.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(schema);
+    bytes.extend_from_slice(&0u32.to_be_bytes());
+    node(&mut bytes, 12, 2);
+    integer(&mut bytes, 0);
+    for _ in 0..6 {
+        pointer(&mut bytes, 1);
+    }
+    real(&mut bytes, 1.0e-8);
+    real(&mut bytes, 1.0e-8);
+    for _ in 0..3 {
+        pointer(&mut bytes, 1);
+    }
+    bytes.push(0);
+    pointer(&mut bytes, 1);
+    bytes.extend_from_slice(&[1, 0]);
+    pointer(&mut bytes, 3);
+    for _ in 0..6 {
+        pointer(&mut bytes, 1);
+    }
+    node(&mut bytes, 13, 3);
+    integer(&mut bytes, 0);
+    pointer(&mut bytes, 1);
+    pointer(&mut bytes, 2);
+    pointer(&mut bytes, 1);
+    pointer(&mut bytes, 4);
+    for _ in 0..4 {
+        pointer(&mut bytes, 1);
+    }
+    node(&mut bytes, 14, 4);
+    integer(&mut bytes, 0);
+    pointer(&mut bytes, 1);
+    real(&mut bytes, 0.0);
+    for _ in 0..3 {
+        pointer(&mut bytes, 1);
+    }
+    pointer(&mut bytes, 3);
+    pointer(&mut bytes, 5);
+    bytes.push(b'+');
+    for _ in 0..5 {
+        pointer(&mut bytes, 1);
+    }
+    node(&mut bytes, 53, 5);
+    integer(&mut bytes, 0);
+    pointer(&mut bytes, 1);
+    pointer(&mut bytes, 2);
+    for _ in 0..3 {
+        pointer(&mut bytes, 1);
+    }
+    bytes.push(b'+');
+    for value in [0.0, 0.0, 0.0, 0.007, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0] {
+        real(&mut bytes, value);
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
+/// One solid body holding two solid regions and the void region, each solid
+/// region owning one shell with one face on the shared sphere surface.
+pub(crate) fn two_solid_regions_partition() -> Vec<u8> {
+    shell_regions_partition(b'S', false)
+}
+
+/// One solid body holding a solid region with one face and a void region with
+/// one cavity shell and one face, besides the exterior void region that owns
+/// no shell.
+pub(crate) fn solid_with_cavity_partition() -> Vec<u8> {
+    shell_regions_partition(b'V', false)
+}
+
+/// The two solid regions of [`two_solid_regions_partition`], with a shell that
+/// holds no face under the exterior void region.
+pub(crate) fn solid_regions_with_void_shell_partition() -> Vec<u8> {
+    shell_regions_partition(b'S', true)
+}
+
+/// A body with a region of type `S` owning shell 3 and a region of type
+/// `second` owning shell 6, each shell with one face, then the exterior void
+/// region, which owns shell 11 without a face when `exterior_shell` is set.
+fn shell_regions_partition(second: u8, exterior_shell: bool) -> Vec<u8> {
+    let sphere = sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
+        .unwrap()
+        .unwrap();
+    let header_len = records.nodes().next().unwrap().range().start;
+    let mut bytes = sphere[..header_len].to_vec();
+    node(&mut bytes, 12, 2);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1; 6]);
+    real(&mut bytes, 1.0e-8);
+    real(&mut bytes, 1.0e-8);
+    pointers(&mut bytes, &[1; 3]);
+    bytes.push(0);
+    pointer(&mut bytes, 1);
+    bytes.extend_from_slice(&[1, 0]);
+    pointer(&mut bytes, 3);
+    pointers(&mut bytes, &[1, 1, 1, 8, 1, 1]);
+    for (shell, face, region) in [(3u16, 4u16, 8u16), (6, 7, 9)] {
+        node(&mut bytes, 13, shell);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, face, 1, 1, region, 1]);
+        node(&mut bytes, 14, face);
+        integer(&mut bytes, 0);
+        pointer(&mut bytes, 1);
+        real(&mut bytes, 0.0);
+        pointers(&mut bytes, &[1, 1, 1, shell, 5]);
+        bytes.push(b'+');
+        pointers(&mut bytes, &[1; 5]);
+    }
+    if exterior_shell {
+        node(&mut bytes, 13, 11);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1, 1, 10, 1]);
+    }
+    node(&mut bytes, 53, 5);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+    bytes.push(b'+');
+    for value in [0.0, 0.0, 0.0, 0.007, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0] {
+        real(&mut bytes, value);
+    }
+    for (region, next, previous, shell, kind) in [
+        (8u16, 9u16, 1u16, 3u16, b'S'),
+        (9, 10, 8, 6, second),
+        (10, 1, 9, if exterior_shell { 11 } else { 1 }, b'V'),
+    ] {
+        node(&mut bytes, 19, region);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, next, previous, shell]);
+        bytes.push(kind);
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
+fn node(bytes: &mut Vec<u8>, kind: u16, index: u16) {
+    bytes.extend_from_slice(&kind.to_be_bytes());
+    pointer(bytes, index);
+}
+fn pointer(bytes: &mut Vec<u8>, value: u16) {
+    bytes.extend_from_slice(&value.to_be_bytes());
+}
+fn integer(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_be_bytes());
+}
+fn real(bytes: &mut Vec<u8>, value: f64) {
+    bytes.extend_from_slice(&value.to_be_bytes());
+}
+
+pub(crate) fn cube_partition() -> Vec<u8> {
+    let sphere = sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
+        .unwrap()
+        .unwrap();
+    let header_len = records.nodes().next().unwrap().range().start;
+    let mut bytes = sphere[..header_len].to_vec();
+    let coordinates = [
+        [0.0, 0.0, 0.0],
+        [0.002, 0.0, 0.0],
+        [0.002, 0.002, 0.0],
+        [0.0, 0.002, 0.0],
+        [0.0, 0.0, 0.002],
+        [0.002, 0.0, 0.002],
+        [0.002, 0.002, 0.002],
+        [0.0, 0.002, 0.002],
+    ];
+    let rings = [
+        [0usize, 3, 2, 1],
+        [4, 5, 6, 7],
+        [0, 1, 5, 4],
+        [1, 2, 6, 5],
+        [2, 3, 7, 6],
+        [3, 0, 4, 7],
+    ];
+    let edge_ends = [
+        [0usize, 1],
+        [1, 2],
+        [2, 3],
+        [3, 0],
+        [4, 5],
+        [5, 6],
+        [6, 7],
+        [7, 4],
+        [0, 4],
+        [1, 5],
+        [2, 6],
+        [3, 7],
+    ];
+    let normals = [
+        [0.0, 0.0, -1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, -1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [-1.0, 0.0, 0.0],
+    ];
+    let x_axes = [
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ];
+    let mut incidences = Vec::new();
+    for (face, ring) in rings.iter().enumerate() {
+        for side in 0..4 {
+            let ends = [ring[side], ring[(side + 1) % 4]];
+            let edge = edge_ends
+                .iter()
+                .position(|pair| *pair == ends || *pair == [ends[1], ends[0]])
+                .unwrap();
+            incidences.push((face, side, edge, ends, edge_ends[edge] == ends));
+        }
+    }
+    node(&mut bytes, 12, 2);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1; 6]);
+    real(&mut bytes, 1.0e-8);
+    real(&mut bytes, 1.0e-8);
+    pointers(&mut bytes, &[1; 3]);
+    bytes.push(0);
+    pointer(&mut bytes, 1);
+    bytes.extend_from_slice(&[1, 0]);
+    pointer(&mut bytes, 3);
+    pointers(&mut bytes, &[1; 6]);
+    node(&mut bytes, 13, 3);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 4, 1, 1, 1, 1]);
+    for face in 0..6 {
+        node(&mut bytes, 14, wire_id(4, face));
+        integer(&mut bytes, 0);
+        pointer(&mut bytes, 1);
+        real(&mut bytes, 0.0);
+        pointers(
+            &mut bytes,
+            &[
+                if face == 5 { 1 } else { wire_id(5, face) },
+                if face == 0 { 1 } else { wire_id(3, face) },
+                wire_id(16, face),
+                3,
+                wire_id(10, face),
+            ],
+        );
+        bytes.push(b'+');
+        pointers(&mut bytes, &[1; 5]);
+        node(&mut bytes, 50, wire_id(10, face));
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+        bytes.push(b'+');
+        vector(&mut bytes, coordinates[rings[face][0]]);
+        vector(&mut bytes, normals[face]);
+        vector(&mut bytes, x_axes[face]);
+        node(&mut bytes, 15, wire_id(16, face));
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, wire_id(62, face * 4), wire_id(4, face), 1]);
+    }
+    for (vertex, position) in coordinates.iter().enumerate() {
+        let point = 37 - u16::try_from(vertex).unwrap();
+        node(&mut bytes, 18, wire_id(22, vertex));
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 1, 1, 1, point]);
+        real(&mut bytes, 0.0);
+        pointer(&mut bytes, 2);
+        node(&mut bytes, 29, point);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1]);
+        vector(&mut bytes, *position);
+    }
+    for (edge, [start, end]) in edge_ends.iter().copied().enumerate() {
+        let fin = incidences
+            .iter()
+            .position(|incidence| incidence.2 == edge)
+            .unwrap();
+        node(&mut bytes, 16, wire_id(38, edge));
+        integer(&mut bytes, 0);
+        pointer(&mut bytes, 1);
+        real(&mut bytes, 0.0);
+        pointers(
+            &mut bytes,
+            &[wire_id(62, fin), 1, 1, wire_id(50, edge), 1, 1, 2],
+        );
+        node(&mut bytes, 30, wire_id(50, edge));
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+        bytes.push(b'+');
+        vector(&mut bytes, coordinates[start]);
+        vector(
+            &mut bytes,
+            std::array::from_fn(|axis| (coordinates[end][axis] - coordinates[start][axis]) / 0.002),
+        );
+    }
+    for (fin, (face, side, edge, ends, forward)) in incidences.iter().copied().enumerate() {
+        let other = incidences
+            .iter()
+            .enumerate()
+            .position(|(index, incidence)| index != fin && incidence.2 == edge)
+            .unwrap();
+        node(&mut bytes, 17, wire_id(62, fin));
+        pointers(
+            &mut bytes,
+            &[
+                1,
+                wire_id(16, face),
+                wire_id(62, face * 4 + (side + 1) % 4),
+                wire_id(62, face * 4 + (side + 3) % 4),
+                wire_id(22, ends[1]),
+                wire_id(62, other),
+                wire_id(38, edge),
+                1,
+                1,
+            ],
+        );
+        bytes.push(if forward { b'+' } else { b'-' });
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
+/// A planar disc face of radius 5 mm bounded by one ring edge on a circle, with
+/// no vertex: the single fin is its own successor and predecessor.
+pub(crate) fn disc_partition() -> Vec<u8> {
+    ring_face_partition(None)
+}
+
+/// The ring face of `disc_partition` on a `SWEPT_SURF` whose section is the
+/// ring's circle, swept along +Z with the stated scale.
+pub(crate) fn swept_ring_partition(scale: f64) -> Vec<u8> {
+    ring_face_partition(Some(scale))
+}
+
+fn ring_face_partition(swept: Option<f64>) -> Vec<u8> {
+    let sphere = sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
+        .unwrap()
+        .unwrap();
+    let header_len = records.nodes().next().unwrap().range().start;
+    let mut bytes = sphere[..header_len].to_vec();
+    node(&mut bytes, 12, 2);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1; 6]);
+    real(&mut bytes, 1.0e-8);
+    real(&mut bytes, 1.0e-8);
+    pointers(&mut bytes, &[1; 3]);
+    bytes.push(0);
+    pointer(&mut bytes, 1);
+    bytes.extend_from_slice(&[1, 0]);
+    pointer(&mut bytes, 3);
+    pointers(&mut bytes, &[1; 6]);
+    node(&mut bytes, 13, 3);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 4, 1, 1, 1, 1]);
+    node(&mut bytes, 14, 4);
+    integer(&mut bytes, 0);
+    pointer(&mut bytes, 1);
+    real(&mut bytes, 0.0);
+    pointers(&mut bytes, &[1, 1, 6, 3, 5]);
+    bytes.push(b'+');
+    pointers(&mut bytes, &[1; 5]);
+    if let Some(scale) = swept {
+        node(&mut bytes, 67, 5);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+        bytes.push(b'+');
+        pointer(&mut bytes, 9);
+        vector(&mut bytes, [0.0, 0.0, 1.0]);
+        real(&mut bytes, scale);
+    } else {
+        node(&mut bytes, 50, 5);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+        bytes.push(b'+');
+        vector(&mut bytes, [0.0, 0.0, 0.0]);
+        vector(&mut bytes, [0.0, 0.0, 1.0]);
+        vector(&mut bytes, [1.0, 0.0, 0.0]);
+    }
+    node(&mut bytes, 15, 6);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 7, 4, 1]);
+    node(&mut bytes, 16, 8);
+    integer(&mut bytes, 0);
+    pointer(&mut bytes, 1);
+    real(&mut bytes, 0.0);
+    pointers(&mut bytes, &[7, 1, 1, 9, 1, 1, 2]);
+    node(&mut bytes, 31, 9);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+    bytes.push(b'+');
+    vector(&mut bytes, [0.0, 0.0, 0.0]);
+    vector(&mut bytes, [0.0, 0.0, 1.0]);
+    vector(&mut bytes, [1.0, 0.0, 0.0]);
+    real(&mut bytes, 0.005);
+    node(&mut bytes, 17, 7);
+    pointers(&mut bytes, &[1, 6, 7, 7, 1, 1, 8, 1, 1]);
+    bytes.push(b'+');
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
+fn wire_id(base: u16, index: usize) -> u16 {
+    base + u16::try_from(index).unwrap()
+}
+fn pointers(bytes: &mut Vec<u8>, values: &[u16]) {
+    for value in values {
+        pointer(bytes, *value);
+    }
+}
+fn vector(bytes: &mut Vec<u8>, values: [f64; 3]) {
+    for value in values {
+        real(bytes, value);
+    }
+}
+
+pub(crate) fn chart_partition(scale: f64) -> Vec<u8> {
+    let sphere = sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
+        .unwrap()
+        .unwrap();
+    let start = records.nodes().next().unwrap().range().start;
+    let mut bytes = sphere[..start].to_vec();
+    node(&mut bytes, 38, 2);
+    integer(&mut bytes, 0);
+    for _ in 0..5 {
+        pointer(&mut bytes, 1);
+    }
+    bytes.push(b'+');
+    for reference in [3, 4, 5, 6, 7] {
+        pointer(&mut bytes, reference);
+    }
+    let points = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ];
+    bytes.extend_from_slice(&40u16.to_be_bytes());
+    integer(&mut bytes, u32::try_from(points.len()).unwrap());
+    pointer(&mut bytes, 5);
+    real(&mut bytes, 0.0);
+    real(&mut bytes, scale);
+    integer(&mut bytes, u32::try_from(points.len()).unwrap());
+    real(&mut bytes, 1.0e-6);
+    real(&mut bytes, 0.0);
+    real(&mut bytes, -3.14158e13);
+    real(&mut bytes, -3.14158e13);
+    for value in points.into_iter().flatten() {
+        real(&mut bytes, value);
+    }
+    for index in [6, 7] {
+        bytes.extend_from_slice(&41u16.to_be_bytes());
+        integer(&mut bytes, 1);
+        pointer(&mut bytes, index);
+        bytes.push(b'H');
+        for _ in 0..3 {
+            real(&mut bytes, 0.0);
+        }
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
+/// The chart partition plus trimmed curves: node 8 restricts the
+/// intersection, node 9 restricts node 8, node 10 restricts itself and node 11
+/// restricts a node that is absent.
+pub(crate) fn trimmed_chart_partition() -> Vec<u8> {
+    let mut bytes = chart_partition(1.0);
+    bytes.truncate(bytes.len() - 4);
+    for (index, basis) in [(8, 2), (9, 8), (10, 10), (11, 99)] {
+        node(&mut bytes, 133, index);
+        integer(&mut bytes, 0);
+        for _ in 0..5 {
+            pointer(&mut bytes, 1);
+        }
+        bytes.push(b'+');
+        pointer(&mut bytes, basis);
+        for _ in 0..6 {
+            real(&mut bytes, 0.0);
+        }
+        real(&mut bytes, 0.0);
+        real(&mut bytes, 1.0);
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}

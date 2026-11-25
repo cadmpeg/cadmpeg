@@ -145,6 +145,9 @@ pub(crate) enum RhinoLossCode {
     IntegrityFailure,
     /// A framed presentation record could not be transferred.
     PresentationRecordDropped,
+    /// A hidden carrier that no topology uses has no display colour, so no
+    /// appearance binding states its visibility.
+    FreeGeometryVisibilityNotStated,
     /// A framed annotation record could not be transferred.
     AnnotationRecordDropped,
     /// A framed product occurrence could not be transferred to the native graph.
@@ -217,6 +220,10 @@ pub(crate) enum RhinoLossCode {
     MeshNormalPrecisionReduced,
     /// Standalone support points and curves cannot keep their dependency.
     WriterSupportGeometryWithheld,
+    /// A mesh that displays a body the archive holds as a Brep is not written.
+    WriterBodyMeshWithheld,
+    /// A written record's source-object association is not written.
+    WriterSourceAssociationOmitted,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -257,6 +264,7 @@ impl RhinoLossCode {
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
+        Self::FreeGeometryVisibilityNotStated,
         Self::AnnotationRecordDropped,
         Self::ProductOccurrenceDropped,
         Self::AnnotationUserdataDropped,
@@ -293,6 +301,8 @@ impl RhinoLossCode {
         Self::MeshVertexPrecisionReduced,
         Self::MeshNormalPrecisionReduced,
         Self::WriterSupportGeometryWithheld,
+        Self::WriterBodyMeshWithheld,
+        Self::WriterSourceAssociationOmitted,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
@@ -308,6 +318,9 @@ impl RhinoLossCode {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::FreeGeometryVisibilityNotStated => {
+                "presentation.free-geometry-visibility-not-stated"
+            }
             Self::AnnotationRecordDropped => "annotation.record-dropped",
             Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
@@ -343,6 +356,8 @@ impl RhinoLossCode {
             Self::HistoryGeometryNotTransferred => "history.geometry-not-transferred",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::WriterSupportGeometryWithheld => "writer.support-geometry-withheld",
+            Self::WriterBodyMeshWithheld => "writer.body-mesh-withheld",
+            Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
@@ -378,6 +393,7 @@ impl RhinoLossCode {
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
+            Self::FreeGeometryVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
             Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -413,6 +429,8 @@ impl RhinoLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterBodyMeshWithheld => LossTaxonomy::TessellationOmitted,
+            Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -475,6 +493,7 @@ mod tests {
                 "container.scan-diagnostic",
                 "container.integrity-failure",
                 "presentation.record-dropped",
+                "presentation.free-geometry-visibility-not-stated",
                 "annotation.record-dropped",
                 "product.occurrence-dropped",
                 "annotation.userdata-dropped",
@@ -511,6 +530,8 @@ mod tests {
                 "mesh.vertex-precision-reduced",
                 "mesh.normal-precision-reduced",
                 "writer.support-geometry-withheld",
+                "writer.body-mesh-withheld",
+                "writer.source-association-omitted",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",

@@ -171,6 +171,13 @@ jobs:
           set -euo pipefail
           python3 scripts/check-codec-facade.py
 
+      - name: Validation rule names
+        # Every validation finding states its rule (rule!/rule_name!), and
+        # every rule an admission route lists is stated by a finding.
+        run: |
+          set -euo pipefail
+          python3 scripts/name-validation-rules.py --check
+
       - name: Dialect identity registry
         # Schema, id grammar, witness form, and the IGES admission lattice in
         # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the commit that adds them.
@@ -379,11 +386,12 @@ jobs:
         if: needs.changes.outputs.schema == 'true'
         # No other build compiles the JsonSchema derives. This gate runs the
         # schema tests, which compare the committed crates/cadmpeg-ir/schema
-        # files with the derives, and checks the core/assembly feature
-        # combinations.
+        # files with the derives (their text, in declared property order, under
+        # `schema-order`), and checks the core/assembly feature combinations.
         run: |
           set -euo pipefail
           cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
+          cargo test -q -p cadmpeg-ir --features schema-order --lib -- committed_json_schemas
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
 

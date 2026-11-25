@@ -198,7 +198,12 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
     use std::sync::Mutex;
 
     static BASELINES: Mutex<Vec<(String, Vec<Entry>)>> = Mutex::new(Vec::new());
-    let key = part.source_fidelity().content_digest.to_string();
+    let key = part
+        .source_fidelity()
+        .content_digest
+        .as_ref()
+        .expect("a decoded part has a content digest")
+        .to_string();
     {
         let baselines = BASELINES.lock().expect("baseline cache");
         if let Some((_, entries)) = baselines.iter().find(|(cached, _)| *cached == key) {

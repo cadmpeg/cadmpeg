@@ -76,14 +76,24 @@ fn a_part_with_parameters_states_one_scope_over_its_root_definition() {
     };
     assert!(root.is_root());
     assert_eq!(root.id.as_str(), "catia:model:product-definition#root");
-    assert!(root.bodies.is_empty());
     assert!(!ir.geometry.bodies.is_empty());
+    assert_root_owns_every_body(ir);
     let [scope] = ir.design.scopes.as_slice() else {
         panic!("one design scope");
     };
     assert_eq!(scope.definition, root.id);
     assert!(scope.roots.is_empty());
     assert!(scope.current.is_empty());
+    // The decoder reads no member that produces a body: every body of the
+    // root is unproduced, and a loss names the unread history (§5.5).
+    assert_eq!(
+        scope.unproduced.iter().collect::<Vec<_>>(),
+        root.bodies.iter().collect::<Vec<_>>()
+    );
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CatiaLossCode::HistoryFeaturesUnread
+            .note("")
+            .code));
     assert_eq!(
         ir.design
             .parameters

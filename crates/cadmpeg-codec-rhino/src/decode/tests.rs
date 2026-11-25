@@ -1289,6 +1289,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
             assert_eq!(ir.geometry.faces[1].sense, Sense::Forward);
         }
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
                 .expect("validate the neutral model")
@@ -1310,7 +1311,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1318,7 +1319,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     assert!(cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
@@ -1328,7 +1329,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1336,7 +1337,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     assert!(!cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
@@ -1353,7 +1354,7 @@ fn admission_ignores_findings_outside_its_checks() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &cadmpeg_ir::Annotations::default(),
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1361,7 +1362,7 @@ fn admission_ignores_findings_outside_its_checks() {
     assert!(cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")

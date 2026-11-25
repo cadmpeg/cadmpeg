@@ -681,12 +681,12 @@ macro_rules! declare_home_arenas {
                 true $(&& arena_is_ordered(&self.$field))*
             }
 
-            /// Keeps the first record of each id in each sorted arena and
-            /// drops the later ones, returning each repeated id whose copies
-            /// differ.
+            /// States one record of each id in each sorted arena whose copies
+            /// hold one value and none of an id whose copies differ,
+            /// returning each such id.
             pub(crate) fn drop_repeated_ids(&mut self, home: &str) -> Vec<RepeatedId> {
                 let mut repeated = Vec::new();
-                $(keep_first_ids(
+                $(drop_repeated_copies(
                     &mut self.$field,
                     crate::schema::ArenaRecord::record_identity,
                     &format!("{home}.{}", stringify!($field)),
@@ -1193,54 +1193,66 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
         .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
 }
 
-/// An id a sorted arena held more than once.
+/// An id a sorted arena held more than once, in copies that differ.
 #[derive(Debug)]
 pub(crate) struct RepeatedId {
     /// The arena, as `<home>.<field>` or `native.<codec>.<arena>`.
     pub(crate) arena: String,
     /// The repeated id.
     pub(crate) id: String,
-    /// The number of later records dropped.
-    pub(crate) dropped: usize,
-    /// Whether a dropped record differs from the kept one.
-    pub(crate) differs: bool,
+    /// The number of copies, all of them dropped.
+    pub(crate) copies: usize,
 }
 
-/// Drops each record of a sorted arena whose id equals the one before it, so
-/// the first record of each id stays, and records each repeated id whose
-/// copies differ from the first.
-///
-/// Copies that hold one value are one record, so dropping them loses
-/// nothing; they are not recorded.
-pub(crate) fn keep_first_ids<T: PartialEq>(
+/// States one record for each id of a sorted arena whose copies hold one
+/// value, and none for an id whose copies differ, which it records in
+/// `repeated` (§2.8).
+pub(crate) fn drop_repeated_copies<T: PartialEq>(
     records: &mut Vec<T>,
     id: impl Fn(&T) -> &str,
     arena: &str,
     repeated: &mut Vec<RepeatedId>,
 ) {
-    let mut current: Option<RepeatedId> = None;
+    let first_new = repeated.len();
+    let mut run: Option<(RepeatedId, bool)> = None;
     records.dedup_by(|later, earlier| {
         if id(later) != id(earlier) {
             return false;
         }
-        match current.as_mut() {
-            Some(run) if run.id == id(later) => {
-                run.dropped += 1;
-                run.differs |= later != earlier;
+        match run.as_mut() {
+            Some((current, differs)) if current.id == id(later) => {
+                current.copies += 1;
+                *differs |= later != earlier;
             }
             _ => {
-                repeated.extend(current.take().filter(|run| run.differs));
-                current = Some(RepeatedId {
-                    arena: arena.to_owned(),
-                    id: id(later).to_owned(),
-                    dropped: 1,
-                    differs: later != earlier,
-                });
+                repeated.extend(
+                    run.take()
+                        .filter(|(_, differs)| *differs)
+                        .map(|(repeated_id, _)| repeated_id),
+                );
+                run = Some((
+                    RepeatedId {
+                        arena: arena.to_owned(),
+                        id: id(later).to_owned(),
+                        copies: 2,
+                    },
+                    later != earlier,
+                ));
             }
         }
         true
     });
-    repeated.extend(current.filter(|run| run.differs));
+    repeated.extend(
+        run.filter(|(_, differs)| *differs)
+            .map(|(repeated_id, _)| repeated_id),
+    );
+    if repeated.len() > first_new {
+        let differing: std::collections::HashSet<&str> = repeated[first_new..]
+            .iter()
+            .map(|repeated| repeated.id.as_str())
+            .collect();
+        records.retain(|record| !differing.contains(id(record)));
+    }
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -1510,6 +1522,28 @@ macro_rules! declare_wire_omitted {
                     definition.sketches.clear();
                 }
                 self.omitted = OmittedArenas::NotRead;
+            }
+
+            /// Takes what the CADIR wire omits from `decoded`, the decode of
+            /// the source this model was saved from: the records of those
+            /// arenas, their feature-parent relations, the sketches of each
+            /// product definition both models hold, and the digest the
+            /// decode wrapper recorded of them. It undoes
+            /// [`Self::drop_omitted_arenas`] for a model whose saved source is
+            /// at hand.
+            pub fn adopt_omitted_arenas(&mut self, decoded: &Self) {
+                $(self.$field.clone_from(&decoded.$field);)*
+                self.feature_regeneration_parents
+                    .clone_from(&decoded.feature_regeneration_parents);
+                for definition in &mut self.product_definitions {
+                    definition.sketches = decoded
+                        .product_definitions
+                        .iter()
+                        .find(|candidate| candidate.id == definition.id)
+                        .map(|candidate| candidate.sketches.clone())
+                        .unwrap_or_default();
+                }
+                self.omitted.clone_from(&decoded.omitted);
             }
 
             /// The identities of the records of the arenas the wire omits.
@@ -2796,11 +2830,9 @@ impl CadIr {
     }
 
     /// Sorts every arena of the document's homes and native namespaces by
-    /// id, keeping records of one id in their present order, then keeps the
-    /// first record of each id and drops the later ones. Returns each
-    /// repeated id whose copies differ; copies that hold one value are one
-    /// record and are not returned. The arenas of a state's delta are left as
-    /// they are.
+    /// id, then states one record of each id whose copies hold one value and
+    /// none of an id whose copies differ. Returns each id whose copies
+    /// differ. The arenas of a state's delta are left as they are.
     pub(crate) fn drop_repeated_ids(&mut self) -> Vec<RepeatedId> {
         self.finalize();
         let mut repeated = self.geometry.drop_repeated_ids("topology");
