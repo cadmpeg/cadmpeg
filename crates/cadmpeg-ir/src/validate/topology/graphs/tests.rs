@@ -307,9 +307,22 @@ fn a_face_with_no_loops_is_the_only_face_of_its_shell_on_an_unbounded_surface() 
 fn a_lone_face_with_no_loops_on_a_closed_surface_breaks_no_rule() {
     let ir = loopless_model(&[("a", 0, "sphere"), ("b", 1, "placed sphere")], 2);
     assert!(loopless_findings(&ir).is_empty());
+}
+
+#[test]
+fn a_marked_shell_is_checked_for_the_surface_alone() {
+    // A marked shell does not state how many faces it holds, so two faces in
+    // it may be the only ones stated of two shells; the plane face is still
+    // a face with no loops on a plane.
     let mut ir = loopless_model(&[("a", 0, "sphere"), ("b", 0, "plane")], 1);
     ir.geometry.shells[0].unstated = Some(crate::topology::Unstated::Members);
-    assert!(loopless_findings(&ir).is_empty());
+    assert_eq!(
+        loopless_findings(&ir),
+        [(
+            "test:model:face#b".to_owned(),
+            "a face with no loops lies on a plane, which a face bounds with a loop".to_owned()
+        )]
+    );
 }
 
 #[test]
@@ -332,7 +345,7 @@ fn a_face_with_no_loops_on_a_cylinder_or_a_cone_breaks_the_rule() {
 }
 
 #[test]
-fn a_partial_face_with_no_loops_exempts_its_shell_and_region() {
+fn a_partial_face_is_exempt_and_exempts_no_other_face() {
     use crate::topology::FaceLoops;
     let partial = |ir: &mut crate::CadIr, face: &str| {
         let face = ir
@@ -343,16 +356,36 @@ fn a_partial_face_with_no_loops_exempts_its_shell_and_region() {
             .unwrap();
         face.loops = FaceLoops::PartialUnspecified { loops: Vec::new() };
     };
-    // The partial face itself, and a complete face beside it in its shell.
+    let mut ir = loopless_model(&[("a", 0, "plane")], 1);
+    partial(&mut ir, "test:model:face#a");
+    assert!(loopless_findings(&ir).is_empty());
+    // A complete face beside the partial face in its shell.
     let mut ir = loopless_model(&[("a", 0, "plane"), ("b", 0, "cone")], 1);
     partial(&mut ir, "test:model:face#a");
-    assert!(loopless_findings(&ir).is_empty());
+    assert_eq!(
+        loopless_findings(&ir),
+        [
+            (
+                "test:model:face#b".to_owned(),
+                "a face with no loops shares its shell with 1 other face(s); it is the only face of its shell".to_owned()
+            ),
+            (
+                "test:model:face#b".to_owned(),
+                "a face with no loops lies on a cone, which a face bounds with a loop".to_owned()
+            ),
+        ]
+    );
     // A complete face in another shell of the region that holds the partial
-    // face: the region's extent is not stated, so neither is the shell's.
+    // face.
     let mut ir = loopless_model(&[("a", 0, "plane"), ("b", 1, "cylinder")], 2);
-    assert_eq!(loopless_findings(&ir).len(), 2);
     partial(&mut ir, "test:model:face#a");
-    assert!(loopless_findings(&ir).is_empty());
+    assert_eq!(
+        loopless_findings(&ir),
+        [(
+            "test:model:face#b".to_owned(),
+            "a face with no loops lies on a cylinder, which a face bounds with a loop".to_owned()
+        )]
+    );
 }
 
 #[test]
