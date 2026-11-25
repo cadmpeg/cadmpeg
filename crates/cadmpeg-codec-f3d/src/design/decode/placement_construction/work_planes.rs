@@ -45,14 +45,15 @@ fn unique_placement<'a>(
 /// plane instead of from the plane entity's origin.
 const FOOT_ORIGIN_REF_TYPE: u32 = 5;
 
-/// Mark each sketch whose placement matrix equals the matrix of a `WorkPlane`
-/// placement of the foot-origin `refType`: its coordinates are measured from the
-/// foot of the perpendicular from the design origin to the plane.
-pub(crate) fn mark_foot_origin_sketches(
-    sketches: &mut [crate::records::sketch_placement::DesignSketchPlacement],
+/// The ids of the sketch placements whose matrix equals the matrix of a
+/// `WorkPlane` placement of the foot-origin `refType`: their coordinates are
+/// measured from the foot of the perpendicular from the design origin to the
+/// plane.
+pub(crate) fn foot_origin_placements(
+    sketches: &[crate::records::sketch_placement::DesignSketchPlacement],
     scopes: &[DesignParameterScope],
     placements: &[DesignPlacementConstruction],
-) {
+) -> std::collections::BTreeSet<String> {
     /// Largest coefficient difference at which two placement matrices are equal.
     const EPS_FRAME_MATCH: f64 = 1.0e-9;
     let frames: Vec<[[f64; 4]; 4]> = scopes
@@ -63,18 +64,20 @@ pub(crate) fn mark_foot_origin_sketches(
             Some(super::checked_solved_frame(placement)?.value.rows())
         })
         .collect();
-    for sketch in sketches {
-        let matrix = *sketch.transform();
-        if frames.iter().any(|frame| {
-            frame
-                .iter()
-                .flatten()
-                .zip(matrix.iter().flatten())
-                .all(|(a, b)| (a - b).abs() <= EPS_FRAME_MATCH)
-        }) {
-            sketch.set_foot_origin();
-        }
-    }
+    sketches
+        .iter()
+        .filter(|sketch| {
+            let matrix = sketch.transform();
+            frames.iter().any(|frame| {
+                frame
+                    .iter()
+                    .flatten()
+                    .zip(matrix.iter().flatten())
+                    .all(|(a, b)| (a - b).abs() <= EPS_FRAME_MATCH)
+            })
+        })
+        .map(|sketch| sketch.id.clone())
+        .collect()
 }
 
 pub(crate) fn solved_frame(

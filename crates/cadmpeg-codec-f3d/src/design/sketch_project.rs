@@ -270,6 +270,8 @@ pub(crate) struct SketchProjectInputs<'a, 's, 'c> {
     pub(crate) curves: &'a [SketchCurveIdentity],
     pub(crate) relations: &'a [SketchRelation],
     pub(crate) texts: &'a [SketchText],
+    /// Ids of the placements that measure from the foot of the design origin.
+    pub(crate) foot_origin: Option<&'a std::collections::BTreeSet<String>>,
 }
 
 impl<'a, 's, 'c> SketchProjectInputs<'a, 's, 'c> {
@@ -287,7 +289,16 @@ impl<'a, 's, 'c> SketchProjectInputs<'a, 's, 'c> {
             curves,
             relations,
             texts,
+            foot_origin: None,
         }
+    }
+
+    pub(crate) fn with_foot_origin(
+        mut self,
+        foot_origin: &'a std::collections::BTreeSet<String>,
+    ) -> Self {
+        self.foot_origin = Some(foot_origin);
+        self
     }
 
     pub(crate) fn with_scan(mut self, scan: &'s crate::container::ContainerScan<'c>) -> Self {
@@ -311,6 +322,7 @@ pub(crate) fn project_sketch_design(
     let relations = inputs.relations;
     let texts = inputs.texts;
     let scan = inputs.scan;
+    let foot_origin = inputs.foot_origin;
 
     let text_frame_curves = text_frame_curve_records(relations, curves, texts);
     let mut placements_by_suffix = HashMap::new();
@@ -336,7 +348,10 @@ pub(crate) fn project_sketch_design(
             continue;
         }
         let Ok(resolved) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-            placement_origin(placement),
+            placement_origin(
+                placement,
+                foot_origin.is_some_and(|set| set.contains(&placement.id)),
+            ),
             Vector3::new(
                 placement.transform()[0][2],
                 placement.transform()[1][2],
@@ -639,7 +654,10 @@ pub(crate) struct SpatialSketchDesign {
 /// Project non-planar Design sketch curves into model-space spatial sketches.
 pub(crate) fn project_spatial_sketch_design(
     ctx: &DecodeContext<'_>,
-    placements: &[DesignSketchPlacement],
+    (placements, foot_origin): (
+        &[DesignSketchPlacement],
+        &std::collections::BTreeSet<String>,
+    ),
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     surfaces: &[SketchSurface],
@@ -743,7 +761,9 @@ pub(crate) fn project_spatial_sketch_design(
             record_spline_segment(&mut spline_segments, scope, record, points);
         }
     }
-    let transform_point = placement_point;
+    let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
+        placement_point(placement, foot_origin.contains(&placement.id), point)
+    };
     let transform_vector = placement_vector;
 
     let shared_identities = shared_curve_identities(curves);

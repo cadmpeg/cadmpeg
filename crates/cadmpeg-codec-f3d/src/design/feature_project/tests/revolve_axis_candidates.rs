@@ -133,7 +133,7 @@ fn construction_with(
         &[],
         std::slice::from_ref(selection),
         &[],
-        (placements, &[]),
+        (placements, &[], &Default::default()),
         &crate::test_support::origin_types::origin_design_types(
             "f3d:Design/MetaStream.dat",
             ORIGIN_FIRST,
@@ -244,9 +244,7 @@ fn an_identity_outside_the_origin_axes_is_no_origin_axis() {
 
 /// A sketch with u = +x, v = -z, normal = +y and a stored translation of
 /// (5, 10, 2.5) mm.
-fn offset_plane_placement(
-    foot_origin: bool,
-) -> crate::records::sketch_placement::DesignSketchPlacement {
+fn stored_origin_placement() -> crate::records::sketch_placement::DesignSketchPlacement {
     use crate::records::sketch_placement::{
         DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
     };
@@ -256,7 +254,7 @@ fn offset_plane_placement(
         [0.0, -1.0, 0.0, 0.25],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let mut placement = crate::records::sketch_placement::DesignSketchPlacement {
+    crate::records::sketch_placement::DesignSketchPlacement {
         frame: DesignSketchFrame::new(
             0,
             DesignSketchFrameForm::ScopeExplicit(SketchPlacementMatrix::try_from(rows).unwrap()),
@@ -271,18 +269,15 @@ fn offset_plane_placement(
         record_index: 700,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
             .unwrap(),
-    };
-    if foot_origin {
-        placement.set_foot_origin();
     }
-    placement
 }
 
 #[test]
 fn a_revolve_axis_drawn_in_a_foot_origin_sketch_lands_at_the_foot_origin_position() {
     let axis_at = |foot_origin: bool| {
         crate::design::feature_project::revolve::sketch_line_axis(
-            &offset_plane_placement(foot_origin),
+            &stored_origin_placement(),
+            foot_origin,
             &cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
             &cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
             "axis",

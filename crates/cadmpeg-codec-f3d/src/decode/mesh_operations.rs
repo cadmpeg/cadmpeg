@@ -374,6 +374,9 @@ pub(super) struct MeshOperationInputs<'a> {
     pub(super) parameters: &'a [DesignParameter],
     pub(super) placements: &'a [DesignSketchPlacement],
     pub(super) sketches: &'a [Sketch],
+    /// Ids of the sketch placements that measure from the foot of the design
+    /// origin.
+    pub(super) foot_origin: &'a std::collections::BTreeSet<String>,
 }
 
 fn section_binding(
@@ -421,7 +424,10 @@ fn section_binding(
         let placement = placements.next().filter(|_| placements.next().is_none())?;
         let matrix = placement.transform();
         FeatureSupportPlaneFrame::new(
-            crate::design::face_resolve::placement_origin(placement),
+            crate::design::face_resolve::placement_origin(
+                placement,
+                inputs.foot_origin.contains(&placement.id),
+            ),
             Vector3::new(matrix[0][2], matrix[1][2], matrix[2][2]),
             Vector3::new(matrix[0][0], matrix[1][0], matrix[2][0]),
         )

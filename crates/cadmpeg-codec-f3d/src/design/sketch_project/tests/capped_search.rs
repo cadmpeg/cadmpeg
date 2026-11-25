@@ -70,7 +70,7 @@ fn capped_spatial_profile_search_reports_a_loss() {
     } = crate::test_support::with_decode_context(|decode_ctx| {
         project_spatial_sketch_design(
             decode_ctx,
-            &[placement],
+            (&[placement], &std::collections::BTreeSet::new()),
             &[],
             &curves,
             &[],

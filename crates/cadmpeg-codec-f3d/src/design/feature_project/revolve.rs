@@ -23,7 +23,11 @@ pub(in crate::design) fn project_fixed_revolve_with_entities(
     edge_operands: &[DesignEdgeOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-    (placements, curve_identities): (&[DesignSketchPlacement], &[SketchCurveIdentity]),
+    (placements, curve_identities, foot_origin): (
+        &[DesignSketchPlacement],
+        &[SketchCurveIdentity],
+        &std::collections::BTreeSet<String>,
+    ),
     design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::extents::AngularTermination;
@@ -144,6 +148,7 @@ pub(in crate::design) fn project_fixed_revolve_with_entities(
             entity_selection_operands,
             placements,
             curve_identities,
+            foot_origin,
         )
         .or_else(|| {
             design_geometry_axis_selection(
@@ -694,6 +699,7 @@ pub(super) fn resolve_sketch_axis_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
+    foot_origin: &std::collections::BTreeSet<String>,
 ) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let stream = native_stream(&scope.id)?;
     let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
@@ -719,17 +725,24 @@ pub(super) fn resolve_sketch_axis_selection(
     else {
         return None;
     };
-    sketch_line_axis(placement, start.as_raw(), direction.as_raw(), &selection.id)
+    sketch_line_axis(
+        placement,
+        foot_origin.contains(&placement.id),
+        start.as_raw(),
+        direction.as_raw(),
+        &selection.id,
+    )
 }
 
 /// The revolution axis along a sketch line, in model space.
 pub(super) fn sketch_line_axis(
     placement: &DesignSketchPlacement,
+    foot_origin: bool,
     start: &Point3,
     direction: &Vector3,
     reference: &str,
 ) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
-    let origin = crate::design::face_resolve::placement_point(placement, start);
+    let origin = crate::design::face_resolve::placement_point(placement, foot_origin, start);
     let direction = crate::design::face_resolve::placement_vector(placement, direction);
     Some(cadmpeg_ir::features::revolve::RevolutionAxis {
         origin: cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?,

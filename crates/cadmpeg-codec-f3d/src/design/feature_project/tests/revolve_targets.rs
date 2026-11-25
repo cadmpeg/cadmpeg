@@ -130,7 +130,7 @@ fn extent(
             std::slice::from_ref(&axis),
             &[],
             &[],
-            (&[], &[]),
+            (&[], &[], &Default::default()),
             &[],
         )?
     else {

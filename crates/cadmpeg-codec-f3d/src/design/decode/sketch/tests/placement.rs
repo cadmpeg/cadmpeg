@@ -1672,7 +1672,7 @@ fn scope_placement_accepts_typed_container_and_frame_references() {
     assert!(parse(&bytes[..scope_end - 1]).is_none());
 }
 
-fn foot_origin_test_placement(foot_origin: bool) -> DesignSketchPlacement {
+fn foot_origin_test_placement() -> DesignSketchPlacement {
     use crate::records::sketch_placement::{
         DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
     };
@@ -1683,7 +1683,7 @@ fn foot_origin_test_placement(foot_origin: bool) -> DesignSketchPlacement {
         [0.0, -1.0, 0.0, 0.25],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let mut placement = DesignSketchPlacement {
+    DesignSketchPlacement {
         frame: DesignSketchFrame::new(
             0,
             DesignSketchFrameForm::ScopeExplicit(SketchPlacementMatrix::try_from(rows).unwrap()),
@@ -1699,21 +1699,22 @@ fn foot_origin_test_placement(foot_origin: bool) -> DesignSketchPlacement {
         record_index: 11,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
             .unwrap(),
-    };
-    if foot_origin {
-        placement.set_foot_origin();
     }
-    placement
 }
 
 #[test]
 fn a_sketch_on_a_foot_origin_plane_measures_from_the_foot_of_the_design_origin() {
     let origin_of = |foot_origin: bool| {
-        let placement = foot_origin_test_placement(foot_origin);
+        let placement = foot_origin_test_placement();
+        let foot_origin_ids: std::collections::BTreeSet<String> = foot_origin
+            .then(|| placement.id.clone())
+            .into_iter()
+            .collect();
         let (sketches, _) = crate::test_support::with_decode_context(|decode_ctx| {
             project_sketch_design(
                 decode_ctx,
-                &SketchProjectInputs::new(std::slice::from_ref(&placement), &[], &[], &[], &[]),
+                &SketchProjectInputs::new(std::slice::from_ref(&placement), &[], &[], &[], &[])
+                    .with_foot_origin(&foot_origin_ids),
                 1.0e-6,
             )
         })

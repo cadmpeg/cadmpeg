@@ -2514,8 +2514,9 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
 /// The model-space origin of a sketch placement in the neutral unit. This is
 /// the single source of the sketch frame origin: a sketch that measures its
 /// coordinates from the foot of the design origin takes that foot instead of
-/// the stored translation.
-pub(crate) fn placement_origin(placement: &DesignSketchPlacement) -> Point3 {
+/// the stored translation. `foot_origin` states that the placement is in the
+/// set of `work_planes::foot_origin_placements`.
+pub(crate) fn placement_origin(placement: &DesignSketchPlacement, foot_origin: bool) -> Point3 {
     let scale = placement_origin_scale(placement);
     let matrix = placement.transform();
     let stored = Point3::new(
@@ -2523,7 +2524,7 @@ pub(crate) fn placement_origin(placement: &DesignSketchPlacement) -> Point3 {
         matrix[1][3] * scale,
         matrix[2][3] * scale,
     );
-    if !placement.frame.foot_origin() {
+    if !foot_origin {
         return stored;
     }
     let (nx, ny, nz) = (matrix[0][2], matrix[1][2], matrix[2][2]);
@@ -2532,9 +2533,13 @@ pub(crate) fn placement_origin(placement: &DesignSketchPlacement) -> Point3 {
 }
 
 /// A point of the sketch plane's coordinates in model space.
-pub(crate) fn placement_point(placement: &DesignSketchPlacement, point: &Point3) -> Point3 {
+pub(crate) fn placement_point(
+    placement: &DesignSketchPlacement,
+    foot_origin: bool,
+    point: &Point3,
+) -> Point3 {
     let matrix = placement.transform();
-    let origin = placement_origin(placement);
+    let origin = placement_origin(placement, foot_origin);
     Point3::new(
         matrix[0][0] * point.x + matrix[0][1] * point.y + matrix[0][2] * point.z + origin.x,
         matrix[1][0] * point.x + matrix[1][1] * point.y + matrix[1][2] * point.z + origin.y,

@@ -90,7 +90,7 @@ fn revolve_projects_with_native_profile() {
         std::slice::from_ref(&axis),
         &[],
         &[],
-        (&[], &[]),
+        (&[], &[], &Default::default()),
         &[],
     )
     else {
@@ -121,7 +121,7 @@ fn revolve_projects_with_native_profile() {
         &[unresolved_axis],
         &[],
         &[],
-        (&[], &[]),
+        (&[], &[], &Default::default()),
         &[],
     )
     else {
@@ -223,7 +223,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
             &[],
             std::slice::from_ref(selection),
             &[],
-            (&[], &[]),
+            (&[], &[], &Default::default()),
             &crate::test_support::origin_types::origin_design_types(
                 "f3d:Design/MetaStream.dat",
                 39,
@@ -324,7 +324,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
             &[],
             std::slice::from_ref(&selection(41)),
             &[],
-            (&[], &[]),
+            (&[], &[], &Default::default()),
             &crate::test_support::origin_types::origin_design_types(
                 "f3d:Design/MetaStream.dat",
                 39,
