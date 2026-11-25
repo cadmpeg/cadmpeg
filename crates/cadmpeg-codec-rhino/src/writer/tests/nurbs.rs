@@ -357,9 +357,11 @@ fn multiple_pcurve_uses_omit_the_body_and_name_it() {
     let (decoded, losses) = super::written(&ir);
     assert!(decoded.geometry.bodies.is_empty());
     assert!(
-        losses
-            .iter()
-            .any(|loss| loss.starts_with("rhino/writer.record-omitted") && loss.contains(&body)),
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterRecordOmitted
+                .kind()
+                .to_string()
+        ) && loss.contains(&body)),
         "{losses:?}"
     );
 }
@@ -725,11 +727,12 @@ fn nurbs_surface_patch_without_boundary_pcurves_omits_the_body_and_names_it() {
     let (decoded, losses) = super::written(&ir);
     assert!(decoded.geometry.bodies.is_empty());
     assert!(
-        losses
-            .iter()
-            .any(|loss| loss.starts_with("rhino/writer.record-omitted")
-                && loss.contains(&body)
-                && loss.contains("explicit pcurve")),
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterRecordOmitted
+                .kind()
+                .to_string()
+        ) && loss.contains(&body)
+            && loss.contains("explicit pcurve")),
         "{losses:?}"
     );
 }

@@ -10,6 +10,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Point, Shell};
 
 use super::{adjacent_quad_sheet, polygon_sheet, written};
+use crate::loss::RhinoLossCode;
 
 /// The tolerance of a decoded coordinate that the archive stores as `f64`.
 const EPS_COORDINATE: f64 = 1.0e-12;
@@ -47,7 +48,11 @@ fn a_body_with_two_shells_is_written_as_one_brep_per_shell() {
     assert_eq!(decoded.geometry.bodies.len(), 2);
     assert_eq!(decoded.geometry.faces.len(), 2);
     assert!(
-        has_loss(&losses, "rhino/writer.body-split", &body),
+        has_loss(
+            &losses,
+            &RhinoLossCode::WriterBodySplit.kind().to_string(),
+            &body
+        ),
         "{losses:?}"
     );
 }
@@ -107,7 +112,11 @@ fn a_scaled_body_is_omitted_while_other_records_are_written() {
     assert!(decoded.geometry.faces.is_empty());
     assert_eq!(decoded.geometry.points.len(), 1);
     assert!(
-        has_loss(&losses, "rhino/writer.record-omitted", &body),
+        has_loss(
+            &losses,
+            &RhinoLossCode::WriterRecordOmitted.kind().to_string(),
+            &body
+        ),
         "{losses:?}"
     );
 }
@@ -159,7 +168,7 @@ fn a_pcurve_no_coedge_uses_is_named_as_not_written() {
     assert!(
         has_loss(
             &losses,
-            "rhino/writer.record-omitted",
+            &RhinoLossCode::WriterRecordOmitted.kind().to_string(),
             "cadir:model:pcurve#orphan"
         ),
         "{losses:?}"

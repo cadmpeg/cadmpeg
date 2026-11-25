@@ -72,9 +72,11 @@ fn a_marked_region_with_no_partial_face_is_written_as_one_sheet_per_face() {
         .all(|body| body.kind == BodyKind::Sheet));
     assert_eq!(geometry.faces.len(), 4);
     assert!(
-        losses
-            .iter()
-            .any(|loss| loss.starts_with("rhino/writer.body-split") && loss.contains(&body)),
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterBodySplit
+                .kind()
+                .to_string()
+        ) && loss.contains(&body)),
         "{losses:?}"
     );
 }

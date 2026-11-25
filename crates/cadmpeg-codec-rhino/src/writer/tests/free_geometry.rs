@@ -140,10 +140,11 @@ fn free_curve_without_a_3dm_form_is_omitted_and_named() {
     assert!(decoded.geometry.curves.is_empty());
     assert_eq!(decoded.geometry.points.len(), 1);
     assert!(
-        losses
-            .iter()
-            .any(|loss| loss.starts_with("rhino/writer.record-omitted")
-                && loss.contains("rhino:test:curve#a")),
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterRecordOmitted
+                .kind()
+                .to_string()
+        ) && loss.contains("rhino:test:curve#a")),
         "{losses:?}"
     );
 }
@@ -416,10 +417,11 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         ir.model.tessellations[0].triangles()
     );
     assert!(
-        losses
-            .iter()
-            .any(|loss| loss.starts_with("rhino/writer.mesh-data-omitted")
-                && loss.contains("triangle groups")),
+        losses.iter().any(|loss| loss.starts_with(
+            &crate::loss::RhinoLossCode::WriterMeshDataOmitted
+                .kind()
+                .to_string()
+        ) && loss.contains("triangle groups")),
         "{losses:?}"
     );
 }
