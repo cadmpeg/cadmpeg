@@ -3024,7 +3024,7 @@ millimetres; child and polycurve parameters, the reserved values, and the
 reserved bounds are not scaled. A segment after the first states the
 `continuous` transition where the end point of the previous child and the
 start point of its own child are coincident (point coincidence of §16, on the
-millimetre coordinates); the first segment, and a segment after a gap, state
+coordinates in file units); the first segment, and a segment after a gap, state
 `discontinuous`. The composite keeps each child as stored, gaps included. The
 parent retains the source object record. A malformed child or parameter array
 does not enter the typed composite curve.

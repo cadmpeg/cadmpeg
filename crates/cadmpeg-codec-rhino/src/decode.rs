@@ -5503,13 +5503,14 @@ fn stage_curve_tree_indexed(
         crate::curves::DecodedCurve::Compound {
             mut children,
             end_parameter,
+            scale,
             ..
         } => {
             crate::curves::fit_polycurve_pieces(ctx, &mut children, end_parameter, 0)?;
             let parameter_range = children.first().and_then(|(start, _)| {
                 cadmpeg_ir::topology::IncreasingParameterInterval::between(*start, end_parameter)
             });
-            let transitions = crate::curves::polycurve_transitions(ctx, &children)?;
+            let transitions = crate::curves::polycurve_transitions(ctx, &children, scale)?;
             let mut segments = Vec::new();
             for (index, ((_, child), transition)) in
                 children.into_iter().zip(transitions).enumerate()
@@ -6056,6 +6057,7 @@ fn commit_curve_tree(
         crate::curves::DecodedCurve::Compound {
             mut children,
             end_parameter,
+            scale,
             ..
         } => {
             crate::curves::fit_polycurve_pieces(ctx, &mut children, end_parameter, 0)
@@ -6063,7 +6065,7 @@ fn commit_curve_tree(
             let parameter_range = children.first().and_then(|(start, _)| {
                 cadmpeg_ir::topology::IncreasingParameterInterval::between(*start, end_parameter)
             });
-            let transitions = crate::curves::polycurve_transitions(ctx, &children)
+            let transitions = crate::curves::polycurve_transitions(ctx, &children, scale)
                 .map_err(|error| error.to_string())?;
             let mut segments = Vec::new();
             for (index, ((_, child), transition)) in

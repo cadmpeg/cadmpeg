@@ -132,6 +132,9 @@ pub(crate) enum DecodedCurve {
         children: Vec<(FiniteReal, DecodedCurve)>,
         /// End parameter of the last child.
         end_parameter: FiniteReal,
+        /// Millimetres per file unit of the child coordinates: the file's
+        /// scale for a 3D polycurve, the identity for a 2D one.
+        scale: MillimeterScale,
         /// Non-fatal source warnings.
         warnings: Diagnostics,
     },
@@ -885,19 +888,28 @@ pub(crate) fn points_coincident(first: Point3, second: Point3) -> bool {
 
 /// The transition into each piece of a polycurve whose pieces
 /// [`fit_polycurve_pieces`] fitted: `Continuous` where the piece before ends
-/// at a point coincident with the start of the piece, and `Discontinuous`
-/// for the first piece and at a gap.
+/// at a point coincident with the start of the piece in file units, which
+/// `scale` converts the child coordinates to, and `Discontinuous` for the
+/// first piece and at a gap.
 pub(crate) fn polycurve_transitions(
     ctx: &DecodeContext<'_>,
     children: &[(FiniteReal, DecodedCurve)],
+    scale: MillimeterScale,
 ) -> Result<Vec<cadmpeg_ir::geometry::CompositeCurveTransition>, GeometryError> {
     use cadmpeg_ir::geometry::CompositeCurveTransition;
 
+    let file_units = |point: Point3| {
+        Point3::new(
+            point.x / scale.value(),
+            point.y / scale.value(),
+            point.z / scale.value(),
+        )
+    };
     let mut previous_end = None;
     children
         .iter()
         .map(|(_, child)| {
-            let ends = piece_ends(ctx, child)?;
+            let ends = piece_ends(ctx, child)?.map(|ends| ends.map(file_units));
             let continuous = matches!(
                 (previous_end, ends),
                 (Some(end), Some([start, _])) if points_coincident(end, start)
@@ -1686,6 +1698,7 @@ fn read_polycurve_2d(
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
+        scale: MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     })
 }
@@ -2080,6 +2093,7 @@ fn read_polycurve(
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
+        scale,
         warnings: Diagnostics::new(),
     })
 }
@@ -3075,6 +3089,7 @@ mod tests {
         let mut decoded = DecodedCurve::Compound {
             children: vec![(FiniteReal::ZERO, leaf())],
             end_parameter: FiniteReal::ONE,
+            scale: MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         let Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) =
@@ -3308,6 +3323,7 @@ mod tests {
         let nested = DecodedCurve::Compound {
             children: vec![(finite(2.0), line(0.0, 1.0)), (finite(3.0), line(0.0, 1.0))],
             end_parameter: finite(5.0),
+            scale: MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         let converted =

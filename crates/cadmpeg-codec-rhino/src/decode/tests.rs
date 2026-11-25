@@ -849,6 +849,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             ),
         ],
         end_parameter: finite_parameter(40.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -879,11 +880,13 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             ),
         ],
         end_parameter: finite_parameter(2.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
         children: vec![(finite_parameter(5.0), nested)],
         end_parameter: finite_parameter(9.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
@@ -915,6 +918,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
             (finite_parameter(1.0), decoded_nurbs(quadratic)),
         ],
         end_parameter: finite_parameter(2.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -1802,7 +1806,6 @@ mod brep;
 #[test]
 fn polycurve_states_continuity_where_adjacent_pieces_meet() {
     use crate::test_support::test_archive as support;
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::CompositeCurveTransition;
 
     let children = [
@@ -1824,10 +1827,60 @@ fn polycurve_states_continuity_where_adjacent_pieces_meet() {
         support::POLYCURVE_CLASS,
         &support::polycurve_payload(&[0.0, 1.0, 2.0, 3.0], &children),
     )]);
+    assert_eq!(
+        composite_transitions(bytes),
+        [
+            CompositeCurveTransition::Discontinuous,
+            CompositeCurveTransition::Continuous,
+            CompositeCurveTransition::Discontinuous,
+        ]
+    );
+}
+
+#[test]
+fn polycurve_tests_continuity_on_file_unit_coordinates() {
+    use crate::test_support::test_archive as support;
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    // In inches the pieces meet 2^-33 apart, within the 2^-32 absolute
+    // coincidence tolerance; in millimetres they are 25.4 times as far.
+    let join = 1.0 + 2.0_f64.powi(-33);
+    let children = [
+        (
+            support::LINE_CLASS,
+            support::line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([join, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let inches = 8;
+    let bytes = support::archive_unit(
+        inches,
+        &[support::object_record(
+            4,
+            support::POLYCURVE_CLASS,
+            &support::polycurve_payload(&[0.0, 1.0, 2.0], &children),
+        )],
+    );
+    assert_eq!(
+        composite_transitions(bytes),
+        [
+            CompositeCurveTransition::Discontinuous,
+            CompositeCurveTransition::Continuous,
+        ]
+    );
+}
+
+/// The segment transitions of the composite curve that `bytes` decodes to.
+fn composite_transitions(bytes: Vec<u8>) -> Vec<cadmpeg_ir::geometry::CompositeCurveTransition> {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
     let decoded = crate::RhinoCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("the polycurve archive decodes");
-    let transitions = decoded
+    decoded
         .ir()
         .geometry
         .curves
@@ -1841,13 +1894,5 @@ fn polycurve_states_continuity_where_adjacent_pieces_meet() {
             ),
             _ => None,
         })
-        .expect("the polycurve decodes to a composite curve");
-    assert_eq!(
-        transitions,
-        [
-            CompositeCurveTransition::Discontinuous,
-            CompositeCurveTransition::Continuous,
-            CompositeCurveTransition::Discontinuous,
-        ]
-    );
+        .expect("the polycurve decodes to a composite curve")
 }

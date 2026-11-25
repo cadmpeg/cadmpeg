@@ -1595,6 +1595,7 @@ pub(crate) mod tests {
         let profile = DecodedCurve::Compound {
             children: vec![(finite(0.0), outer), (finite(1.0), inner)],
             end_parameter: finite(2.0),
+            scale: crate::settings::MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         {
