@@ -32,6 +32,7 @@ pub use cages::{cage_bodies, cage_bodies_clause, remove_cage_bodies, without_cag
 pub mod capacity;
 mod carried;
 mod coverage;
+pub mod edge_ranges;
 pub mod edge_recovery;
 mod loss;
 pub use loss::{
@@ -44,7 +45,7 @@ pub use loss::{
 };
 mod partial;
 pub mod saved;
-pub use partial::without_partial_topology;
+pub use partial::{without_faces_and_bodies, without_partial_topology};
 mod scene;
 pub mod subset_lowering;
 pub mod target;

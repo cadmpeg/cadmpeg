@@ -653,6 +653,54 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
     }
 }
 
+/// A decoder that states the source holds design records beyond the depth it
+/// delivers charges `design` once, and the wrapper adds no second charge.
+#[test]
+fn a_class_the_source_holds_beyond_the_delivered_depth_is_charged_once() {
+    use cadmpeg_core::decode::ArenaClass::{Design, Process};
+    for (delivered, requested, missing) in [
+        (DecodeDepth::Geometry, DecodeDepth::Geometry, &[Design][..]),
+        (DecodeDepth::Geometry, DecodeDepth::Design, &[Design]),
+        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design, Process]),
+        (DecodeDepth::Design, DecodeDepth::Design, &[]),
+        (DecodeDepth::Full, DecodeDepth::Full, &[]),
+    ] {
+        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
+        decoded.body.transfer = crate::report::decode::DecodeTransfer::at(delivered, true);
+        decoded.body.source_holds(Design);
+        decoded.body.source_holds(Design);
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            requested,
+            &DecodePolicy::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result.ir().scope(), delivered.scope());
+        let losses = depth_losses(&result);
+        assert_eq!(losses.len(), missing.len(), "{losses:?}");
+        for class in missing {
+            assert_eq!(
+                losses
+                    .iter()
+                    .filter(|loss| loss.message.contains(&format!(" {class} ")))
+                    .count(),
+                1,
+                "{class}: {losses:?}"
+            );
+        }
+        let held = losses.iter().find(|loss| {
+            loss.message
+                .contains("the source holds design records that a geometry-depth decode")
+        });
+        assert_eq!(held.is_some(), !missing.is_empty(), "{losses:?}");
+        if let Some(loss) = held {
+            assert_eq!(loss.severity, crate::report::Severity::Error);
+        }
+    }
+}
+
 #[test]
 fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty() {
     for requested in [DecodeDepth::Geometry, DecodeDepth::Design] {

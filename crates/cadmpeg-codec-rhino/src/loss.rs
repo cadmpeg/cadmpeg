@@ -224,6 +224,13 @@ pub(crate) enum RhinoLossCode {
     WriterBodyMeshWithheld,
     /// A written record's source-object association is not written.
     WriterSourceAssociationOmitted,
+    /// A record the writer has no 3DM form for is not written, with the
+    /// records only it uses.
+    WriterRecordOmitted,
+    /// A mesh is written without values 3DM has no place for.
+    WriterMeshDataOmitted,
+    /// One body is written as several Brep objects.
+    WriterBodySplit,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -303,6 +310,9 @@ impl RhinoLossCode {
         Self::WriterSupportGeometryWithheld,
         Self::WriterBodyMeshWithheld,
         Self::WriterSourceAssociationOmitted,
+        Self::WriterRecordOmitted,
+        Self::WriterMeshDataOmitted,
+        Self::WriterBodySplit,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
@@ -358,6 +368,9 @@ impl RhinoLossCode {
             Self::WriterSupportGeometryWithheld => "writer.support-geometry-withheld",
             Self::WriterBodyMeshWithheld => "writer.body-mesh-withheld",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
+            Self::WriterRecordOmitted => "writer.record-omitted",
+            Self::WriterMeshDataOmitted => "writer.mesh-data-omitted",
+            Self::WriterBodySplit => "writer.body-split",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
@@ -372,8 +385,10 @@ impl RhinoLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::ObjectRecordCensus => Severity::Info,
-            Self::ObjectFramingUndecodable | Self::IntegrityFailure => Severity::Error,
+            Self::ObjectRecordCensus | Self::WriterBodySplit => Severity::Info,
+            Self::ObjectFramingUndecodable | Self::IntegrityFailure | Self::WriterRecordOmitted => {
+                Severity::Error
+            }
             _ => Severity::Warning,
         }
     }
@@ -431,6 +446,9 @@ impl RhinoLossCode {
             Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
             Self::WriterBodyMeshWithheld => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
+            Self::WriterRecordOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterMeshDataOmitted => LossTaxonomy::TessellationOmitted,
+            Self::WriterBodySplit => LossTaxonomy::TopologyNotTransferred,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -532,6 +550,9 @@ mod tests {
                 "writer.support-geometry-withheld",
                 "writer.body-mesh-withheld",
                 "writer.source-association-omitted",
+                "writer.record-omitted",
+                "writer.mesh-data-omitted",
+                "writer.body-split",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",
