@@ -65,7 +65,7 @@ pub(super) fn check_dimension_tolerance(
 /// What a PMI dimension states beside its nominal (part 10, §8): a fit's
 /// designations are capital letters and a grade; a tolerance goes with a
 /// length or angle, and a fit with a length; `Basic` and `SingleLimit` go
-/// with a stated nominal; and a tolerance, compared in the dimension's sign,
+/// with a stated nominal, and `decimals` with a length or angle nominal; and a tolerance, compared in the dimension's sign,
 /// or `decimals` equal to the bound parameter's is a second spelling of it
 /// (D60, D61).
 pub(super) fn check_dimension_statements(
@@ -118,6 +118,18 @@ pub(super) fn check_dimension_statements(
             | Tolerance::Basic
             | Tolerance::SingleLimit(_) => {}
         }
+    }
+    if dimension.decimals.is_some()
+        && (dimension.nominal.is_none() || nominal == Some(PmiQuantity::Ratio))
+    {
+        error(
+            findings,
+            annotation,
+            crate::rule!(
+                "pmi.dimension-states-decimals-no-nominal-length",
+                "dimension states `decimals` and no nominal with a length or angle quantity"
+            ),
+        );
     }
     let bound = match &dimension.nominal {
         Some(Dimension::Parameter(id)) => parameters.design(id.as_str()).map(|p| (p, false)),
