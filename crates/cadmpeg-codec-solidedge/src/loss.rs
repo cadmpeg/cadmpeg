@@ -33,7 +33,6 @@ pub(crate) enum SolidEdgeLossCode {
     SheetMetalBendMethodUnread,
     SheetMetalBaseTabUnread,
     SheetMetalFlangeFieldUnread,
-    FeaturePatternSenseUnread,
     PartitionUnreadable,
     PartitionIncomplete,
     PrimaryStateAssumed,
