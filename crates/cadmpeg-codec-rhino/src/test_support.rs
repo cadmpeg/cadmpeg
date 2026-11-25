@@ -72,7 +72,7 @@ pub(crate) fn millimeter_scale(millimeters_per_unit: f64) -> crate::settings::Mi
 pub(crate) fn plan_at(
     version: crate::RhinoArchiveVersion,
     ir: &cadmpeg_ir::document::CadIr,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::RhinoCodec.plan(

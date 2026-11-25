@@ -71,6 +71,7 @@ impl GeometryDiff {
             options,
             profile: args.profile,
             density: None,
+            reject_empty: false,
         };
         let measured = |loaded: &LoadedDocument| -> Result<MeasureReport, ApplicationError> {
             require_geometry(loaded)?;

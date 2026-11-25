@@ -146,7 +146,8 @@ pub fn unit_cube_with_history_body() -> Result<CadIr, ExampleError> {
     Ok(ir)
 }
 
-/// A `10 mm` axis-aligned cube spanning the origin to `(10, 10, 10)`.
+/// A `10 mm` axis-aligned cube spanning the origin to `(10, 10, 10)`, with
+/// the root definition that lists its body (§8.1).
 pub fn unit_cube() -> Result<CadIr, ExampleError> {
     let s = 10.0_f64;
 
@@ -377,6 +378,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         visible: None,
         native_ref: None,
     });
+    add_document_root(&mut ir);
 
     ir.finalize();
 

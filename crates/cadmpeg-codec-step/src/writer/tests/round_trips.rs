@@ -712,7 +712,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     product.label = Some("Cube part".into());
     product.part_number = Some("PART-001".into());
     product.bodies = vec![ir.geometry.bodies[0].id.clone()];
-    ir.model.product_definitions.push(product);
+    ir.model.product_definitions = vec![product];
     let options = StepWriteOptions {
         ..StepWriteOptions::default()
     };

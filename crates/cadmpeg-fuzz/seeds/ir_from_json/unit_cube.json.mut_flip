@@ -480,13 +480,14 @@
             10.0
           ]
         },
-        "ends": {ı          "start": "synthetic:cube:vertex#3",
+        "ends": {
+          "start": "synthetic:cube:vertex#3",
           "end": "synthetic:cube:vertex#0"
         }
       },
       {
         "id": "synthetic:cube:edge#4",
-        "carrier": {
+        "carrier›: {
           "curve": "synthetic:cube:curve#4",
           "param_range": [
             0.0,
@@ -1052,7 +1053,22 @@
   },
   "model": {
     "assets": [],
-    "product_definitions": [],
+    "product_definitions": [
+      {
+        "id": "test:model:product-definition#document",
+        "bom_properties": {},
+        "storage": {
+          "kind": "file",
+          "document": {}
+        },
+        "bodies": [
+          "synthetic:cube:body#0"
+        ],
+        "occurrences": [],
+        "instance_bodies": [],
+        "representations": []
+      }
+    ],
     "occurrences": [],
     "drawings": [],
     "semantic_annotations": [],

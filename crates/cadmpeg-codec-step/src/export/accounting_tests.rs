@@ -59,29 +59,27 @@ fn pmi_dropped_by_schema_does_not_skip_later_losses() {
 }
 
 fn product(ir: &mut cadmpeg_ir::CadIr) {
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
+    ir.model.product_definitions = vec![cadmpeg_ir::products::ProductDefinition {
+        sketches: Vec::default(),
 
-            id: "test:model:product-definition#empty".try_into().unwrap(),
-            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
-            source_name: None,
-            label: None,
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: Vec::new(),
-            native_ref: None,
-            generated_from: None,
-            storage: cadmpeg_ir::products::Storage::Embedded,
-            occurrences: Vec::new(),
-            instance_bodies: Vec::new(),
-            representations: Vec::new(),
-            units: None,
-            general_tolerance: None,
-            active: None,
-        });
+        id: "test:model:product-definition#empty".try_into().unwrap(),
+        kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::default(),
+        bodies: Vec::new(),
+        native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
+    }];
 }
 
 #[test]
