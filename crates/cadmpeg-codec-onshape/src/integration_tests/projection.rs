@@ -1562,7 +1562,7 @@ fn a_missing_closed_hole_boundary_refuses_region_construction() {
     crate::test_support::review::validate(result);
 }
 
-fn stored_attachment() -> Vec<u8> {
+pub(super) fn stored_attachment() -> Vec<u8> {
     crate::test_support::review::edit(
         &face_sketch_bundle([0.0, 0.0, 1.0], true),
         |path, response| {
