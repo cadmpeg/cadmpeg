@@ -803,6 +803,38 @@ fn a_partial_turn_whose_record_stores_its_sense_is_typed_with_a_warning() {
 }
 
 #[test]
+fn a_reversed_full_turn_is_typed_about_the_reversed_axis_without_a_warning() {
+    for (sense, direction, reversed) in [
+        ("Stored", [0.0, 1.0, 0.0], None),
+        ("Reversed", [0.0, -1.0, 0.0], Some(true)),
+    ] {
+        let (ir, native) = part(
+            r#"<Dimension Name="D1">360deg</Dimension>"#,
+            &with_centreline(),
+            &[sensed(
+                revolution([0.0, 0.0, 0.0], direction, &one_sided(TAU), "join"),
+                sense,
+            )],
+        );
+        let revolve = typed(&ir, &native, "Revolve1").unwrap();
+        assert_eq!(axis_pick(&revolve), (Some(entity("axis")), reversed));
+        assert_eq!(
+            revolve.axis.as_ref().unwrap().resolved,
+            Some(
+                serde_json::from_value::<AxisValue>(json!({
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "direction": {"x": direction[0], "y": direction[1], "z": direction[2]}}))
+                .unwrap()
+            )
+        );
+        assert!(matches!(&revolve.span, Some(Span::Between { start, .. })
+            if matches!(**start, Limit::AtOrigin)));
+        let (_, _, projected) = typed_timeline(&ir, &native);
+        assert!(projected.revolve_sense_assumed.is_none());
+    }
+}
+
+#[test]
 fn only_a_sense_read_with_the_axis_that_the_solid_depends_on_is_named() {
     let two_sided = json!({"kind": "resolved", "value": {
         "profile": {"kind": "sketch", "value": SKETCH},
