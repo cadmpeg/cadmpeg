@@ -1648,3 +1648,30 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
         loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("BODY 2")
     }));
 }
+
+#[test]
+fn a_withheld_face_leaves_no_loss_that_states_it_partial() {
+    // FACE 4's vertex loop names an unresolved VERTEX, and the face has no
+    // surface, so its shell and body are withheld: no loss states it partial.
+    let mut stream = vertex_loop_topology_partition_stream(99);
+    let face = Graph::parse(&stream)
+        .get(NodeKind::Face, 4)
+        .expect("face")
+        .pos();
+    put_ref(&mut stream, face + 26, 1);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    assert!(result.ir().geometry.faces.is_empty());
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
+    }));
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.message.contains("is stated partial")),
+        "{losses:#?}"
+    );
+}
