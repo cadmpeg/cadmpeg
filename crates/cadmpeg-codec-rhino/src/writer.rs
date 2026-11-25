@@ -8,6 +8,7 @@ use std::io::{Seek, SeekFrom, Write};
 mod convert;
 mod exact;
 mod model;
+mod subd;
 pub(crate) mod target;
 use model::{
     TrimEdge, WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel,
@@ -1382,6 +1383,77 @@ fn prepare_write(
         if mesh.of.body().is_some() {
             unbound.push(mesh.id.as_str().to_owned());
         }
+    }
+
+    let unwritten_cages = subd::unwritten_cages(ir, archive_version)
+        .map(|(_, cages)| cages)
+        .unwrap_or_default();
+    let cage_owners = subd::cage_owners(ir);
+    let mut unheld_cage_content = std::collections::BTreeMap::<_, Vec<&str>>::new();
+    let mut shared_cage_bodies = std::collections::BTreeMap::<&str, Vec<&str>>::new();
+    for surface in geometry
+        .subds
+        .iter()
+        .filter(|surface| !unwritten_cages.contains(&&surface.id))
+    {
+        let owner = cage_owners.get(surface.id.as_str());
+        let body = owner.map(|owner| owner.body);
+        let identity = match owner {
+            Some(owner) if !owner.shared => owner.body.id.as_str(),
+            _ => surface.id.as_str(),
+        };
+        let name = body.and_then(|body| written_name(body.name.as_deref()));
+        let built = subd::placed(&surface.cage, body.and_then(|body| body.transform))
+            .and_then(|cage| subd::payload(&cage, archive_version))
+            .and_then(|payload| {
+                let attributes = object_attributes_payload(
+                    identity,
+                    name,
+                    body.and_then(|body| body.color),
+                    body.and_then(|body| body.visible),
+                )?;
+                let record = framed_object_record(
+                    subd::SUBD_OBJECT_TYPE,
+                    subd::SUBD_CLASS,
+                    &payload.body,
+                    Some(&payload.direct),
+                    Some(attributes),
+                )?;
+                Ok((record, payload.unheld))
+            });
+        let Some((record, unheld)) = records.admit(surface.id.as_str(), built)? else {
+            continue;
+        };
+        records.file.write_all(&record)?;
+        for content in unheld {
+            unheld_cage_content
+                .entry(content)
+                .or_default()
+                .push(surface.id.as_str());
+        }
+        let Some(owner) = owner else {
+            continue;
+        };
+        held.extend([owner.body.id.as_str(), owner.region, owner.shell]);
+        if owner.shared {
+            shared_cage_bodies
+                .entry(owner.body.id.as_str())
+                .or_default()
+                .push(surface.id.as_str());
+        }
+        if owner.body.name.as_deref() != name {
+            cut_names.push(identity.to_owned());
+        }
+    }
+    for (content, cages) in unheld_cage_content {
+        losses.extend(value_unwritable("Rhino", content.reason(), cages));
+    }
+    for (body, cages) in shared_cage_bodies {
+        losses.push(RhinoLossCode::WriterBodySplit.note(format!(
+            "body {body} is written as {} SubD objects, one for each of its cages: {}",
+            cages.len(),
+            cages.join(", ")
+        )));
     }
 
     for (body, pieces) in splits {

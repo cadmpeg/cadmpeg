@@ -162,6 +162,18 @@ impl SubdCage {
         Ok(())
     }
 
+    /// Control vertices in cage order.
+    #[must_use]
+    pub fn vertices(&self) -> &[SubdVertex] {
+        &self.vertices
+    }
+
+    /// Symmetries of the cage.
+    #[must_use]
+    pub fn symmetries(&self) -> &[SubdSymmetry] {
+        &self.symmetries
+    }
+
     /// Control edges in cage order.
     #[must_use]
     pub fn edges(&self) -> &[SubdEdge] {
@@ -751,6 +763,12 @@ impl SubdVertex {
     pub fn set_point(&mut self, point: FinitePoint3) {
         self.point = point;
     }
+
+    /// Secondary-grip topology owned by this vertex.
+    #[must_use]
+    pub const fn secondary_grips(&self) -> Option<&SubdVertexGripLayout> {
+        self.secondary_grips.as_ref()
+    }
 }
 
 /// Compass direction of the root edge in a control-cage grid frame.
@@ -1011,6 +1029,24 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// Start and end vertex indices into the cage's vertices.
+    #[must_use]
+    pub const fn vertices(&self) -> [u32; 2] {
+        self.vertices
+    }
+
+    /// Crease sharpness at the start and at the end vertex.
+    #[must_use]
+    pub const fn sharpness(&self) -> [NonNegativeReal; 2] {
+        self.sharpness
+    }
+
+    /// Sector coefficients at the start and at the end vertex.
+    #[must_use]
+    pub const fn sector_coefficients(&self) -> [FiniteReal; 2] {
+        self.sector_coefficients
+    }
+
     /// The knot interval the edge states, before any user value.
     #[must_use]
     pub const fn knot_interval(&self) -> Option<PositiveReal> {

@@ -24,6 +24,49 @@ pub(crate) fn positive(value: f64) -> cadmpeg_ir::scalar::PositiveReal {
     cadmpeg_ir::scalar::PositiveReal::new(value).expect("positive fixture scalar")
 }
 
+/// An open cage of two quads that share the edge from vertex 1 to vertex 4.
+/// Its components state every vertex and edge tag and unequal end sharpness.
+pub(crate) fn two_quad_cage() -> cadmpeg_ir::subd::SubdCage {
+    use cadmpeg_ir::subd::{
+        SubdCage, SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdVertex, SubdVertexTag,
+    };
+    let vertex = |x: f64, y: f64, tag| {
+        SubdVertex::new(cadmpeg_ir::math::Point3::new(x, y, 0.25 * x), tag, None).unwrap()
+    };
+    let vertices = vec![
+        vertex(0.0, 0.0, SubdVertexTag::Corner),
+        vertex(1.0, 0.0, SubdVertexTag::Crease),
+        vertex(2.0, 0.0, SubdVertexTag::Corner),
+        vertex(0.0, 1.0, SubdVertexTag::Dart),
+        vertex(1.0, 1.0, SubdVertexTag::Smooth),
+        vertex(2.0, 1.0, SubdVertexTag::Corner),
+    ];
+    let edge = |ends, sharpness, tag, coefficients| {
+        SubdEdge::new(ends, sharpness, tag, None, coefficients).unwrap()
+    };
+    let edges = vec![
+        edge([0, 1], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([1, 2], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([2, 5], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([5, 4], [0.0, 0.0], SubdEdgeTag::SmoothX, [0.0, 0.5]),
+        edge([4, 3], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([3, 0], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([1, 4], [0.5, 1.5], SubdEdgeTag::Smooth, [0.25, 0.75]),
+    ];
+    let face = |uses: [(u32, bool); 4]| {
+        SubdFace::from_edge_uses(
+            uses.map(|(edge, reversed)| SubdEdgeUse { edge, reversed })
+                .to_vec(),
+        )
+        .unwrap()
+    };
+    let faces = vec![
+        face([(0, false), (6, false), (4, false), (5, false)]),
+        face([(1, false), (2, false), (3, false), (6, true)]),
+    ];
+    SubdCage::new(vertices, edges, faces, Vec::new()).unwrap()
+}
+
 /// A positive fixture angle.
 pub(crate) fn positive_angle(value: f64) -> cadmpeg_ir::scalar::PositiveAngle {
     cadmpeg_ir::scalar::PositiveAngle::new(value).expect("positive fixture angle")
