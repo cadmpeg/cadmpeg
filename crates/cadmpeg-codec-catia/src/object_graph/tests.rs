@@ -26,8 +26,8 @@ fn payload_field_borrowed_wire_preserves_json_bytes() {
     for field in fields {
         let owned: super::PayloadFieldWire = field.clone().into();
         assert_eq!(
-            serde_json::to_vec(&field).expect("borrowed field JSON"),
-            serde_json::to_vec(&owned).expect("owned field JSON")
+            cadmpeg_core::serde_erase::json::to_vec(&field).expect("borrowed field JSON"),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned field JSON")
         );
     }
 }
@@ -49,7 +49,9 @@ fn payload_field_retained_limit_refuses_json_record() {
         field: &field,
     };
     let arena_name = "payload_fields";
-    let json_len = serde_json::to_vec(&record).expect("field JSON").len();
+    let json_len = cadmpeg_core::serde_erase::json::to_vec(&record)
+        .expect("field JSON")
+        .len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -1546,13 +1548,13 @@ fn object_record_wire_checks_derived_roles() {
         lead: 0,
         body: super::ObjectRecordBody::Inline(vec![0, 0xfe]),
     };
-    let mut wire = serde_json::to_value(&record).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
     assert_eq!(
-        serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<super::ObjectRecord>(wire.clone()).unwrap(),
         record
     );
     wire["owner_ref"] = serde_json::json!(2);
-    assert!(serde_json::from_value::<super::ObjectRecord>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<super::ObjectRecord>(wire).is_err());
 }
 
 fn suffix_bearing_record() -> ObjectRecord {
@@ -1596,15 +1598,15 @@ fn suffix_bearing_record() -> ObjectRecord {
 #[test]
 fn object_record_body_wire_rejects_a_subtype_disagreeing_with_the_payload() {
     let record = suffix_bearing_record();
-    let mut wire = serde_json::to_value(&record).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
     assert_eq!(wire["body"]["Nested"]["subtype"], serde_json::json!("Blob"));
     assert_eq!(
-        serde_json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
         record
     );
 
     wire["body"]["Nested"]["subtype"] = serde_json::json!("Empty");
-    let error = serde_json::from_value::<ObjectRecord>(wire)
+    let error = cadmpeg_core::serde_erase::json::from_value::<ObjectRecord>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("subtype"), "{error}");
@@ -1613,19 +1615,19 @@ fn object_record_body_wire_rejects_a_subtype_disagreeing_with_the_payload() {
 #[test]
 fn object_record_body_wire_rejects_a_repeated_suffix_disagreeing_with_the_payload() {
     let record = suffix_bearing_record();
-    let mut wire = serde_json::to_value(&record).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
     assert_eq!(
         wire["body"]["Nested"]["repeated_reference_suffix"]["terminal_reference"],
         serde_json::json!(49)
     );
     assert_eq!(
-        serde_json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
         record
     );
 
     wire["body"]["Nested"]["repeated_reference_suffix"]["terminal_reference"] =
         serde_json::json!(50);
-    let error = serde_json::from_value::<ObjectRecord>(wire)
+    let error = cadmpeg_core::serde_erase::json::from_value::<ObjectRecord>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("repeated_reference_suffix"), "{error}");
@@ -1639,15 +1641,15 @@ fn payload_field_wire_rejects_a_declared_len_disagreeing_with_the_blob() {
         bytes: vec![1, 2, 3].into(),
         offset: 4,
     };
-    let mut wire = serde_json::to_value(&field).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&field).unwrap();
     assert_eq!(wire["Blob"]["declared_len"], serde_json::json!(3));
     assert_eq!(
-        serde_json::from_value::<PayloadField>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<PayloadField>(wire.clone()).unwrap(),
         field
     );
 
     wire["Blob"]["declared_len"] = serde_json::json!(2);
-    let error = serde_json::from_value::<PayloadField>(wire)
+    let error = cadmpeg_core::serde_erase::json::from_value::<PayloadField>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("declared_len"), "{error}");
@@ -1666,15 +1668,15 @@ fn payload_field_wire_rejects_a_table_count_disagreeing_with_the_rows() {
         }],
         offset: 4,
     };
-    let mut wire = serde_json::to_value(&field).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&field).unwrap();
     assert_eq!(wire["BulkTable"]["table_count"], serde_json::json!(1));
     assert_eq!(
-        serde_json::from_value::<PayloadField>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<PayloadField>(wire.clone()).unwrap(),
         field
     );
 
     wire["BulkTable"]["table_count"] = serde_json::json!(2);
-    let error = serde_json::from_value::<PayloadField>(wire)
+    let error = cadmpeg_core::serde_erase::json::from_value::<PayloadField>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("table_count"), "{error}");

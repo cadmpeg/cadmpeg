@@ -81,7 +81,10 @@ mod tests {
         let json =
             r#"{"occurrences":["use-b","use-a"],"object_uuid_values":["value-a","value-b"]}"#;
         let members: UuidGroupMembers = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&members).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&members).unwrap(),
+            json
+        );
         for json in [
             r#"{"occurrences":[],"object_uuid_values":[]}"#,
             r#"{"occurrences":["use"],"object_uuid_values":[]}"#,

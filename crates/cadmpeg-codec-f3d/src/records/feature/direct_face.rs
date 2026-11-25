@@ -488,30 +488,38 @@ mod tests {
     #[test]
     fn draft_parting_optional_keys_distinguish_absence_value_and_null() {
         let mut wire = serde_json::json!({"flipped":false,"tangent_chain":false});
-        let absent: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
+        let absent: super::DesignDraftFlags =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert!(absent.parting.is_none());
         wire["parting"] = serde_json::json!({
             "form":2,"mode":3,"prefix_scalars":[1.5,0.5],"boundary_flag":false,
             "pull":{"value":93,"offset":75},"tool":{"value":92,"offset":86},"faces":{"value":91,"offset":101}
         });
-        let present: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(present).unwrap(), wire);
+        let present: super::DesignDraftFlags =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(present).unwrap(),
+            wire
+        );
         assert!(present.parting.unwrap().fixed_edges.is_none());
         wire["parting"]["fixed_edges"] = serde_json::json!({"value":94,"offset":75});
-        let with_fixed: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
+        let with_fixed: super::DesignDraftFlags =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(with_fixed.parting.unwrap().fixed_edges.unwrap().value, 94);
         wire["parting"]["fixed_edges"] = serde_json::Value::Null;
         assert!(
-            serde_json::from_value::<super::DesignDraftFlags>(wire.clone())
+            cadmpeg_core::serde_erase::json::from_value::<super::DesignDraftFlags>(wire.clone())
                 .unwrap_err()
                 .to_string()
                 .contains("fixed_edges")
         );
         wire["parting"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<super::DesignDraftFlags>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("parting"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::DesignDraftFlags>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("parting")
+        );
     }
 
     fn operation(outside: Option<DesignShellOutsideWall>) -> DesignShellOperation {
@@ -551,23 +559,23 @@ mod tests {
             ..without.clone()
         };
         for value in [both, one, without, flagged] {
-            let wire = serde_json::to_value(&value).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
             assert_eq!(
-                serde_json::from_value::<DesignShellOperation>(wire).unwrap(),
+                cadmpeg_core::serde_erase::json::from_value::<DesignShellOperation>(wire).unwrap(),
                 value
             );
         }
-        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(operation(None)).unwrap();
         assert!(wire["wall_slots"].get("outside").is_none());
         wire["wall_slots"]["outside"] = serde_json::Value::Null;
-        let error = serde_json::from_value::<DesignShellOperation>(wire)
+        let error = cadmpeg_core::serde_erase::json::from_value::<DesignShellOperation>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("outside"), "{error}");
 
-        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(operation(None)).unwrap();
         wire["wall_slots"] = serde_json::Value::Null;
-        let error = serde_json::from_value::<DesignShellOperation>(wire)
+        let error = cadmpeg_core::serde_erase::json::from_value::<DesignShellOperation>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("wall_slots"), "{error}");

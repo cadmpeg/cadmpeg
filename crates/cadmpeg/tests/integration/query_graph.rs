@@ -160,7 +160,8 @@ fn graph_json_envelope() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "query");
     let graph = value["payload"].as_array().unwrap();
     assert_eq!(graph.len(), 2);
@@ -193,7 +194,8 @@ fn graph_brep_hops_3_reaches_faces() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     let ids: Vec<&str> = value["payload"]
         .as_array()
         .unwrap()

@@ -91,9 +91,10 @@ fn renamed(value: &mut Value, kinds: &[&str]) {
 /// `records` with each identity of a kind in `kinds` renamed for the second
 /// body.
 fn instance<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str]) -> Vec<T> {
-    let mut value = serde_json::to_value(records).expect("the records serialize");
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(records).expect("the records serialize");
     renamed(&mut value, kinds);
-    serde_json::from_value(value).expect("the renamed records deserialize")
+    cadmpeg_core::serde_erase::json::from_value(value).expect("the renamed records deserialize")
 }
 
 /// The cube `ir` under `first`, and a second cube body under `second` on

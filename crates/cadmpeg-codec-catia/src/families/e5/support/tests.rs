@@ -57,14 +57,14 @@ fn affine_maps_retain_negative_scale_and_independent_fields() {
         matches!(correspondence.program, E5ParameterProgram::Affine { scale, offset }
         if scale.get() == -2.0 && offset.get() == 8.0)
     );
-    let wire = serde_json::to_value(&support).expect("store fields");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&support).expect("store fields");
     assert_eq!(
-        serde_json::from_value::<E5CurveSupport>(wire.clone()).expect("load"),
+        cadmpeg_core::serde_erase::json::from_value::<E5CurveSupport>(wire.clone()).expect("load"),
         support
     );
     let mut conflicting = wire;
     conflicting["kind"]["correspondence"]["fit_tolerance"] = serde_json::json!(0.25);
-    assert!(serde_json::from_value::<E5CurveSupport>(conflicting).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<E5CurveSupport>(conflicting).is_err());
 }
 
 #[test]

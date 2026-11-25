@@ -221,7 +221,7 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         assert!(!parsed.is_physically_dependent());
         assert!(!parsed.is_logically_dependent());
         assert_eq!(
-            serde_json::to_value(parsed).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(parsed).unwrap(),
             serde_json::json!({
                 "blank_status": 99,
                 "subordinate_status": 99,
@@ -239,8 +239,8 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         Some(UseFlag::Construction)
     );
     assert_eq!(
-        serde_json::to_value(early).unwrap(),
-        serde_json::to_value(later).unwrap()
+        cadmpeg_core::serde_erase::json::to_value(early).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(later).unwrap()
     );
 }
 

@@ -181,8 +181,10 @@ fn version_four_position_preserves_its_single_matrix_row() {
     let legacy = read(&bytes, &scope, &types).unwrap();
     assert_eq!(legacy, positions);
     scope.captured_positions = Some(legacy);
-    let decoded: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+    let decoded: DesignParameterScope = cadmpeg_core::serde_erase::json::from_value(
+        cadmpeg_core::serde_erase::json::to_value(&scope).unwrap(),
+    )
+    .unwrap();
     assert_eq!(decoded.captured_positions, scope.captured_positions);
 }
 
@@ -299,7 +301,7 @@ fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() 
         assert!(ctx.resource_refusal().is_some());
     });
     scope.captured_positions = Some(positions);
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
     assert_eq!(
         wire["captured_positions"]["paths"]
             .as_array()
@@ -308,13 +310,15 @@ fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() 
         1
     );
     assert_eq!(
-        serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wire.clone()).unwrap(),
         scope
     );
     for index in [serde_json::json!(1), serde_json::Value::Null] {
         let mut invalid = wire.clone();
         invalid["captured_positions"]["rows"][1]["path_index"] = index;
-        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err()
+        );
     }
     let mut rewritten = wire.clone();
     let mut identities = IdentityMap::new(|id: &str| Ok(id.to_owned()));

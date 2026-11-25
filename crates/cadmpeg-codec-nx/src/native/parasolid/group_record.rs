@@ -215,44 +215,62 @@ mod tests {
                 r#"{{"id":"group",{scope},"xmt":10,"node_id":7,"references":[3,4,5,6,7],"selector":4{status},"byte_len":20,"inflated_offset":0}}"#
             );
             let group: ParasolidGroupRecord = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&group).unwrap(), json);
             assert_eq!(
-                serde_json::to_vec(&group).unwrap(),
-                serde_json::to_vec(&GroupWire::from(group.clone())).unwrap()
+                cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
+                json
+            );
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_vec(&group).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&GroupWire::from(group.clone())).unwrap()
             );
             for selector in 1..=10u8 {
                 let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
                 value["selector"] = serde_json::json!(selector);
-                let decoded = serde_json::from_value::<ParasolidGroupRecord>(value).unwrap();
+                let decoded =
+                    cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(value)
+                        .unwrap();
                 assert_eq!(u8::from(decoded.selector), selector);
             }
             for slot in 0..5 {
                 let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
                 value["references"][slot] = serde_json::json!(0);
-                assert!(serde_json::from_value::<ParasolidGroupRecord>(value).is_err());
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(value)
+                        .is_err()
+                );
             }
             let mut null_owner: serde_json::Value = serde_json::from_str(&json).unwrap();
             null_owner["references"][1] = serde_json::json!(1);
-            assert!(serde_json::from_value::<ParasolidGroupRecord>(null_owner).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(null_owner)
+                    .is_err()
+            );
             let mut nullable_links: serde_json::Value = serde_json::from_str(&json).unwrap();
             nullable_links["references"] = serde_json::json!([1, 3, 1, 1, 1]);
-            assert!(serde_json::from_value::<ParasolidGroupRecord>(nullable_links).is_ok());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(nullable_links)
+                    .is_ok()
+            );
             let mut null_status: serde_json::Value = serde_json::from_str(&json).unwrap();
             null_status["linked_reference_status"] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<ParasolidGroupRecord>(null_status)
-                .unwrap_err()
-                .to_string()
-                .contains("linked_reference_status"));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(null_status)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("linked_reference_status")
+            );
             if scope.contains("\"deltas\"") {
                 let mut missing: serde_json::Value = serde_json::from_str(&json).unwrap();
                 missing
                     .as_object_mut()
                     .unwrap()
                     .remove("linked_reference_status");
-                assert!(serde_json::from_value::<ParasolidGroupRecord>(missing)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("linked_reference_status"));
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(missing)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("linked_reference_status")
+                );
             }
             for (field, invalid) in [
                 ("selector", serde_json::json!(11)),
@@ -262,22 +280,30 @@ mod tests {
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire[field] = invalid;
-                let error = serde_json::from_value::<ParasolidGroupRecord>(wire).unwrap_err();
+                let error =
+                    cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(wire)
+                        .unwrap_err();
                 assert!(error.to_string().contains(field), "{error}");
             }
             if !scope.contains("\"deltas\"") {
                 let mut with_status: serde_json::Value = serde_json::from_str(&json).unwrap();
                 with_status["linked_reference_status"] = serde_json::json!(0);
-                assert!(serde_json::from_value::<ParasolidGroupRecord>(with_status)
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(
+                        with_status
+                    )
                     .unwrap_err()
                     .to_string()
-                    .contains("linked_reference_status"));
+                    .contains("linked_reference_status")
+                );
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire["partition_stream_ordinal"] = serde_json::json!(9);
-                assert!(serde_json::from_value::<ParasolidGroupRecord>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("partition_stream_ordinal"));
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupRecord>(wire)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("partition_stream_ordinal")
+                );
             }
         }
     }

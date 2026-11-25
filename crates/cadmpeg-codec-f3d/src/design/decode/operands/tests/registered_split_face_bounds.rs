@@ -114,7 +114,7 @@ fn decode_with_scanned_header(
     let groups: Vec<DesignConstructionOperandGroup> = role
         .into_iter()
         .map(|role| {
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": format!("{STREAM}:group#90"),
                 "scope_record_index": 50,
                 "scope_reference_ordinal": 0,

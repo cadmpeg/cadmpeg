@@ -339,7 +339,8 @@ fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive(
     .unwrap();
     assert_eq!(axis.native_options().len(), 1);
     assert_eq!(axis.source_settings().len(), 1);
-    let axis: DatumAxis = serde_json::from_str(&serde_json::to_string(&axis).unwrap()).unwrap();
+    let axis: DatumAxis =
+        serde_json::from_str(&cadmpeg_core::serde_erase::json::to_string(&axis).unwrap()).unwrap();
     let replacements = std::collections::BTreeMap::from([(
         "test:model:parameter#one".to_owned(),
         "test:placed:parameter#one".to_owned(),

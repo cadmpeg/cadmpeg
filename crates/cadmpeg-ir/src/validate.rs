@@ -579,7 +579,7 @@ mod tests {
         ];
         for &(bytes, valid) in cases {
             let method: crate::features::surfaces::SplitFaceMethod =
-                serde_json::from_slice(bytes).unwrap();
+                cadmpeg_core::serde_erase::json::from_slice(bytes).unwrap();
             for configuration_local in [false, true] {
                 let definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
@@ -809,16 +809,18 @@ mod tests {
             SplitBodyTool::Faces(FaceSelection::Unresolved),
             SplitBodyTool::Plane { plane },
         ] {
-            let wire = serde_json::to_value(&tool).expect("serialize tool");
+            let wire = cadmpeg_core::serde_erase::json::to_value(&tool).expect("serialize tool");
             assert_eq!(
-                serde_json::from_value::<SplitBodyTool>(wire).expect("tool"),
+                cadmpeg_core::serde_erase::json::from_value::<SplitBodyTool>(wire).expect("tool"),
                 tool
             );
         }
-        assert!(serde_json::from_value::<SplitBodyTool>(
-            serde_json::json!({"kind": "planes", "value": []})
-        )
-        .is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<SplitBodyTool>(
+                serde_json::json!({"kind": "planes", "value": []})
+            )
+            .is_err()
+        );
     }
 }
 

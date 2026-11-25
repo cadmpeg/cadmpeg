@@ -218,7 +218,9 @@ impl Capture {
                 }
             }
             Self::Picked => {
-                if let Ok(pick) = serde_json::from_value(Value::Object(members)) {
+                if let Ok(pick) =
+                    cadmpeg_core::serde_erase::json::from_value(Value::Object(members))
+                {
                     found.picks.push((at, pick));
                 }
             }

@@ -993,8 +993,8 @@ fn snapshot(bytes: &[u8]) -> String {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
-                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "ir": cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir"),
+                "report": cadmpeg_core::serde_erase::json::to_value(result.report()).expect("serialize report"),
                 "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }
@@ -1002,7 +1002,9 @@ fn snapshot(bytes: &[u8]) -> String {
     };
     let inspect =
         match NxCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+            Ok(summary) => {
+                cadmpeg_core::serde_erase::json::to_value(&summary).expect("serialize inspect")
+            }
             Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
         };
     snapshot_text(&serde_json::json!({ "decode": decode, "inspect": inspect }))

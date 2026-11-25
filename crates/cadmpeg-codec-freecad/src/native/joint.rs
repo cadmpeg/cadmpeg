@@ -441,7 +441,7 @@ mod tests {
                 Err(cadmpeg_core::CodecError::Malformed(_))
             ));
             let wire = serde_json::json!({"id": id, "object": object, "kind": "grounded", "references": [], "placements": [super::FiniteFrame::default().rows()], "offsets": [], "parameters": {}});
-            assert!(serde_json::from_value::<JointRecord>(wire).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire).is_err());
         }
     }
 
@@ -507,7 +507,8 @@ mod tests {
         let wire = serde_json::json!({"id":"fcstd:native:joint#Joint", "object":"fcstd:native:object#Joint", "kind":"Fixed",
             "references":[null, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
             "placements":[identity,identity], "offsets":[identity,identity], "parameters":{}});
-        let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
+        let record =
+            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap();
         let JointBody::Pair { connectors, .. } = &record.body else {
             panic!("paired joint")
         };
@@ -516,7 +517,10 @@ mod tests {
             connectors[1].reference.as_ref().unwrap().object(),
             Some("second")
         );
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            wire
+        );
     }
 
     #[test]
@@ -545,16 +549,16 @@ mod tests {
             BTreeMap::new(),
         )
         .unwrap();
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
         assert_eq!(wire["kind"], "CustomCoupling");
         assert_eq!(
-            serde_json::from_value::<JointRecord>(wire.clone()).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap(),
             record
         );
         for name in ["grounded", "Grounded"] {
             let mut invalid = wire.clone();
             invalid["kind"] = serde_json::json!(name);
-            assert!(serde_json::from_value::<JointRecord>(invalid).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<JointRecord>(invalid).is_err());
         }
     }
 
@@ -572,13 +576,22 @@ mod tests {
             "offsets": [],
             "parameters": {"Suppressed": "true"}
         });
-        let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record =
+            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            wire
+        );
 
         let mut unreferenced = wire;
         unreferenced["references"] = serde_json::json!([null]);
-        let record = serde_json::from_value::<JointRecord>(unreferenced.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), unreferenced);
+        let record =
+            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(unreferenced.clone())
+                .unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            unreferenced
+        );
     }
 
     #[test]
@@ -596,7 +609,8 @@ mod tests {
                 "offsets": [identity, identity],
                 "parameters": parameters
             });
-            let error = serde_json::from_value::<JointRecord>(wire).unwrap_err();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire).unwrap_err();
             assert!(error.to_string().contains("invalid value"), "{error}");
         }
 
@@ -612,7 +626,7 @@ mod tests {
                 "offsets": [identity, identity],
                 "parameters": parameters
             });
-            let record = serde_json::from_value::<JointRecord>(wire.clone())
+            let record = cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone())
                 .expect("valid known parameter values remain admissible");
             if name == "Angle" {
                 assert_eq!(
@@ -620,7 +634,10 @@ mod tests {
                     Some(15.5)
                 );
             }
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+                wire
+            );
         }
     }
 
@@ -644,11 +661,14 @@ mod tests {
                 "offsets": [identity, identity],
                 "parameters": {"Suppressed": raw}
             });
-            let record = serde_json::from_value::<JointRecord>(wire.clone())
+            let record = cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone())
                 .expect("primary bool spellings remain admissible");
             assert_eq!(record.parameters().raw("Suppressed"), Some(raw));
             assert_eq!(record.parameters().bool_value("Suppressed"), Some(expected));
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+                wire
+            );
         }
     }
 
@@ -664,11 +684,15 @@ mod tests {
             "offsets": [identity, identity],
             "parameters": {"FutureJointSetting": "vendor spelling"}
         });
-        let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
+        let record =
+            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap();
         assert_eq!(
             record.parameters().raw("FutureJointSetting"),
             Some("vendor spelling")
         );
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            wire
+        );
     }
 }

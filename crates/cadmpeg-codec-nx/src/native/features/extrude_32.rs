@@ -379,12 +379,13 @@ mod tests {
     fn extrude32_construction_borrowed_wire_preserves_bytes() {
         let record: FeatureExtrude32Construction = serde_json::from_str(CONSTRUCTION_WIRE).unwrap();
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
             CONSTRUCTION_WIRE.as_bytes()
         );
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&ConstructionWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&ConstructionWire::from(record.clone()))
+                .unwrap()
         );
     }
 
@@ -401,7 +402,10 @@ mod tests {
     fn construction_keeps_paired_nonempty_profiles_and_the_exact_wire() {
         let wire = r#"{"id":"c","operation_label":"o","branch":"b","body_object_index":0,"profile_references":["","r"],"profile_data_blocks":["a",""],"atom_data_blocks":["atom"],"first_data_blocks":["first"],"second_data_blocks":["second"]}"#;
         let value: FeatureExtrude32Construction = serde_json::from_str(wire).unwrap();
-        assert_eq!(serde_json::to_string(&value).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+            wire
+        );
         for fields in [
             vec!["profile_references"],
             vec!["profile_data_blocks"],
@@ -412,7 +416,10 @@ mod tests {
                 invalid[field] = serde_json::json!([]);
             }
             let error =
-                serde_json::from_value::<FeatureExtrude32Construction>(invalid).unwrap_err();
+                cadmpeg_core::serde_erase::json::from_value::<FeatureExtrude32Construction>(
+                    invalid,
+                )
+                .unwrap_err();
             assert!(error
                 .to_string()
                 .contains("profile_references/profile_data_blocks"));
@@ -434,23 +441,31 @@ mod tests {
                 let mut invalid = original.clone();
                 invalid[field] = serde_json::json!(vec![""; length]);
                 assert!(
-                    serde_json::from_value::<FeatureExtrude32Construction>(invalid)
-                        .unwrap_err()
-                        .to_string()
-                        .contains(field)
+                    cadmpeg_core::serde_erase::json::from_value::<FeatureExtrude32Construction>(
+                        invalid
+                    )
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
                 );
             }
         }
         let mut invalid = original;
         invalid["profile_references"] = serde_json::json!(vec![""; 255]);
         invalid["profile_data_blocks"] = serde_json::json!(vec![""; 255]);
-        assert!(serde_json::from_value::<FeatureExtrude32Construction>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureExtrude32Construction>(invalid)
+                .is_err()
+        );
     }
     #[test]
     fn branch_rejects_impossible_positions_and_lane_counts() {
         let wire = r#"{"id":"b","operation_label":"o","body_object_index":0,"scalar":1.0,"raw_scalar":"2ff0000000000000","atoms_be":[1031798784],"atom_source_offsets":[113],"atom_indices":[0],"atom_data_blocks":[""],"first_indices":[0,4096],"raw_first_indices":["00","9000"],"first_index_source_offsets":[119,120],"first_data_blocks":[null,""],"second_indices":[0],"raw_second_indices":["8000"],"second_index_source_offsets":[124],"second_data_blocks":[null],"terminal_object_index":0,"raw_terminal_object_index":"900000","terminal_source_offset":128,"source_offset":100}"#;
         let parsed: FeatureExtrudePayload32Branch = serde_json::from_str(wire).unwrap();
-        assert_eq!(serde_json::to_string(&parsed).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&parsed).unwrap(),
+            wire
+        );
         for field in [
             "atom_source_offsets",
             "first_index_source_offsets",
@@ -459,20 +474,24 @@ mod tests {
             let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
             invalid[field][0] = serde_json::json!(1000);
             assert!(
-                serde_json::from_value::<FeatureExtrudePayload32Branch>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
+                cadmpeg_core::serde_erase::json::from_value::<FeatureExtrudePayload32Branch>(
+                    invalid
+                )
+                .unwrap_err()
+                .to_string()
+                .contains(field)
             );
         }
         for field in ["source_offset", "terminal_source_offset"] {
             let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
             invalid[field] = serde_json::json!(u64::MAX);
             assert!(
-                serde_json::from_value::<FeatureExtrudePayload32Branch>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
+                cadmpeg_core::serde_erase::json::from_value::<FeatureExtrudePayload32Branch>(
+                    invalid
+                )
+                .unwrap_err()
+                .to_string()
+                .contains(field)
             );
         }
         for fields in [
@@ -501,11 +520,19 @@ mod tests {
                     let item = invalid[field][0].clone();
                     invalid[field] = serde_json::json!(vec![item; length]);
                 }
-                assert!(serde_json::from_value::<FeatureExtrudePayload32Branch>(invalid).is_err());
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<FeatureExtrudePayload32Branch>(
+                        invalid
+                    )
+                    .is_err()
+                );
             }
         }
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
         invalid["raw_terminal_object_index"] = serde_json::json!("f000");
-        assert!(serde_json::from_value::<FeatureExtrudePayload32Branch>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureExtrudePayload32Branch>(invalid)
+                .is_err()
+        );
     }
 }
