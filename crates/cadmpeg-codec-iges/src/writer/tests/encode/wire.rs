@@ -115,31 +115,36 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
 }
 
 #[test]
-fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
+fn encode_drops_a_reversed_composite_with_shared_wire_vertex() {
     let decoded = reversed_composite_with_shared_vertex();
     let validation =
         cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
-        panic!("shared wire vertex was accepted");
-    };
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("shared wire vertex"), "{error}");
+    let plan = plan_at(IgesVersion::V5_0, decoded.ir(), None).unwrap();
+    let losses = &plan.report().losses;
+    assert!(
+        losses.iter().any(|loss| {
+            loss.code.to_string() == "iges/writer.body-omitted"
+                && loss.message.contains("shared wire vertex")
+        }),
+        "{losses:#?}"
+    );
 }
 
 #[test]
-fn encode_reports_orphan_wire_vertex_as_malformed() {
+fn encode_drops_the_wire_beside_an_orphan_vertex_and_names_the_vertex() {
     let mut decoded = reversed_composite_with_shared_vertex();
     decoded.ir_mut().geometry.shells[0]
         .members
         .retain(|member| !matches!(member, cadmpeg_ir::topology::ShellMember::FreeVertex { .. }));
-    let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
-        panic!("orphan vertex was accepted");
-    };
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    let plan = plan_at(IgesVersion::V5_0, decoded.ir(), None).unwrap();
+    let losses = &plan.report().losses;
     assert!(
-        error.to_string().contains("no wire or face owner"),
-        "{error}"
+        losses.iter().any(|loss| {
+            loss.code.to_string() == "iges/writer.body-omitted"
+                && loss.message.contains("no wire or face owner")
+        }),
+        "{losses:#?}"
     );
 }
 

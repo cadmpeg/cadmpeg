@@ -1541,7 +1541,7 @@ id_type!(
 );
 id_type!(
     /// Identifies a [`crate::subd::SubdSurface`] carrier.
-    SubdId, compose
+    SubdId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).

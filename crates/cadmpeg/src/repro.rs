@@ -2,7 +2,7 @@
 //! Command wrappers for the reproduction library.
 use crate::application::{
     artifact_store::FileDestination,
-    refusal::{ApplicationError, CheckOperation, ConversionRefusal},
+    refusal::{ApplicationError, ConversionRefusal},
 };
 use anyhow::{bail, Context, Result};
 use cadmpeg_ir::report::check::Finding;
@@ -87,7 +87,6 @@ pub(crate) fn check_fragment(
     };
     let body = serde_json::json!({"check_report": report});
     let refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-        operation: CheckOperation::Check,
         decode_report: None,
         validation: report.clone(),
     });

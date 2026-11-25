@@ -487,89 +487,92 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
         sum_definition,
         None,
     ));
-    ir.geometry.subds.push(SubdSurface {
-        id: v2_id!(SubdId, "subd", crate::identity_key!("directed")),
-        scheme: SubdScheme::CatmullClark,
-        source_object: None,
-        cage: crate::subd::SubdCage::new(
-            vec![
-                SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Crease, None).map_err(
-                    |_| {
-                        crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
-                            "invalid directed SubD example vertex",
-                        )
-                    },
-                )?,
-                SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None).map_err(
-                    |_| {
-                        crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
-                            "invalid directed SubD example vertex",
-                        )
-                    },
-                )?,
-                SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Corner, None).map_err(
-                    |_| {
-                        crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
-                            "invalid directed SubD example vertex",
-                        )
-                    },
-                )?,
-            ],
-            vec![
-                SubdEdge::new(
-                    [0, 1],
-                    [0.25, 0.75],
-                    SubdEdgeTag::Crease,
-                    None,
-                    [0.125, 0.875],
-                )
-                .map_err(|_| {
-                    crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
-                        "invalid directed SubD example edge",
+    let cage =
+        SubdSurface {
+            id: v2_id!(SubdId, "subd", crate::identity_key!("directed")),
+            scheme: SubdScheme::CatmullClark,
+            source_object: None,
+            cage: crate::subd::SubdCage::new(
+                vec![
+                    SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Crease, None)
+                        .map_err(|_| {
+                            crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                                "invalid directed SubD example vertex",
+                            )
+                        })?,
+                    SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None)
+                        .map_err(|_| {
+                            crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                                "invalid directed SubD example vertex",
+                            )
+                        })?,
+                    SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Corner, None)
+                        .map_err(|_| {
+                            crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                                "invalid directed SubD example vertex",
+                            )
+                        })?,
+                ],
+                vec![
+                    SubdEdge::new(
+                        [0, 1],
+                        [0.25, 0.75],
+                        SubdEdgeTag::Crease,
+                        None,
+                        [0.125, 0.875],
                     )
-                })?,
-                SubdEdge::new([1, 2], [0.0, 0.5], SubdEdgeTag::SmoothX, None, [0.25, 0.75])
                     .map_err(|_| {
                         crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
                             "invalid directed SubD example edge",
                         )
                     })?,
-                SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5]).map_err(
-                    |_| {
-                        crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
-                            "invalid directed SubD example edge",
-                        )
+                    SubdEdge::new([1, 2], [0.0, 0.5], SubdEdgeTag::SmoothX, None, [0.25, 0.75])
+                        .map_err(|_| {
+                            crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                                "invalid directed SubD example edge",
+                            )
+                        })?,
+                    SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5])
+                        .map_err(|_| {
+                            crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                                "invalid directed SubD example edge",
+                            )
+                        })?,
+                ],
+                vec![SubdFace::from_edge_uses(vec![
+                    SubdEdgeUse {
+                        edge: 0,
+                        reversed: false,
                     },
-                )?,
-            ],
-            vec![SubdFace::from_edge_uses(vec![
-                SubdEdgeUse {
-                    edge: 0,
-                    reversed: false,
-                },
-                SubdEdgeUse {
-                    edge: 1,
-                    reversed: false,
-                },
-                SubdEdgeUse {
-                    edge: 2,
-                    reversed: false,
-                },
-            ])
+                    SubdEdgeUse {
+                        edge: 1,
+                        reversed: false,
+                    },
+                    SubdEdgeUse {
+                        edge: 2,
+                        reversed: false,
+                    },
+                ])
+                .map_err(|_| {
+                    crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                        "invalid directed SubD example face",
+                    )
+                })?],
+                Vec::new(),
+            )
             .map_err(|_| {
                 crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
-                    "invalid directed SubD example face",
+                    "invalid directed SubD example cage",
                 )
-            })?],
-            Vec::new(),
-        )
-        .map_err(|_| {
-            crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
-                "invalid directed SubD example cage",
-            )
-        })?,
-        native_ref: None,
-    });
+            })?,
+            native_ref: None,
+        };
+    ir.geometry.push_cage_object(
+        cage,
+        v2_id!(BodyId, "body", crate::identity_key!("directed")),
+        v2_id!(RegionId, "region", crate::identity_key!("directed")),
+        v2_id!(ShellId, "shell", crate::identity_key!("directed")),
+    );
     ir.finalize();
     Ok(ir)
 }
