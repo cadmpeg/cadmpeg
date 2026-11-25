@@ -153,7 +153,7 @@ fn convert_stdout_contains_only_json_artifact() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &crate::support::rooted_cube(),
+        &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
     );
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
