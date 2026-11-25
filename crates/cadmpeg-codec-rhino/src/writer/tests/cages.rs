@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A cage body is written as an `ON_SubD` object, and a cage that the archive
-//! version cannot hold is left out with its body; the loss that names the
-//! cage names the body (§5.6).
+//! A cage body is written as an `ON_SubD` object, or as a mesh of the cage's
+//! control net where the archive holds no `ON_SubD` of the cage (§5.6).
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
-use cadmpeg_test_support::cages::{assert_cage_body_dropped, push_cage, push_cage_body};
+use cadmpeg_test_support::cages::{push_cage, push_cage_body, CageBody};
 
 use super::planar_tetrahedron;
 use crate::test_support::two_quad_cage;
@@ -85,24 +85,64 @@ fn an_archive_70_cage_reports_its_end_sharpness() {
     assert_eq!(decoded.geometry.bodies.len(), 2);
 }
 
-#[test]
-fn an_archive_50_cage_body_is_left_out_with_its_cage() {
-    let mut ir = planar_tetrahedron();
-    let cage = push_cage_body(&mut ir, "rhino");
-
-    let (report, decoded) = write(&ir, RhinoArchiveVersion::V5);
-    assert_cage_body_dropped(&report, &cage, "bodies", 1);
-    assert_eq!(decoded.geometry.bodies.len(), 1);
+/// A cage body written as a mesh of the cage's control net.
+fn assert_control_mesh(report: &ExportReport, decoded: &CadIr, cage: &CageBody) {
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "writer.subd-control-mesh"
+                && loss.message.contains(cage.subd.as_str())
+        }),
+        "{:#?}",
+        report.losses
+    );
+    assert!(decoded.geometry.subds.is_empty());
+    assert_eq!(decoded.model.tessellations.len(), 1);
+    let points = two_quad_cage()
+        .vertices()
+        .iter()
+        .map(|vertex| vertex.point().get())
+        .collect::<Vec<_>>();
+    let written = decoded.model.tessellations[0]
+        .vertices()
+        .into_iter()
+        .map(FinitePoint3::get)
+        .collect::<Vec<_>>();
+    assert_eq!(written, points);
 }
 
 #[test]
-fn a_t_spline_cage_body_is_left_out_with_its_cage() {
+fn an_archive_50_cage_body_is_written_as_its_control_net() {
+    let mut ir = planar_tetrahedron();
+    let cage = push_cage(&mut ir, "rhino", two_quad_cage());
+
+    let (report, decoded) = write(&ir, RhinoArchiveVersion::V5);
+    assert_control_mesh(&report, &decoded, &cage);
+}
+
+#[test]
+fn a_t_spline_cage_body_is_written_as_its_control_net() {
     let mut ir = planar_tetrahedron();
     let cage = push_cage(&mut ir, "rhino", two_quad_cage());
     ir.geometry.subds[0].scheme = cadmpeg_ir::SubdScheme::TSpline;
 
     let (report, decoded) = write(&ir, RhinoArchiveVersion::V7);
-    assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    assert_control_mesh(&report, &decoded, &cage);
+}
+
+#[test]
+fn a_cage_of_no_face_is_named_where_the_archive_holds_no_subd() {
+    let mut ir = planar_tetrahedron();
+    let cage = push_cage_body(&mut ir, "rhino");
+
+    let (report, decoded) = write(&ir, RhinoArchiveVersion::V5);
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(cage.subd.as_str())
+                && loss.message.contains(cage.body.as_str())),
+        "{:#?}",
+        report.losses
+    );
     assert_eq!(decoded.geometry.bodies.len(), 1);
-    assert!(decoded.geometry.subds.is_empty());
 }

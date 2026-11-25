@@ -1386,7 +1386,7 @@ fn prepare_write(
         .filter(|mesh| !withheld.contains(mesh.id.as_str()))
     {
         let built = check_mesh(mesh).and_then(|admission| {
-            let payload = mesh_payload(mesh, archive_version, &admission.channels)?;
+            let payload = mesh_payload(&MeshRows::of(mesh, &admission.channels), archive_version)?;
             Ok((
                 mesh_object_record(&payload, mesh.id.as_str())?,
                 admission.omitted,
@@ -1408,17 +1408,13 @@ fn prepare_write(
         }
     }
 
-    let unwritten_cages = subd::unwritten_cages(ir, archive_version)
-        .map(|(_, cages)| cages)
-        .unwrap_or_default();
     let cage_owners = subd::cage_owners(ir);
     let mut unheld_cage_content = std::collections::BTreeMap::<_, Vec<&str>>::new();
     let mut shared_cage_bodies = std::collections::BTreeMap::<&str, Vec<&str>>::new();
-    for surface in geometry
-        .subds
-        .iter()
-        .filter(|surface| !unwritten_cages.contains(&&surface.id))
-    {
+    let mut meshed_cages = std::collections::BTreeMap::<_, Vec<&str>>::new();
+    let mut fanned_cages = Vec::new();
+    let mut quantized_cages = Vec::new();
+    for surface in &geometry.subds {
         let owner = cage_owners.get(surface.id.as_str());
         let body = owner.map(|owner| owner.body);
         let identity = match owner {
@@ -1426,15 +1422,36 @@ fn prepare_write(
             _ => surface.id.as_str(),
         };
         let name = body.and_then(|body| written_name(body.name.as_deref()));
-        let built = subd::placed(&surface.cage, body.and_then(|body| body.transform))
-            .and_then(|cage| subd::payload(&cage, archive_version))
-            .and_then(|payload| {
+        let mesh_reason = subd::control_mesh_reason(surface, archive_version);
+        let built =
+            subd::placed(&surface.cage, body.and_then(|body| body.transform)).and_then(|cage| {
                 let attributes = object_attributes_payload(
                     identity,
                     name,
                     body.and_then(|body| body.color),
                     body.and_then(|body| body.visible),
                 )?;
+                if mesh_reason.is_some() {
+                    let mesh = subd::control_mesh(&cage)?;
+                    let rows = MeshRows {
+                        vertices: mesh.vertices,
+                        faces: mesh.faces,
+                        normals: Vec::new(),
+                        channels: [&[]; 4],
+                    };
+                    let quantized =
+                        !archive_version.stores_mesh_vertices_as_f64() && quantizes(&rows.vertices);
+                    let payload = mesh_payload(&rows, archive_version)?;
+                    let record = framed_object_record(
+                        0x20,
+                        MESH_CLASS,
+                        &payload.body,
+                        Some(&payload.direct),
+                        Some(attributes),
+                    )?;
+                    return Ok((record, Vec::new(), mesh.fanned, quantized));
+                }
+                let payload = subd::payload(&cage, archive_version)?;
                 let record = framed_object_record(
                     subd::SUBD_OBJECT_TYPE,
                     subd::SUBD_CLASS,
@@ -1442,12 +1459,28 @@ fn prepare_write(
                     Some(&payload.direct),
                     Some(attributes),
                 )?;
-                Ok((record, payload.unheld))
+                Ok((record, payload.unheld, false, false))
             });
-        let Some((record, unheld)) = records.admit(surface.id.as_str(), built)? else {
+        let named = match owner {
+            Some(owner) => format!("cage {} of body {}", surface.id, owner.body.id),
+            None => surface.id.as_str().to_owned(),
+        };
+        let Some((record, unheld, fanned, quantized)) = records.admit(&named, built)? else {
             continue;
         };
         records.file.write_all(&record)?;
+        if let Some(reason) = mesh_reason {
+            meshed_cages
+                .entry(reason)
+                .or_default()
+                .push(surface.id.as_str());
+        }
+        if fanned {
+            fanned_cages.push(surface.id.as_str());
+        }
+        if quantized {
+            quantized_cages.push(surface.id.as_str());
+        }
         for content in unheld {
             unheld_cage_content
                 .entry(content)
@@ -1468,12 +1501,34 @@ fn prepare_write(
             cut_names.push(identity.to_owned());
         }
     }
+    for (reason, cages) in meshed_cages {
+        losses.push(RhinoLossCode::WriterSubdControlMesh.note(format!(
+            "{} subdivision cage(s) are written as meshes of their control nets, without the \
+             subdivision rule, edge sharpness, and vertex tags: {reason}: {}",
+            cages.len(),
+            cages.join(", ")
+        )));
+    }
+    if !fanned_cages.is_empty() {
+        losses.push(RhinoLossCode::WriterSubdControlMesh.note(format!(
+            "each control-net face of more than four sides is written as a fan of triangles \
+             from its first corner: {}",
+            fanned_cages.join(", ")
+        )));
+    }
+    if !quantized_cages.is_empty() {
+        losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(format!(
+            "archive version 50 stores mesh vertices as f32, and the control nets of these \
+             cages are written as meshes: {}",
+            quantized_cages.join(", ")
+        )));
+    }
     for (content, cages) in unheld_cage_content {
         losses.extend(value_unwritable("Rhino", content.reason(), cages));
     }
     for (body, cages) in shared_cage_bodies {
         losses.push(RhinoLossCode::WriterBodySplit.note(format!(
-            "body {body} is written as {} SubD objects, one for each of its cages: {}",
+            "body {body} is written as {} objects, one for each of its cages: {}",
             cages.len(),
             cages.join(", ")
         )));
@@ -3442,28 +3497,69 @@ struct MeshPayload {
     direct: Vec<u8>,
 }
 
+/// The rows of a 3DM mesh: its vertices, its faces as four vertex indices
+/// (a triangle repeats its third), its vertex normals, and the bytes of its
+/// texture, curvature, colour, and surface-parameter channels.
+struct MeshRows<'a> {
+    vertices: Vec<cadmpeg_ir::features::geometry::FinitePoint3>,
+    faces: Vec<[u32; 4]>,
+    normals: Vec<cadmpeg_ir::features::geometry::FiniteVector3>,
+    channels: [&'a [u8]; 4],
+}
+
+impl<'a> MeshRows<'a> {
+    /// The rows of `mesh`, with the channels in `channels`.
+    fn of(mesh: &'a cadmpeg_ir::tessellation::Tessellation, channels: &BTreeSet<u32>) -> Self {
+        Self {
+            vertices: mesh.vertices(),
+            faces: mesh
+                .triangles()
+                .into_iter()
+                .map(|[a, b, c]| [a, b, c, c])
+                .collect(),
+            normals: mesh.vertex_normals(),
+            channels: [
+                CHANNEL_UV,
+                CHANNEL_CURVATURE,
+                CHANNEL_COLOR,
+                CHANNEL_SURFACE_PARAMETERS,
+            ]
+            .map(|kind| mesh_channel(mesh, channels, kind)),
+        }
+    }
+}
+
+/// Whether a 3DM `f32` vertex changes a coordinate of `vertices`.
+fn quantizes(vertices: &[cadmpeg_ir::features::geometry::FinitePoint3]) -> bool {
+    vertices.iter().any(|point| {
+        [point.x, point.y, point.z]
+            .into_iter()
+            .any(|value| cadmpeg_core::convert::f32_from_f64(value).map(f64::from) != Some(value))
+    })
+}
+
 fn mesh_payload(
-    mesh: &cadmpeg_ir::tessellation::Tessellation,
+    mesh: &MeshRows<'_>,
     archive_version: RhinoArchiveVersion,
-    channels: &BTreeSet<u32>,
 ) -> Result<MeshPayload, CodecError> {
+    let [uv, curvature, color, surface_parameters] = mesh.channels;
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
     payload.extend(
-        (i32::try_from(mesh.vertices().len()).map_err(|_| {
+        (i32::try_from(mesh.vertices.len()).map_err(|_| {
             native_count_limit(
                 2_147_483_647,
-                cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
+                cadmpeg_core::decode::u64_from_index(mesh.vertices.len()),
             )
         })?)
         .to_le_bytes(),
     );
     payload.extend(
-        (i32::try_from(mesh.triangles().len()).map_err(|_| {
+        (i32::try_from(mesh.faces.len()).map_err(|_| {
             native_count_limit(
                 2_147_483_647,
-                cadmpeg_core::decode::u64_from_index(mesh.triangles().len()),
+                cadmpeg_core::decode::u64_from_index(mesh.faces.len()),
             )
         })?)
         .to_le_bytes(),
@@ -3477,9 +3573,9 @@ fn mesh_payload(
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 5]);
 
-    let width = if mesh.vertices().len() < 256 {
+    let width = if mesh.vertices.len() < 256 {
         FaceIndexWidth::One
-    } else if mesh.vertices().len() < 65_536 {
+    } else if mesh.vertices.len() < 65_536 {
         FaceIndexWidth::Two
     } else {
         FaceIndexWidth::Four
@@ -3493,8 +3589,8 @@ fn mesh_payload(
         })?)
         .to_le_bytes(),
     );
-    for triangle in mesh.triangles() {
-        for index in [triangle[0], triangle[1], triangle[2], triangle[2]] {
+    for face in &mesh.faces {
+        for &index in face {
             match width {
                 FaceIndexWidth::One => payload.push(u8::try_from(index).map_err(|_| {
                     CodecError::Malformed("mesh face index exceeds chosen width".into())
@@ -3511,7 +3607,7 @@ fn mesh_payload(
     }
 
     let mut float_vertices = Vec::new();
-    for point in mesh.vertices() {
+    for point in &mesh.vertices {
         for value in [point.x, point.y, point.z] {
             let value = cadmpeg_core::convert::f32_from_f64(value)
                 .ok_or_else(|| CodecError::Malformed("mesh vertex exceeds f32 range".into()))?;
@@ -3519,29 +3615,19 @@ fn mesh_payload(
         }
     }
     let mut normals = Vec::new();
-    for normal in mesh.vertex_normals() {
+    for normal in &mesh.normals {
         for value in [normal.x, normal.y, normal.z] {
             let value = cadmpeg_core::convert::f32_from_f64(value)
                 .ok_or_else(|| CodecError::Malformed("mesh normal exceeds f32 range".into()))?;
             normals.extend(value.to_le_bytes());
         }
     }
-    for data in [
-        &float_vertices[..],
-        &normals[..],
-        mesh_channel(mesh, channels, CHANNEL_UV),
-        mesh_channel(mesh, channels, CHANNEL_CURVATURE),
-        mesh_channel(mesh, channels, CHANNEL_COLOR),
-    ] {
+    for data in [&float_vertices[..], &normals[..], uv, curvature, color] {
         payload.extend(mesh_buffer(data)?);
     }
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 16]);
-    payload.extend(mesh_buffer(mesh_channel(
-        mesh,
-        channels,
-        CHANNEL_SURFACE_PARAMETERS,
-    ))?);
+    payload.extend(mesh_buffer(surface_parameters)?);
     let mut direct = payload.clone();
     payload.extend(mesh_mapping_tag()?);
     payload.extend([0_u8; 3]);
@@ -3552,7 +3638,7 @@ fn mesh_payload(
         payload.push(1);
         direct.push(1);
         let doubles = mesh
-            .vertices()
+            .vertices
             .iter()
             .flat_map(|point| {
                 [point.x, point.y, point.z]
@@ -3563,21 +3649,21 @@ fn mesh_payload(
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(0_i32.to_le_bytes());
         body.extend(
-            (u32::try_from(mesh.vertices().len()).map_err(|_| {
+            (u32::try_from(mesh.vertices.len()).map_err(|_| {
                 native_count_limit(
                     4_294_967_295,
-                    cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
+                    cadmpeg_core::decode::u64_from_index(mesh.vertices.len()),
                 )
             })?)
             .to_le_bytes(),
         );
         body.extend(mesh_buffer(&doubles)?);
         payload.extend(crc_chunk(0x4000_8000, &body)?);
-        let min = mesh.vertices().iter().fold([f64::INFINITY; 3], |a, point| {
+        let min = mesh.vertices.iter().fold([f64::INFINITY; 3], |a, point| {
             [a[0].min(point.x), a[1].min(point.y), a[2].min(point.z)]
         });
         let max = mesh
-            .vertices()
+            .vertices
             .iter()
             .fold([f64::NEG_INFINITY; 3], |a, point| {
                 [a[0].max(point.x), a[1].max(point.y), a[2].max(point.z)]

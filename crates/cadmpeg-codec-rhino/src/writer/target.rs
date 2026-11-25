@@ -55,29 +55,7 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
-    // A cage the archive cannot hold is left out with the body that holds
-    // only it (§5.6).
-    let mut losses = Vec::new();
-    let mut cageless = None;
-    let unwritten = super::subd::unwritten_cages(input.ir, version);
-    if let Some((reason, cages)) = &unwritten {
-        let mut ir = input.ir.clone();
-        let bodies =
-            cadmpeg_ir::codec::write::remove_cage_bodies_of(&mut ir, |id| cages.contains(&id));
-        losses.push(RhinoLossCode::WriterRecordOmitted.note(format!(
-            "{} subdivision cage(s) are not written: {reason}: {}{}",
-            cages.len(),
-            cages
-                .iter()
-                .map(|id| id.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-            cadmpeg_ir::codec::write::cage_bodies_clause(&bodies)
-        )));
-        cageless = (!bodies.is_empty()).then_some(ir);
-    }
-    let unwritten = unwritten.map(|(_, cages)| cages).unwrap_or_default();
-    let source = cageless.as_ref().unwrap_or(input.ir);
+    let source = input.ir;
     let unjoined = unjoined_regions(source);
     let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
         source,
@@ -113,7 +91,7 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
-    losses.extend(partial_losses);
+    let mut losses = partial_losses;
     losses.extend(written.losses);
     if !written.wrote_object {
         losses.push(output_empty(
@@ -211,7 +189,6 @@ pub(crate) fn plan(
                 .geometry
                 .subds
                 .iter()
-                .filter(|subd| !unwritten.contains(&&subd.id))
                 .filter_map(|subd| subd.source_object.as_ref()),
         )
         .count();
@@ -265,10 +242,9 @@ pub(crate) fn plan(
 /// holds. Topology and pcurves are written as Brep and point objects;
 /// `WriterRecordOmitted` names each record the writer leaves out.
 /// `points` and `curves` are `Reported` because
-/// `WriterSupportGeometryWithheld` accounts for withheld support records,
+/// `WriterSupportGeometryWithheld` accounts for withheld support records, and
 /// `tessellations` because `WriterBodyMeshWithheld` accounts for the display
-/// meshes of bodies written as Breps, and `subds` because
-/// `WriterRecordOmitted` names each cage the archive version cannot hold.
+/// meshes of bodies written as Breps.
 const COVERAGE: ArenaDispositions = {
     use ArenaDisposition::{Ignored, Omitted, Reported, Written};
     ArenaDispositions {
@@ -283,7 +259,7 @@ const COVERAGE: ArenaDispositions = {
         points: Reported,
         surfaces: Written,
         curves: Reported,
-        subds: Reported,
+        subds: Written,
         pcurves: Written,
         procedural_surfaces: Omitted,
         procedural_curves: Omitted,

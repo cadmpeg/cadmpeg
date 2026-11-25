@@ -4,7 +4,7 @@
 use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::subd::{SubdCage, SubdEdge};
 
-use super::{payload, placed, Unheld, SUBD_CLASS};
+use super::{control_mesh, payload, placed, Unheld, SUBD_CLASS};
 use crate::chunks::ArchiveVersion;
 use crate::settings::MillimeterScale;
 use crate::test_support::two_quad_cage;
@@ -99,4 +99,59 @@ fn a_placed_cage_moves_its_vertices() {
         );
     }
     assert_eq!(moved.edges(), cage.edges());
+}
+
+#[test]
+fn a_control_mesh_holds_the_cage_faces_as_quads() {
+    let mesh = control_mesh(&two_quad_cage()).expect("the control net is a mesh");
+    assert_eq!(mesh.faces, [[0, 1, 4, 3], [1, 2, 5, 4]]);
+    assert_eq!(mesh.vertices.len(), 6);
+    assert!(!mesh.fanned);
+}
+
+#[test]
+fn a_control_mesh_fans_a_face_of_more_than_four_sides() {
+    use cadmpeg_ir::subd::{SubdEdgeTag, SubdEdgeUse, SubdFace, SubdVertex, SubdVertexTag};
+    let corners = [[0.0, 0.0], [2.0, 0.0], [3.0, 1.0], [1.0, 2.0], [-1.0, 1.0]];
+    let vertices = corners
+        .iter()
+        .map(|&[x, y]| {
+            SubdVertex::new(
+                cadmpeg_ir::math::Point3::new(x, y, 0.0),
+                SubdVertexTag::Corner,
+                None,
+            )
+            .expect("a finite vertex")
+        })
+        .collect();
+    let edges = (0..5_u32)
+        .map(|index| {
+            SubdEdge::new(
+                [index, (index + 1) % 5],
+                [0.0, 0.0],
+                SubdEdgeTag::Crease,
+                None,
+                [0.0, 0.0],
+            )
+            .expect("a valid edge")
+        })
+        .collect();
+    let face = SubdFace::from_edge_uses(
+        (0..5)
+            .map(|edge| SubdEdgeUse {
+                edge,
+                reversed: false,
+            })
+            .collect(),
+    )
+    .expect("a valid face");
+    let cage = SubdCage::new(vertices, edges, vec![face], Vec::new()).expect("a valid cage");
+    let mesh = control_mesh(&cage).expect("the control net is a mesh");
+    assert_eq!(mesh.faces, [[0, 1, 2, 2], [0, 2, 3, 3], [0, 3, 4, 4]]);
+    assert!(mesh.fanned);
+}
+
+#[test]
+fn a_cage_of_no_face_has_no_control_mesh() {
+    assert!(control_mesh(&SubdCage::default()).is_err());
 }

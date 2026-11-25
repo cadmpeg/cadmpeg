@@ -12,15 +12,12 @@
 use std::collections::BTreeSet;
 
 use crate::document::{CadIr, Topology};
-use crate::ids::{BodyId, RegionId, ShellId, SubdId};
+use crate::ids::{BodyId, RegionId, ShellId};
 use crate::topology::ShellMember;
 
-/// The shells whose members are subdivision cages that `selected` accepts
-/// only and that no face names.
-fn cage_shells<'ir>(
-    geometry: &'ir Topology,
-    selected: &dyn Fn(&SubdId) -> bool,
-) -> BTreeSet<&'ir ShellId> {
+/// The shells whose members are subdivision cages only and that no face
+/// names.
+fn cage_shells(geometry: &Topology) -> BTreeSet<&ShellId> {
     let face_shells: BTreeSet<&ShellId> = geometry.faces.iter().map(|face| &face.shell).collect();
     geometry
         .shells
@@ -30,7 +27,7 @@ fn cage_shells<'ir>(
                 && shell
                     .members
                     .iter()
-                    .all(|member| matches!(member, ShellMember::Subd { id } if selected(id)))
+                    .all(|member| matches!(member, ShellMember::Subd { .. }))
                 && !face_shells.contains(&shell.id)
         })
         .map(|shell| &shell.id)
@@ -41,14 +38,8 @@ fn cage_shells<'ir>(
 /// cages, sorted.
 #[must_use]
 pub fn cage_bodies(ir: &CadIr) -> Vec<BodyId> {
-    cage_bodies_of(ir, &|_| true)
-}
-
-/// The bodies of `ir` every region of which holds only shells of the
-/// subdivision cages that `selected` accepts, sorted.
-fn cage_bodies_of(ir: &CadIr, selected: &dyn Fn(&SubdId) -> bool) -> Vec<BodyId> {
     let geometry = &ir.geometry;
-    let cage_shells = cage_shells(geometry, selected);
+    let cage_shells = cage_shells(geometry);
     if cage_shells.is_empty() {
         return Vec::new();
     }
@@ -78,7 +69,7 @@ fn cage_bodies_of(ir: &CadIr, selected: &dyn Fn(&SubdId) -> bool) -> Vec<BodyId>
 /// [`remove_cage_bodies`]). `None` where no body holds a cage.
 #[must_use]
 pub fn without_cage_bodies(ir: &CadIr) -> Option<CadIr> {
-    if cage_shells(&ir.geometry, &|_| true).is_empty() {
+    if cage_shells(&ir.geometry).is_empty() {
         return None;
     }
     let mut out = ir.clone();
@@ -91,14 +82,7 @@ pub fn without_cage_bodies(ir: &CadIr) -> Option<CadIr> {
 /// unproduced bodies. The cages stay in `subds`. Returns the removed bodies,
 /// sorted.
 pub fn remove_cage_bodies(ir: &mut CadIr) -> Vec<BodyId> {
-    remove_cage_bodies_of(ir, |_| true)
-}
-
-/// Removes the bodies that hold only cages `selected` accepts, as
-/// [`remove_cage_bodies`] removes every cage body. A writer that writes some
-/// cages and leaves out others removes the bodies of the cages it leaves out.
-pub fn remove_cage_bodies_of(ir: &mut CadIr, selected: impl Fn(&SubdId) -> bool) -> Vec<BodyId> {
-    let bodies = cage_bodies_of(ir, &selected);
+    let bodies = cage_bodies(ir);
     if bodies.is_empty() {
         return bodies;
     }

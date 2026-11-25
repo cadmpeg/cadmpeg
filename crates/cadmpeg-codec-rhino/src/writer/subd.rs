@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::SubdId;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::subd::{SubdCage, SubdEdgeTag, SubdScheme, SubdVertexTag};
 use cadmpeg_ir::transform::Transform;
 
@@ -26,33 +26,87 @@ pub(super) const SUBD_OBJECT_TYPE: i64 = 0x40000;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 
+/// The most vertices, and the most faces, a written 3DM mesh holds.
+const MESH_COUNT_LIMIT: usize = 1 << 24;
+
 /// The empty bounding box `ON_BoundingBox::EmptyBoundingBox`.
 const EMPTY_BOX: [f64; 6] = [1.0, 0.0, 0.0, -1.0, 0.0, 0.0];
 
-/// The cages `version` cannot hold and the reason, or `None` where it holds
-/// every cage of `ir`.
-pub(super) fn unwritten_cages(
-    ir: &CadIr,
+/// Why `version` holds `cage` only as a mesh of its control net, or `None`
+/// where it holds the cage as an `ON_SubD`.
+pub(super) fn control_mesh_reason(
+    cage: &cadmpeg_ir::subd::SubdSurface,
     version: RhinoArchiveVersion,
-) -> Option<(&'static str, Vec<&SubdId>)> {
-    let subds = &ir.geometry.subds;
-    let (reason, cages): (_, Vec<_>) = if version == RhinoArchiveVersion::V5 {
-        (
-            "archive version 50 holds a SubD only as a mesh proxy of its limit surface, which \
-             this writer does not generate",
-            subds.iter().map(|subd| &subd.id).collect(),
-        )
+) -> Option<&'static str> {
+    if version == RhinoArchiveVersion::V5 {
+        Some("archive version 50 holds no SubD object")
+    } else if cage.scheme == SubdScheme::TSpline {
+        Some("a 3DM SubD is a Catmull-Clark cage, and these cages are T-spline cages")
     } else {
-        (
-            "a 3DM SubD is a Catmull-Clark cage, and these cages are T-spline cages",
-            subds
-                .iter()
-                .filter(|subd| subd.scheme == SubdScheme::TSpline)
-                .map(|subd| &subd.id)
-                .collect(),
-        )
-    };
-    (!cages.is_empty()).then_some((reason, cages))
+        None
+    }
+}
+
+/// A cage's control net as mesh rows: its vertices, and its faces as four
+/// vertex indices. A face of three sides repeats its third corner; a face of
+/// more than four sides is a fan of triangles from its first corner.
+pub(super) struct ControlMesh {
+    pub(super) vertices: Vec<FinitePoint3>,
+    pub(super) faces: Vec<[u32; 4]>,
+    pub(super) fanned: bool,
+}
+
+/// The control net of `cage` as mesh rows.
+pub(super) fn control_mesh(cage: &SubdCage) -> Result<ControlMesh, CodecError> {
+    let edges = cage.edges();
+    let mut faces = Vec::new();
+    let mut fanned = false;
+    for face in cage.faces() {
+        let corners = face
+            .edge_uses()
+            .map(|edge_use| {
+                let edge = position(edge_use.edge)
+                    .ok()
+                    .and_then(|index| edges.get(index))
+                    .ok_or_else(|| {
+                        CodecError::NotImplemented(format!(
+                            "the cage names edge {}, which it does not hold",
+                            edge_use.edge
+                        ))
+                    })?;
+                Ok(edge.vertices()[usize::from(edge_use.reversed)])
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        match corners[..] {
+            [a, b, c] => faces.push([a, b, c, c]),
+            [a, b, c, d] => faces.push([a, b, c, d]),
+            [first, ref rest @ ..] => {
+                fanned = true;
+                faces.extend(
+                    rest.windows(2)
+                        .map(|pair| [first, pair[0], pair[1], pair[1]]),
+                );
+            }
+            [] => {}
+        }
+    }
+    let vertices = cage
+        .vertices()
+        .iter()
+        .map(cadmpeg_ir::subd::SubdVertex::point)
+        .collect::<Vec<_>>();
+    if faces.is_empty() || vertices.len() > MESH_COUNT_LIMIT || faces.len() > MESH_COUNT_LIMIT {
+        return Err(CodecError::NotImplemented(
+            "the cage's control net counts are outside a 3DM mesh's range: it holds from one \
+             face to 2^24 faces and vertices"
+                .into(),
+        ));
+    }
+    Ok(ControlMesh {
+        vertices,
+        faces,
+        fanned,
+    })
 }
 
 /// The body that holds a cage (§5.6), the region and shell that hold it
