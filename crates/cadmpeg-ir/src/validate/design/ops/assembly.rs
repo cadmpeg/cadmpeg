@@ -565,6 +565,17 @@ fn path_occurrences(path: &OccurrencePath) -> Option<Vec<&str>> {
         .collect()
 }
 
+/// The occurrences a pick's occurrence path steps through, where its
+/// context names a path of occurrence steps.
+pub(in crate::validate::design) fn occurrence_steps(pick: &Picked) -> Option<Vec<&str>> {
+    path_occurrences(pick_path(pick)?)
+}
+
+/// Whether a pick names an occurrence path under none of `roots`.
+pub(in crate::validate::design) fn under_none(pick: &Picked, roots: &[Vec<&str>]) -> bool {
+    occurrence_steps(pick).is_some_and(|steps| !roots.iter().any(|root| steps.starts_with(root)))
+}
+
 /// A chain's pins are two distinct axes, and its pins and native picks pick
 /// the geometry of the pattern's seeds (§6.7). A pick is judged where it and
 /// every seed name their occurrences by paths of occurrence steps.
@@ -574,12 +585,8 @@ fn check_chain_seeds(
     links: &ChainLinks,
     findings: &mut Vec<Finding>,
 ) {
-    let seeds: Option<Vec<Vec<&str>>> = picks::named(seeds).and_then(|seeds| {
-        seeds
-            .iter()
-            .map(|seed| path_occurrences(pick_path(seed)?))
-            .collect()
-    });
+    let seeds: Option<Vec<Vec<&str>>> =
+        picks::named(seeds).and_then(|seeds| seeds.iter().map(occurrence_steps).collect());
     let off_seeds = |selection: &OrderedSelection| {
         let Some(seeds) = seeds.as_ref().filter(|seeds| !seeds.is_empty()) else {
             return false;
@@ -587,13 +594,7 @@ fn check_chain_seeds(
         picks::named(selection)
             .unwrap_or_default()
             .iter()
-            .any(|pick| {
-                let Some(PickContext::Occurrence(path)) = &pick.context else {
-                    return false;
-                };
-                path_occurrences(path)
-                    .is_some_and(|steps| !seeds.iter().any(|seed| steps.starts_with(seed)))
-            })
+            .any(|pick| under_none(pick, seeds))
     };
     match links {
         ChainLinks::Connected(links) => {
@@ -1232,7 +1233,9 @@ fn pick_path(pick: &Picked) -> Option<&OccurrencePath> {
 /// The participants of a selection, as the picks that list them: its
 /// `Named` members, or a rule's stated `resolved`. `None` where the
 /// selection does not list them (§6.7: such a rule is not checked).
-fn listed_participants(selection: &SetSelection) -> Option<&[Picked]> {
+pub(in crate::validate::design) fn listed_participants(
+    selection: &SetSelection,
+) -> Option<&[Picked]> {
     match &selection.picks {
         Picks::Unread => None,
         Picks::Named(members) => Some(members.as_slice()),

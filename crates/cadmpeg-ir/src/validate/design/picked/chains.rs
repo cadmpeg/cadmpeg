@@ -471,7 +471,13 @@ impl<'a> Probe<'_, 'a> {
     /// `CornerRound::Round` occurs only with a profile whose picked curves
     /// are all line segments (§6), edges or sketch curves.
     fn round_corners<O: MemberOrder>(&mut self, profile: &'a Selection<O>) {
-        let mut curved: BTreeSet<&str> = sketch::curved(self.index, profile).into_iter().collect();
+        for curve in sketch::curved(self.index, profile, self.linear) {
+            self.error(crate::rule!(
+                "design.round-corner-profile-not-lines",
+                "CornerRound::Round occurs with a profile that picks curve {curve}, which is no line segment"
+            ));
+        }
+        let mut curved = BTreeSet::new();
         for state in self.states(&profile.at) {
             let Some(topology) = state.matcher.topology() else {
                 continue;
@@ -482,10 +488,10 @@ impl<'a> Probe<'_, 'a> {
                 }
             }
         }
-        for curve in curved {
+        for edge in curved {
             self.error(crate::rule!(
                 "design.round-corner-profile-not-lines",
-                "CornerRound::Round occurs with a profile that picks {curve}, which is no line segment"
+                "CornerRound::Round occurs with a profile that picks edge {edge}, which is no line segment"
             ));
         }
     }

@@ -11,7 +11,7 @@
 //! names. A rule that needs a pick resolved in a stored state (a chain's
 //! connectivity, an edge's incidence) is not checked here.
 
-mod assembly;
+pub(in crate::validate::design) mod assembly;
 mod body;
 mod bounds;
 mod dressup;

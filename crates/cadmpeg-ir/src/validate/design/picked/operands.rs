@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::ops::body::{Kept, SplitMode, TransformBodies, TransformStep};
-use crate::design::ops::shared::JointConnector;
+use crate::design::ops::shared::{JointConnector, JointKind};
 use crate::design::ops::surface::Knit;
 use crate::design::selection::{
     Anchor, MemberOrder, OrderedSelection, Picked, Picks, Selection, SetSelection,
@@ -16,8 +16,9 @@ use crate::design::selection::{
 
 use super::super::constructions::input_selections;
 use super::super::matching::{Matcher, StateTopology};
+use super::super::ops::assembly::{listed_participants, occurrence_steps, under_none};
 use super::super::sheets;
-use super::{all_entities, entities, resolved_entities, straight_length, Entity, Probe};
+use super::{all_entities, entities, picks, resolved_entities, straight_length, Entity, Probe};
 
 /// The bodies and faces an operand selection resolves to in a state.
 struct Operands<'a> {
@@ -138,6 +139,11 @@ impl<'a> Probe<'_, 'a> {
                 kept: Some(Kept::Pieces { keep, remove }),
                 ..
             } => self.pieces(targets, [keep, remove]),
+            SplitMode::ByTools {
+                targets: None,
+                kept: Some(Kept::Pieces { keep, remove }),
+                ..
+            } => self.participant_pieces([keep, remove]),
             SplitMode::Mutual {
                 elements,
                 kept: Some(Kept::Pieces { keep, remove }),
@@ -176,6 +182,40 @@ impl<'a> Probe<'_, 'a> {
         }
     }
 
+    /// Where a split's `targets` is `None`, its piece picks target entities
+    /// of its assembly participants (§6.5): a pick judged where it and every
+    /// participant name their occurrences by paths of occurrence steps.
+    fn participant_pieces(&mut self, lists: [&'a Option<Box<SetSelection>>; 2]) {
+        let Some(context) = &self.definition.assembly else {
+            return;
+        };
+        let roots: Option<Vec<Vec<&str>>> = context
+            .participants
+            .values()
+            .map(|selection| {
+                listed_participants(selection)?
+                    .iter()
+                    .map(occurrence_steps)
+                    .collect::<Option<Vec<_>>>()
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|roots| roots.into_iter().flatten().collect());
+        let Some(roots) = roots.filter(|roots| !roots.is_empty()) else {
+            return;
+        };
+        let outside = lists
+            .into_iter()
+            .flatten()
+            .flat_map(|list| picks(&**list))
+            .any(|pick| under_none(pick, &roots));
+        if outside {
+            self.error(crate::rule!(
+                "design.piece-pick-outside-split-operands",
+                "a Kept::Pieces piece pick names an occurrence under no participant of the split"
+            ));
+        }
+    }
+
     /// A `Constrained` mate's first connector picks a moved body (§6.5).
     pub(super) fn mates(&mut self, transform: &'a TransformBodies) {
         let mut apart = BTreeSet::new();
@@ -185,6 +225,18 @@ impl<'a> Probe<'_, 'a> {
                 continue;
             };
             for (mate_at, mate) in mates.iter().enumerate() {
+                if !matches!(
+                    mate.kind,
+                    JointKind::Coincident { .. }
+                        | JointKind::Parallel
+                        | JointKind::Perpendicular
+                        | JointKind::Tangent { .. }
+                        | JointKind::Concentric
+                        | JointKind::Distance { .. }
+                        | JointKind::Angle { .. }
+                ) {
+                    continue;
+                }
                 let [first, _] = &mate.connectors;
                 let selections = connector_selections(first);
                 if selections.is_empty() || selections.iter().any(|s| s.at != *moved_at) {
@@ -275,16 +327,15 @@ impl<'a> Probe<'_, 'a> {
         if corners.at != Anchor::Input {
             return;
         }
-        let Some(thicknesses) = sheets::entering(self.index, self.feature.id.as_str())
-            .and_then(|entering| entering.thicknesses)
-        else {
-            return;
-        };
-        let Some(thinnest) = thicknesses.into_iter().reduce(f64::min) else {
-            return;
-        };
         let mut short = BTreeMap::new();
         for state in self.states(&corners.at) {
+            let Some(thinnest) =
+                sheets::entering(self.index, self.feature.id.as_str(), state.configuration)
+                    .and_then(|entering| entering.thicknesses)
+                    .and_then(|thicknesses| thicknesses.into_iter().reduce(f64::min))
+            else {
+                continue;
+            };
             let Some(topology) = state.matcher.topology() else {
                 continue;
             };
@@ -294,12 +345,12 @@ impl<'a> Probe<'_, 'a> {
                 };
                 if let Some(length) = straight_length(topology, edge) {
                     if length < thinnest - self.linear {
-                        short.insert(edge, length);
+                        short.insert(edge, (length, thinnest));
                     }
                 }
             }
         }
-        for (edge, length) in short {
+        for (edge, (length, thinnest)) in short {
             self.error(crate::rule!(
                 "design.break-corner-edge-shorter-than-sheet",
                 "BreakCorner.corners picks edge {edge} of length {length}, shorter than the sheet's thickness {thinnest}"

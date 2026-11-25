@@ -4,10 +4,13 @@
 
 use std::collections::BTreeMap;
 
-use super::super::super::fixture;
+use cadmpeg_core::text::NonBlankString;
+
+use super::super::super::fixture::{self, id};
 use super::{body, bottom, current, edge, face, positive, ruled, sheet, with};
 use crate::design::construction::{Construction, ConstructionKind};
 use crate::design::feature::FeatureOperation;
+use crate::design::ops::assembly::{AssemblyContext, ContextEffect};
 use crate::design::ops::body::{
     BodyMate, Kept, Split, SplitMode, SplitTool, TransformBodies, TransformStep, Transformation,
 };
@@ -16,7 +19,10 @@ use crate::design::ops::sheet_metal::{CornerBreak, SheetMetalKind};
 use crate::design::ops::surface::Knit;
 use crate::design::options::SheetOutput;
 use crate::design::refs::EntityRef;
-use crate::design::selection::{Anchor, MemberOrder, Selection};
+use crate::design::selection::{
+    Anchor, MemberOrder, Members, OccurrencePath, PathStep, PickContext, PickTarget, Picked, Picks,
+    Selection, StepRef,
+};
 use crate::document::CadIr;
 use crate::ids::BodyId;
 
@@ -61,9 +67,67 @@ fn a_split_piece_pick_lies_in_the_split_targets() {
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
+/// The component under the occurrences `path` steps through.
+fn under<O: MemberOrder>(
+    path: &[&str],
+    context: fn(OccurrencePath) -> PickContext,
+) -> Selection<O> {
+    let steps = path
+        .iter()
+        .map(|key| PathStep {
+            occurrence: StepRef::Occurrence(id("occurrence", key)),
+            configuration: None,
+        })
+        .collect();
+    let pick = Picked {
+        target: PickTarget::Component,
+        context: Some(context(OccurrencePath(steps))),
+        native: None,
+        domain: None,
+        witness: None,
+        resolved: None,
+    };
+    Selection {
+        at: Anchor::Current,
+        picks: Picks::Named(Members::new(vec![pick]).unwrap()),
+        native: None,
+    }
+}
+
+#[test]
+fn a_split_of_the_participants_picks_pieces_under_a_participant() {
+    let split = |piece: &[&str]| {
+        FeatureOperation::Split(Box::new(Split {
+            mode: SplitMode::ByTools {
+                targets: None,
+                tools: SplitTool::Plane(Box::new(empty())),
+                method: None,
+                kept: Some(Kept::Pieces {
+                    keep: None,
+                    remove: Some(Box::new(under(piece, PickContext::Occurrence))),
+                }),
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let rule = "design.piece-pick-outside-split-operands";
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.assembly = Some(AssemblyContext {
+        participants: BTreeMap::from([(
+            Some(ContextEffect::Definitions),
+            under(&["a"], PickContext::Occurrence),
+        )]),
+    });
+    with(&mut ir, |_| split(&["a", "c"]));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |_| split(&["b"]));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
 #[test]
 fn a_constrained_mate_first_connector_picks_a_moved_body() {
-    let transform = |ir: &CadIr, moved: EntityRef| {
+    let transform = |ir: &CadIr, moved: EntityRef, kind: JointKind| {
         let connector = || JointConnector::Entity(current(vec![face(ir, bottom(ir))]));
         FeatureOperation::TransformBodies(Box::new(TransformBodies {
             bodies: current(vec![moved]),
@@ -71,7 +135,7 @@ fn a_constrained_mate_first_connector_picks_a_moved_body() {
                 steps: vec![TransformStep::Constrained {
                     mates: vec![BodyMate {
                         connectors: [connector(), connector()],
-                        kind: JointKind::Coincident { offset: None },
+                        kind,
                         alignment: None,
                     }],
                 }],
@@ -91,10 +155,14 @@ fn a_constrained_mate_first_connector_picks_a_moved_body() {
     let part = ir.model.product_definitions.last_mut().unwrap();
     part.bodies.push(other.id.clone());
     ir.geometry.bodies.push(other);
-    with(&mut ir, |ir| transform(ir, body(ir)));
+    let coincident = || JointKind::Coincident { offset: None };
+    with(&mut ir, |ir| transform(ir, body(ir), coincident()));
     assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| transform(ir, moved.clone()));
+    with(&mut ir, |ir| transform(ir, moved.clone(), coincident()));
     assert_eq!(ruled(&ir, rule).len(), 1);
+    let native = JointKind::Native(NonBlankString::new("test:mate").unwrap());
+    with(&mut ir, |ir| transform(ir, moved.clone(), native));
+    assert!(ruled(&ir, rule).is_empty());
 }
 
 #[test]
