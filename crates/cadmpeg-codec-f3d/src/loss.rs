@@ -823,7 +823,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// A scope tail sets the third state byte; the scope is read as an active feature with no evaluated result.
     FeatureUnevaluatedStateAssumed,
-    /// A scope tail stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
+    /// A scope tail before the timeline marker stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
     FeatureNoResultActiveAssumed,
     /// A scope tail stores a state byte above `1`; the byte is read as set.
     FeatureStateByteAboveOne,
@@ -957,6 +957,10 @@ pub(crate) enum F3dLossCode {
     /// A Combine operand resolved in its input state names no model body and
     /// no generating feature, so it keeps its input-state bodies.
     FeatureCombineBodyProducerUnresolved,
+    /// A generated Combine operand slot names the feature that inserts it:
+    /// the state that last updates the slot before the Combine has no unique
+    /// earlier scope.
+    FeatureCombineOperandWriterAssumed,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -1320,6 +1324,9 @@ pub(crate) enum F3dLossCode {
     GeometryNotTransferred,
     /// B-rep topology graph was not built from the container.
     TopologyNotTransferred,
+    /// A face states no loop on a plane, cylinder, or cone; the face is
+    /// stated partial.
+    TopologyFaceBoundaryUnstated,
     /// No ASM BREP stream was found or selected as the document geometry stream.
     MissingGeometryStream,
     /// An `XREF` path cycles through a member already on the resolution stack.
@@ -2004,6 +2011,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkShared,
         Self::FeatureReverseNormalLinkOrderAssumed,
         Self::FeatureCombineBodyProducerUnresolved,
+        Self::FeatureCombineOperandWriterAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -2219,6 +2227,7 @@ impl F3dLossCode {
         Self::MaterialNotTransferred,
         Self::GeometryNotTransferred,
         Self::TopologyNotTransferred,
+        Self::TopologyFaceBoundaryUnstated,
         Self::MissingGeometryStream,
         Self::XrefCycle,
         Self::XrefMemberMissing,
@@ -3137,6 +3146,7 @@ impl F3dLossCode {
             Self::FeatureCombineBodyProducerUnresolved => {
                 "feature.combine-body-producer-unresolved"
             }
+            Self::FeatureCombineOperandWriterAssumed => "feature.combine-operand-writer-assumed",
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -3455,6 +3465,7 @@ impl F3dLossCode {
             Self::MaterialNotTransferred => "material.not-transferred",
             Self::GeometryNotTransferred => "geometry.not-transferred",
             Self::TopologyNotTransferred => "topology.not-transferred",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::MissingGeometryStream => "container.missing-geometry-stream",
             Self::XrefCycle => "xref.cycle",
             Self::XrefMemberMissing => "xref.member-missing",
@@ -4140,6 +4151,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
+            | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4344,7 +4356,8 @@ impl F3dLossCode {
             | Self::UnindexedRecordsRetained
             | Self::BodyDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameAmbiguous
-            | Self::WorkPlaneDisplayNameUndecoded => Severity::Warning,
+            | Self::WorkPlaneDisplayNameUndecoded
+            | Self::TopologyFaceBoundaryUnstated => Severity::Warning,
         }
     }
 
@@ -4917,6 +4930,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
+            | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -5182,6 +5196,7 @@ impl F3dLossCode {
             | Self::BlendSupportPartial => LossTaxonomy::ProceduralReduced,
             Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
@@ -5881,6 +5896,7 @@ mod tests {
                 "feature.reverse-normal-link-shared",
                 "feature.reverse-normal-link-order-assumed",
                 "feature.combine-body-producer-unresolved",
+                "feature.combine-operand-writer-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",
@@ -6096,6 +6112,7 @@ mod tests {
                 "material.not-transferred",
                 "geometry.not-transferred",
                 "topology.not-transferred",
+                "topology.face-boundary-unstated",
                 "container.missing-geometry-stream",
                 "xref.cycle",
                 "xref.member-missing",

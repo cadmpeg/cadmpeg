@@ -5,14 +5,15 @@ use crate::test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
-    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeError,
+    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::check::{Check, Finding, ValidationReport};
 use crate::report::export::FidelityResolution;
+use crate::report::strictness::{code_name, Strictness};
 use crate::report::Severity;
 use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
@@ -40,6 +41,77 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let mut canonical = ir.to_canonical_json().unwrap();
     canonical.push('\n');
     assert_eq!(encoded, canonical.as_bytes());
+}
+
+/// The CADIR writer drops a record nested past the document bound and
+/// removes the stub link that names it; the record at the bound stays.
+#[test]
+fn cadir_encoder_drops_a_record_past_the_document_bound() {
+    const WITHIN: &str = "test:native:within#1";
+    const PAST: &str = "test:native:past#1";
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let record = |id: &str, depth: usize| {
+        let field = (0..depth).fold(serde_json::Value::Null, |inner, _| {
+            serde_json::Value::Array(vec![inner])
+        });
+        crate::NativeRecord::new(
+            crate::ids::Identity::new(id).unwrap(),
+            [("field".to_owned(), field)].into_iter().collect(),
+        )
+        .unwrap()
+    };
+    let within = crate::bounds::MAX_DOCUMENT_DEPTH - 5;
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records(
+            "deep",
+            vec![record(WITHIN, within), record(PAST, within + 1)],
+        )
+        .unwrap();
+    let stub = crate::NativeUnknownRecord {
+        id: crate::ids::UnknownId::mint("test:source:part#holder").unwrap(),
+        links: vec![crate::ids::Identity::new(PAST).unwrap()],
+    };
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    ir.set_native_unknowns(&ctx, "test", std::slice::from_ref(&stub))
+        .unwrap();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a record past the bound does not refuse the write");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .collect::<Vec<_>>();
+    let [loss] = unwritable.as_slice() else {
+        panic!("one loss for the one record: {unwritable:?}");
+    };
+    assert!(
+        loss.message.contains(PAST) && loss.message.contains("native.test.deep"),
+        "{}",
+        loss.message
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    let kept = written
+        .native
+        .namespace("test")
+        .unwrap()
+        .arenas()
+        .get("deep")
+        .unwrap()
+        .iter()
+        .map(crate::NativeRecord::id)
+        .collect::<Vec<_>>();
+    assert_eq!(kept, [WITHIN]);
+    let stubs = written.native_unknowns("test").unwrap();
+    assert_eq!(stubs.len(), 1);
+    assert!(stubs[0].links.is_empty());
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(written.geometry.points.len(), ir.geometry.points.len());
 }
 
 #[test]
@@ -104,7 +176,7 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let error = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
         .unwrap_err();
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
     };
     assert_eq!(
@@ -831,6 +903,259 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
     }
 }
 
+#[test]
+fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.set_scope(cadmpeg_core::decode::ContentScope::full())
+        .unwrap();
+    let face = |at: usize| ir.geometry.faces[at].id.as_str().to_owned();
+    let (named, unnamed) = (face(0), face(1));
+    let deep = (0..crate::bounds::MAX_DOCUMENT_DEPTH / 2).fold(
+        serde_json::json!({"kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#f"}}),
+        |from, _| {
+            serde_json::json!({"kind": "modified", "value": {"feature": "test:design:feature#f", "from": from}})
+        },
+    );
+    let native = serde_json::json!({"codec": "test", "value": {"kind": "text", "value": "Face1"}});
+    ir.design.names = serde_json::from_value(serde_json::json!([
+        [{"kind": "face", "value": named}, {"name": deep, "native": native}],
+        [{"kind": "face", "value": unnamed}, {"name": deep}]
+    ]))
+    .unwrap();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a name past the bound does not refuse the write");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .collect::<Vec<_>>();
+    assert_eq!(unwritable.len(), 2, "{unwritable:?}");
+    assert!(unwritable
+        .iter()
+        .all(|loss| loss.message.contains("design.names")));
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(
+        crate::hash::finite_json::to_json_value(&written.design.names).unwrap(),
+        serde_json::json!([[{"kind": "face", "value": named}, {"native": native}]])
+    );
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+}
+
+#[test]
+fn cadir_encoder_writes_the_empty_document_when_every_record_is_dropped() {
+    const PAST: &str = "test:native:past#1";
+    let mut ir = CadIr::empty();
+    let field = (0..crate::bounds::MAX_DOCUMENT_DEPTH).fold(serde_json::Value::Null, |inner, _| {
+        serde_json::Value::Array(vec![inner])
+    });
+    let record = crate::NativeRecord::new(
+        crate::ids::Identity::new(PAST).unwrap(),
+        [("field".to_owned(), field)].into_iter().collect(),
+    )
+    .unwrap();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records("deep", vec![record])
+        .unwrap();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a document past the bound does not refuse the write");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "output.empty"),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(written, CadIr::empty());
+}
+
+struct LossyEncoder(Vec<crate::report::loss::LossNote>);
+
+impl EncoderBackend for LossyEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        body.losses.clone_from(&self.0);
+        Ok(body)
+    }
+}
+
+fn empty_output() -> LossyEncoder {
+    LossyEncoder(vec![super::output_empty("the test output holds nothing")])
+}
+
+fn refused_write(error: EncodeError) -> super::StrictWriteRejection {
+    match error {
+        EncodeError::StrictRejected(rejection) => rejection,
+        other => panic!("expected a strict refusal, got {other}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_writes_a_report_with_losses() {
+    let ir = CadIr::empty();
+    let plan = empty_output()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| code_name(&loss.code) == "export:output.empty"));
+    plan.write_to(&mut Vec::new()).unwrap();
+}
+
+#[test]
+fn a_severity_floor_refuses_the_write_before_any_byte() {
+    let ir = CadIr::empty();
+    let strictness = Strictness {
+        floor: Some(Severity::Info),
+        ..Strictness::default()
+    };
+    let rejection = refused_write(
+        empty_output()
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&strictness),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
+    assert_eq!(
+        rejection.report().losses[rejection.entry()],
+        *rejection.loss()
+    );
+}
+
+#[test]
+fn a_severity_floor_above_every_loss_admits_the_write() {
+    let ir = CadIr::empty();
+    let encoder = empty_output();
+    assert!(encoder.0[0].severity < Severity::Blocking);
+    let strictness = Strictness {
+        floor: Some(Severity::Blocking),
+        ..Strictness::default()
+    };
+    encoder
+        .plan(
+            EncodeInput::new(&ir, None).with_strictness(&strictness),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_refused_code_refuses_the_write_and_another_code_admits_it() {
+    let ir = CadIr::empty();
+    let refusing = Strictness::default().with_code("export:output.empty");
+    let rejection = refused_write(
+        empty_output()
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&refusing),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
+
+    let other = Strictness::default().with_code("export:record.invalid");
+    empty_output()
+        .plan(
+            EncodeInput::new(&ir, None).with_strictness(&other),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
+    let ir = CadIr::empty();
+    let kind = crate::report::loss::LossKind::shared(
+        crate::report::loss::LossTaxonomy::TopologyNotTransferred,
+    );
+    let encoder = LossyEncoder(vec![crate::report::loss::LossNote::new(
+        kind.clone(),
+        "synthetic reject floor",
+    )]);
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    let rejection = refused_write(
+        encoder
+            .plan(
+                EncodeInput::new(&ir, None).with_strictness(&pinned),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert_eq!(rejection.loss().code, kind);
+
+    let unpinned = crate::report::loss::LossKind::shared(
+        crate::report::loss::LossTaxonomy::ParametricRecordOmitted,
+    );
+    assert_eq!(unpinned.strict_floor(), None);
+    LossyEncoder(vec![crate::report::loss::LossNote::new(
+        unpinned,
+        "a loss with no strict floor",
+    )])
+    .plan(
+        EncodeInput::new(&ir, None).with_strictness(&pinned),
+        TargetRequest::Inherit,
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_wrapper_charges_each_carried_error_of_the_validation() {
+    let ir = CadIr::empty();
+    let validation = validation_report(vec![
+        finding(None, "warning", Severity::Warning),
+        finding(None, "error", Severity::Error),
+    ]);
+    let plan = LossyEncoder(Vec::new())
+        .plan(
+            EncodeInput::new(&ir, None).with_validation(&validation),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let charged = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| code_name(&loss.code) == "export:record.invalid")
+        .count();
+    assert_eq!(charged, 1);
+
+    let refusing = Strictness::default().with_code("export:record.invalid");
+    let rejection = refused_write(
+        LossyEncoder(Vec::new())
+            .plan(
+                EncodeInput::new(&ir, None)
+                    .with_validation(&validation)
+                    .with_strictness(&refusing),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err(),
+    );
+    assert!(rejection.loss().message.contains("error"));
+}
+
 /// A Boolean parameter whose expression is `depth - 1` negations of `true`:
 /// a tree `depth` levels deep.
 fn negated_parameter(key: &str, depth: usize) -> crate::design::parameter::DesignParameter {
@@ -861,10 +1186,11 @@ fn negated_parameter(key: &str, depth: usize) -> crate::design::parameter::Desig
     }
 }
 
-/// A record past a bound of §2.5 is content CADIR cannot hold (§3.4): the
-/// writer drops it, and the bytes it writes read back.
+/// An expression past the bound of §2.5 is content CADIR cannot hold (§3.4):
+/// the writer states it `Source` with no tokens, the partial form of §3.3,
+/// and the bytes it writes read back.
 #[test]
-fn the_cadir_writer_drops_a_record_past_the_expression_bound() {
+fn the_cadir_writer_restates_an_expression_past_its_bound() {
     let mut ir = unit_cube().unwrap();
     ir.design.parameters.push(negated_parameter(
         "within",
@@ -898,13 +1224,24 @@ fn the_cadir_writer_drops_a_record_past_the_expression_bound() {
     plan.write_to(&mut written).unwrap();
     let read = CadIr::from_json(std::str::from_utf8(&written).unwrap())
         .expect("the written bytes read back");
-    let parameters = read
-        .design
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(parameters, ["test:design:parameter#within"]);
+    let definition = |key: &str| {
+        read.design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.as_str() == format!("test:design:parameter#{key}"))
+            .map(|parameter| parameter.definition.clone())
+            .unwrap()
+    };
+    assert_eq!(
+        definition("within"),
+        negated_parameter("within", crate::bounds::MAX_EXPRESSION_DEPTH).definition
+    );
+    assert!(matches!(
+        definition("past"),
+        crate::design::parameter::ParameterDefinition::Expression(
+            crate::design::expr::Expression::Source { tokens, .. }
+        ) if tokens.is_empty()
+    ));
 }
 
 /// `repro` outside every record is written unstated where it passes the

@@ -130,6 +130,16 @@ fn merged_member(
     merged_member_in(ctx, member, "member")
 }
 
+/// The source of an archive member file.
+fn member_source() -> cadmpeg_ir::SourceMeta {
+    cadmpeg_ir::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::parse("f3d:manifest-3-2-0-0").unwrap(),
+        )),
+        std::collections::BTreeMap::new(),
+    )
+}
+
 fn merged_member_in(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     member: cadmpeg_ir::CadIr,
@@ -236,6 +246,7 @@ fn a_member_definition_owns_the_top_level_of_its_file() {
 
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut member = cadmpeg_ir::examples::unit_cube().unwrap();
+    member.model.product_definitions.clear();
     let top = OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
     let external = ProductDefinitionId::mint("f3d:xref:document#part.f3d").unwrap();
     member.model.occurrences = vec![Occurrence::new(
@@ -251,12 +262,7 @@ fn a_member_definition_owns_the_top_level_of_its_file() {
             Storage::External(cadmpeg_ir::products::ExternalDocument::path("part.f3d")),
         ));
     crate::tree::place_top_level(&mut member.model, top.clone());
-    member.source = Some(cadmpeg_ir::SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::parse("f3d:manifest-3-2-0-0").unwrap(),
-        )),
-        std::collections::BTreeMap::new(),
-    ));
+    member.source = Some(member_source());
     let definition =
         crate::f3z::merge::define_member(&ctx, &mut member, "Member", "member.f3d").unwrap();
     // §8.1: the member file's definition is stored in its own file of the
@@ -316,7 +322,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     }
 
     for ordinal in 0..2 {
-        let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
+        let prefix = format!("f3d:role/occurrence-{ordinal}@brep:entity#");
         assert_eq!(merged.bodies[ordinal].id.as_str(), format!("{prefix}1"));
         assert_eq!(merged.regions[ordinal].id.as_str(), format!("{prefix}2"));
         assert_eq!(merged.regions[ordinal].body.as_str(), format!("{prefix}1"));
@@ -349,7 +355,7 @@ fn occurrence_merge_rewrites_only_member_native_record_text() {
     for (source, expected) in [
         (
             id,
-            "f3d:xref/member/Design1/BulkStream.dat:design-construction-operand-group#7",
+            "f3d:member@Design1/BulkStream.dat:design-construction-operand-group#7",
         ),
         (
             "f3d:Design1/BulkStream.dat:design-construction-operand-group#8",
@@ -411,7 +417,7 @@ fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
         let PatternTransform::CurveDrivenPartial { parameters } = pattern.definition() else {
             panic!("partial")
         };
-        let expected = format!("f3d:xref/{occurrence}/Design1/BulkStream.dat:design-record#91");
+        let expected = format!("f3d:{occurrence}@Design1/BulkStream.dat:design-record#91");
         assert_eq!(parameters.path, Some(PathRef::Native(expected.clone())));
         assert_eq!(seeds, &[PatternSeed::Native(expected)]);
     }
@@ -439,7 +445,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     }
     .rewrite(body)
     .unwrap();
-    assert_eq!(scoped.id.as_str(), "f3d:xref/component-0/model:body#source");
+    assert_eq!(scoped.id.as_str(), "f3d:component-0@model:body#source");
     assert_eq!(scoped.name.as_deref(), Some(source_id));
 }
 
@@ -492,7 +498,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
         .expect("read merged arena");
     assert_eq!(
         merged[0].id,
-        "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-sketch-placement#42"
+        "f3d:role/occurrence-0@Design/BulkStream.dat:design-sketch-placement#42"
     );
 }
 
@@ -534,7 +540,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     assert_eq!(configurations[0].entry_name(), "Design/table.dsgcfg");
     assert_eq!(
         configurations[0].id(),
-        "f3d:xref/component-0/configuration:entry#Design/table.dsgcfg"
+        "f3d:component-0@configuration:entry#Design/table.dsgcfg"
     );
     assert_eq!(configurations[0].payload(), &serde_json::Map::new());
 }
@@ -606,11 +612,11 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         .expect("read merged visibility arena");
     assert_eq!(
         merged_visibility[0].id(),
-        "f3d:xref/role/occurrence-0/Design/BulkStream.dat:body-visibility#3"
+        "f3d:role/occurrence-0@Design/BulkStream.dat:body-visibility#3"
     );
     assert_eq!(
         merged_visibility[0].body.as_str(),
-        "f3d:xref/role/occurrence-0/brep:entity#1"
+        "f3d:role/occurrence-0@brep:entity#1"
     );
     assert_eq!(merged_visibility[0].stream(), "Design/BulkStream.dat");
 
@@ -621,7 +627,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         .expect("read merged configuration arena");
     assert_eq!(
         merged_configurations[0].id(),
-        "f3d:xref/role/occurrence-0/configuration:entry#Design/table.dsgcfg"
+        "f3d:role/occurrence-0@configuration:entry#Design/table.dsgcfg"
     );
     assert_eq!(
         merged_configurations[0].payload(),
@@ -657,8 +663,12 @@ fn occurrence_key_preserves_authored_roles() {
         occurrence_key(&reference("role /#: value", 7)),
         "role-role%20%2F%23%3A%20value/reference-7/occurrence-0"
     );
+    assert_eq!(
+        occurrence_key(&reference("pin@2", 7)),
+        "role-pin%402/reference-7/occurrence-0"
+    );
     let key = occurrence_key(&reference("role /#: value", 7));
-    cadmpeg_ir::ids::Identity::new(format!("f3d:xref/{key}/native:record#1"))
+    cadmpeg_ir::ids::Identity::new(format!("f3d:{key}@native:record#1"))
         .expect("encoded occurrence key remains an admitted identity scope");
 }
 
@@ -765,6 +775,19 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
         .all(|feature| container.ordinal < feature.ordinal));
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model = parent;
+    ir.model.product_definitions.extend([
+        cadmpeg_ir::products::ProductDefinition::root(
+            crate::tree::file_root_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        ),
+        cadmpeg_ir::products::ProductDefinition::new(
+            crate::ids::member_definition_id(None, "component-0").unwrap(),
+            cadmpeg_ir::products::Storage::File {
+                document: cadmpeg_ir::products::ExternalDocument::path("component.f3d"),
+                source: Some(member_source()),
+            },
+        ),
+    ]);
     ir.native = native;
     ir.finalize();
     let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
@@ -884,7 +907,7 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
     });
     assert_eq!(
         fields["placement_source"]["stream"],
-        "f3d:xref/part/occurrence-2/Design/BulkStream.dat"
+        "f3d:part/occurrence-2@Design/BulkStream.dat"
     );
     assert_eq!(fields["placement_source"]["carrier_record_index"], 71);
     assert_eq!(fields["placement_source"]["owner"]["target"], 19);
@@ -897,6 +920,7 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
 #[test]
 fn imported_definition_bodies_keep_their_definition_frame() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.product_definitions.clear();
     let body = ir.geometry.bodies[0].id.clone();
     ir.model
         .product_definitions
@@ -1033,10 +1057,10 @@ fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operan
         AssemblyJoint, JointConnector, JointOperand, Occurrence, OperandContainer, PairedJointKind,
     };
     let definition = ProductDefinitionId::mint("f3d:model:product-definition#shared").unwrap();
-    let child = OccurrenceId::mint("f3d:xref/first/model:occurrence#child").unwrap();
-    let native_ref = "f3d:xref/first/Design/BulkStream.dat:design-parameter-scope#10";
+    let child = OccurrenceId::mint("f3d:first@model:occurrence#child").unwrap();
+    let native_ref = "f3d:first@Design/BulkStream.dat:design-parameter-scope#10";
     let mut joint = AssemblyJoint::paired(
-        JointId::mint("f3d:xref/first/model:joint#group").unwrap(),
+        JointId::mint("f3d:first@model:joint#group").unwrap(),
         PairedJointKind::Fixed {
             angle: None,
             translation_offset: None,
@@ -1084,9 +1108,16 @@ fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operan
         .unwrap();
     assert_eq!(
         second.occurrences[0].id.as_str(),
-        "f3d:xref/second/instance-child/model:occurrence#child"
+        "f3d:second/instance-child@model:occurrence#child"
     );
-    assert_ne!(first.assembly_joints[0].id, second.assembly_joints[0].id);
+    assert_eq!(
+        first.assembly_joints[0].id.as_str(),
+        "f3d:first@model:joint#group"
+    );
+    assert_eq!(
+        second.assembly_joints[0].id.as_str(),
+        "f3d:first@model:joint#group@second/instance-child"
+    );
     for (instance, parent) in [(&first, first_parent), (&second, second_parent)] {
         assert!(instance.product_definitions.is_empty());
         assert_eq!(instance.occurrences[0].prototype, definition);
@@ -1205,6 +1236,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             )
         };
         let mut component = cadmpeg_ir::CadIr::empty();
+        component.source = Some(member_source());
         let definition = define_member(&ctx, &mut component, "member", "member.f3d").unwrap();
         let component_of = |name: &str| {
             cadmpeg_ir::ids::ProductDefinitionId::mint(format!("f3d:model:component#{name}"))
@@ -1368,7 +1400,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         let scope = occurrence_key(&reference);
         let selected = target.map_or_else(
             || placing.clone(),
-            |name| OccurrenceId::mint(format!("f3d:xref/{scope}/model:occurrence#{name}")).unwrap(),
+            |name| OccurrenceId::mint(format!("f3d:{scope}@model:occurrence#{name}")).unwrap(),
         );
         // A member joint's paths start below its member root, so the keyed
         // root rows check only the placing document's joint.

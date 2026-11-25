@@ -10,6 +10,8 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::examples::unit_cube;
 use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
+use crate::report::strictness::{code_name, Strictness};
+use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
@@ -19,7 +21,7 @@ use super::{
 };
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    ContentScope, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
+    ContentScope, DecodeContext, DecodeDepth, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_core::CodecError;
 
@@ -423,7 +425,7 @@ fn strict_options(depth: DecodeDepth) -> DecodeOptions {
         depth,
         ..DecodeOptions::default()
     };
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     options
 }
 
@@ -470,6 +472,79 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
             .count(),
         1
     );
+}
+
+fn decode_with(depth: DecodeDepth, strictness: Strictness) -> Result<DecodeResult, DecodeFailure> {
+    RejectFloorCodec.decode(
+        &mut Cursor::new(vec![1u8, 2, 3, 4]),
+        &DecodeOptions {
+            depth,
+            strictness,
+            ..DecodeOptions::default()
+        },
+    )
+}
+
+fn refused_code(failure: DecodeFailure) -> LossKind {
+    match failure {
+        DecodeFailure::StrictRejected { rejection } => rejection.loss().code.clone(),
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_admits_a_reject_floor_loss() {
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let result = decode_with(depth, Strictness::default()).unwrap();
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == reject_floor_kind()));
+    }
+}
+
+#[test]
+fn a_severity_floor_refuses_a_full_and_a_container_only_decode() {
+    let severity = LossNote::new(reject_floor_kind(), "probe").severity;
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let strictness = Strictness {
+            floor: Some(severity),
+            ..Strictness::default()
+        };
+        assert_eq!(
+            refused_code(decode_with(depth, strictness).unwrap_err()),
+            reject_floor_kind()
+        );
+    }
+}
+
+#[test]
+fn a_severity_floor_above_every_loss_admits_the_decode() {
+    let severity = LossNote::new(reject_floor_kind(), "probe").severity;
+    assert!(severity < Severity::Blocking);
+    let strictness = Strictness {
+        floor: Some(Severity::Blocking),
+        ..Strictness::default()
+    };
+    decode_with(DecodeDepth::Full, strictness).unwrap();
+}
+
+#[test]
+fn a_refused_code_refuses_a_full_and_a_container_only_decode() {
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let strictness = Strictness::default().with_code(&code_name(&reject_floor_kind()));
+        assert_eq!(
+            refused_code(decode_with(depth, strictness).unwrap_err()),
+            reject_floor_kind()
+        );
+    }
+}
+
+#[test]
+fn a_code_the_report_does_not_hold_admits_the_decode() {
+    let strictness = Strictness::default().with_code("export:output.empty");
+    decode_with(DecodeDepth::Full, strictness).unwrap();
 }
 
 #[test]
@@ -653,6 +728,54 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
     }
 }
 
+/// A decoder that states the source holds design records beyond the depth it
+/// delivers charges `design` once, and the wrapper adds no second charge.
+#[test]
+fn a_class_the_source_holds_beyond_the_delivered_depth_is_charged_once() {
+    use cadmpeg_core::decode::ArenaClass::{Design, Process};
+    for (delivered, requested, missing) in [
+        (DecodeDepth::Geometry, DecodeDepth::Geometry, &[Design][..]),
+        (DecodeDepth::Geometry, DecodeDepth::Design, &[Design]),
+        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design, Process]),
+        (DecodeDepth::Design, DecodeDepth::Design, &[]),
+        (DecodeDepth::Full, DecodeDepth::Full, &[]),
+    ] {
+        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
+        decoded.body.transfer = crate::report::decode::DecodeTransfer::at(delivered, true);
+        decoded.body.source_holds(Design);
+        decoded.body.source_holds(Design);
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            requested,
+            &DecodePolicy::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result.ir().scope(), delivered.scope());
+        let losses = depth_losses(&result);
+        assert_eq!(losses.len(), missing.len(), "{losses:?}");
+        for class in missing {
+            assert_eq!(
+                losses
+                    .iter()
+                    .filter(|loss| loss.message.contains(&format!(" {class} ")))
+                    .count(),
+                1,
+                "{class}: {losses:?}"
+            );
+        }
+        let held = losses.iter().find(|loss| {
+            loss.message
+                .contains("the source holds design records that a geometry-depth decode")
+        });
+        assert_eq!(held.is_some(), !missing.is_empty(), "{losses:?}");
+        if let Some(loss) = held {
+            assert_eq!(loss.severity, crate::report::Severity::Error);
+        }
+    }
+}
+
 #[test]
 fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty() {
     for requested in [DecodeDepth::Geometry, DecodeDepth::Design] {
@@ -772,6 +895,30 @@ fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_ch
         "{}",
         loss.message
     );
+    let [stub]: [_; 1] = result
+        .ir()
+        .native_unknowns("test")
+        .expect("the test stubs")
+        .try_into()
+        .expect("one stub for the one repeated id");
+    assert!(stub.links.is_empty());
+    assert!(
+        loss.message
+            .contains(&format!("record={}", stub.id.as_str()))
+            && loss.message.contains(cube.geometry.vertices[0].id.as_str()),
+        "{}",
+        loss.message
+    );
+    assert!(result
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some());
+    assert!(!result
+        .ir()
+        .geometry
+        .vertices
+        .iter()
+        .any(|vertex| vertex.point == cube.geometry.points[0].id));
 }
 
 #[test]
@@ -865,37 +1012,32 @@ impl CodecBackend for DeepContextCodec {
     }
 }
 
+/// A value outside every record that passes a bound is stated as the value
+/// it takes when unstated, with one `record.unreadable` Error that names its
+/// field, so the decode returns a document within the bounds (§2.5, §3.3)
+/// and digests it.
 #[test]
-fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited() {
+fn a_value_past_the_bound_outside_every_record_is_unstated_with_its_loss() {
     let result = DeepContextCodec
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
-        .expect("a digest the walk refuses does not refuse the decode");
-    assert_eq!(result.source_fidelity().content_digest, None);
-    assert!(result.source_fidelity().edited(result.ir()).unwrap());
-    let unavailable = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.to_string() == "decode/content-digest.unavailable")
-        .collect::<Vec<_>>();
-    let [loss] = unavailable.as_slice() else {
-        panic!("one loss for the missing digest: {unavailable:?}");
-    };
-    assert_eq!(loss.severity, crate::report::Severity::Warning);
-    let outside = result
+        .expect("a value past the bound does not refuse the decode");
+    assert!(result.ir().repro.is_none());
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    assert_eq!(
+        result.source_fidelity().content_digest,
+        Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
+    );
+    let unreadable = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
         .collect::<Vec<_>>();
-    let [loss] = outside.as_slice() else {
-        panic!("one loss for the depth outside every record: {outside:?}");
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the value outside every record: {unreadable:?}");
     };
-    assert!(
-        loss.message.contains("outside every record"),
-        "{}",
-        loss.message
-    );
+    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert!(loss.message.contains("(repro)"), "{}", loss.message);
 }
 
 /// A decoder that states, beside the unit cube, two native records: one at
@@ -996,6 +1138,26 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
             "{}",
             loss.message
         );
+        let [stub]: [_; 1] = result
+            .ir()
+            .native_unknowns("test")
+            .expect("the test stubs")
+            .try_into()
+            .expect("one stub for the one record");
+        assert!(
+            loss.message
+                .contains(&format!("record={}", stub.id.as_str())),
+            "{}",
+            loss.message
+        );
+        let retained = result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .expect("the record's retained text");
+        assert_eq!(
+            retained.stream(),
+            format!("native.test.deep/{}", PastTheBoundCodec::PAST)
+        );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).unwrap();
@@ -1086,7 +1248,7 @@ fn add_procedural_curve(
 fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
     let mut result = decode_result(ir);
     result
-        .record_content_digest(&DecodePolicy::desktop())
+        .record_content_digest(&DecodePolicy::desktop(), FormatId::new("test"))
         .expect("a record past the bound does not refuse the decode");
     let unreadable = result
         .report()
@@ -1128,6 +1290,27 @@ fn assert_resolves(result: &DecodeResult) {
     );
 }
 
+/// The record a `record.unreadable` loss gives up, and the ids its
+/// `dropped=[…]` names.
+fn given_up_record(message: &str) -> (String, std::collections::BTreeSet<String>) {
+    let record = message
+        .split_once(": record ")
+        .and_then(|(_, tail)| tail.split_once(" of arena "))
+        .map(|(record, _)| record.to_owned())
+        .unwrap_or_default();
+    let dropped = message
+        .split_once("dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(ids, _)| {
+            ids.split(", ")
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    (record, dropped)
+}
+
 /// The ids of the curves of `result`.
 fn curve_ids(result: &DecodeResult) -> Vec<&str> {
     result
@@ -1150,13 +1333,18 @@ fn a_carrier_past_the_document_bound_is_given_up_with_its_construction() {
         panic!("one loss for the one record: {unreadable:?}");
     };
     assert!(
-        loss.message
-            .contains("record test:model:curve#deep of arena geometry.curves")
-            && loss
-                .message
-                .ends_with("; dropped=[test:model:construction#deep]"),
+        loss.message.contains("of arena geometry.curves"),
         "{}",
         loss.message
+    );
+    assert_eq!(
+        given_up_record(&loss.message),
+        (
+            "test:model:curve#deep".to_owned(),
+            ["test:model:construction#deep", "test:model:curve#deep"]
+                .map(str::to_owned)
+                .into()
+        )
     );
     assert!(!curve_ids(&result).contains(&"test:model:curve#deep"));
     assert!(curve_ids(&result).contains(&"test:model:curve#kept"));
@@ -1175,11 +1363,18 @@ fn a_construction_past_the_document_bound_is_given_up_with_its_carrier() {
         panic!("one loss for the one record: {unreadable:?}");
     };
     assert!(
-        loss.message
-            .contains("record test:model:construction#deep of arena geometry.procedural_curves")
-            && loss.message.ends_with("; dropped=[test:model:curve#deep]"),
+        loss.message.contains("of arena geometry.procedural_curves"),
         "{}",
         loss.message
+    );
+    assert_eq!(
+        given_up_record(&loss.message),
+        (
+            "test:model:construction#deep".to_owned(),
+            ["test:model:construction#deep", "test:model:curve#deep"]
+                .map(str::to_owned)
+                .into()
+        )
     );
     assert!(!curve_ids(&result).contains(&"test:model:curve#deep"));
     assert!(curve_ids(&result).contains(&"test:model:curve#kept"));
@@ -1187,7 +1382,7 @@ fn a_construction_past_the_document_bound_is_given_up_with_its_carrier() {
 }
 
 /// A give-up that drops another record moves the places after it, and each
-/// record past the bound is still given up at its own place. The deep
+/// record past the bound is given up at its own place. The deep
 /// construction `#a` is given up first and drops `curve#a`, which moves the
 /// deep `curve#b` one place: a stale place would remove `curve#c`.
 #[test]
@@ -1199,25 +1394,20 @@ fn records_past_the_bound_in_one_walk_are_each_given_up_at_their_place() {
     let (result, unreadable) = given_up(ir);
     let mut named = unreadable
         .iter()
-        .map(|loss| {
-            let (record, dropped) = loss.message.split_once(" of arena ").unwrap();
-            (
-                record.trim_start_matches("record ").to_owned(),
-                dropped.rsplit_once("; ").unwrap().1.to_owned(),
-            )
-        })
+        .map(|loss| given_up_record(&loss.message))
         .collect::<Vec<_>>();
     named.sort();
+    let ids = |ids: [&str; 2]| ids.map(str::to_owned).into();
     assert_eq!(
         named,
         [
             (
                 "test:model:construction#a".to_owned(),
-                "dropped=[test:model:curve#a]".to_owned()
+                ids(["test:model:construction#a", "test:model:curve#a"])
             ),
             (
                 "test:model:curve#b".to_owned(),
-                "dropped=[test:model:construction#b]".to_owned()
+                ids(["test:model:construction#b", "test:model:curve#b"])
             ),
         ]
     );

@@ -48,15 +48,14 @@ pub enum Check {
     /// members, states equal coedge senses.
     CoedgePairing,
     /// Wire topology ownership is violated: a coedge also references a wire
-    /// edge, an edge also references a free vertex, a wire edge or free vertex
-    /// does not belong to exactly one shell, a subdivision cage belongs to more
-    /// than one shell, a shell repeats a member, a shell holding a cage holds
-    /// anything else or is not its body's only shell, or a wire body contains
-    /// faces.
+    /// edge, an edge also references a free vertex, a wire edge, free vertex,
+    /// or subdivision cage does not belong to exactly one shell, a shell
+    /// repeats a member, a shell holding a cage holds anything else or is not
+    /// its body's only shell, or a wire body contains faces.
     WireTopology,
     /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
-    /// A face does not state every loop, or a region, shell, or body does
+    /// A face does not state its boundary in full, or a region, shell, or body does
     /// not state every child (§5.6, Unstated children).
     TopologyPartial,
     /// A surface, curve, pcurve, or point carrier is orphan: no topology or

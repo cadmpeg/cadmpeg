@@ -86,7 +86,7 @@ pub(crate) fn decode(
             .into_iter()
             .map(|id| session.decode_member(id).unwrap())
             .collect::<Vec<_>>();
-        assert_equal(&result, &session.compose(members));
+        assert_equal(&result, &session.compose(members, &options.strictness));
     }
     result
 }

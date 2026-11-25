@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, MissingStateForm};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
@@ -199,9 +199,17 @@ fn write(ir: &CadIr) -> (ExportReport, CadIr) {
 }
 
 fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
+    write_bytes_as(ir, MissingStateForm::GeometryTrue)
+}
+
+/// [`write_bytes`] in the form `missing_states`.
+fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport, CadIr, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(
+            EncodeInput::new(ir, None).with_missing_states(missing_states),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
     let decoded = F3dCodec
@@ -209,6 +217,30 @@ fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
         .expect("the written file decodes");
     crate::test_support::assert_decodes_back(&report, decoded.report());
     (report, decoded.into_parts().0, bytes)
+}
+
+/// The item tail of a decoded scope: its family, state bytes, `s0`, `s1`,
+/// and current and preceding history-state identities.
+type Tail = (String, [u8; 3], bool, bool, Option<i64>, Option<i64>);
+
+/// The item tails of the decoded scopes that store one, in record order.
+fn tails(decoded: &CadIr) -> Vec<Tail> {
+    let mut scopes = f3d_native(decoded).design_parameter_scopes;
+    scopes.sort_by_key(|scope| scope.record_index);
+    scopes
+        .iter()
+        .filter_map(|scope| {
+            let flags = scope.tail_flags?;
+            Some((
+                format!("{:?}", scope.kind()),
+                flags.stored_state(),
+                flags.no_result,
+                flags.rolled_back,
+                scope.history_state_id(),
+                scope.previous_history_state_id(),
+            ))
+        })
+        .collect()
 }
 
 fn loss<'a>(report: &'a ExportReport, code: &str) -> Vec<&'a str> {
@@ -416,7 +448,7 @@ fn a_comment_is_written_with_its_parameter() {
 
 #[test]
 fn a_failure_of_the_design_module_drops_the_design_not_the_body() {
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, ir) = write(&scoped_cube());
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(ir.model.parameters.is_empty());
@@ -1018,7 +1050,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
             pmi: None,
             native_ref: None,
         });
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, _) = write(&ir);
     let omitted = loss(
         &report,
@@ -1136,7 +1168,7 @@ fn a_stale_and_a_current_evaluation_are_each_charged_once_by_name() {
     let stale = format!("{stale}: {root} tool body of {EXTRUDE} (stale)");
     let current = format!("{current}: {root} state at the start of {timeline}");
     for dropped in [false, true] {
-        super::FAIL_NEXT_PLAN.with(|fail| fail.set(dropped));
+        super::FAIL_NEXT_PLAN.with(|fail| fail.set(u32::from(dropped)));
         let (report, _) = write(&ir);
         assert!(
             loss(&report, "export/evaluation.stale")

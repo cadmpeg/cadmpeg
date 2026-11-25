@@ -1025,7 +1025,7 @@ fn a_curve_replica_chain_past_the_document_depth_is_given_up_at_decode() {
     assert!(unreadable[0].message.contains("step:data:curve#9"));
     assert!(unreadable[0]
         .message
-        .contains("dropped=[step:construction:curve_replica#9]"));
+        .contains("dropped=[step:construction:curve_replica#9, step:data:curve#9]"));
     assert!(unreadable[0].message.contains("geometry.curves"));
     assert!(!decoded
         .ir()
@@ -1080,7 +1080,7 @@ fn a_surface_replica_chain_past_the_document_depth_is_given_up_at_decode() {
     assert!(unreadable[0].message.contains("step:data:surface#8"));
     assert!(unreadable[0]
         .message
-        .contains("dropped=[step:construction:surface_replica#8]"));
+        .contains("dropped=[step:construction:surface_replica#8, step:data:surface#8]"));
     assert!(unreadable[0].message.contains("geometry.surfaces"));
     assert!(!decoded
         .ir()

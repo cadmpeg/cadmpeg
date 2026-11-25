@@ -995,7 +995,7 @@ fn nested_plane(depth: usize) -> Value {
 }
 
 #[test]
-fn the_walk_of_the_deepest_construction_runs_on_a_small_stack() {
+fn the_walk_of_the_deepest_construction_runs_on_the_smallest_default_stack() {
     // A nested construction is four levels of JSON: inputs, input, reference
     // and construction. The deepest nesting a document holds is the last
     // whose document is within the document bound.
@@ -1008,12 +1008,7 @@ fn the_walk_of_the_deepest_construction_runs_on_a_small_stack() {
         .last()
         .unwrap();
     assert!(depth > crate::bounds::MAX_DOCUMENT_DEPTH - 4, "{depth}");
-    let findings = std::thread::Builder::new()
-        .stack_size(256 * 1024)
-        .spawn(move || findings(&ir))
-        .unwrap()
-        .join()
-        .unwrap();
+    let findings = super::fixture::on_the_smallest_default_stack(move || findings(&ir));
     assert!(
         !findings
             .iter()

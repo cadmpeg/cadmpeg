@@ -56,8 +56,7 @@ fn partial_connector_objects_follow_their_archive_source_scope() {
     }
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for occurrence in ["first", "second"] {
-        let expected =
-            format!("f3d:xref/{occurrence}/Design/BulkStream.dat:design-parameter-scope#30");
+        let expected = format!("f3d:{occurrence}@Design/BulkStream.dat:design-parameter-scope#30");
         let targets = std::collections::BTreeMap::from([(
             "f3d:Design/BulkStream.dat:design-parameter-scope#30".to_owned(),
             expected.clone(),
@@ -168,11 +167,11 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
         .unwrap();
         assert_eq!(
             rewritten.id.as_str(),
-            format!("f3d:xref/{occurrence}/model:feature#form")
+            format!("f3d:{occurrence}@model:feature#form")
         );
         assert_eq!(
             rewritten.evaluation.outputs()[0].as_str(),
-            format!("f3d:xref/{occurrence}/model:body#result")
+            format!("f3d:{occurrence}@model:body#result")
         );
         let FeatureDefinition::Operation(FeatureOperation::Form(construction)) =
             rewritten.evaluation.definition()
@@ -180,7 +179,7 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
             panic!("Form");
         };
         assert_eq!(construction.inputs().parameters["width"], "width / 2");
-        let expected = format!("f3d:xref/{occurrence}/Design1/BulkStream.dat:design-record#99");
+        let expected = format!("f3d:{occurrence}@Design1/BulkStream.dat:design-record#99");
         assert_eq!(construction.inputs().references[0].as_str(), expected);
         assert_eq!(
             construction.inputs().lists[0].members[0].reference.as_str(),
@@ -212,8 +211,8 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
                 .map(SubdId::as_str)
                 .collect::<Vec<_>>(),
             [
-                format!("f3d:xref/{occurrence}/model:subd#member"),
-                format!("f3d:xref/{occurrence}/model:subd#candidate")
+                format!("f3d:{occurrence}@model:subd#member"),
+                format!("f3d:{occurrence}@model:subd#candidate")
             ]
         );
         assert_eq!(construction.committed_cages().count(), 1);

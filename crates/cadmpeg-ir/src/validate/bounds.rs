@@ -7,26 +7,35 @@ use crate::report::check::Check;
 use crate::report::Severity;
 
 pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let (_written, measured) = crate::bounds::write_measured(ir, std::io::sink());
+    let Ok((_, measured)) = crate::hash::measured_canonical_json(ir) else {
+        return;
+    };
     if !measured.records.is_empty() {
         let mut sorted = ir.clone();
         sorted.finalize();
         for (place, bound) in measured.records {
+            let seed = sorted.record_at(&place);
             record_finding(
                 findings,
                 Check::Depth,
                 Severity::Error,
-                sorted.record_at(&place),
+                seed.as_ref().map(|seed| seed.id.as_str()),
                 crate::rule!(
                     "bounds.record-past-depth-bound",
                     "record of arena {} {}",
-                    place.arena(),
+                    seed.as_ref()
+                        .map_or_else(String::new, |seed| seed.arena.to_string()),
                     bound.describe()
                 ),
             );
         }
     }
-    if let Some(bound) = measured.outside {
+    if let Some(bound) = measured.outside.values().next() {
+        let fields = measured
+            .outside
+            .keys()
+            .map(|outside| outside.field.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
         record_finding(
             findings,
             Check::Depth,
@@ -34,8 +43,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             None,
             crate::rule!(
                 "bounds.document-past-depth-bound",
-                "the document {} outside every record",
-                bound.describe()
+                "the document {} outside every record ({})",
+                bound.describe(),
+                fields.into_iter().collect::<Vec<_>>().join(", ")
             ),
         );
     }

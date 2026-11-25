@@ -11,8 +11,7 @@
 //! recurses into it ([`admit_text`]), and refuses an expression past its
 //! bound where it parses one. The decode wrapper gives up each record a
 //! decoder states past a bound: it finds them with [`Measure`] while it
-//! writes the document's canonical JSON for the content digest. The CADIR
-//! writer drops each such record, and validation reports it.
+//! writes the document's canonical JSON for the content digest.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -174,82 +173,23 @@ pub(crate) enum Place {
     },
 }
 
+/// Where a value outside every record sits: `field` is the root member, or
+/// `home.field` for a member of a home or of `native`, and `entry` is the
+/// position in that member's array.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Outside {
+    pub(crate) field: String,
+    pub(crate) entry: Option<usize>,
+}
+
 /// What [`Measure`] found past a bound.
 #[derive(Debug, Default)]
 pub(crate) struct Measured {
     /// Each record past a bound, with the first bound it passes.
     pub(crate) records: BTreeMap<Place, Bound>,
-    /// The first bound passed outside every record.
-    pub(crate) outside: Option<Bound>,
-}
-
-impl Place {
-    /// The arena as a report names it: `home.arena`, or
-    /// `native.codec.arena`.
-    pub(crate) fn arena(&self) -> String {
-        match self {
-            Self::Home { home, arena, .. } => format!("{home}.{arena}"),
-            Self::Native { codec, arena, .. } => format!("native.{codec}.{arena}"),
-        }
-    }
-
-    /// The place `index` of the same arena.
-    pub(crate) fn at(&self, index: usize) -> Self {
-        match self {
-            Self::Home { home, arena, .. } => Self::Home {
-                home: home.clone(),
-                arena: arena.clone(),
-                index,
-            },
-            Self::Native { codec, arena, .. } => Self::Native {
-                codec: codec.clone(),
-                arena: arena.clone(),
-                index,
-            },
-        }
-    }
-}
-
-/// A record given up for a bound it passes, with the ids of the records
-/// that go with it, sorted.
-#[derive(Debug)]
-pub(crate) struct GivenUp {
-    pub(crate) id: String,
-    pub(crate) arena: String,
-    pub(crate) bound: Bound,
-    pub(crate) dropped: Vec<String>,
-}
-
-impl GivenUp {
-    /// The record, its arena, the bound, `outcome`, and the dropped ids.
-    pub(crate) fn describe(&self, outcome: &str) -> String {
-        format!(
-            "record {} of arena {} {}, so {outcome}; dropped=[{}]",
-            self.id,
-            self.arena,
-            self.bound.describe(),
-            self.dropped.join(", ")
-        )
-    }
-}
-
-/// Writes the canonical JSON of `ir` to `writer`. Returns the write's result
-/// and what the written text holds past a bound; a failed write returns what
-/// the text held before the failure.
-pub(crate) fn write_measured(
-    ir: &crate::CadIr,
-    writer: impl Write,
-) -> (
-    Result<(), crate::hash::finite_json::CanonicalJsonError>,
-    Measured,
-) {
-    let mut measure = Measure::new(writer);
-    let written = crate::hash::finite_json::write_canonical_json(
-        crate::hash::finite_json::admission::CanonicalAdmission::unlimited(),
-        &mut measure,
-        ir,
-    );
-    (written, measure.finish())
+    /// Each value outside every record past a bound, with the first bound it
+    /// passes.
+    pub(crate) outside: BTreeMap<Outside, Bound>,
 }
 
 const HOMES: [&str; 4] = ["geometry", "model", "design", "process"];
@@ -300,7 +240,13 @@ impl<W: Write> Measure<W> {
     /// What the measure found.
     pub(crate) fn finish(mut self) -> Measured {
         if take_expression_past() {
-            self.found.outside.get_or_insert(Bound::Expression);
+            self.found
+                .outside
+                .entry(Outside {
+                    field: String::new(),
+                    entry: None,
+                })
+                .or_insert(Bound::Expression);
         }
         self.found
     }
@@ -324,9 +270,11 @@ impl<W: Write> Measure<W> {
         let array = self.levels.get(level - 1).filter(|array| array.array)?;
         let text = |at: usize| String::from_utf8_lossy(&self.levels[at].key).into_owned();
         Some(if level == 3 {
+            let (home, arena) = (text(0), text(1));
+            crate::give_up::Arena::home(&home, &arena)?;
             Place::Home {
-                home: text(0),
-                arena: text(1),
+                home,
+                arena,
                 index: array.index,
             }
         } else {
@@ -344,8 +292,48 @@ impl<W: Write> Measure<W> {
                 self.found.records.entry(place).or_insert(bound);
             }
             None => {
-                self.found.outside.get_or_insert(bound);
+                let outside = self.outside();
+                self.found.outside.entry(outside).or_insert(bound);
             }
+        }
+    }
+
+    /// Where the value being written sits, outside every record.
+    fn outside(&self) -> Outside {
+        let key = |at: usize| {
+            self.levels
+                .get(at)
+                .filter(|level| !level.array)
+                .map(|level| String::from_utf8_lossy(&level.key).into_owned())
+        };
+        let root = key(0).unwrap_or_default();
+        let member = (HOMES.contains(&root.as_str()) || root == "native")
+            .then(|| key(1))
+            .flatten();
+        match member {
+            Some(member) => Outside {
+                field: format!("{root}.{member}"),
+                entry: self
+                    .levels
+                    .get(2)
+                    .filter(|level| level.array)
+                    .map(|level| level.index),
+            },
+            None => Outside {
+                field: root,
+                entry: None,
+            },
+        }
+    }
+
+    /// Charges a noted expression to the value outside every record that
+    /// ends here, when a member of the root or of a home ends at `depth`.
+    fn member_ends(&mut self, depth: usize) {
+        if (1..=2).contains(&depth)
+            && self.levels.get(depth - 1).is_some_and(|level| !level.array)
+            && take_expression_past()
+        {
+            self.mark(Bound::Expression);
         }
     }
 
@@ -407,12 +395,15 @@ impl<W: Write> Measure<W> {
                 if self.levels.len() == closed {
                     if byte == b']' {
                         self.element_ends(closed);
+                    } else {
+                        self.member_ends(closed);
                     }
                     self.levels.pop();
                 }
             }
             b',' if followed => {
                 self.element_ends(self.scan.depth);
+                self.member_ends(self.scan.depth);
                 if let Some(level) = self.levels.last_mut() {
                     if level.array {
                         level.index += 1;
@@ -438,6 +429,105 @@ impl<W: Write> Write for Measure<W> {
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
+}
+
+/// A value outside every record that [`unstate_outside`] stated in its
+/// unstated form: its field, and what the document states in its place.
+#[derive(Debug)]
+pub(crate) struct Unstated {
+    pub(crate) field: String,
+    pub(crate) what: String,
+}
+
+/// States each value of `outside`, which belongs to no record and passes a
+/// bound, as the value it takes when unstated (§2.4). An entry of the name
+/// table states its native name alone, or is removed where it has none
+/// (§5.7); any other field takes its value in the empty document.
+///
+/// # Errors
+///
+/// [`CodecError::Malformed`] where the document does not read back from its
+/// JSON.
+pub(crate) fn unstate_outside(
+    ir: &mut crate::document::CadIr,
+    outside: &BTreeMap<Outside, Bound>,
+) -> Result<Vec<Unstated>, cadmpeg_core::CodecError> {
+    let mut unstated = Vec::new();
+    for (place, bound) in outside.iter().rev() {
+        let what = match (place.field.as_str(), place.entry) {
+            ("design.names", Some(entry)) => {
+                let mut entries = ir.design.names.entries().clone();
+                let Some((entity, mut stated)) = entries
+                    .iter()
+                    .nth(entry)
+                    .map(|(entity, stated)| (entity.clone(), stated.clone()))
+                else {
+                    continue;
+                };
+                let what = if stated.native.is_some() {
+                    stated.name = None;
+                    entries.insert(entity.clone(), stated);
+                    format!(
+                        "the name of {} with its native name alone, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                } else {
+                    entries.remove(&entity);
+                    format!(
+                        "no name of {}, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                };
+                ir.design.names = entries.into();
+                what
+            }
+            (field, _) => {
+                unstate(ir, field)?;
+                format!("the unstated value of a field that {}", bound.describe())
+            }
+        };
+        unstated.push(Unstated {
+            field: place.field.clone(),
+            what,
+        });
+    }
+    Ok(unstated)
+}
+
+/// Replaces `field` of `ir`, a root member or `home.field`, by its value in
+/// the empty document, or removes it where the empty document omits it. The
+/// arenas the wire omits keep their records.
+fn unstate(ir: &mut crate::document::CadIr, field: &str) -> Result<(), cadmpeg_core::CodecError> {
+    let malformed = |error: String| cadmpeg_core::CodecError::Malformed(error);
+    let mut document = crate::hash::finite_json::to_json_value(&*ir)
+        .map_err(|error| malformed(error.to_string()))?;
+    let empty = crate::hash::finite_json::to_json_value(&crate::document::CadIr::empty())
+        .map_err(|error| malformed(error.to_string()))?;
+    let pointer = format!("/{}", field.replace('.', "/"));
+    let unstated = empty.pointer(&pointer).cloned();
+    let Some((parent, key)) = pointer.rsplit_once('/') else {
+        return Ok(());
+    };
+    let Some(parent) = document
+        .pointer_mut(parent)
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    match unstated {
+        Some(value) => {
+            parent.insert(key.to_owned(), value);
+        }
+        None => {
+            parent.remove(key);
+        }
+    }
+    let decoded = serde_json::from_value(document).map_err(|error| malformed(error.to_string()))?;
+    let original = std::mem::replace(ir, decoded);
+    ir.model.adopt_omitted_arenas(&original.model);
+    Ok(())
 }
 
 #[cfg(test)]

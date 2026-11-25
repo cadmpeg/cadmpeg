@@ -357,42 +357,86 @@ fn physics_joints_are_design_joint_features() {
     assert_eq!(report.error_count(), 0, "{:#?}", report.findings);
 }
 
-/// A decode at geometry depth states no design, so the `PhysX` settings of the
-/// joints have no target and are reported.
-#[test]
-fn a_geometry_decode_reports_the_physx_settings_of_joints() {
+/// Decodes `text` at `depth`.
+fn decode_at(
+    text: &str,
+    depth: cadmpeg_core::decode::DecodeDepth,
+) -> cadmpeg_ir::codec::DecodeResult {
     use cadmpeg_ir::codec::Codec;
     let options = cadmpeg_ir::codec::DecodeOptions {
-        depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+        depth,
         ..Default::default()
     };
-    let result = crate::UsdCodec
-        .decode(
-            &mut std::io::Cursor::new(physx_fixture().into_bytes()),
-            &options,
-        )
-        .expect("decode");
-    let ir = result.ir();
-    assert!(ir.design.features.is_empty());
-    assert_eq!(ir.model.assembly_joints.len(), 2);
-    assert!(solver_value(ir, "PhysxJointAPI", "physxJoint:armature").is_none());
-    let loss = result
+    crate::UsdCodec
+        .decode(&mut std::io::Cursor::new(text.as_bytes()), &options)
+        .expect("decode")
+}
+
+/// The `decode/depth.not-delivered` losses of `result`.
+fn depth_losses(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<&str> {
+    result
         .report()
         .losses
         .iter()
-        .find(|loss| {
-            loss.message
-                .contains("PhysX properties were not transferred")
-        })
-        .unwrap_or_else(|| panic!("{:#?}", result.report().losses));
-    for property in [
-        "/Arm/Shoulder.physxJoint:armature",
-        "/Arm/Grip.physxMimicJoint:transX:referenceJoint",
-    ] {
+        .filter(|loss| loss.code.to_string() == "decode/depth.not-delivered")
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// A decode at geometry depth leaves out the joints, which are design
+/// features, and the `PhysX` settings that target them, and charges
+/// `decode/depth.not-delivered` for `design` in their place.
+#[test]
+fn a_geometry_decode_of_joints_charges_the_undelivered_design() {
+    use cadmpeg_core::decode::DecodeDepth;
+    let result = decode_at(&physx_fixture(), DecodeDepth::Geometry);
+    let ir = result.ir();
+    assert!(!ir.scope().design);
+    assert!(ir.design.features.is_empty());
+    assert_eq!(ir.model.assembly_joints.len(), 2);
+    assert!(solver_value(ir, "PhysxJointAPI", "physxJoint:armature").is_none());
+    assert!(ir.model.solver_settings.iter().all(|settings| !matches!(
+        settings.target.entity,
+        cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }
+    )));
+    let losses = depth_losses(&result);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].contains("design records"), "{}", losses[0]);
+    for loss in &result.report().losses {
+        for property in [
+            "/Arm/Shoulder.physxJoint:armature",
+            "/Arm/Grip.physxMimicJoint:transX:referenceJoint",
+        ] {
+            assert!(!loss.message.contains(property), "{}", loss.message);
+        }
+    }
+}
+
+/// A decode that delivers the design states the joints and charges no
+/// depth loss.
+#[test]
+fn a_design_decode_of_joints_charges_no_depth_loss() {
+    let result = decode_at(&physx_fixture(), cadmpeg_core::decode::DecodeDepth::Design);
+    assert!(!result.ir().design.features.is_empty());
+    assert!(
+        depth_losses(&result).is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+/// A stage without joints holds no design, so neither depth charges one.
+#[test]
+fn a_stage_without_joints_charges_no_depth_loss() {
+    use cadmpeg_core::decode::DecodeDepth;
+    let layer = "#usda 1.0\ndef Xform \"Base\" (\n    prepend apiSchemas = [\"PhysicsRigidBodyAPI\"]\n)\n{\n}\n";
+    for depth in [DecodeDepth::Geometry, DecodeDepth::Design] {
+        let result = decode_at(layer, depth);
+        assert!(result.ir().model.assembly_joints.is_empty());
         assert!(
-            loss.message.contains(property),
-            "{property}: {}",
-            loss.message
+            depth_losses(&result).is_empty(),
+            "{depth}: {:#?}",
+            result.report().losses
         );
     }
 }
@@ -940,4 +984,82 @@ fn an_infinite_lock_bound_locks_the_axis_as_a_revolute_joint() {
         losses.iter().all(|loss| !loss.contains("limit:transZ")),
         "{losses:#?}"
     );
+}
+
+const MESH_RIG: &str = "#usda 1.0\ndef Xform \"Rig\"\n{\n    def Mesh \"Base\" (\n        prepend apiSchemas = [\"PhysicsRigidBodyAPI\"]\n    )\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh \"Arm\" (\n        prepend apiSchemas = [\"PhysicsRigidBodyAPI\"]\n    )\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 2), (1, 0, 2), (0, 1, 2)]\n    }\n    def PhysicsRevoluteJoint \"Hinge\"\n    {\n        rel physics:body0 = </Rig/Base>\n        rel physics:body1 = </Rig/Arm>\n    }\n}\n";
+
+/// The `export:value.unwritable` notes of `report`.
+fn unwritable(report: &cadmpeg_ir::report::export::ExportReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/value.unwritable")
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// A joint whose body prim is left out for a point past the binary32 range
+/// is left out with it: no written relationship names a prim the layer
+/// does not hold.
+#[test]
+fn a_joint_to_a_prim_left_out_is_left_out_with_it() {
+    let (mut ir, _, _) = decode(MESH_RIG).into_parts();
+    let (written, _) = encode(&ir);
+    let target = written
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("rel physics:body1 = <"))
+        .and_then(|rest| rest.strip_suffix('>'))
+        .expect("the joint names its second body")
+        .to_owned();
+    let arm = ir
+        .model
+        .tessellations
+        .iter()
+        .position(|tessellation| tessellation.id.as_str().contains("Arm"))
+        .expect("the arm mesh");
+    ir.model.tessellations[arm]
+        .edit_vertices(|point| {
+            point.x = 1e300;
+            Ok(())
+        })
+        .expect("a finite point");
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("def Mesh \"Arm\""), "{text}");
+    assert!(!text.contains(&format!("<{target}")), "{text}");
+    assert!(!text.contains("PhysicsRevoluteJoint"), "{text}");
+    let notes = unwritable(&report);
+    assert!(
+        notes.iter().any(|note| note.contains(&target))
+            && notes.iter().any(|note| note.contains("Hinge")),
+        "{:#?}",
+        report.losses
+    );
+    let read = decode(&text);
+    assert!(read.ir().model.assembly_joints.is_empty());
+    assert_eq!(read.ir().model.rigid_bodies.len(), 1);
+}
+
+/// A mass past the binary32 range is left out; its body stays and takes
+/// the fallback mass.
+#[test]
+fn a_mass_past_the_binary32_range_is_left_out_and_its_body_stays() {
+    let (mut ir, _, _) = decode(LAYER).into_parts();
+    ir.model.mass_properties[0].mass = cadmpeg_ir::scalar::PositiveReal::new(1e39);
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("physics:mass"), "{text}");
+    let notes = unwritable(&report);
+    assert!(
+        notes.len() == 1 && notes[0].contains("/A/Base.physics:mass"),
+        "{:#?}",
+        report.losses
+    );
+    let read = decode(&text);
+    assert_eq!(read.ir().model.rigid_bodies.len(), 2);
+    assert_eq!(read.ir().model.assembly_joints.len(), 1);
+    assert!(read
+        .ir()
+        .model
+        .mass_properties
+        .iter()
+        .all(|mass| mass.mass.is_none()));
 }
