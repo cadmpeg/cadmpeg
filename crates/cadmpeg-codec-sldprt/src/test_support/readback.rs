@@ -85,12 +85,16 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
         }));
     }
     // A digest attribute digests encoded bytes; the records they encode are
-    // compared instead.
+    // compared instead. A configuration's stale mark is the writer's own
+    // (§3.4, States), and `export:evaluation.stale` names the edits it marks.
     entries.extend(
         diff.source
             .attributes
             .into_iter()
-            .filter(|change| !change.key.as_str().ends_with("_sha256"))
+            .filter(|change| {
+                let key = change.key.as_str();
+                !key.ends_with("_sha256") && !key.ends_with("_needs_update")
+            })
             .map(|change| Entry {
                 arena: "source.attributes".into(),
                 id: change.key.to_string(),
@@ -221,6 +225,7 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
         &part.source_fidelity().annotations,
         &part.source_fidelity().codec_digests,
         &records,
+        &[],
         &[],
         &mut bytes,
     )

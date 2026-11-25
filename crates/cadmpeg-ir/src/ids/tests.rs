@@ -307,6 +307,14 @@ fn encoded_components_preserve_empty_prefixes_and_unicode_bytes() {
     use super::IdentityKeyTail;
     let encoded = IdentityKeyTail::percent_encode("A B:#%\u{2003}é");
     assert_eq!(encoded.as_str(), "A%20B%3A%23%25%E2%80%83é");
+    assert_eq!(
+        IdentityKeyTail::percent_encode("Pin@2/BulkStream.dat").as_str(),
+        "Pin%402/BulkStream.dat"
+    );
+    assert_eq!(
+        IdentityKeyTail::percent_encode("Pin@ 2").as_str(),
+        "Pin%40%202"
+    );
     let suffix = crate::identity_key!("@7");
     assert_eq!(
         suffix

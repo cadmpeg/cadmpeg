@@ -959,18 +959,24 @@ impl IdentityKeyTail {
         }
     }
 
-    /// Escape identity separators, the escape byte, and Unicode whitespace
-    /// in one source component.
+    /// Escape identity separators, the decode-set qualifier `@`, the escape
+    /// byte, and Unicode whitespace in one source component.
     #[inline]
     #[must_use]
     pub fn percent_encode(value: &str) -> Self {
         if value
             .bytes()
-            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%'))
+            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%' | b'@'))
         {
             return Self(value.to_owned());
         }
         Self::percent_encode_slow(value)
+    }
+
+    /// Whether [`Self::percent_encode`] escapes `character`.
+    #[must_use]
+    pub fn escapes(character: char) -> bool {
+        matches!(character, ':' | '#' | '%' | '@') || character.is_whitespace()
     }
 
     #[cold]
@@ -978,7 +984,7 @@ impl IdentityKeyTail {
     fn percent_encode_slow(value: &str) -> Self {
         let mut encoded = String::with_capacity(value.len());
         for character in value.chars() {
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            if Self::escapes(character) {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
                     const HEX: &[u8; 16] = b"0123456789ABCDEF";
