@@ -55,16 +55,20 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
-    let unjoined = unjoined_regions(input.ir);
+    // The writer writes no cage, so it writes no cage body (§5.6); the
+    // `subds` coverage charges the cage.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let source = cageless.as_ref().unwrap_or(input.ir);
+    let unjoined = unjoined_regions(source);
     let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
-        input.ir,
+        source,
         "Rhino",
         "its faces are written as an open Brep",
     )? {
         Some((complete, losses)) => (Some(complete), losses),
         None => (None, Vec::new()),
     };
-    let ir = complete.as_ref().unwrap_or(input.ir);
+    let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
     let written = super::write(&recovered.document, version, &unjoined, &mut bytes)?;
@@ -214,7 +218,7 @@ pub(crate) fn plan(
         bytes,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: source.census(),
         },
         write_path: WritePath::Synthesized {
             consumption: Consumption::NotConsumed,
