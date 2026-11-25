@@ -153,7 +153,7 @@ fn convert_stdout_contains_only_json_artifact() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &crate::support::rooted_cube(),
+        &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
     );
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -429,11 +429,21 @@ fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
         ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains(
-            "parametric/design record(s) were not represented in STEP",
-        ));
+        .stderr(predicate::str::contains("the write's strictness refuses"));
     let report: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(report["refusal"]["code"], "strict_export_rejected");
     assert_eq!(report["decode_report"]["transfer"]["kind"], "full");
+    assert!(
+        report["export"]["losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| loss["message"]
+                .as_str()
+                .unwrap()
+                .contains("parametric/design record(s) were not represented in STEP")),
+        "{report:#}"
+    );
 }
 
 #[cfg(all(feature = "step", any(feature = "fcstd", feature = "f3d")))]
@@ -474,11 +484,11 @@ fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[
 #[test]
 fn step_artifact_starts_with_step_header() {
     let dir = tempdir().unwrap();
-    let input = fixture(
-        dir.path(),
-        "cube.json",
-        &unit_cube().expect("unit cube fixture is admitted"),
-    );
+    let input = fixture(dir.path(), "cube.json", &{
+        let mut cube = unit_cube().expect("unit cube fixture is admitted");
+        cadmpeg_ir::examples::add_document_root(&mut cube);
+        cube
+    });
 
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -491,7 +501,11 @@ fn step_artifact_starts_with_step_header() {
         ])
         .output()
         .unwrap();
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(output.stdout.starts_with(b"ISO-10303-21"));
     assert!(String::from_utf8_lossy(&output.stdout)
         .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
@@ -715,12 +729,13 @@ fn convert_writes_and_reports_check_errors_unless_rejected() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "refusing to export under --reject-errors",
+            "the write's strictness refuses export:record.invalid",
         ));
     assert!(!refused.exists());
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(&refused_report).unwrap()).unwrap();
-    assert_eq!(value["refusal"]["code"], "check_failed");
+    assert_eq!(value["refusal"]["code"], "strict_export_rejected");
+    assert_eq!(value["refusal"]["stage"], "export");
 }
 
 #[cfg(feature = "step")]

@@ -9,7 +9,7 @@ use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
 use crate::support::fixture;
-#[cfg(all(feature = "creo", feature = "step"))]
+#[cfg(all(feature = "creo", any(feature = "step", feature = "iges")))]
 use crate::support::geometryless_creo;
 #[cfg(feature = "rhino")]
 use crate::support::minimal_rhino_archive;
@@ -74,7 +74,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("refusing to write a lossy"));
+        .stderr(predicate::str::contains("the decode's strictness refuses"));
 
     let report = dir.path().join("lossy-report.json");
     Command::cargo_bin("cadmpeg")
@@ -121,7 +121,7 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .args(args)
             .assert()
             .code(1)
-            .stderr(predicate::str::contains("strict mode rejects"));
+            .stderr(predicate::str::contains("the decode's strictness refuses"));
 
         let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
         assert_eq!(value["status"], "refused");
@@ -165,7 +165,7 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| { loss["code"]["value"]["code"] == "export.no-geometry-written" }));
+        .any(|loss| { loss["code"]["value"]["code"] == "output.empty" }));
 }
 
 /// A container-only document converts to STEP: the writer writes what the
@@ -197,7 +197,7 @@ fn convert_writes_a_container_only_document_to_step() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
+        .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
     assert!(value["export"]["notes"]
         .as_array()
         .unwrap()
@@ -205,6 +205,51 @@ fn convert_writes_a_container_only_document_to_step() {
         .any(|note| note.as_str().unwrap().contains(
             "the document records container depth; the step writer plans from geometry"
         )));
+}
+
+/// A container-only document converts to IGES: the writer writes a file that
+/// holds no entity and charges `export:output.empty`, which `--reject-empty`
+/// refuses before any byte is written.
+#[cfg(all(feature = "creo", feature = "iges"))]
+#[test]
+fn convert_writes_a_container_only_document_to_iges_and_reject_empty_refuses_it() {
+    let dir = tempdir().unwrap();
+    let input = geometryless_creo(dir.path(), "empty.prt");
+    let run = |output: &std::path::Path, report: &std::path::Path, reject_empty: bool| {
+        let mut command = Command::cargo_bin("cadmpeg").unwrap();
+        command.args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--container-only",
+            "--report",
+            report.to_str().unwrap(),
+        ]);
+        if reject_empty {
+            command.arg("--reject-empty");
+        }
+        command.assert()
+    };
+
+    let output = dir.path().join("empty.igs");
+    let report = dir.path().join("written.json");
+    run(&output, &report, false).success();
+    assert!(!fs::read(&output).unwrap().is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert!(value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["namespace"] == "export"
+            && loss["code"]["value"]["code"] == "output.empty"));
+
+    let refused = dir.path().join("refused.igs");
+    let report = dir.path().join("refused.json");
+    run(&refused, &report, true).code(1);
+    assert!(!refused.exists());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["code"], "strict_export_rejected");
 }
 
 /// A same-format container-only F3Z conversion replays the archive, whose
@@ -519,7 +564,7 @@ fn rhino_word_5_is_refused_with_the_encoder_catalog() {
 /// The same Creo file loses content on both sides, and the two scopes name
 /// different stages for it: `decode` reports what the reader could not carry,
 /// `export` what the writer will not emit. Both are negative verdicts, so both
-/// exit 1 rather than 2. A file that loses nothing is written under every
+/// exit 1 rather than 2: `strict_decode_rejected` and `strict_export_rejected`. A file that loses nothing is written under every
 /// scope, which is what proves the scope is a predicate and not a switch that
 /// refuses on sight.
 #[cfg(all(feature = "creo", feature = "step"))]
@@ -540,7 +585,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
             .args(["convert", path, "-f", "step", scope])
             .assert()
             .code(1)
-            .stderr(predicate::str::contains("decode reported"));
+            .stderr(predicate::str::contains("the decode's strictness refuses"));
     }
 
     Command::cargo_bin("cadmpeg")
@@ -557,28 +602,26 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .assert()
         .code(1)
         .stderr(
-            predicate::str::contains("export planning reported 2 loss(es)")
-                .and(predicate::str::contains(
-                    "uninterpreted passthrough record(s)",
-                ))
-                .and(predicate::str::contains("decode reported").not()),
+            predicate::str::contains("the write's strictness refuses")
+                .and(predicate::str::contains("the decode's strictness").not()),
         );
     let report: serde_json::Value =
         serde_json::from_slice(&fs::read(export_report).unwrap()).unwrap();
-    assert_eq!(report["refusal"]["code"], "export_loss_rejected");
+    assert_eq!(report["refusal"]["code"], "strict_export_rejected");
+    assert_eq!(report["refusal"]["stage"], "export");
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["kind"], "native");
     let losses = report["export"]["losses"].as_array().unwrap();
     assert_eq!(losses.len(), 2);
     assert!(losses
         .iter()
-        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
+        .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
 
-    let lossless = fixture(
-        dir.path(),
-        "cube.cadir.json",
-        &unit_cube().expect("unit cube fixture is admitted"),
-    );
+    let lossless = fixture(dir.path(), "cube.cadir.json", &{
+        let mut cube = unit_cube().expect("unit cube fixture is admitted");
+        cadmpeg_ir::examples::add_document_root(&mut cube);
+        cube
+    });
     for scope in [
         "--reject-lossy",
         "--reject-lossy=decode",
@@ -632,7 +675,7 @@ fn report_to_an_unwritable_path_is_an_operational_error() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &crate::support::rooted_cube(),
+        &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
     );
     let report = dir.path().join("missing-subdir").join("report.json");
     Command::cargo_bin("cadmpeg")

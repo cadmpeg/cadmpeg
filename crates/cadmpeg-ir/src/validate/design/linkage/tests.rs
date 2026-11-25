@@ -15,7 +15,7 @@ use crate::ids::Identity;
 use crate::math::Point3;
 use crate::units::UnitVector3;
 use crate::validate::design::fixture::{
-    assert_finding, assert_no_design_finding, document, feature, unresolved,
+    assert_finding, assert_no_design_finding, configuration, document, feature, id, unresolved,
 };
 use crate::NativeRecord;
 
@@ -42,6 +42,18 @@ fn design_identities_are_unique() {
         .features
         .push(unresolved("fillet", OperationFamily::Fillet));
     assert_finding(&ir, "is not unique among the design records");
+}
+
+#[test]
+fn a_design_record_shares_no_id_with_a_model_record() {
+    let mut ir = document();
+    let mut shared = configuration("shared", None);
+    shared.id = id("definition", "part");
+    ir.design.configurations.push(shared);
+    assert_finding(
+        &ir,
+        "design.configurations record id is also the id of a product_definitions record",
+    );
 }
 
 /// A datum axis feature whose record and link name native records.

@@ -695,6 +695,18 @@ macro_rules! declare_home_arenas {
                 repeated
             }
 
+            /// Removes the record at `index` of the arena whose wire key is
+            /// `arena`, returning its id.
+            pub(crate) fn remove_record(&mut self, arena: &str, index: usize) -> Option<String> {
+                $(if arena == stringify!($field) {
+                    return (index < self.$field.len()).then(|| {
+                        crate::schema::ArenaRecord::record_identity(&self.$field.remove(index))
+                            .to_owned()
+                    });
+                })*
+                None
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(if !arena_is_ordered(&self.$field) {
@@ -2048,6 +2060,46 @@ impl ProceduralCarrierError {
 }
 
 impl Topology {
+    /// Adds `surface`, a cage that the source holds as an object of its own,
+    /// with the body, region, and shell that hold it (§5.6): the shell's
+    /// `members` list the cage and nothing else, and the body is a solid where
+    /// every edge of the cage borders two of its faces and a sheet otherwise.
+    /// Returns the body, for the caller to state the object's display name,
+    /// colour, and visibility.
+    pub fn push_cage_object(
+        &mut self,
+        surface: SubdSurface,
+        body: crate::ids::BodyId,
+        region: crate::ids::RegionId,
+        shell: crate::ids::ShellId,
+    ) -> &mut Body {
+        let kind = if surface.cage.is_closed() {
+            crate::topology::BodyKind::Solid
+        } else {
+            crate::topology::BodyKind::Sheet
+        };
+        let mut cage_shell = Shell::new(shell.clone(), region.clone());
+        cage_shell.members.push(crate::topology::ShellMember::Subd {
+            id: surface.id.clone(),
+        });
+        self.subds.push(surface);
+        self.shells.push(cage_shell);
+        self.regions
+            .push(Region::new(region, body.clone(), vec![shell]));
+        let index = self.bodies.len();
+        self.bodies.push(Body {
+            id: body,
+            kind,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            unstated: None,
+            native_ref: None,
+        });
+        &mut self.bodies[index]
+    }
+
     /// Returns the unique surface that carries `construction`.
     #[must_use]
     pub fn procedural_surface_owner(
@@ -2801,8 +2853,9 @@ impl CadIr {
     }
 
     /// Parse JSON and reject any unsupported `ir_version`, or a document
-    /// whose scope excludes a class it holds records of. Every float zero,
-    /// `-0` and `-0.0` included, reads as 0 (§2.5).
+    /// whose scope excludes a class it holds records of, or that nests
+    /// deeper than a CADIR document's bound. Every float zero, `-0` and
+    /// `-0.0` included, reads as 0 (§2.5).
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
@@ -2819,7 +2872,7 @@ impl CadIr {
             "ir_version"
         );
 
-        let probe = serde_json::from_str::<VersionProbe>(s)?;
+        let probe = crate::bounds::read_json::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
         one_zero::from_str::<Self>(s).map_err(|error| {
             match legacy::omitted_arena_refusal(&error.to_string()) {
@@ -2841,6 +2894,69 @@ impl CadIr {
         repeated.extend(self.process.drop_repeated_ids("process"));
         repeated.extend(self.native.drop_repeated_ids());
         repeated
+    }
+
+    /// Removes the record at `place`, returning its id and the ids of the
+    /// procedural constructions it was the owning carrier of, which are
+    /// removed with it: the document states no construction without its
+    /// carrier.
+    pub(crate) fn remove_record(
+        &mut self,
+        place: &crate::bounds::Place,
+    ) -> Option<(String, Vec<String>)> {
+        use crate::bounds::Place;
+        let owned = self.owned_constructions();
+        let id = match place {
+            Place::Home { home, arena, index } => match home.as_str() {
+                "geometry" => self.geometry.remove_record(arena, *index),
+                "model" => self.model.remove_record(arena, *index),
+                "design" => self.design.remove_record(arena, *index),
+                "process" => self.process.remove_record(arena, *index),
+                _ => None,
+            },
+            Place::Native {
+                codec,
+                arena,
+                index,
+            } => self.native.remove_record(codec, arena, *index),
+        }?;
+        let still = self.owned_constructions();
+        let lost =
+            |construction: &str| owned.contains(construction) && !still.contains(construction);
+        let mut dropped = Vec::new();
+        self.geometry.procedural_curves.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        self.geometry.procedural_surfaces.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        Some((id, dropped))
+    }
+
+    /// The ids of the procedural constructions a curve or surface carrier
+    /// owns.
+    fn owned_constructions(&self) -> std::collections::BTreeSet<String> {
+        let curves = self
+            .geometry
+            .curves
+            .iter()
+            .filter_map(|curve| curve.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        let surfaces = self
+            .geometry
+            .surfaces
+            .iter()
+            .filter_map(|surface| surface.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        curves.chain(surfaces).collect()
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record

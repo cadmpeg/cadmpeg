@@ -356,6 +356,8 @@ struct FindingProbe {
     #[serde(default)]
     check: Option<String>,
     #[serde(default)]
+    rule: Option<String>,
+    #[serde(default)]
     severity: Option<String>,
     #[serde(default)]
     message: Option<String>,
@@ -1210,6 +1212,7 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             .map(|finding| {
                 serde_json::json!({
                     "check": finding.check,
+                    "rule": finding.rule,
                     "severity": finding.severity,
                     "message": finding.message,
                     "entity": finding.entity,
@@ -1218,12 +1221,13 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             .collect();
         print_json("findings", serde_json::Value::Array(payload))?;
     } else {
-        println!("severity\tcheck\tentity\tmessage");
+        println!("severity\tcheck\trule\tentity\tmessage");
         for finding in rows {
             println!(
-                "{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}",
                 opt(finding.severity.as_ref()),
                 opt(finding.check.as_ref()),
+                opt(finding.rule.as_ref()),
                 opt(finding.entity.as_ref()),
                 opt(finding.message.as_ref()),
             );

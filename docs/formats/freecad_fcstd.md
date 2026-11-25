@@ -16,16 +16,22 @@ The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target
 retained document write regenerates the ZIP container deterministically, writes `Document.xml`
 first, preserves the physical order of the retained side entries, preserves every unedited XML
 record and every named side entry, and serializes checked
-leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
-declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
-without a typed serializer is refused rather than flattening or discarding children.
-Retained-document transcoding across bands is explicitly refused: the writer regenerates no
-`Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
-by name rather than emitted. A schema-2 object-input edit that requires recomputation is refused because its `Feature`
-declaration has no persisted pending-recompute flag. Document and cosmetic label edits remain
-available. A preserving write of a source whose retained document graph is
-unusable is refused with the source's own dialect and the catalog, never silently rewritten to
-schema 4.
+leaf-value edits with XML escaping. It writes the band the retained `Document.xml` declares, so a
+preserving write reproduces schemas 2 and 3 as well. The document facts and the band come from the
+retained `Document.xml`. An edit that the patch cannot hold stays as the source stores it, and the
+export report names its record with `export:edit.dropped`: an edit of a nested value without a
+typed serializer, of a property, object, or extension declaration, or of a value whose written form
+does not read back as its record states it. Where the patched `Document.xml` does not read back,
+the write holds `Document.xml` as the source stores it. An archive entry record that does not read,
+a repeated entry name, and a ZIP member without an entry record are left out with
+`export:native.records-omitted`. A property whose side entry the archive does not hold is written
+with an empty `file` attribute, which names no entry, and its object is marked `Touched` in schemas
+3 and 4. A schema-2 `Feature` declaration has no persisted pending-recompute flag: a schema-2
+object-input edit is written beside the stored shape, and the report names the object with
+`export:evaluation.stale`. Retained-document transcoding across bands is refused: the writer
+regenerates no `Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3
+source is refused by name. A source whose retained `Document.xml` does not read as a FreeCAD
+document is refused with the source's own dialect and the catalog.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
 recursive typed property values, and named side entries. New object declarations carry

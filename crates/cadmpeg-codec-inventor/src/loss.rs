@@ -306,8 +306,8 @@ pub(crate) enum InventorLossCode {
     AssemblyPlacementNotTransferred,
     /// Occurrences hidden below a root occurrence stay in native records.
     AssemblyVisibilityNestedNative,
-    /// Grounding joints leave the document; at design depth only their
-    /// grounded occurrences remain, without the joint ids and native records.
+    /// Grounding joints leave a design-depth decode as grounded occurrences,
+    /// without their joint ids and native records.
     AssemblyGroundingJointDropped,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ids::EvaluationId;
 use super::names::NameEntry;
-use super::read::{self, Ceiling};
+use super::read;
 use super::refs::{EntityRef, Evaluated, Position, RecordRef};
 use super::selection::OccurrencePath;
 use crate::document::Topology;
@@ -181,7 +181,9 @@ pub struct CurrentState {
 }
 
 /// Walks every chain of state bases of `evaluations` and refuses one deeper
-/// than [`Ceiling::StateChain`] or one that is a cycle.
+/// than
+/// [`max_state_chain_depth`](cadmpeg_core::decode::ResourceLimits::max_state_chain_depth)
+/// or one that is a cycle.
 ///
 /// An evaluation with content has depth one more than the evaluation its
 /// `StateBase::Evaluation` base names, or one where its base is another arm or
@@ -224,8 +226,9 @@ pub(crate) enum ChainLink {
 }
 
 /// The depth of each of the `states` of one arena, whose bases `link`
-/// states, refusing a chain deeper than [`Ceiling::StateChain`] or one that
-/// is a cycle.
+/// states, refusing a chain deeper than
+/// [`max_state_chain_depth`](cadmpeg_core::decode::ResourceLimits::max_state_chain_depth)
+/// or one that is a cycle.
 ///
 /// A state with content has depth one more than its base. `name` names a
 /// state in the refusal of a cycle. The walk is iterative, and visits each
@@ -267,7 +270,7 @@ pub(crate) fn chain_depths<T>(
             };
             marks[at] = Mark::OnChain;
             chain.push(at);
-            read::within(Ceiling::StateChain, u64_from_index(chain.len()))?;
+            read::within_state_chain(u64_from_index(chain.len()))?;
             match base {
                 Ok(base) => at = base,
                 Err(depth) => break depth,
@@ -280,7 +283,7 @@ pub(crate) fn chain_depths<T>(
                 .ok_or("the depth of a chain of state bases overflows")?;
             marks[at] = Mark::Depth(depth);
         }
-        read::within(Ceiling::StateChain, depth)?;
+        read::within_state_chain(depth)?;
     }
     Ok(marks
         .into_iter()

@@ -47,7 +47,7 @@ fn cube_with(occurrences: Vec<Occurrence>) -> CadIr {
         .iter()
         .map(|occurrence| occurrence.id.clone())
         .collect();
-    cube.model.product_definitions.extend([definition, root]);
+    cube.model.product_definitions = vec![definition, root];
     cube.model.occurrences = occurrences;
     cube
 }
