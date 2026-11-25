@@ -362,7 +362,27 @@ fn a_value_with_no_finite_literal_in_its_unit_is_written_in_its_canonical_unit()
         )),
         None,
     );
-    ir.design.parameters.extend([spin, huge]);
+    let back = parameter(
+        "back",
+        "Back",
+        neutral(Node::mul(
+            number(1.0, Some(UnitSymbol::Mm)),
+            MulOp::Divide,
+            Node::mul(number(1.0, None), MulOp::Divide, number(0.0, None)),
+        )),
+        None,
+    );
+    let twice = parameter(
+        "twice",
+        "Twice",
+        neutral(Node::mul(
+            reference("huge"),
+            MulOp::Multiply,
+            number(2.0, None),
+        )),
+        Some(5.0),
+    );
+    ir.design.parameters.extend([spin, huge, back, twice]);
     let (report, decoded_ir) = write(&ir);
     let spin = decoded_ir
         .model
@@ -375,7 +395,18 @@ fn a_value_with_no_finite_literal_in_its_unit_is_written_in_its_canonical_unit()
         .model
         .parameters
         .iter()
-        .all(|parameter| parameter.name != "Huge"));
+        .all(|parameter| parameter.name != "Huge" && parameter.name != "Back"));
+    assert_length(&decoded_ir, "Twice", "5 mm", 5.0);
+    assert!(
+        loss(&report, "export/parameter.flattened")
+            .iter()
+            .any(
+                |message| message.contains("reference parameters the file does not write")
+                    && message.contains(parameter_id("twice").as_str())
+            ),
+        "{:#?}",
+        report.losses
+    );
     let unwritable = loss(&report, "export/value.unwritable");
     assert!(
         unwritable
@@ -388,7 +419,8 @@ fn a_value_with_no_finite_literal_in_its_unit_is_written_in_its_canonical_unit()
         unwritable
             .iter()
             .any(|message| message.contains("no finite number")
-                && message.contains(parameter_id("huge").as_str())),
+                && message.contains(parameter_id("huge").as_str())
+                && message.contains(parameter_id("back").as_str())),
         "{unwritable:#?}"
     );
 }

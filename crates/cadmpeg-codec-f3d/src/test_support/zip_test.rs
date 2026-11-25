@@ -117,6 +117,33 @@ pub(crate) fn f3d_with_smbh_and_manifest_version(smbh: &[u8], version: &str) -> 
     zip.finish().unwrap().into_inner()
 }
 
+/// `archive` with `version` as the document version of its root
+/// `Manifest.dat`, which leads that record as a length-prefixed string.
+pub(crate) fn with_manifest_version(archive: &[u8], version: &str) -> Vec<u8> {
+    use std::io::Read;
+
+    let mut source = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        let mut payload = Vec::new();
+        entry.read_to_end(&mut payload).unwrap();
+        if name == "Manifest.dat" {
+            let length =
+                usize::try_from(u32::from_le_bytes(payload[..4].try_into().unwrap())).unwrap();
+            let mut manifest = u32::try_from(version.len()).unwrap().to_le_bytes().to_vec();
+            manifest.extend_from_slice(version.as_bytes());
+            manifest.extend_from_slice(&payload[4 + length..]);
+            payload = manifest;
+        }
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&payload).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
 pub(crate) fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);

@@ -2,7 +2,7 @@
 //! Source-less F3D archive generation: assemble a ZIP archive from a neutral
 //! `CadIr` with no retained source.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
@@ -309,21 +309,19 @@ fn attempt<W: Write + Seek>(
         (None, None) => Vec::new(),
     };
     let mut configurations = Vec::new();
-    let mut renamed_entries = Vec::new();
+    let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
+    let mut inactive = Vec::new();
     if write_design {
         let names = configuration_entry_names(&native.design_configurations);
-        for (configuration, name) in native.design_configurations.iter().zip(names) {
+        for (configuration, (name, fault)) in native.design_configurations.iter().zip(names) {
             if configuration.active_row().is_some() {
-                return Err(Failure::design(CodecError::NotImplemented(
-                    "source-less F3D generation does not write the Design configuration root record"
-                        .into(),
-                )));
+                inactive.push(configuration.id());
             }
             let payload =
                 crate::records::configuration::encode_configuration_payload(configuration)
                     .map_err(Failure::design)?;
-            if name != *configuration.entry_name() {
-                renamed_entries.push(format!(
+            if let Some(fault) = fault {
+                renamed.entry(fault).or_default().push(format!(
                     "{} from {} to {name}",
                     configuration.id(),
                     configuration.entry_name()
@@ -332,12 +330,18 @@ fn attempt<W: Write + Seek>(
             configurations.push((name, payload));
         }
     }
-    let renamed_entries = cadmpeg_ir::codec::write::value_unwritable(
-        "F3D",
-        "writes these configuration documents under other entry names: Fusion reads a \
-         configuration document only under a unique, well-formed name in the design folder",
-        renamed_entries,
-    );
+    let configuration_losses = renamed
+        .into_iter()
+        .filter_map(|(fault, entries)| {
+            cadmpeg_ir::codec::write::value_unwritable("F3D", &fault.reason(), entries)
+        })
+        .chain(cadmpeg_ir::codec::write::native_records_omitted(
+            "F3D",
+            "writes no DesignConfigurationRoot record, so no row of these configuration tables \
+             is active",
+            inactive,
+        ))
+        .collect::<Vec<_>>();
     let design_bulk = encode_design_bulkstream(
         target,
         &native,
@@ -376,7 +380,7 @@ fn attempt<W: Write + Seek>(
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
             let mut losses = plan.into_losses();
             losses.extend(unstated_visibility);
-            losses.extend(renamed_entries);
+            losses.extend(configuration_losses);
             return Ok((
                 coverage(
                     write_design,
@@ -393,7 +397,7 @@ fn attempt<W: Write + Seek>(
     let written = neutral.is_some();
     let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
     losses.extend(unstated_visibility);
-    losses.extend(renamed_entries);
+    losses.extend(configuration_losses);
     Ok((
         coverage(write_design, parameters, written, ArenaDisposition::Written),
         losses,
@@ -466,77 +470,111 @@ fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossN
 
 /// The folder of the design asset that holds its configuration documents.
 const CONFIGURATION_FOLDER: &str = "DesignConfigurationTable.BlobParts";
-/// The fixed fields of a ZIP local file header.
+/// The largest value of a ZIP u16 length field.
+const ZIP_U16_FIELD_MAX: usize = 0xFFFF;
+/// The fixed fields of a ZIP local file header, its signature included.
 const ZIP_LOCAL_HEADER_BYTES: usize = 30;
-/// The largest ZIP local file header with its name: less than 64 KiB.
-const ZIP_LOCAL_ENTRY_LIMIT: usize = 0xFFFE;
-/// The longest entry name.
-const ENTRY_NAME_LIMIT: usize = ZIP_LOCAL_ENTRY_LIMIT - ZIP_LOCAL_HEADER_BYTES;
+/// The longest entry name the archive writer accepts: the `zip` crate
+/// writes a local header and its name only when together they are less
+/// than the u16 maximum.
+const ENTRY_NAME_LIMIT: usize = ZIP_U16_FIELD_MAX - 1 - ZIP_LOCAL_HEADER_BYTES;
 
-/// The entry name each configuration document is written under: its own
-/// where it is legal and the first of its spelling, and otherwise a free name
-/// in the design's configuration folder that keeps its base name where that
-/// is legal.
+/// Why a configuration document is written under another entry name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum EntryNameFault {
+    /// The name is longer than a ZIP local header holds.
+    ContainerWidth,
+    /// The name is outside the folder of the written design asset.
+    OutsideDesign,
+    /// An earlier configuration document has the same name.
+    Repeated,
+}
+
+impl EntryNameFault {
+    fn reason(self) -> String {
+        match self {
+            Self::ContainerWidth => format!(
+                "writes these configuration documents under other entry names: the ZIP \
+                 container holds an entry name and its {ZIP_LOCAL_HEADER_BYTES}-byte local \
+                 header in fewer than {ZIP_U16_FIELD_MAX} bytes, the maximum of its u16 length \
+                 field, so a name is at most {ENTRY_NAME_LIMIT} bytes"
+            ),
+            Self::OutsideDesign => "writes these configuration documents under other entry \
+                 names: the written archive holds one design asset, and an entry outside its \
+                 folder is not a document of that asset"
+                .to_owned(),
+            Self::Repeated => "writes these configuration documents under other entry names: \
+                 Fusion reads a repeated configuration entry name as invalid"
+                .to_owned(),
+        }
+    }
+}
+
+/// The entry name each configuration document is written under, with the
+/// fault of its own name where that differs: its own name where the
+/// container holds it in the design folder as the first of its spelling,
+/// and otherwise a free name in the design's configuration folder that keeps
+/// its base name where it can.
 fn configuration_entry_names(
     configurations: &[crate::records::configuration::DesignConfiguration],
-) -> Vec<String> {
+) -> Vec<(String, Option<EntryNameFault>)> {
     use crate::records::configuration::DesignConfigurationKind;
     let mut taken = BTreeSet::new();
-    let kept = configurations
+    let faults = configurations
         .iter()
         .map(|configuration| {
             let name = configuration.entry_name();
-            (legal_entry_name(name) && taken.insert(name.clone())).then(|| name.clone())
+            entry_name_fault(name)
+                .or_else(|| (!taken.insert(name.clone())).then_some(EntryNameFault::Repeated))
         })
         .collect::<Vec<_>>();
     let mut ordinal = 0usize;
     configurations
         .iter()
-        .zip(kept)
-        .map(|(configuration, kept)| {
-            kept.unwrap_or_else(|| {
-                let base = configuration
-                    .entry_name()
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or_default();
-                let named = format!("{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{base}");
-                if legal_entry_name(&named) && taken.insert(named.clone()) {
-                    return named;
+        .zip(faults)
+        .map(|(configuration, fault)| {
+            let Some(fault) = fault else {
+                return (configuration.entry_name().clone(), None);
+            };
+            let base = configuration
+                .entry_name()
+                .rsplit('/')
+                .next()
+                .unwrap_or_default();
+            let named = format!("{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{base}");
+            if entry_name_fault(&named).is_none() && taken.insert(named.clone()) {
+                return (named, Some(fault));
+            }
+            let (stem, extension) = match configuration.kind() {
+                DesignConfigurationKind::Table => ("DesignConfigurationTable", "dsgcfg"),
+                DesignConfigurationKind::Rule => ("DesignConfigurationRule", "dsgcfgrule"),
+            };
+            loop {
+                ordinal += 1;
+                let numbered =
+                    format!("{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{stem}.{ordinal}.{extension}");
+                if taken.insert(numbered.clone()) {
+                    return (numbered, Some(fault));
                 }
-                let (stem, extension) = match configuration.kind() {
-                    DesignConfigurationKind::Table => ("DesignConfigurationTable", "dsgcfg"),
-                    DesignConfigurationKind::Rule => ("DesignConfigurationRule", "dsgcfgrule"),
-                };
-                loop {
-                    ordinal += 1;
-                    let numbered = format!(
-                        "{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{stem}.{ordinal}.{extension}"
-                    );
-                    if taken.insert(numbered.clone()) {
-                        return numbered;
-                    }
-                }
-            })
+            }
         })
         .collect()
 }
 
-/// Whether the decoder reads `name` back as an entry of the written design:
-/// a path in the design folder of non-empty segments, none `.` or `..`,
-/// holding no backslash or control character, that a ZIP header holds.
-fn legal_entry_name(name: &str) -> bool {
-    name.len() <= ENTRY_NAME_LIMIT
-        && name
-            .strip_prefix(DESIGN_FOLDER)
-            .and_then(|path| path.strip_prefix('/'))
-            .is_some_and(|path| {
-                path.split('/').all(|segment| {
-                    !matches!(segment, "" | "." | "..")
-                        && !segment
-                            .contains(|character: char| character == '\\' || character.is_control())
-                })
-            })
+/// Why `name` cannot be written as an entry of the design asset, apart from
+/// a repeat.
+fn entry_name_fault(name: &str) -> Option<EntryNameFault> {
+    if name.len() > ENTRY_NAME_LIMIT {
+        Some(EntryNameFault::ContainerWidth)
+    } else if name
+        .strip_prefix(DESIGN_FOLDER)
+        .and_then(|path| path.strip_prefix('/'))
+        .is_none_or(str::is_empty)
+    {
+        Some(EntryNameFault::OutsideDesign)
+    } else {
+        None
+    }
 }
 
 /// The members of a written archive.

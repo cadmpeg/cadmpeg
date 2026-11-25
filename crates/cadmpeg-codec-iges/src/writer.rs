@@ -472,7 +472,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
             .is_none_or(|solved| flatten_curve(solved).is_err())
     });
     if let Some(subset) = lowering.unlowered.into_iter().next() {
-        return Err(subset.error.into());
+        return Err(naming(subset.curve.as_str())(subset.error));
     }
     let mut range_losses = Vec::new();
     let ranged = state_open_edge_ranges(lowering.ir.as_ref(), &mut range_losses)?;

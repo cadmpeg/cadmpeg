@@ -92,7 +92,11 @@ struct Lowering {
 
 /// A document with its selected subset curves restated.
 pub struct SubsetLowering<'a> {
-    /// The document, with each subset in `unlowered` as it states it.
+    /// The document with every selected subset restated, except the subsets
+    /// in `unlowered`. A subset in `unlowered` keeps its stated construction.
+    /// Where the lowering restated its source, its interval stays on the
+    /// earlier parameter of that source, so a writer writes it only as its
+    /// cache.
     pub ir: Cow<'a, CadIr>,
     /// Each selected subset that cannot be restated on its source.
     pub unlowered: Vec<UnloweredSubset>,

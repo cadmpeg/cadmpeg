@@ -333,6 +333,8 @@ pub(in crate::writer::generate) fn plan(
     let mut written = Vec::new();
     let mut flattened = Vec::new();
     let mut unwritten = Vec::new();
+    let mut flattened_dependents = Vec::new();
+    let mut unwritten_dependents = Vec::new();
     let mut unbounded = Vec::new();
     let mut restated = Vec::new();
     let mut renamed = Vec::new();
@@ -352,6 +354,12 @@ pub(in crate::writer::generate) fn plan(
         } else {
             printed_expression(&parameter.definition, &name_of)
         };
+        let dependent = printed.is_none()
+            && !forced.contains(&index)
+            && references(&parameter.definition)
+                .into_iter()
+                .filter_map(expression::referenced)
+                .any(|id| !written_names.contains_key(id));
         let canonical = cached(parameter).or_else(|| match (&printed, &parameter.definition) {
             (Some(_), ParameterDefinition::Expression(Expression::Neutral(neutral))) => {
                 expression::evaluate(&neutral.0, &|id| written_values.get(id).copied())
@@ -359,7 +367,11 @@ pub(in crate::writer::generate) fn plan(
             _ => None,
         });
         let Some(canonical) = canonical else {
-            unwritten.push(parameter.id.to_string());
+            if dependent {
+                unwritten_dependents.push(parameter.id.to_string());
+            } else {
+                unwritten.push(parameter.id.to_string());
+            }
             continue;
         };
         if !canonical.is_finite() {
@@ -382,7 +394,11 @@ pub(in crate::writer::generate) fn plan(
                     restated.push(parameter.id.to_string());
                     text
                 };
-                flattened.push(parameter.id.to_string());
+                if dependent {
+                    flattened_dependents.push(parameter.id.to_string());
+                } else {
+                    flattened.push(parameter.id.to_string());
+                }
                 text
             }
         };
@@ -436,6 +452,16 @@ pub(in crate::writer::generate) fn plan(
         "F3D",
         "omits these parameters: their expressions have no established Fusion form and they hold no cached value",
         unwritten,
+    ));
+    losses.extend(parameter_flattened(
+        "F3D",
+        "states these parameters by their cached values: their expressions reference parameters the file does not write",
+        flattened_dependents,
+    ));
+    losses.extend(parameter_flattened(
+        "F3D",
+        "omits these parameters: their expressions reference parameters the file does not write, and they hold no cached value",
+        unwritten_dependents,
     ));
     losses.extend(value_unwritable(
         "F3D",
