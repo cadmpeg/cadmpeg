@@ -2856,10 +2856,17 @@ impl CadIr {
         repeated
     }
 
-    /// Removes the record at `place`, returning its id.
-    pub(crate) fn remove_record(&mut self, place: &crate::bounds::Place) -> Option<String> {
+    /// Removes the record at `place`, returning its id and the ids of the
+    /// procedural constructions it was the owning carrier of, which are
+    /// removed with it: the document states no construction without its
+    /// carrier.
+    pub(crate) fn remove_record(
+        &mut self,
+        place: &crate::bounds::Place,
+    ) -> Option<(String, Vec<String>)> {
         use crate::bounds::Place;
-        match place {
+        let owned = self.owned_constructions();
+        let id = match place {
             Place::Home { home, arena, index } => match home.as_str() {
                 "geometry" => self.geometry.remove_record(arena, *index),
                 "model" => self.model.remove_record(arena, *index),
@@ -2872,7 +2879,44 @@ impl CadIr {
                 arena,
                 index,
             } => self.native.remove_record(codec, arena, *index),
-        }
+        }?;
+        let still = self.owned_constructions();
+        let lost =
+            |construction: &str| owned.contains(construction) && !still.contains(construction);
+        let mut dropped = Vec::new();
+        self.geometry.procedural_curves.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        self.geometry.procedural_surfaces.retain(|procedural| {
+            let keep = !lost(procedural.id.as_str());
+            if !keep {
+                dropped.push(procedural.id.as_str().to_owned());
+            }
+            keep
+        });
+        Some((id, dropped))
+    }
+
+    /// The ids of the procedural constructions a curve or surface carrier
+    /// owns.
+    fn owned_constructions(&self) -> std::collections::BTreeSet<String> {
+        let curves = self
+            .geometry
+            .curves
+            .iter()
+            .filter_map(|curve| curve.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        let surfaces = self
+            .geometry
+            .surfaces
+            .iter()
+            .filter_map(|surface| surface.geometry.procedural_construction())
+            .map(|id| id.as_str().to_owned());
+        curves.chain(surfaces).collect()
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record

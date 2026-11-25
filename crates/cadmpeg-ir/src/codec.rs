@@ -385,7 +385,8 @@ impl DecodeResult {
     /// The same walk finds each record the decoder stated past a bound of
     /// §2.5, which §2.8 states none of. Each such record is given up, with a
     /// `decode/record.unreadable` Error that names it, and the document is
-    /// digested again without it. Records that reference a given-up record
+    /// digested again without it. A procedural construction whose carrier is
+    /// given up goes with it. Other records that reference a given-up record
     /// keep the reference (interim: the shared give-up pass of §2.8 does not
     /// exist yet). The walk admits at least
     /// [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
@@ -454,10 +455,13 @@ impl DecodeResult {
         self.ir.finalize();
         let mut gave_up = false;
         for (place, bound) in records.into_iter().rev() {
-            let Some(id) = self.ir.remove_record(&place) else {
+            let Some((id, dropped)) = self.ir.remove_record(&place) else {
                 continue;
             };
             gave_up = true;
+            // Dropped constructions move the places of their arena, so the
+            // next walk finds the records still past a bound.
+            let moved = !dropped.is_empty();
             let arena = match &place {
                 crate::bounds::Place::Home { home, arena, .. } => format!("{home}.{arena}"),
                 crate::bounds::Place::Native { codec, arena, .. } => {
@@ -468,12 +472,23 @@ impl DecodeResult {
                 DecodeLoss::new(
                     crate::unknown::part::record_unreadable_kind(),
                     format!(
-                        "record {id} of arena {arena} {}, so the decode wrapper gave it up",
-                        bound.describe()
+                        "record {id} of arena {arena} {}, so the decode wrapper gave it up{}",
+                        bound.describe(),
+                        if dropped.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                " with the constructions it owned; dropped=[{}]",
+                                dropped.join(", ")
+                            )
+                        }
                     ),
                 )
                 .with_severity(crate::report::Severity::Error),
             );
+            if moved {
+                break;
+            }
         }
         gave_up
     }
