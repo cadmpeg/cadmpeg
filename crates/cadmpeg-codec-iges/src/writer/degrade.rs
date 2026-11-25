@@ -323,6 +323,7 @@ impl<'ir> Uses<'ir> {
                                     .map(|vertex| vertex.point.as_str()),
                             );
                         }
+                        ShellMember::Subd { id } => records.push(id.as_str()),
                     }
                 }
             }

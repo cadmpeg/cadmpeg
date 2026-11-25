@@ -146,6 +146,9 @@ pub(crate) enum UsdLossCode {
     ExportJointNotWritten,
     /// A solver property has no prim, attribute, or target to write.
     ExportSolverPropertyNotWritten,
+    /// A design feature other than a joint, or the design state of a scope,
+    /// was not written.
+    ExportDesignNotWritten,
     /// The rigid body, mass, or velocity of a body with a transform of its
     /// own, written as a group of prims, was not written.
     ExportPhysicsNotWritten,
@@ -210,6 +213,7 @@ impl UsdLossCode {
         Self::ExportCarrierNotWritten,
         Self::ExportJointNotWritten,
         Self::ExportSolverPropertyNotWritten,
+        Self::ExportDesignNotWritten,
         Self::ExportPhysicsNotWritten,
         Self::ExportGroupFaceNotWritten,
     ];
@@ -449,6 +453,11 @@ impl UsdLossCode {
                 "export.group-face-not-written",
                 Info,
                 T::TopologyNotTransferred,
+            ),
+            Self::ExportDesignNotWritten => (
+                "export.design-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
             ),
         }
     }

@@ -187,11 +187,8 @@ pub fn without_faces_and_bodies(
         .collect();
     removed_shells.extend(geometry.shells.iter().filter_map(|shell| {
         let id = shell.id.as_str();
-        (opened_shells.contains(id)
-            && !kept_face_shells.contains(id)
-            && shell.wire_edges().next().is_none()
-            && shell.free_vertices().next().is_none())
-        .then_some(id)
+        (opened_shells.contains(id) && !kept_face_shells.contains(id) && shell.members.is_empty())
+            .then_some(id)
     }));
     let opened_regions: BTreeSet<&str> = geometry
         .shells
