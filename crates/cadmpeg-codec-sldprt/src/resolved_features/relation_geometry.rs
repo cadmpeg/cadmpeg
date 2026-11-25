@@ -3570,6 +3570,7 @@ mod relation_geometry_tests {
             )
             .unwrap(),
             operands: vec![operand(40, 12), operand(52, 13)],
+            class_assumed: false,
         };
         let lane = FeatureInputLane {
             id: "lane#test".into(),
@@ -3797,6 +3798,7 @@ mod relation_geometry_tests {
                     entity_ref: None,
                 })
                 .collect(),
+            class_assumed: false,
         };
         let lane = FeatureInputLane {
             id: LANE.into(),
@@ -4140,6 +4142,7 @@ mod relation_geometry_tests {
             )
             .unwrap(),
             operands: vec![operand(0), operand(1)],
+            class_assumed: false,
         };
         let lane = FeatureInputLane {
             id: LANE.into(),

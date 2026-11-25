@@ -32,6 +32,7 @@ pub(super) fn relation_lane() -> FeatureInputLane {
             scalars: RelationScalars::from_refs(vec!["scalar".into()], Some("scalar".into()), None)
                 .unwrap(),
             operands: Vec::new(),
+            class_assumed: false,
         }],
         body_selections: Vec::new(),
         edge_selections: Vec::new(),

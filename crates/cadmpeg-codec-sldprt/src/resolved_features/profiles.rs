@@ -4693,6 +4693,7 @@ mod detached_legacy_sketch_tests {
                 )
                 .unwrap(),
                 operands: Vec::new(),
+                class_assumed: false,
             }],
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
@@ -4809,6 +4810,7 @@ mod detached_legacy_sketch_tests {
                         )
                         .unwrap(),
                         operands: Vec::new(),
+                        class_assumed: false,
                     }
                 })
                 .collect::<Vec<_>>();

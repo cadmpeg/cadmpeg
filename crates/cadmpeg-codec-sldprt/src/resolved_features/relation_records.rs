@@ -5,6 +5,7 @@ use super::parameter_classes::{
 };
 use super::scalars::FeatureObjectNames;
 use super::{is_class_token, RELATION_INSTANCE_ID_PREFIX, SKETCH_POINT_TOLERANCE};
+use crate::archive::compound_opening;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::classify::HistoryMetadata;
 use crate::layout::feature_input_scalar_class_prefix as class_prefix;
@@ -260,6 +261,9 @@ struct RelationGroup<'a> {
     feature_ref: &'a str,
     family: FeatureInputRelationFamily,
     class_ref: &'a str,
+    /// Whether `class_ref` rests only on reading a compound-file lane's class
+    /// tokens as its own (open item EV-05).
+    class_assumed: bool,
     operands: &'a [FeatureInputOperand],
     scalars: Vec<(usize, &'a FeatureInputScalar)>,
     /// Present while every scalar is a one-operand display scalar of one
@@ -497,13 +501,16 @@ pub(super) fn relation_instances(
         if candidate_counts.get(scalar.id.as_str()) == Some(&1) {
             declarations.insert(
                 scalar.id.as_str(),
-                (class.offset, family, class.id.as_str()),
+                (class.offset, family, class.id.as_str(), false),
             );
         }
     }
     // A dimension that its nearest declaration does not claim has the
     // relation class its own relation-class token names, of the quantity its
-    // record states (§2).
+    // record states (§2). A compound-file lane does not state which tokens are
+    // its own (open item EV-05); its tokens are read as its own, and the
+    // class rests on that reading.
+    let compound = compound_opening(&lane.native_payload);
     let token_classes = if refused.is_empty() {
         HashMap::new()
     } else {
@@ -529,7 +536,7 @@ pub(super) fn relation_instances(
         {
             declarations.insert(
                 scalar.id.as_str(),
-                (class.offset, family, class.id.as_str()),
+                (class.offset, family, class.id.as_str(), compound),
             );
         }
     }
@@ -559,7 +566,7 @@ pub(super) fn relation_instances(
         };
         let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
         let declaration = declarations.get(scalar.id.as_str());
-        let Some((class_offset, family, class_ref)) = declaration else {
+        let Some((class_offset, family, class_ref, assumed)) = declaration else {
             if candidate_counts
                 .get(scalar.id.as_str())
                 .is_some_and(|count| *count > 1)
@@ -590,6 +597,7 @@ pub(super) fn relation_instances(
                     feature_ref,
                     family,
                     class_ref,
+                    class_assumed: false,
                     operands: &scalar.operands,
                     scalars: vec![(scalar_index, scalar)],
                     circle_displays: CircleDisplays::of(scalar, scalar_name),
@@ -630,6 +638,7 @@ pub(super) fn relation_instances(
                         feature_ref: group.feature_ref,
                         family: group.family,
                         class_ref: group.class_ref,
+                        class_assumed: group.class_assumed,
                         operands: &scalar.operands,
                         scalars: vec![(scalar_index, scalar)],
                         circle_displays: CircleDisplays::of(scalar, scalar_name),
@@ -661,6 +670,9 @@ pub(super) fn relation_instances(
             if promote_class {
                 group.family = *family;
                 group.class_ref = *class_ref;
+                group.class_assumed = *assumed;
+            } else {
+                group.class_assumed &= *assumed;
             }
             group.push(scalar_index, scalar, scalar_name);
         } else {
@@ -668,6 +680,7 @@ pub(super) fn relation_instances(
                 feature_ref,
                 family: *family,
                 class_ref,
+                class_assumed: *assumed,
                 operands: &scalar.operands,
                 scalars: vec![(scalar_index, scalar)],
                 circle_displays: CircleDisplays::of(scalar, scalar_name),
@@ -699,6 +712,7 @@ pub(super) fn relation_instances(
                 group.scalars.into_iter().map(|(_, scalar)| scalar),
             )?,
             operands: group.operands.to_vec(),
+            class_assumed: group.class_assumed,
         });
     }
     // A class can declare more than one scalar relation. The ordinary
@@ -740,6 +754,7 @@ pub(super) fn relation_instances(
             feature_ref: feature_ref.to_owned(),
             scalars: crate::records::relation_scalars::RelationScalars::from_scalars([scalar])?,
             operands: scalar.operands.clone(),
+            class_assumed: false,
         });
     }
     instances.sort_unstable_by(|left, right| {
@@ -1840,6 +1855,7 @@ mod binary_relation_operand_tests {
             )
             .unwrap(),
             operands,
+            class_assumed: false,
         }
     }
 
@@ -2379,10 +2395,16 @@ mod relation_records_tests {
     /// one pair, the second dimension another. The scalars' object
     /// identifiers run from `0x40` in steps of 2, in stream order.
     fn token_form_lane(relation: u16, parameter: u16) -> FeatureInputLane {
+        let mut opening = 0x20u32.to_le_bytes().to_vec();
+        opening.extend_from_slice(&[0x02, 0x00]);
+        token_form_lane_opening(&opening, relation, parameter)
+    }
+
+    /// The lane of [`token_form_lane`] in a stream that opens with `opening`.
+    fn token_form_lane_opening(opening: &[u8], relation: u16, parameter: u16) -> FeatureInputLane {
         const NAME_CLASS: u16 = 0x72;
         let object = |position: u32| 0x40 + 2 * position;
-        let mut bytes = 0x20u32.to_le_bytes().to_vec();
-        bytes.extend_from_slice(&[0x02, 0x00]);
+        let mut bytes = opening.to_vec();
         let declare = |bytes: &mut Vec<u8>, class: &str| {
             bytes.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
             bytes.extend_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
@@ -2556,7 +2578,14 @@ mod relation_records_tests {
     /// scalars holding two line operands, which the angle family's signature
     /// fits.
     fn refused_dimension_lane(after: usize) -> (FeatureInputLane, FeatureInputClass) {
-        let mut lane = token_form_lane(0x30, 0x32);
+        refused_dimension_lane_of(token_form_lane(0x30, 0x32), after)
+    }
+
+    /// [`refused_dimension_lane`] built on `lane`.
+    fn refused_dimension_lane_of(
+        mut lane: FeatureInputLane,
+        after: usize,
+    ) -> (FeatureInputLane, FeatureInputClass) {
         let angle = class(lane.scalars[after].offset + 1, "sgAnglDim");
         lane.classes.push(angle.clone());
         for scalar in &mut lane.scalars[3..5] {
@@ -2603,6 +2632,68 @@ mod relation_records_tests {
                 Some(lane.scalars[4].id.clone()),
             )
         );
+        assert!(instances.iter().all(|relation| !relation.class_assumed));
+    }
+
+    /// In a compound-file lane, whose stream opens with a u16 and a class
+    /// declaration and does not state where the lane's own class tokens begin
+    /// (open item EV-05), a refused dimension takes the relation class its
+    /// relation-class token names when every token is read as the lane's own,
+    /// and its relation states that its class rests on that reading. A length
+    /// relation declared in place beside the first display scalar's
+    /// parameter-class token states that token's class.
+    #[test]
+    fn a_refused_dimension_of_a_compound_lane_takes_its_token_class_as_assumed() {
+        let (mut lane, angle) =
+            refused_dimension_lane_of(token_form_lane_opening(&[0x02, 0x00], 0x30, 0x32), 2);
+        assert!(crate::archive::compound_opening(&lane.native_payload));
+        let name = lane
+            .names
+            .iter()
+            .find(|name| name.id == lane.scalars[1].name)
+            .unwrap()
+            .offset;
+        // The declaration ends at prefix +2, where the relation-class token
+        // would end; it is the marker, the u16 length and the name.
+        let prefix = crate::layout::feature_input_scalar_class_prefix::LEN
+            - crate::layout::feature_input_scalar_class_prefix::ZERO;
+        let end = name - u64::try_from(prefix).unwrap();
+        let in_place = "sgLLDist";
+        lane.classes.push(class(
+            end - u64::try_from(6 + in_place.len()).unwrap(),
+            in_place,
+        ));
+        let distance = lane
+            .classes
+            .iter()
+            .find(|class| class.name == "sgPntPntDist")
+            .unwrap()
+            .id
+            .clone();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
+        assert!(instances
+            .iter()
+            .all(|relation| relation.class_ref != angle.id));
+        let dimension = instances
+            .iter()
+            .find(|relation| relation.scalar_refs().contains(&lane.scalars[3].id))
+            .expect("the refused dimension's relation");
+        assert_eq!(
+            (
+                dimension.class_ref.clone(),
+                dimension.scalar_refs().to_vec(),
+                dimension.class_assumed,
+            ),
+            (
+                distance,
+                vec![lane.scalars[3].id.clone(), lane.scalars[4].id.clone()],
+                true,
+            )
+        );
+        assert!(instances
+            .iter()
+            .filter(|relation| relation.class_assumed)
+            .all(|relation| relation.id == dimension.id));
     }
 
     /// The relation-class token takes a declaration before the parameter-class
@@ -3240,6 +3331,7 @@ mod relation_records_tests {
                     feature_ref: "sketch".into(),
                     scalars: RelationScalars::from_refs(refs, parameter, None).unwrap(),
                     operands: Vec::new(),
+                    class_assumed: false,
                 };
                 let linear = linear_handle_driver(&relation, &lane);
                 assert_eq!(
@@ -3317,6 +3409,7 @@ mod relation_records_tests {
                 feature_ref: "sketch",
                 family: FeatureInputRelationFamily::CircleDiameter,
                 class_ref: "class",
+                class_assumed: false,
                 operands: &first.operands,
                 scalars: vec![(index, first)],
                 circle_displays: CircleDisplays::of(first, name_of(first)),

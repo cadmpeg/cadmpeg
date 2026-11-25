@@ -231,6 +231,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     entity_index: 0,
                     entity_ref: Some(relation_point.id().to_string()),
                 }],
+                class_assumed: false,
             },
             FeatureInputRelationInstance {
                 id: "qualified-point-relation".into(),
@@ -262,6 +263,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         entity_ref: Some(relation_point.id().to_string()),
                     },
                 ],
+                class_assumed: false,
             },
             FeatureInputRelationInstance {
                 id: "line-relation".into(),
@@ -284,6 +286,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     entity_index: 0,
                     entity_ref: Some(support_handle.id().to_string()),
                 }],
+                class_assumed: false,
             },
             FeatureInputRelationInstance {
                 id: "coincident-point-relation".into(),
@@ -315,6 +318,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         entity_ref: Some(relation_point.id().to_string()),
                     },
                 ],
+                class_assumed: false,
             },
             FeatureInputRelationInstance {
                 id: "self-linked-curve-relation".into(),
@@ -346,6 +350,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         entity_ref: Some(support_handle.id().to_string()),
                     },
                 ],
+                class_assumed: false,
             },
             FeatureInputRelationInstance {
                 id: "forward-linked-curve-relation".into(),
@@ -377,6 +382,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                         entity_ref: Some(support_handle.id().to_string()),
                     },
                 ],
+                class_assumed: false,
             },
         ],
         body_selections: Vec::new(),
@@ -582,6 +588,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
                 entity_index: 0,
                 entity_ref: Some(point_marker.id().to_string()),
             }],
+            class_assumed: false,
         }],
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
@@ -738,6 +745,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
                 entity_ref: Some(second_marker.id().to_string()),
             },
         ],
+        class_assumed: false,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),

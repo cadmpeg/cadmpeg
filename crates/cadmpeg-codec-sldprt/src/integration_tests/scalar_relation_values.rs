@@ -122,6 +122,7 @@ impl Fixture {
                 )
                 .unwrap(),
                 operands,
+                class_assumed: false,
             }],
             body_selections: Vec::new(),
             edge_selections: Vec::new(),

@@ -229,6 +229,7 @@ fn display_relation_synthesis_fixture() -> (
             )
             .expect("display scalar relation"),
             operands: Vec::new(),
+            class_assumed: false,
         });
     (Vec::new(), features, lanes)
 }

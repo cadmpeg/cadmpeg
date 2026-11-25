@@ -590,6 +590,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                 entity_ref: Some(marker.into()),
             })
             .collect(),
+        class_assumed: false,
     };
     let parameter = |id: &str, display| DesignParameter {
         product_definition: None,

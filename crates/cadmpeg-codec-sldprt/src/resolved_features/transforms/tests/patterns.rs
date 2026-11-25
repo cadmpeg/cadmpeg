@@ -1190,6 +1190,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
             )
             .unwrap(),
             operands: vec![operand(offset + 1, first), operand(offset + 2, second)],
+            class_assumed: false,
         }
     };
     let lane = FeatureInputLane {
@@ -1399,6 +1400,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
                 entity_ref: None,
             },
         ],
+        class_assumed: false,
     };
     let lane = FeatureInputLane {
         id: "lane#test".into(),
@@ -1604,6 +1606,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
                 entity_ref: None,
             },
         ],
+        class_assumed: false,
     };
     let lane = FeatureInputLane {
         id: "lane#test".into(),
@@ -1752,6 +1755,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
                 )
                 .unwrap(),
                 operands: vec![operand(0, known), operand(1, "missing")],
+                class_assumed: false,
             }
         };
     let relations = vec![

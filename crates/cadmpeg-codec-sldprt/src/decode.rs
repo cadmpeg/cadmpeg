@@ -1297,6 +1297,11 @@ pub(crate) fn append_design_losses(
                 "{multiply_projected_relations} native sketch relation record(s) are claimed by multiple neutral objects."
             )));
     }
+    if let Some(native) = native.as_ref() {
+        report
+            .losses
+            .extend(assumed_dimension_class_notes(ir, native));
+    }
 
     let native_features = evaluated_feature_states
         .iter()
@@ -2566,6 +2571,62 @@ fn multiply_projected_sketch_relation_records(
         .values()
         .filter(|count| **count > 1)
         .count()
+}
+
+/// One note for each relation instance whose class rests on reading every
+/// class token of its compound-file lane as the lane's own (open item EV-05),
+/// naming the constraints projected from it, or the relation record where
+/// none is.
+fn assumed_dimension_class_notes(
+    ir: &CadIr,
+    native: &crate::native::SldprtNative,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let mut projected = HashMap::<&str, Vec<&str>>::new();
+    for (native_ref, id) in ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| Some((constraint.native_ref.as_deref()?, constraint.id.as_str())))
+        .chain(
+            ir.model
+                .spatial_sketch_constraints
+                .iter()
+                .filter_map(|constraint| {
+                    Some((constraint.native_ref.as_deref()?, constraint.id.as_str()))
+                }),
+        )
+    {
+        projected.entry(native_ref).or_default().push(id);
+    }
+    native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| {
+            lane.relation_instances
+                .iter()
+                .filter(|relation| relation.class_assumed)
+                .map(move |relation| (lane, relation))
+        })
+        .map(|(lane, relation)| {
+            let class = lane
+                .classes
+                .iter()
+                .find(|class| class.id == relation.class_ref)
+                .map_or(relation.class_ref.as_str(), |class| class.name.as_str());
+            let dimension = projected.get(relation.id.as_str()).map_or_else(
+                || crate::loss::named(&[relation.id.as_str()]),
+                |ids| crate::loss::named(ids),
+            );
+            SldprtLossCode::SketchDimensionClassAssumed.note(format!(
+                "sketch dimension {dimension} takes the relation class `{class}` that its \
+                 relation-class token names only by reading every class token of its \
+                 compound-file lane as the lane's own; the stream does not state where the \
+                 lane's own tokens begin (open item EV-05). The stored relation record `{}` is \
+                 kept unchanged.",
+                relation.id
+            ))
+        })
+        .collect()
 }
 
 fn conflicting_display_reference(
