@@ -17,7 +17,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
-use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
+use crate::curves::{
+    decode_embedded_curve_2d, error, exact_nurbs, points_coincident, DecodedCurve, GeometryError,
+};
 use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{interval, point, vector, MillimeterScale};
 use crate::wire::Uuid;
@@ -36,8 +38,6 @@ const ON_V5_EXTRUSION_DISPLAY_MESH_CACHE: Uuid = Uuid::from_canonical([
 ]);
 const UNIT_TOLERANCE: f64 = EPS_EXTRUSION_DEGENERATE;
 const MITER_Z_MINIMUM: f64 = 1.0 / 64.0;
-const CLOSURE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
-const CLOSURE_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
 
 /// One exact profile boundary at both effective path ends.
 #[derive(Debug, Clone)]
@@ -372,7 +372,7 @@ pub(crate) fn decode(
         boundaries,
         direction,
         cap_origins,
-        cap_normals: [cap_frames[0].2, cap_frames[1].2],
+        cap_normals: [cap_frames[0].1, cap_frames[1].1],
         cap_u_axes: [cap_frames[0].0, cap_frames[1].0],
         caps,
         meshes,
@@ -572,20 +572,6 @@ fn evaluate_profile_point(
         })
 }
 
-fn points_coincident(first: Point3, second: Point3) -> bool {
-    [
-        (first.x, second.x),
-        (first.y, second.y),
-        (first.z, second.z),
-    ]
-    .into_iter()
-    .all(|(a, b)| {
-        let difference = (a - b).abs();
-        difference <= CLOSURE_ABSOLUTE_TOLERANCE
-            || difference <= (a.abs() + b.abs()) * CLOSURE_RELATIVE_TOLERANCE
-    })
-}
-
 fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
     if profile_off_plane(curve) {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
@@ -651,32 +637,23 @@ fn cap_frame(
     zaxis: Vector3,
     miter: Option<UnitVector3>,
     offset: usize,
-) -> Result<(UnitVector3, UnitVector3, UnitVector3), GeometryError> {
+) -> Result<(UnitVector3, UnitVector3), GeometryError> {
     let local_x = mitered_local(Vector3::new(1.0, 0.0, 0.0), miter, offset)?;
     let local_y = mitered_local(Vector3::new(0.0, 1.0, 0.0), miter, offset)?;
     let world_x = local_to_world_vector(local_x, xaxis, yaxis, zaxis);
     let world_y = local_to_world_vector(local_y, xaxis, yaxis, zaxis);
     let u = normalize(world_x, offset, "extrusion cap U axis")?;
     let normal = normalize(world_x.cross(world_y), offset, "extrusion cap normal")?;
-    let v = normalize(
-        Vector3::from(normal).cross(u.into()),
-        offset,
-        "extrusion cap V axis",
-    )?;
-    Ok((u, v, normal))
+    Ok((u, normal))
 }
 
 fn cap_pcurve(
     curve: &NurbsCurve,
     origin: Point3,
-    frame: (UnitVector3, UnitVector3, UnitVector3),
+    frame: (UnitVector3, UnitVector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
-    let frame = (
-        Vector3::from(frame.0),
-        Vector3::from(frame.1),
-        Vector3::from(frame.2),
-    );
+    let (u_axis, normal) = (Vector3::from(frame.0), Vector3::from(frame.1));
     let mut points = Vec::new();
     for index in 0..curve.pole_count() {
         let point = curve
@@ -684,12 +661,11 @@ fn cap_pcurve(
             .point_at(index)
             .ok_or_else(|| GeometryError::malformed(offset, "extrusion cap boundary has no pole"))?
             .get();
-        let delta = point.vector_from(origin);
-        let distance = delta.dot(frame.2);
-        if distance.abs() > EPS_EXTRUSION_POSITION {
+        if point.vector_from(origin).dot(normal).abs() > EPS_EXTRUSION_POSITION {
             return Err(error(offset, "extrusion cap boundary is not planar"));
         }
-        points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
+        let [u, v] = crate::surfaces::plane_parameters(point, origin, normal, u_axis);
+        points.push(Point2::new(u, v));
     }
     let mut knots = Vec::new();
     knots.extend_from_slice(curve.knots());
@@ -1042,12 +1018,13 @@ pub(crate) mod tests {
 
     use super::{
         active_miter, cap_frame, exact_orientation, mitered_local, read_mesh_cache,
-        read_v5_mesh_cache, split_profiles, ExtrusionFormat, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
+        read_v5_mesh_cache, split_profiles, ExtrusionFormat, ANONYMOUS,
         ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
     use crate::curves::DecodedCurve;
     use crate::curves::GeometryError;
+    use crate::curves::COINCIDENCE_ABSOLUTE_TOLERANCE;
     use crate::layout::anonymous_version_prefix as anon_ver;
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
@@ -1170,6 +1147,22 @@ pub(crate) mod tests {
         cache: Option<Vec<u8>>,
         profile: Vec<u8>,
     ) -> Vec<u8> {
+        payload_with_up(minor, caps, cache, profile, [0.0, 1.0, 0.0])
+    }
+
+    /// A minor-3 extrusion of the rectangle profile, capped at both ends,
+    /// whose up direction is `up`.
+    pub(crate) fn capped_payload_with_up(up: [f64; 3]) -> Vec<u8> {
+        payload_with_up(3, [true, true], None, polyline_wrapper(false, true), up)
+    }
+
+    fn payload_with_up(
+        minor: i32,
+        caps: [bool; 2],
+        cache: Option<Vec<u8>>,
+        profile: Vec<u8>,
+        up: [f64; 3],
+    ) -> Vec<u8> {
         let mut body = Vec::new();
         push_i32(&mut body, 1);
         push_i32(&mut body, minor);
@@ -1181,7 +1174,7 @@ pub(crate) mod tests {
         for value in [0.25, 0.75] {
             push_f64(&mut body, value);
         }
-        for value in [0.0, 1.0, 0.0] {
+        for value in up {
             push_f64(&mut body, value);
         }
         body.extend([0, 0]);
@@ -1376,7 +1369,7 @@ pub(crate) mod tests {
             Point3::new(-radius, -radius, 0.0),
             Point3::new(0.0, -radius, 0.0),
             Point3::new(radius, -radius, 0.0),
-            Point3::new(radius, CLOSURE_ABSOLUTE_TOLERANCE / 2.0, 0.0),
+            Point3::new(radius, COINCIDENCE_ABSOLUTE_TOLERANCE / 2.0, 0.0),
         ];
         let mut weights = vec![
             1.0,
@@ -1602,6 +1595,7 @@ pub(crate) mod tests {
         let profile = DecodedCurve::Compound {
             children: vec![(finite(0.0), outer), (finite(1.0), inner)],
             end_parameter: finite(2.0),
+            scale: crate::settings::MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         {
@@ -1717,8 +1711,8 @@ pub(crate) mod tests {
             0,
         )
         .expect("required invariant");
-        assert_eq!(Vector3::from(plain.2), Vector3::new(0.0, 0.0, 1.0));
-        let mitered_normal: Vector3 = mitered.2.into();
+        assert_eq!(Vector3::from(plain.1), Vector3::new(0.0, 0.0, 1.0));
+        let mitered_normal: Vector3 = mitered.1.into();
         assert!((mitered_normal.y - 0.6).abs() < EPS_MITER_DIRECTION);
         assert!((mitered_normal.z - 0.8).abs() < EPS_MITER_DIRECTION);
     }

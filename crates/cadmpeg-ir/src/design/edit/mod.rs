@@ -41,7 +41,7 @@ mod members;
 mod removal;
 mod resolve;
 pub mod state_view;
-mod states;
+pub(crate) mod states;
 mod wire;
 
 #[cfg(test)]

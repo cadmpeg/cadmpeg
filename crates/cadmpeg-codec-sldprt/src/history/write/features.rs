@@ -808,9 +808,9 @@ pub(in crate::history) fn sync_neutral_features(
         // The definitions in wire form; `None` when one cannot be read back.
         let definitions = written.and_then(|written| {
             Some((
-                serde_json::to_value(original.evaluation.definition()).ok()?,
+                cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition()).ok()?,
                 written,
-                serde_json::to_value(written.evaluation.definition()).ok()?,
+                cadmpeg_core::serde_erase::to_json_value(written.evaluation.definition()).ok()?,
             ))
         });
         let as_source = construction

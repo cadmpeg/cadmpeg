@@ -76,7 +76,7 @@ fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
             .retained_record(source_id)
             .unwrap();
         let suffix = source_id.strip_prefix("f3d:").unwrap();
-        let id = format!("f3d:role-{XREF_ROLE}/reference-0/occurrence-0@{suffix}");
+        let id = format!("f3d:comp.f3d@{suffix}");
         let retained = decoded
             .source_fidelity()
             .retained_record(&id)
@@ -85,20 +85,17 @@ fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
         assert_eq!(retained.sha256(), original_record.sha256());
         assert_eq!(retained.offset(), original_record.offset());
         assert_eq!(retained.byte_len(), original_record.byte_len());
-        let owner = format!(
-            "f3d:role-{XREF_ROLE}/reference-0/occurrence-0@{}",
-            original_record.stream()
-        );
+        let owner = format!("f3d:comp.f3d@{}", original_record.stream());
         assert_eq!(retained.stream(), owner);
         if let Some(provenance) = decoded.source_fidelity().annotations.provenance.get(&id) {
             assert_eq!(provenance.stream(), owner);
         }
     }
-    let source_image = format!("f3d:role-{XREF_ROLE}/reference-0/occurrence-0@file:source-image#0");
+    let source_image = "f3d:comp.f3d@file:source-image#0";
     assert_eq!(
         decoded
             .source_fidelity()
-            .retained_record(&source_image)
+            .retained_record(source_image)
             .unwrap()
             .data(),
         Some(component.as_slice())

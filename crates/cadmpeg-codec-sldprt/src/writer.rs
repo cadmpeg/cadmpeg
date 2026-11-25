@@ -117,6 +117,13 @@ pub(crate) struct SemanticWriteCache {
     pub(crate) native: CachedNative,
 }
 
+/// Per-pass withheld features and shaping edits for one semantic write.
+#[derive(Clone, Copy)]
+pub(crate) struct SemanticWriteControls<'a> {
+    pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
+    pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
+}
+
 /// Writes a semantic document and returns the dialect and arena coverage it
 /// wrote. Each feature of `withheld` keeps its stored definition record, for
 /// the reason it is paired with. `digests` are the codec digests the decode
@@ -139,8 +146,7 @@ pub(crate) fn write_semantic_with_records(
         annotations,
         digests,
         retained_records,
-        withheld,
-        shaped,
+        SemanticWriteControls { withheld, shaped },
         &mut cache,
         writer,
     )
@@ -151,11 +157,11 @@ pub(crate) fn write_semantic_with_records_cached(
     annotations: &Annotations,
     digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
-    withheld: &[(cadmpeg_ir::features::FeatureId, String)],
-    shaped: &[crate::history::write::brep_agreement::ShapingEdit],
+    controls: SemanticWriteControls<'_>,
     cache: &mut SemanticWriteCache,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let SemanticWriteControls { withheld, shaped } = controls;
     let source_baseline = &mut cache.source_baseline;
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
@@ -3305,26 +3311,29 @@ fn retained_source_baseline<'a>(
         let raw = root.window();
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(raw);
         let len = raw.len();
-        if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
+        if let Ok(guard) = SOURCE_BASELINE_CACHE.lock() {
             if let Some((_, _, cached)) = guard.iter().find(|(cached_digest, cached_len, _)| {
                 *cached_digest == digest && *cached_len == len
             }) {
                 *baseline = Some(Arc::clone(cached));
                 return Ok(baseline.as_deref());
             }
-            let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
-            sort_arenas(&mut decoded.ir);
-            let shared = Arc::new(decoded);
-            if guard.len() >= 2 {
-                guard.remove(0);
-            }
-            guard.push((digest, len, Arc::clone(&shared)));
-            *baseline = Some(shared);
-            return Ok(baseline.as_deref());
         }
         let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
         sort_arenas(&mut decoded.ir);
-        *baseline = Some(Arc::new(decoded));
+        let shared = Arc::new(decoded);
+        if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
+            if !guard.iter().any(|(cached_digest, cached_len, _)| {
+                *cached_digest == digest && *cached_len == len
+            }) {
+                if guard.len() >= 8 {
+                    guard.remove(0);
+                }
+                guard.push((digest, len, Arc::clone(&shared)));
+            }
+        }
+        *baseline = Some(shared);
+        return Ok(baseline.as_deref());
     }
     Ok(baseline.as_deref())
 }

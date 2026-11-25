@@ -80,14 +80,83 @@ fn a_qualified_scope_begins_with_the_key_of_a_file_definition() {
         messages(&decode_set("test:pin@model:occurrence#a"), FRAGMENT),
         []
     );
-    let mut ir = decode_set("test:pin@model:occurrence#a");
-    ir.model.occurrences[0].id = "test:bolt@model:occurrence#a".try_into().unwrap();
+    for key in ["bolt", "root"] {
+        let id = format!("test:{key}@model:occurrence#a");
+        let mut ir = decode_set("test:pin@model:occurrence#a");
+        ir.model.occurrences[0].id = id.as_str().try_into().unwrap();
+        assert_eq!(messages(&ir, FRAGMENT), [(Severity::Error, Some(id))]);
+    }
+}
+
+#[test]
+fn records_of_a_component_file_carry_its_key() {
+    const FRAGMENT: &str = "does not begin its scope with that file's key `pin@`";
     assert_eq!(
-        messages(&ir, FRAGMENT),
-        [(
-            Severity::Error,
-            Some("test:bolt@model:occurrence#a".to_owned())
-        )]
+        messages(&decode_set("test:pin@model:occurrence#a"), FRAGMENT),
+        []
+    );
+    assert_eq!(
+        messages(&decode_set("test:model:occurrence#a"), FRAGMENT),
+        [(Severity::Error, Some("test:model:occurrence#a".to_owned()))]
+    );
+}
+
+/// `decode_set` with a design scope for `pin` whose timeline holds
+/// `feature`, and a body of `pin` with region `region`.
+fn with_design_and_topology(feature: &str, region: &str) -> CadIr {
+    use crate::design::container::{Container, OrderedKind};
+    use crate::design::refs::Member;
+    use crate::design::scope::DesignScope;
+
+    let mut ir = decode_set("test:pin@model:occurrence#a");
+    let pin = definition("test:model:product-definition#pin");
+    let timeline = "test:pin@design:container#timeline";
+    ir.design.scopes.push(DesignScope {
+        definition: pin.clone(),
+        roots: vec![timeline.try_into().unwrap()],
+        active_configuration: None,
+        active_arrangements: std::collections::BTreeSet::new(),
+        occurrences: std::collections::BTreeMap::new(),
+        current: Vec::new(),
+        unproduced: std::collections::BTreeSet::new(),
+    });
+    ir.design.containers.push(Container::Ordered {
+        id: timeline.try_into().unwrap(),
+        kind: OrderedKind::Timeline,
+        members: vec![Member::Feature(feature.try_into().unwrap())],
+        folders: Vec::new(),
+        rollback: None,
+        placement: None,
+    });
+    let body: crate::ids::BodyId = "test:pin@model:body#b".try_into().unwrap();
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|row| row.id == pin)
+        .unwrap()
+        .bodies
+        .push(body.clone());
+    ir.geometry.regions.push(crate::topology::Region::new(
+        region.try_into().unwrap(),
+        body,
+        Vec::new(),
+    ));
+    ir
+}
+
+#[test]
+fn features_and_topology_of_a_component_file_carry_its_key() {
+    const FRAGMENT: &str = "does not begin its scope with that file's key `pin@`";
+    let qualified =
+        with_design_and_topology("test:pin@design:feature#301", "test:pin@model:region#r");
+    assert_eq!(messages(&qualified, FRAGMENT), []);
+    let unqualified = with_design_and_topology("test:design:feature#301", "test:model:region#r");
+    assert_eq!(
+        messages(&unqualified, FRAGMENT),
+        [
+            (Severity::Error, Some("test:design:feature#301".to_owned())),
+            (Severity::Error, Some("test:model:region#r".to_owned())),
+        ]
     );
 }
 

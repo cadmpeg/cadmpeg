@@ -31,6 +31,11 @@ const MAX_JOIN_DEGREE: usize = 64;
 const MAX_JOIN_ELEVATED_POLES: usize = 1 << 20;
 /// Acceptance tolerance for circle plane axes and evaluated radius points.
 const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;
+/// `ON_ZERO_TOLERANCE`, the absolute coordinate difference of coincident points.
+pub(crate) const COINCIDENCE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
+/// `ON_RELATIVE_TOLERANCE`, the coordinate difference of coincident points
+/// relative to the sum of their magnitudes.
+const COINCIDENCE_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
 
 const POINT: Uuid = Uuid::from_canonical([
     0xc3, 0x10, 0x1a, 0x1d, 0xf1, 0x57, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -127,6 +132,9 @@ pub(crate) enum DecodedCurve {
         children: Vec<(FiniteReal, DecodedCurve)>,
         /// End parameter of the last child.
         end_parameter: FiniteReal,
+        /// Millimetres per file unit of the child coordinates: the file's
+        /// scale for a 3D polycurve, the identity for a 2D one.
+        scale: MillimeterScale,
         /// Non-fatal source warnings.
         warnings: Diagnostics,
     },
@@ -836,6 +844,200 @@ pub(crate) fn remap_nurbs_domain(
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
+/// Gives each piece of a polycurve the parameter interval the polycurve maps
+/// onto it, so the pieces laid end to end carry the polycurve's parameter.
+/// `children` holds each piece with its start parameter, and `end` closes the
+/// last interval. A NURBS piece takes its interval by an affine knot map, a
+/// nested polycurve by an affine map of its own parameters, and a circle
+/// whose interval is its own domain `[0, 2π]` stays as it is. Any other piece
+/// takes its exact NURBS form over the interval; a piece with no such form
+/// stays as it is.
+pub(crate) fn fit_polycurve_pieces(
+    ctx: &DecodeContext<'_>,
+    children: &mut [(FiniteReal, DecodedCurve)],
+    end: FiniteReal,
+    offset: usize,
+) -> Result<(), GeometryError> {
+    let starts = children.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+    for (index, (_, child)) in children.iter_mut().enumerate() {
+        let target = [starts[index], starts.get(index + 1).copied().unwrap_or(end)];
+        if target[0] >= target[1] {
+            return Err(error(offset, "polycurve segment domain is invalid"));
+        }
+        fit_polycurve_piece(ctx, child, target, offset)?;
+    }
+    Ok(())
+}
+
+/// Whether two points are coincident as `ON_PointsAreCoincident` tests them:
+/// each pair of coordinates differs by at most an absolute or a relative
+/// tolerance.
+pub(crate) fn points_coincident(first: Point3, second: Point3) -> bool {
+    [
+        (first.x, second.x),
+        (first.y, second.y),
+        (first.z, second.z),
+    ]
+    .into_iter()
+    .all(|(a, b)| {
+        let difference = (a - b).abs();
+        difference <= COINCIDENCE_ABSOLUTE_TOLERANCE
+            || difference <= (a.abs() + b.abs()) * COINCIDENCE_RELATIVE_TOLERANCE
+    })
+}
+
+/// The transition into each piece of a polycurve whose pieces
+/// [`fit_polycurve_pieces`] fitted: `Continuous` where the piece before ends
+/// at a point coincident with the start of the piece in file units, which
+/// `scale` converts the child coordinates to, and `Discontinuous` for the
+/// first piece and at a gap.
+pub(crate) fn polycurve_transitions(
+    ctx: &DecodeContext<'_>,
+    children: &[(FiniteReal, DecodedCurve)],
+    scale: MillimeterScale,
+) -> Result<Vec<cadmpeg_ir::geometry::CompositeCurveTransition>, GeometryError> {
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    let file_units = |point: Point3| {
+        Point3::new(
+            point.x / scale.value(),
+            point.y / scale.value(),
+            point.z / scale.value(),
+        )
+    };
+    let mut previous_end = None;
+    children
+        .iter()
+        .map(|(_, child)| {
+            let ends = piece_ends(ctx, child)?.map(|ends| ends.map(file_units));
+            let continuous = matches!(
+                (previous_end, ends),
+                (Some(end), Some([start, _])) if points_coincident(end, start)
+            );
+            previous_end = ends.map(|[_, end]| end);
+            Ok(if continuous {
+                CompositeCurveTransition::Continuous
+            } else {
+                CompositeCurveTransition::Discontinuous
+            })
+        })
+        .collect()
+}
+
+/// The start and end points of a fitted polycurve piece. A leaf other than a
+/// NURBS curve or a full circle, and a piece that does not evaluate, has none.
+fn piece_ends(
+    ctx: &DecodeContext<'_>,
+    piece: &DecodedCurve,
+) -> Result<Option<[Point3; 2]>, GeometryError> {
+    let _nested = ctx.enter_nested("Rhino polycurve piece ends")?;
+    let geometry = match piece {
+        DecodedCurve::Compound { children, .. } => {
+            let (Some((_, first)), Some((_, last))) = (children.first(), children.last()) else {
+                return Ok(None);
+            };
+            return Ok(piece_ends(ctx, first)?
+                .zip(piece_ends(ctx, last)?)
+                .map(|([start, _], [_, end])| [start, end]));
+        }
+        DecodedCurve::Leaf { geometry, .. } => geometry,
+    };
+    let domain = match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            match cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs) {
+                Some(domain) => domain.endpoints(),
+                None => return Ok(None),
+            }
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => [0.0, TAU],
+        _ => return Ok(None),
+    };
+    let point = |parameter| -> Result<Option<Point3>, CodecError> {
+        match cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter) {
+            Ok(point) => Ok(Some(point.get())),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => Err(limit.into()),
+            Err(_) => Ok(None),
+        }
+    };
+    Ok(point(domain[0])?.zip(point(domain[1])?).map(Into::into))
+}
+
+fn fit_polycurve_piece(
+    ctx: &DecodeContext<'_>,
+    piece: &mut DecodedCurve,
+    target: [FiniteReal; 2],
+    offset: usize,
+) -> Result<(), GeometryError> {
+    let replacement = match piece {
+        DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let Some(first) = children.first().map(|(start, _)| start.get()) else {
+                return Ok(());
+            };
+            let last = end_parameter.get();
+            if [first, last] == target.map(FiniteReal::get) {
+                return Ok(());
+            }
+            let map = |parameter: f64| {
+                if parameter == first {
+                    Some(target[0])
+                } else if parameter == last {
+                    Some(target[1])
+                } else {
+                    cadmpeg_ir::math::parameter_fraction(parameter, first, last).and_then(
+                        |fraction| {
+                            cadmpeg_ir::math::interpolate(
+                                target[0].get(),
+                                target[1].get(),
+                                fraction.get(),
+                            )
+                        },
+                    )
+                }
+            };
+            for (start, _) in children.iter_mut() {
+                *start = map(start.get())
+                    .ok_or_else(|| error(offset, "polycurve parameter remap overflowed"))?;
+            }
+            *end_parameter = target[1];
+            return Ok(());
+        }
+        DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+            ..
+        } => {
+            let degree = usize::try_from(nurbs.degree())
+                .map_err(|_| error(offset, "curve degree is too large"))?;
+            let domain = [
+                nurbs.knots().get(degree).copied(),
+                nurbs.knots().get(nurbs.pole_count()).copied(),
+            ];
+            if domain == target.map(|value| Some(value.get())) {
+                return Ok(());
+            }
+            remap_nurbs_domain(nurbs.clone(), target, offset)?
+        }
+        DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
+            ..
+        } if target.map(FiniteReal::get) == [0.0, TAU] => {
+            return Ok(());
+        }
+        DecodedCurve::Leaf { .. } => match exact_nurbs(ctx, piece, offset) {
+            Ok(nurbs) => remap_nurbs_domain(nurbs, target, offset)?,
+            Err(GeometryError::Codec(error)) => return Err(GeometryError::Codec(error)),
+            Err(_) => return Ok(()),
+        },
+    };
+    if let DecodedCurve::Leaf { geometry, .. } = piece {
+        *geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(replacement));
+    }
+    Ok(())
+}
+
 /// Exact joined curve and recoverable join diagnostics.
 pub(crate) struct NurbsJoin {
     pub(crate) curve: NurbsCurve,
@@ -1496,6 +1698,7 @@ fn read_polycurve_2d(
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
+        scale: MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     })
 }
@@ -1890,6 +2093,7 @@ fn read_polycurve(
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
+        scale,
         warnings: Diagnostics::new(),
     })
 }
@@ -2885,6 +3089,7 @@ mod tests {
         let mut decoded = DecodedCurve::Compound {
             children: vec![(FiniteReal::ZERO, leaf())],
             end_parameter: FiniteReal::ONE,
+            scale: MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         let Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) =
@@ -3118,6 +3323,7 @@ mod tests {
         let nested = DecodedCurve::Compound {
             children: vec![(finite(2.0), line(0.0, 1.0)), (finite(3.0), line(0.0, 1.0))],
             end_parameter: finite(5.0),
+            scale: MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         let converted =

@@ -145,7 +145,7 @@ The class lineage is `Begin-of-ASM-History-Data`; `history_stream` is the second
 11
 ```
 
-`stream_size == stream_size_duplicate`. `stream_size` is not always the `state_id` of the head `delta_state` (see `asm-open-items.md` HS-01).
+`stream_size_duplicate` is equal to `stream_size` or larger. `stream_size` is not always the `state_id` of the head `delta_state` (see `asm-open-items.md` HS-01).
 
 An ACIS 217/218 history partition begins directly with the first exact `delta_state` record. The record framer establishes the preceding solved-record boundary; identifier bytes inside payload strings do not select it.
 
@@ -160,15 +160,17 @@ Each history node is a linked construction state:
 04 i64 = 0               (constant)
 0c ref prev_state        (-1 on head)
 0c ref next_state        (-1 on tail)
-0c ref node_index        (0,1,2,... sequential)
+0c ref node_index        (distinct in the chain)
 0c ref = -1
 0c ref = 0
 0b                       (false sentinel)
 ```
 
+`prev_state` and `next_state` are node indices. The head state is the state whose `prev_state` is `-1`, and the tail state is the state whose `next_state` is `-1`. These links give the order of the chain from the head state to the tail state. The position of a `delta_state` record in the stream does not give its place in the chain. The order in which an application writes the records is given in the specification of its format.
+
 Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores an old and new entity reference: null→entity is insertion, entity→null is deletion, and entity→entity is update.
 
-The BulletinBoard chain closes with its tagged-zero terminator. A second `04 0 11` sequence separates the state body from the following record sequence. On a non-tail state, that `0x11` is the next `delta_state` record delimiter and the state owns no intervening entity records. The tail state is followed by `End-of-ASM-History-Section`, the retained history entity snapshot, and `End-of-ASM-data`. These records use the ordinary SAB name-chain and payload grammar. An `End-of-ASM-History-Section` name chain immediately followed by an entity name chain wraps that snapshot record. The embedded name contains one or more components. The fields after its terminal identifier use the ordinary payload layout. Their ordered `0x0c` entity-reference tokens, including `-1` null references, use the construction-history revision namespace and are retained independently of the snapshot's local record ordinal. The old references across the BulletinBoard changes form a unique contiguous interval immediately after the active RecordTable. Snapshot local ordinal zero has the interval's first revision identity, and each following snapshot record increments that identity by one. `End-of-ASM-data` is excluded from the interval.
+The BulletinBoard chain closes with its tagged-zero terminator. A second `04 0 11` sequence separates the state body from the following record sequence. On every `delta_state` record but the last, that `0x11` is the next `delta_state` record delimiter and the state owns no intervening entity records. The last `delta_state` record is followed by `End-of-ASM-History-Section`, the retained history entity snapshot, and `End-of-ASM-data`. These records use the ordinary SAB name-chain and payload grammar. An `End-of-ASM-History-Section` name chain immediately followed by an entity name chain wraps that snapshot record. The embedded name contains one or more components. The fields after its terminal identifier use the ordinary payload layout. Their ordered `0x0c` entity-reference tokens, including `-1` null references, use the construction-history revision namespace and are retained independently of the snapshot's local record ordinal. The old references across the BulletinBoard changes form a unique contiguous interval immediately after the active RecordTable. Snapshot local ordinal zero has the interval's first revision identity, and each following snapshot record increments that identity by one. `End-of-ASM-data` is excluded from the interval.
 
 The linked `delta_state` chain runs from the current model toward the initial model. Historical entity membership is reconstructed from the identity map of the active RecordTable. Reversing an update `old -> new` keeps stable entity slot `new` and changes its record revision to `old`. Reversing an insertion `null -> new` removes slot `new`. Reversing a deletion `old -> null` adds slot `old` with record revision `old`. A complete chain accepts every transition without a missing slot or record revision and terminates at the singleton map `0 -> 0` for `asmheader`. The entity-slot-to-record-revision map of a state is the map before its own changes are reversed.
 

@@ -150,12 +150,16 @@ impl ConstructionEdit {
         let mut applied = original.clone();
         match &self.leaf {
             ConstructionLeaf::Definition(pointer) => {
-                let mut wire = serde_json::to_value(original.evaluation.definition()).ok()?;
-                let edited = serde_json::to_value(current.evaluation.definition()).ok()?;
+                let mut wire =
+                    cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition())
+                        .ok()?;
+                let edited =
+                    cadmpeg_core::serde_erase::to_json_value(current.evaluation.definition())
+                        .ok()?;
                 *wire.pointer_mut(pointer)? = edited.pointer(pointer)?.clone();
                 applied
                     .evaluation
-                    .set_definition(serde_json::from_value(wire).ok()?);
+                    .set_definition(cadmpeg_core::serde_erase::from_json_value(&wire).ok()?);
             }
             ConstructionLeaf::Dependencies => {
                 applied.dependencies.clone_from(&current.dependencies);
@@ -178,7 +182,7 @@ impl ConstructionEdit {
         let (source, edited) = match &self.leaf {
             ConstructionLeaf::Definition(pointer) => {
                 let at = |feature: &Feature| {
-                    serde_json::to_value(feature.evaluation.definition())
+                    cadmpeg_core::serde_erase::to_json_value(feature.evaluation.definition())
                         .ok()
                         .and_then(|wire| wire.pointer(pointer).cloned())
                         .unwrap_or(Value::Null)
@@ -234,8 +238,8 @@ pub(crate) fn construction_edits(original: &Feature, current: &Feature) -> Vec<C
     let mut edits = Vec::new();
     if original.evaluation.definition() != current.evaluation.definition() {
         match (
-            serde_json::to_value(original.evaluation.definition()),
-            serde_json::to_value(current.evaluation.definition()),
+            cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition()),
+            cadmpeg_core::serde_erase::to_json_value(current.evaluation.definition()),
         ) {
             (Ok(original), Ok(current)) => {
                 differing_leaves(Some(&original), Some(&current), "", "", &mut edits);
@@ -848,7 +852,9 @@ impl<'source> SourceEdits<'source> {
                 edit.claim(original, current, written)
             })
             .collect::<Vec<_>>();
-        let Ok(source_definition) = serde_json::to_value(original.evaluation.definition()) else {
+        let Ok(source_definition) =
+            cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition())
+        else {
             return;
         };
         if edits.is_empty() && !withhold && original.dependencies == current.dependencies {

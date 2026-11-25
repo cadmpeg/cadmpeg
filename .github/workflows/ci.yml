@@ -513,9 +513,9 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
-    # macos-latest is sometimes a 5-core runner and sometimes a 3-core one.
-    # On 5 cores the full test build took 18 minutes and the tests 6. On 3
-    # cores the build was still compiling at 60 minutes, and Windows took 57.
+    # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
+    # 3-core runner the test build takes about 50 minutes when it stays in
+    # memory, and the tests about 20; on the 5-core runner, 13 and 9.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -540,8 +540,8 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-          # A cold build on a 3-core runner can outlast the timeout. Saving
-          # what it compiled lets the next main run start from there.
+          # The cache holds the dependencies. A main run whose tests fail
+          # still saves them.
           cache-on-failure: true
 
       - name: Match cargo's job count to the runner
@@ -552,11 +552,39 @@ jobs:
         with:
           tool: cargo-nextest
 
+      # Each step's timeout ends it before the job's, so the job fails rather
+      # than being cancelled, and the report and cache steps run.
+      - name: Build tests
+        timeout-minutes: 75
+        run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
+
       - name: Unit and integration tests
-        # Ends the step before the job's timeout, so the job fails rather
-        # than being cancelled and the cache step saves the build.
-        timeout-minutes: 105
+        timeout-minutes: 40
         run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+
+      # A step timeout stops only the step's shell: cargo, rustc and the test
+      # binaries keep running. Name them, then stop them before the cache step.
+      - name: Report swap and unfinished work
+        if: ${{ always() && runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          sysctl vm.swapusage
+          ps -axo etime=,rss=,args= | awk '
+            $3 ~ /(^|\/)rustc$/ {
+              name = "?"
+              for (i = 4; i < NF; i++) if ($i == "--crate-name") name = $(i + 1)
+              kind = / --test( |$)/ ? "tests" : "lib"
+              printf "still compiling %s (%s) after %s, %d MiB\n", name, kind, $1, $2 / 1024
+            }
+            $3 ~ /\/target\/debug\/deps\// {
+              args = $0
+              sub(/^ *[^ ]+ +[^ ]+ +/, "", args)
+              printf "still running %s after %s, %d MiB\n", substr(args, 1, 300), $1, $2 / 1024
+            }'
+          pkill -x cargo-nextest || true
+          pkill -x cargo || true
+          pkill -x rustc || true
+          pkill -f '/target/debug/deps/' || true
 
   # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.
   audit:
