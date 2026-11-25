@@ -22,6 +22,7 @@ use crate::design::options::{
 };
 use crate::design::selection::{MemberOrder, Selection, SetSelection};
 use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::math::portable::Portable;
 use crate::math::Point3;
 use crate::topology::EdgeCarrier;
 
@@ -272,7 +273,7 @@ fn curve_distance(topology: &StateTopology<'_>, edge: &str, point: Point3) -> Op
             let offset = point.vector_from(circle.center().get());
             let height = offset.dot(axis);
             let across = offset.cross(axis).norm() - circle.radius().get();
-            Some(height.hypot(across))
+            Some(height.portable_hypot(across))
         }
         _ => None,
     }
