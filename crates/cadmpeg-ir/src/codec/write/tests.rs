@@ -1408,3 +1408,141 @@ fn the_wrapper_charges_each_carried_error_of_the_validation() {
     );
     assert!(rejection.loss().message.contains("error"));
 }
+
+/// A Boolean parameter whose expression is `depth - 1` negations of `true`:
+/// a tree `depth` levels deep.
+fn negated_parameter(key: &str, depth: usize) -> crate::design::parameter::DesignParameter {
+    use crate::design::expr::{Expression, Neutral, Node, UnaryOp};
+    crate::design::parameter::DesignParameter {
+        id: format!("test:design:parameter#{key}").try_into().unwrap(),
+        scope: "test:design:definition#part".to_owned().try_into().unwrap(),
+        owner: None,
+        name: Some(cadmpeg_core::text::NonBlankString::new(key).unwrap()),
+        kind: crate::design::units::ValueKind::Boolean,
+        unit: None,
+        definition: crate::design::parameter::ParameterDefinition::Expression(Expression::Neutral(
+            Neutral(
+                (1..depth).fold(Node::Boolean(true), |operand, _| Node::Unary {
+                    op: UnaryOp::Not,
+                    operand: Box::new(operand),
+                }),
+            ),
+        )),
+        value: None,
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: std::collections::BTreeMap::default(),
+        source_settings: std::collections::BTreeMap::default(),
+        native_ref: None,
+    }
+}
+
+/// An expression past the bound of §2.5 is content CADIR cannot hold (§3.4):
+/// the writer states it `Source` with no tokens, the partial form of §3.3,
+/// and the bytes it writes read back.
+#[test]
+fn the_cadir_writer_restates_an_expression_past_its_bound() {
+    let mut ir = unit_cube().unwrap();
+    ir.design.parameters.push(negated_parameter(
+        "within",
+        crate::bounds::MAX_EXPRESSION_DEPTH,
+    ));
+    ir.design.parameters.push(negated_parameter(
+        "past",
+        crate::bounds::MAX_EXPRESSION_DEPTH + 1,
+    ));
+    assert!(matches!(
+        ir.to_canonical_json(),
+        Err(crate::hash::finite_json::CanonicalJsonError::PastBound {
+            bound: crate::bounds::Bound::Expression,
+            ..
+        })
+    ));
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a record past a bound does not refuse the write");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .collect::<Vec<_>>();
+    let [loss] = unwritable.as_slice() else {
+        panic!("one loss for the one record: {unwritable:?}");
+    };
+    assert!(
+        loss.message.contains("test:design:parameter#past")
+            && loss.message.contains("design.parameters")
+            && !loss.message.contains("#within"),
+        "{}",
+        loss.message
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let read = CadIr::from_json(std::str::from_utf8(&written).unwrap())
+        .expect("the written bytes read back");
+    let definition = |key: &str| {
+        read.design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.as_str() == format!("test:design:parameter#{key}"))
+            .map(|parameter| parameter.definition.clone())
+            .unwrap()
+    };
+    assert_eq!(
+        definition("within"),
+        negated_parameter("within", crate::bounds::MAX_EXPRESSION_DEPTH).definition
+    );
+    assert!(matches!(
+        definition("past"),
+        crate::design::parameter::ParameterDefinition::Expression(
+            crate::design::expr::Expression::Source { tokens, .. }
+        ) if tokens.is_empty()
+    ));
+}
+
+/// `repro` outside every record is written unstated where it passes the
+/// document bound.
+#[test]
+fn the_cadir_writer_writes_repro_past_the_document_bound_unstated() {
+    let mut ir = unit_cube().unwrap();
+    let finding = Finding {
+        rule: crate::rule_name!("test.unresolved-link"),
+        check: Check::NativeLinks,
+        severity: Severity::Error,
+        entity: None,
+        related: Vec::new(),
+        message: "unresolved link".into(),
+    };
+    ir.repro = Some(Box::new(crate::repro::BundleMetadata {
+        signature: crate::repro::Signature::new(
+            &finding,
+            crate::codec_id!("cadir"),
+            crate::repro::Stage::Check,
+        ),
+        roots: Vec::new(),
+        context: (0..crate::bounds::MAX_DOCUMENT_DEPTH)
+            .fold(crate::attributes::AttributeJson::Null, |inner, _| {
+                crate::attributes::AttributeJson::Array(vec![inner])
+            }),
+        manifest: Vec::new(),
+        incomplete_reason: None,
+    }));
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("repro past the bound does not refuse the write");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "value.unwritable"
+                && loss.message.contains("repro"))
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let read = CadIr::from_json(std::str::from_utf8(&written).unwrap())
+        .expect("the written bytes read back");
+    assert!(read.repro.is_none());
+}
