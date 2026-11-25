@@ -589,6 +589,10 @@ impl RevolutionSurfaceConstruction {
     pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {
         self.axis_origin = axis_origin;
     }
+    /// Replace the axis direction, keeping the admitted unit length.
+    pub fn set_axis_direction(&mut self, axis_direction: UnitVector3) {
+        self.axis_direction = axis_direction;
+    }
     /// Return the admitted unit axis direction. A caller that passes it on
     /// keeps the unit-length guarantee and performs no new admission.
     pub const fn axis_direction(&self) -> UnitVector3 {
@@ -1133,6 +1137,10 @@ impl AxisRevolutionSurfaceConstruction {
     /// Replace the axis origin and keep the admitted directrix and direction.
     pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {
         self.axis_origin = axis_origin;
+    }
+    /// Replace the axis direction, keeping the admitted unit length.
+    pub fn set_axis_direction(&mut self, axis_direction: UnitVector3) {
+        self.axis_direction = axis_direction;
     }
     /// Return the admitted unit axis direction. A caller that passes it on
     /// keeps the unit-length guarantee and performs no new admission.
