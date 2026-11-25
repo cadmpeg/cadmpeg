@@ -10,9 +10,10 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::{BodyKind, PcurveUse};
+use cadmpeg_ir::topology::{BodyKind, FaceLoops, Loop, LoopBoundary, LoopRing, PcurveUse};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
@@ -338,13 +339,117 @@ fn a_solid_cylinder_under_a_non_uniform_scale_writes_an_elliptic_rational_suppor
     assert_on_side(&curved_boundary_points(read), 2.0);
 }
 
+/// [`solid_cylinder`] with no seam: the side face is a band bounded by its
+/// bottom and top circles, each a loop of its own, and the face classifies
+/// neither loop as outer.
+fn seamless_cylinder() -> CadIr {
+    let mut ir = solid_cylinder();
+    let geometry = &mut ir.geometry;
+    geometry
+        .coedges
+        .retain(|coedge| !coedge.id.as_str().contains("#side-seam"));
+    geometry
+        .edges
+        .retain(|edge| !keyed(edge.id.as_str(), "seam"));
+    geometry
+        .curves
+        .retain(|curve| !keyed(curve.id.as_str(), "seam"));
+    geometry
+        .loops
+        .retain(|loop_| !keyed(loop_.id.as_str(), "side"));
+    let mut side_loops = Vec::new();
+    for key in ["side-bottom", "side-top"] {
+        let loop_id: LoopId = format!("test:model:loop#{key}")
+            .try_into()
+            .expect("valid identity");
+        let coedge = geometry
+            .coedges
+            .iter_mut()
+            .find(|coedge| keyed(coedge.id.as_str(), key))
+            .expect("the side coedge");
+        coedge.owner_loop = loop_id.clone();
+        geometry.loops.push(Loop {
+            id: loop_id.clone(),
+            face: "test:model:face#side".try_into().expect("valid identity"),
+            boundary: LoopBoundary::Ring(
+                LoopRing::new(vec![coedge.id.clone()], Vec::new()).expect("a ring"),
+            ),
+            native_ref: None,
+        });
+        side_loops.push(loop_id);
+    }
+    geometry
+        .faces
+        .iter_mut()
+        .find(|face| keyed(face.id.as_str(), "side"))
+        .expect("the side face")
+        .loops = FaceLoops::Unspecified { loops: side_loops };
+    ir.finalize();
+    ir
+}
+
 #[test]
-fn an_analytic_face_with_a_slanted_parameter_curve_is_dropped_naming_the_rule() {
+fn a_seamless_cylinder_band_under_a_non_uniform_scale_writes_its_full_turn_face() {
+    let mut ir = seamless_cylinder();
+    ir.geometry.bodies[0].transform = Transform::affine([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]);
+    let (losses, bytes) = written(&ir, IgesVersion::V5_3);
+    for code in [
+        "iges/writer.body-omitted",
+        "iges/writer.face-omitted",
+        "iges/writer.pcurve-omitted",
+    ] {
+        assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+    }
+    let read = decoded(bytes);
+    assert_eq!(read.geometry.faces.len(), 3);
+    let points = curved_boundary_points(&read);
+    assert_on_side(&points, 2.0);
+    for height in [0.0, CYLINDER_HEIGHT] {
+        assert!(
+            points
+                .iter()
+                .any(|point| (point.z - height).abs() <= 1.0e-9),
+            "no boundary point lies on the ellipse at height {height}"
+        );
+    }
+}
+
+#[test]
+fn a_cylinder_face_with_a_slanted_parameter_curve_keeps_its_model_space_boundary() {
     let mut curves = isoparametric_side();
     curves[0].2 = [FRAC_1_SQRT_2, FRAC_1_SQRT_2];
-    let (losses, _) = written(&open_cylinder(curves), IgesVersion::V5_1);
-    let omitted = charged(&losses, "iges/writer.face-omitted");
-    assert_eq!(omitted.len(), 1, "{losses:#?}");
-    assert!(omitted[0].contains("side"), "{omitted:?}");
-    assert!(omitted[0].contains("isoparametric"), "{omitted:?}");
+    let (losses, bytes) = written(&open_cylinder(curves), IgesVersion::V5_1);
+    assert!(
+        charged(&losses, "iges/writer.face-omitted").is_empty(),
+        "{losses:#?}"
+    );
+    let omitted = charged(&losses, "iges/writer.pcurve-omitted");
+    assert_eq!(omitted.len(), 4, "{losses:#?}");
+    let read = decoded(bytes);
+    assert_eq!(read.geometry.faces.len(), 2);
+    let side = read
+        .geometry
+        .faces
+        .iter()
+        .find(|face| {
+            read.geometry.surfaces.iter().any(|surface| {
+                surface.id == face.surface
+                    && !matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                    )
+            })
+        })
+        .expect("the side face reads back on its curved support");
+    let side_loops = side.loops.stated().collect::<Vec<_>>();
+    assert!(read
+        .geometry
+        .coedges
+        .iter()
+        .filter(|coedge| side_loops.contains(&&coedge.owner_loop))
+        .all(|coedge| coedge.pcurves.is_empty()));
 }

@@ -77,6 +77,7 @@ mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;
+mod revolved_restatement;
 mod roundtrip;
 
 fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {

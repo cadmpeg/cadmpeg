@@ -56,7 +56,7 @@ fn the_faces_on_an_unwritable_edge_are_dropped_and_the_rest_is_written() {
 }
 
 #[test]
-fn a_body_the_writer_cannot_place_is_dropped_and_the_empty_file_is_written() {
+fn a_body_under_a_singular_transform_is_dropped_and_the_empty_file_is_written() {
     let mut ir = cube();
     ir.geometry.bodies[0].transform = Transform::affine([
         [1.0, 0.0, 0.0, 0.0],
@@ -68,10 +68,7 @@ fn a_body_the_writer_cannot_place_is_dropped_and_the_empty_file_is_written() {
     let omitted = charged(&synthesis.losses, "iges/writer.body-omitted");
     assert_eq!(omitted.len(), 1, "{omitted:?}");
     assert!(omitted[0].contains(&body));
-    assert!(
-        omitted[0].contains("places the transform of body"),
-        "{omitted:?}"
-    );
+    assert!(charged(&synthesis.losses, "iges/writer.face-omitted").is_empty());
     assert_eq!(charged(&synthesis.losses, "export/output.empty").len(), 1);
     let text = String::from_utf8(synthesis.bytes).expect("IGES Fixed ASCII is UTF-8");
     assert!(text

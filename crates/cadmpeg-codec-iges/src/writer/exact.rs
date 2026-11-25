@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact restatements that let the writer encode a document in IGES entities.
 
-use super::rational_support::Revolved;
+use super::rational_support::{DomainHints, Revolved};
 use super::{
     edge_span, effective_topology_tolerance, flatten_curve, lifted_pcurve, polyline_knots,
     polyline_parameters, reverse_nurbs, solved_curve, topology_edge_explicit_tolerance,
     TopologyIndex,
 };
+use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
@@ -15,7 +16,7 @@ use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, Pcurv
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{PcurveId, SurfaceId};
+use cadmpeg_ir::ids::{CoedgeId, PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Coedge, LoopBoundaryRole, PcurveUse, Sense};
@@ -27,22 +28,27 @@ use std::f64::consts::TAU;
 
 /// The document with a parameter curve for each coedge on an `admitted`
 /// support that Type 144, a Type 143 whose loops already carry parameter
-/// curves, or a rational restatement of the support requires. On a plane
-/// each computed curve is the image of the edge curve under the plane's
-/// inverse frame. On a cylinder, cone, sphere or torus face whose coedges
-/// carry none, each computed curve is the parameter line of an edge line or
-/// circle that lies on one parameter line of the support. Each is exact.
+/// curves, or a rational restatement of the support requires, and the
+/// parameter values that the restated domain of each revolved support must
+/// include besides those curves. On a plane each computed curve is the
+/// image of the edge curve under the plane's inverse frame. On a cylinder,
+/// cone, sphere or torus face whose coedges carry none, each computed curve
+/// is the parameter line of an edge line or circle that lies on one
+/// parameter line of the support, followed, where the next coedge starts at
+/// another parameter of the same pole or apex, by the parameter line along
+/// that pole. Each is exact.
 pub(super) fn state_pcurves(
     ir: &CadIr,
     admitted: impl Fn(&str) -> bool,
-) -> Result<Cow<'_, CadIr>, CodecError> {
+) -> Result<(Cow<'_, CadIr>, DomainHints), CodecError> {
+    let mut hints = DomainHints::new();
     if ir
         .geometry
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty())
     {
-        return Ok(Cow::Borrowed(ir));
+        return Ok((Cow::Borrowed(ir), hints));
     }
     let index = TopologyIndex::new(ir);
     let mut computed = Vec::new();
@@ -74,20 +80,20 @@ pub(super) fn state_pcurves(
         let trimmed = loops
             .iter()
             .any(|loop_| face.loop_role(&loop_.id) != LoopBoundaryRole::Unspecified);
-        if !trimmed && coedges.iter().all(|coedge| coedge.pcurves.is_empty()) {
-            continue;
-        }
+        let unstated = coedges.iter().all(|coedge| coedge.pcurves.is_empty());
         let plane = match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => plane,
             SurfaceGeometry::Solved(geometry) => {
-                if let Some(form) = Revolved::of(geometry) {
-                    if coedges.iter().all(|coedge| coedge.pcurves.is_empty()) {
-                        if let Some(segments) =
-                            revolved_loop_segments(&index, surface, &form, &loops)?
+                if let Some(form) = Revolved::of(geometry).filter(|_| unstated) {
+                    if let Some(segments) = revolved_loop_segments(&index, surface, &form, &loops)?
+                    {
+                        if let Some((pcurves, [u, v])) =
+                            revolved_pcurves(&index, surface, &form, face.sense, segments)?
                         {
-                            computed.extend(
-                                revolved_pcurves(&index, &form, segments).unwrap_or_default(),
-                            );
+                            computed.extend(pcurves);
+                            let entry = hints.entry(surface.id.as_str().to_owned()).or_default();
+                            entry[0].extend(u);
+                            entry[1].extend(v);
                         }
                     }
                 }
@@ -95,35 +101,41 @@ pub(super) fn state_pcurves(
             }
             SurfaceGeometry::Procedural { .. } => continue,
         };
+        if !trimmed && unstated {
+            continue;
+        }
         for coedge in coedges {
             if !coedge.pcurves.is_empty() {
                 continue;
             }
             if let Some(pcurve) = plane_pcurve(&index, plane, coedge) {
-                computed.push((coedge.id.clone(), pcurve));
+                computed.push((coedge.id.clone(), vec![pcurve]));
             }
         }
     }
     if computed.is_empty() {
-        return Ok(Cow::Borrowed(ir));
+        return Ok((Cow::Borrowed(ir), hints));
     }
     let mut stated = ir.clone();
-    for (coedge_id, pcurve) in computed {
+    for (coedge_id, pcurves) in computed {
         if let Some(coedge) = stated
             .geometry
             .coedges
             .iter_mut()
             .find(|coedge| coedge.id == coedge_id)
         {
-            coedge.pcurves = vec![PcurveUse {
-                pcurve: pcurve.id.clone(),
-                isoparametric: None,
-                parameter_range: None,
-            }];
-            stated.geometry.pcurves.push(pcurve);
+            coedge.pcurves = pcurves
+                .iter()
+                .map(|pcurve| PcurveUse {
+                    pcurve: pcurve.id.clone(),
+                    isoparametric: None,
+                    parameter_range: None,
+                })
+                .collect();
+            stated.geometry.pcurves.extend(pcurves);
         }
     }
-    Ok(Cow::Owned(stated))
+    Ok((Cow::Owned(stated), hints))
 }
 
 /// The parameter curve of `coedge` on `plane`, in the coedge's traversal.
@@ -187,8 +199,12 @@ fn plane_pcurve(
 /// The identity of the parameter curve that the writer computes for
 /// `coedge`, absent where the document already holds a record of that name.
 fn computed_pcurve_id(index: &TopologyIndex<'_>, coedge: &Coedge) -> Option<PcurveId> {
+    named_pcurve_id(index, "pcurve", coedge)
+}
+
+fn named_pcurve_id(index: &TopologyIndex<'_>, kind: &str, coedge: &Coedge) -> Option<PcurveId> {
     let id = PcurveId::try_from(format!(
-        "iges:writer:pcurve#{}",
+        "iges:writer:{kind}#{}",
         coedge.id.as_str().replace('#', "/")
     ))
     .ok()?;
@@ -203,6 +219,7 @@ struct Segment<'ir> {
     mid: f64,
     mid_uv: Point2,
     rate: Point2,
+    tolerance: f64,
 }
 
 impl Segment<'_> {
@@ -293,6 +310,7 @@ fn segment_candidates<'ir>(
                 mid,
                 mid_uv,
                 rate,
+                tolerance,
             })
             .collect(),
         edge_point: at,
@@ -363,18 +381,235 @@ fn revolved_loop_segments<'ir>(
 /// Samples per edge at which the writer checks a computed parameter line.
 const SEGMENT_SAMPLES: u32 = 8;
 
-/// The largest parameter step between consecutive coedges of a loop after
-/// whole periods are removed. A larger step crosses a pole or a seam.
-const JOIN_LIMIT: f64 = std::f64::consts::FRAC_PI_4;
+/// One coedge of a loop on a revolved support: its parameter line and, where
+/// the next coedge starts at another parameter of the same pole or apex, the
+/// parameter line along that pole to the next start.
+struct Piece<'ir> {
+    segment: Segment<'ir>,
+    pole: Option<[Point2; 2]>,
+}
 
-/// The parameter curve of each segment in `loops` on the revolved support,
-/// each moved by whole periods so that its loop joins, or none where a loop
-/// does not close in the parameter plane.
+/// A loop of parameter lines that closes in the parameter plane, and the
+/// number of whole turns its traversal makes along `u` and along `v`.
+struct LoopChain<'ir> {
+    pieces: Vec<Piece<'ir>>,
+    winding: [i32; 2],
+}
+
+impl LoopChain<'_> {
+    fn shift(&mut self, shift: Point2) {
+        for piece in &mut self.pieces {
+            piece.segment.mid_uv = Point2::new(
+                piece.segment.mid_uv.u + shift.u,
+                piece.segment.mid_uv.v + shift.v,
+            );
+            if let Some(pole) = &mut piece.pole {
+                *pole = pole.map(|point| Point2::new(point.u + shift.u, point.v + shift.v));
+            }
+        }
+    }
+
+    /// The least and greatest value of parameter `axis` on the loop.
+    fn extent(&self, axis: usize) -> [f64; 2] {
+        self.pieces
+            .iter()
+            .flat_map(|piece| piece.segment.ends())
+            .map(|point| if axis == 0 { point.u } else { point.v })
+            .fold([f64::INFINITY, f64::NEG_INFINITY], |[low, high], value| {
+                [low.min(value), high.max(value)]
+            })
+    }
+}
+
+/// How one parameter line ends where the next starts.
+enum Join {
+    Coincident,
+    /// The straight parameter line between the two lies on one pole or apex.
+    Pole,
+    Open,
+}
+
+/// The join from `from` to `to` on `surface`, checked by evaluating the
+/// straight parameter line between them against the point at `from`.
+fn join(
+    index: &TopologyIndex<'_>,
+    surface: &Surface,
+    from: Point2,
+    to: Point2,
+    tolerance: f64,
+) -> Result<Join, CodecError> {
+    if (to.u - from.u).abs() <= ANGULAR_TOLERANCE && (to.v - from.v).abs() <= ANGULAR_TOLERANCE {
+        return Ok(Join::Coincident);
+    }
+    let at = |uv: Point2| {
+        finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            index.ir,
+            &surface.geometry,
+            uv.u,
+            uv.v,
+        ))
+    };
+    let Some(anchor) = at(from)? else {
+        return Ok(Join::Open);
+    };
+    for step in 1..=SEGMENT_SAMPLES {
+        let fraction = f64::from(step) / f64::from(SEGMENT_SAMPLES);
+        let uv = Point2::new(
+            (to.u - from.u).mul_add(fraction, from.u),
+            (to.v - from.v).mul_add(fraction, from.v),
+        );
+        if !at(uv)?.is_some_and(|point| point.get().distance(anchor.get()) <= tolerance) {
+            return Ok(Join::Open);
+        }
+    }
+    Ok(Join::Pole)
+}
+
+/// `segments` moved by whole periods so that each starts where the previous
+/// ends, joined along a pole or apex where they meet there, or none where
+/// the loop does not close in the parameter plane.
+fn closed_chain<'ir>(
+    index: &TopologyIndex<'_>,
+    surface: &Surface,
+    periods: impl Fn(Point2) -> Point2,
+    segments: Vec<Segment<'ir>>,
+) -> Result<Option<LoopChain<'ir>>, CodecError> {
+    let mut pieces: Vec<Piece<'ir>> = Vec::new();
+    for mut segment in segments {
+        if let Some(previous) = pieces.last_mut() {
+            let [_, end] = previous.segment.ends();
+            let [start, _] = segment.ends();
+            let shift = periods(Point2::new(end.u - start.u, end.v - start.v));
+            segment.mid_uv = Point2::new(segment.mid_uv.u + shift.u, segment.mid_uv.v + shift.v);
+            let [start, _] = segment.ends();
+            match join(index, surface, end, start, previous.segment.tolerance)? {
+                Join::Coincident => {}
+                Join::Pole => previous.pole = Some([end, start]),
+                Join::Open => return Ok(None),
+            }
+        }
+        pieces.push(Piece {
+            segment,
+            pole: None,
+        });
+    }
+    let (Some(first), Some(last)) = (pieces.first(), pieces.last()) else {
+        return Ok(None);
+    };
+    let [start, _] = first.segment.ends();
+    let [_, end] = last.segment.ends();
+    let turns = periods(Point2::new(start.u - end.u, start.v - end.v));
+    let target = Point2::new(start.u - turns.u, start.v - turns.v);
+    let pole = match join(index, surface, end, target, last.segment.tolerance)? {
+        Join::Coincident => None,
+        Join::Pole => Some([end, target]),
+        Join::Open => return Ok(None),
+    };
+    let winding = [turns.u, turns.v].map(|turn| {
+        let whole = (-turn / TAU).round();
+        if whole >= 1.0 {
+            1
+        } else if whole <= -1.0 {
+            -1
+        } else {
+            0
+        }
+    });
+    if let Some(last) = pieces.last_mut() {
+        last.pole = pole;
+    }
+    Ok(Some(LoopChain { pieces, winding }))
+}
+
+/// The face side of each loop that winds once around the support, and the
+/// parameter values the support's domain must reach past the loops: a pole
+/// or apex that bounds the face, or one period past a loop on a periodic
+/// parameter. Moves the upper loop on a periodic parameter by whole periods
+/// to lie above the lower one. None where the loops do not bound one face
+/// on the support.
+fn face_sides(
+    form: &Revolved,
+    sense: Sense,
+    chains: &mut [LoopChain<'_>],
+) -> Option<[Vec<f64>; 2]> {
+    let orientation = form.orientation() * if sense == Sense::Reversed { -1.0 } else { 1.0 };
+    let mut sides: [(Vec<usize>, Vec<usize>); 2] = Default::default();
+    for (position, chain) in chains.iter().enumerate() {
+        let (axis, side) = match chain.winding {
+            [0, 0] => continue,
+            [turn, 0] => (1, f64::from(turn) * orientation),
+            [0, turn] => (0, -f64::from(turn) * orientation),
+            _ => return None,
+        };
+        let (lowers, uppers) = &mut sides[axis];
+        if side > 0.0 {
+            lowers.push(position);
+        } else {
+            uppers.push(position);
+        }
+    }
+    let mut hints: [Vec<f64>; 2] = Default::default();
+    for (axis, (lowers, uppers)) in sides.into_iter().enumerate() {
+        let periodic = axis == 0 || form.v_periodic();
+        let poles = if periodic { Vec::new() } else { form.poles() };
+        match (lowers.as_slice(), uppers.as_slice()) {
+            ([], []) => {}
+            ([lower], [upper]) => {
+                let [_, low] = chains[*lower].extent(axis);
+                let [high, _] = chains[*upper].extent(axis);
+                if periodic {
+                    let gap = high - low;
+                    let moved = gap - TAU * ((gap / TAU).ceil() - 1.0);
+                    let shift = moved - gap;
+                    chains[*upper].shift(if axis == 0 {
+                        Point2::new(shift, 0.0)
+                    } else {
+                        Point2::new(0.0, shift)
+                    });
+                } else if high <= low {
+                    return None;
+                }
+            }
+            ([lower], []) => {
+                let [_, low] = chains[*lower].extent(axis);
+                hints[axis].push(if periodic {
+                    low + TAU
+                } else {
+                    poles
+                        .into_iter()
+                        .filter(|pole| *pole > low)
+                        .min_by(f64::total_cmp)?
+                });
+            }
+            ([], [upper]) => {
+                let [high, _] = chains[*upper].extent(axis);
+                hints[axis].push(if periodic {
+                    high - TAU
+                } else {
+                    poles
+                        .into_iter()
+                        .filter(|pole| *pole < high)
+                        .max_by(f64::total_cmp)?
+                });
+            }
+            _ => return None,
+        }
+    }
+    Some(hints)
+}
+
+/// The parameter curves of each coedge in `loops` on the revolved support,
+/// moved by whole periods so that each loop closes and the loops bound the
+/// face, and the domain values [`face_sides`] adds. None where a loop does
+/// not close in the parameter plane or the loops do not bound the face.
 fn revolved_pcurves(
     index: &TopologyIndex<'_>,
+    surface: &Surface,
     form: &Revolved,
+    sense: Sense,
     loops: Vec<Vec<Segment<'_>>>,
-) -> Option<Vec<(cadmpeg_ir::ids::CoedgeId, Pcurve)>> {
+) -> Result<Option<ComputedPcurves>, CodecError> {
     let periods = |delta: Point2| {
         let turns = |value: f64| (value / TAU).round() * TAU;
         Point2::new(
@@ -386,78 +621,90 @@ fn revolved_pcurves(
             },
         )
     };
-    let mut computed = Vec::new();
-    let mut first_centre = None;
-    for loop_segments in loops {
-        let mut segments = Vec::new();
-        for mut segment in loop_segments {
-            if let Some(previous) = segments.last().map(Segment::ends) {
-                let [start, _] = segment.ends();
-                let shift = periods(Point2::new(
-                    previous[1].u - start.u,
-                    previous[1].v - start.v,
-                ));
-                segment.mid_uv =
-                    Point2::new(segment.mid_uv.u + shift.u, segment.mid_uv.v + shift.v);
-                let [start, _] = segment.ends();
-                if (previous[1].u - start.u).abs() > JOIN_LIMIT
-                    || (previous[1].v - start.v).abs() > JOIN_LIMIT
-                {
-                    return None;
-                }
-            }
-            segments.push(segment);
-        }
-        let [start, _] = segments.first()?.ends();
-        let [_, end] = segments.last()?.ends();
-        if (end.u - start.u).abs() > JOIN_LIMIT || (end.v - start.v).abs() > JOIN_LIMIT {
-            return None;
-        }
-        let centre = segments.iter().map(|segment| segment.mid_uv.u).sum::<f64>()
-            / cadmpeg_core::convert::f64_from_index(segments.len())?;
-        let shift = match first_centre {
-            Some(first) => periods(Point2::new(first - centre, 0.0)).u,
-            None => {
-                first_centre = Some(centre);
-                0.0
-            }
+    let mut chains = Vec::new();
+    for segments in loops.into_iter().filter(|segments| !segments.is_empty()) {
+        let Some(chain) = closed_chain(index, surface, periods, segments)? else {
+            return Ok(None);
         };
-        for mut segment in segments {
-            segment.mid_uv = Point2::new(segment.mid_uv.u + shift, segment.mid_uv.v);
-            let id = computed_pcurve_id(index, segment.coedge)?;
-            let [start, end] = segment.range;
-            let points = [start, end].map(|parameter| {
-                let uv = segment.at(parameter);
-                Point3::new(uv.u, uv.v, 0.0)
-            });
-            let nurbs = NurbsCurve::from_lanes(
-                1,
-                vec![start, start, end, end],
-                points.to_vec(),
-                None,
-                false,
-            )
-            .ok()?;
-            let range = FiniteVector::from([FiniteReal::new(start)?, FiniteReal::new(end)?]);
-            let (nurbs, range) = if segment.coedge.sense == Sense::Reversed {
-                reverse_nurbs(&nurbs, range).ok()?
-            } else {
-                (nurbs, range)
-            };
-            computed.push((
-                segment.coedge.id.clone(),
-                Pcurve {
-                    id,
-                    geometry: PcurveGeometry::Nurbs {
-                        nurbs: planar_lanes(&nurbs)?,
-                    },
-                    metadata: PcurveMetadata::general(None, Some(range), None),
-                    native_ref: None,
-                },
-            ));
-        }
+        chains.push(chain);
     }
-    Some(computed)
+    let mut first_centre = None;
+    for chain in &mut chains {
+        let [low, high] = chain.extent(0);
+        let centre = 0.5 * (low + high);
+        let first = *first_centre.get_or_insert(centre);
+        chain.shift(Point2::new(
+            periods(Point2::new(first - centre, 0.0)).u,
+            0.0,
+        ));
+    }
+    let Some(hints) = face_sides(form, sense, &mut chains) else {
+        return Ok(None);
+    };
+    let mut computed = Vec::new();
+    for piece in chains.into_iter().flat_map(|chain| chain.pieces) {
+        let Some(pcurves) = piece_pcurves(index, &piece) else {
+            return Ok(None);
+        };
+        computed.push((piece.segment.coedge.id.clone(), pcurves));
+    }
+    Ok(Some((computed, hints)))
+}
+
+/// Computed parameter curves by coedge, and the domain values by parameter.
+type ComputedPcurves = (Vec<(CoedgeId, Vec<Pcurve>)>, [Vec<f64>; 2]);
+
+/// The parameter curve of `piece` in the coedge's traversal, followed by its
+/// pole line.
+fn piece_pcurves(index: &TopologyIndex<'_>, piece: &Piece<'_>) -> Option<Vec<Pcurve>> {
+    let segment = &piece.segment;
+    let line = |start: f64, end: f64, points: [Point2; 2]| {
+        let nurbs = NurbsCurve::from_lanes(
+            1,
+            vec![start, start, end, end],
+            points.map(|uv| Point3::new(uv.u, uv.v, 0.0)).to_vec(),
+            None,
+            false,
+        )
+        .ok()?;
+        let range = FiniteVector::from([FiniteReal::new(start)?, FiniteReal::new(end)?]);
+        Some((nurbs, range))
+    };
+    let [start, end] = segment.range;
+    let (nurbs, range) = line(
+        start,
+        end,
+        [start, end].map(|parameter| segment.at(parameter)),
+    )?;
+    let (nurbs, range) = if segment.coedge.sense == Sense::Reversed {
+        reverse_nurbs(&nurbs, range).ok()?
+    } else {
+        (nurbs, range)
+    };
+    let pcurve = |id, nurbs: &NurbsCurve, range| {
+        Some(Pcurve {
+            id,
+            geometry: PcurveGeometry::Nurbs {
+                nurbs: planar_lanes(nurbs)?,
+            },
+            metadata: PcurveMetadata::general(None, Some(range), None),
+            native_ref: None,
+        })
+    };
+    let mut pcurves = vec![pcurve(
+        computed_pcurve_id(index, segment.coedge)?,
+        &nurbs,
+        range,
+    )?];
+    if let Some(pole) = piece.pole {
+        let (nurbs, range) = line(0.0, 1.0, pole)?;
+        pcurves.push(pcurve(
+            named_pcurve_id(index, "pole-pcurve", segment.coedge)?,
+            &nurbs,
+            range,
+        )?);
+    }
+    Some(pcurves)
 }
 
 /// The parameter curve form whose `(u, v)` control points are the `x`, `y`
@@ -486,7 +733,7 @@ fn planar_lanes(nurbs: &NurbsCurve) -> Option<PcurveNurbs> {
 }
 
 /// The exact NURBS form of `geometry` whose domain contains `range`.
-fn nurbs_form(geometry: &CurveGeometry, range: FiniteVector<2>) -> Option<NurbsCurve> {
+pub(super) fn nurbs_form(geometry: &CurveGeometry, range: FiniteVector<2>) -> Option<NurbsCurve> {
     let interval = range.finite_components().map(FiniteReal::get);
     match geometry.solved()? {
         SolvedCurveGeometry::Line(line) => {
@@ -556,11 +803,77 @@ fn nurbs_form(geometry: &CurveGeometry, range: FiniteVector<2>) -> Option<NurbsC
     }
 }
 
+/// The document with the reversed-normal flag of each B-spline support
+/// folded into the senses of its faces. A Type 128 normal is the cross
+/// product of its `u` and `v` derivatives, so each face on a support whose
+/// flag is set takes the opposite sense and keeps its oriented normal.
+pub(super) fn forward_normals(ir: &CadIr) -> Cow<'_, CadIr> {
+    let reversed = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
+            )
+        })
+        .map(|surface| surface.id.clone())
+        .collect::<BTreeSet<_>>();
+    if reversed.is_empty() {
+        return Cow::Borrowed(ir);
+    }
+    let mut restated = ir.clone();
+    let mut folded = BTreeSet::new();
+    for surface in &mut restated.geometry.surfaces {
+        if !reversed.contains(&surface.id) {
+            continue;
+        }
+        let (SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+        | SurfaceGeometry::Procedural {
+            cache: Some(SolvedSurfaceGeometry::Nurbs(nurbs)),
+            ..
+        }) = &mut surface.geometry
+        else {
+            continue;
+        };
+        if let Some(forward) = forward_nurbs(nurbs) {
+            *nurbs = forward;
+            folded.insert(surface.id.clone());
+        }
+    }
+    for face in &mut restated.geometry.faces {
+        if folded.contains(&face.surface) {
+            face.sense = super::placement::opposite(face.sense);
+        }
+    }
+    Cow::Owned(restated)
+}
+
+/// `nurbs` with its reversed-normal flag cleared.
+fn forward_nurbs(nurbs: &NurbsSurface) -> Option<NurbsSurface> {
+    NurbsSurface::new(
+        NurbsSurfaceAxis::new(
+            nurbs.u_degree(),
+            nurbs.u_knots().clone(),
+            nurbs.u_periodic(),
+        ),
+        NurbsSurfaceAxis::new(
+            nurbs.v_degree(),
+            nurbs.v_knots().clone(),
+            nurbs.v_periodic(),
+        ),
+        nurbs.pole_grid().clone(),
+        false,
+    )
+    .ok()
+}
+
 /// The document with each face whose sense runs against its plane or
 /// B-spline support moved to the support with its parameters exchanged. The
 /// exchange reverses the support normal, so the face is forward, as Type 144
-/// states every face. A B-spline support's reversed-normal flag is folded
-/// into the senses of its faces.
+/// states every face. The B-spline supports carry no reversed-normal flag
+/// ([`forward_normals`]).
 pub(super) fn forward_supports(ir: &CadIr) -> Cow<'_, CadIr> {
     let geometry = &ir.geometry;
     let mut changed = BTreeMap::<&str, (&Surface, Vec<Exchange<'_>>)>::new();
@@ -572,12 +885,15 @@ pub(super) fn forward_supports(ir: &CadIr) -> Cow<'_, CadIr> {
         else {
             continue;
         };
-        let normal_reversed = match &surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => false,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => nurbs.normal_reversed(),
-            _ => continue,
-        };
-        let exchanged = (face.sense == Sense::Reversed) != normal_reversed;
+        if !matches!(
+            &surface.geometry,
+            SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Plane(_) | SolvedSurfaceGeometry::Nurbs(_)
+            )
+        ) {
+            continue;
+        }
+        let exchanged = face.sense == Sense::Reversed;
         let admitted =
             !exchanged || face_pcurves(ir, face).all(|pcurve| exchanged_pcurve(pcurve).is_some());
         changed
@@ -590,14 +906,7 @@ pub(super) fn forward_supports(ir: &CadIr) -> Cow<'_, CadIr> {
                 admitted,
             });
     }
-    changed.retain(|_, (surface, faces)| {
-        faces.iter().any(|face| face.exchanged && face.admitted)
-            || matches!(
-                &surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                    if nurbs.normal_reversed()
-            )
-    });
+    changed.retain(|_, (_, faces)| faces.iter().any(|face| face.exchanged && face.admitted));
     if changed.is_empty() {
         return Cow::Borrowed(ir);
     }
@@ -743,23 +1052,7 @@ fn support_with(geometry: &SurfaceGeometry, exchanged: bool) -> Option<SurfaceGe
             if exchanged {
                 nurbs.transpose_parameter_axes();
             }
-            SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
-                    NurbsSurfaceAxis::new(
-                        nurbs.u_degree(),
-                        nurbs.u_knots().clone(),
-                        nurbs.u_periodic(),
-                    ),
-                    NurbsSurfaceAxis::new(
-                        nurbs.v_degree(),
-                        nurbs.v_knots().clone(),
-                        nurbs.v_periodic(),
-                    ),
-                    nurbs.pole_grid().clone(),
-                    false,
-                )
-                .ok()?,
-            )
+            SolvedSurfaceGeometry::Nurbs(nurbs)
         }
         _ => return None,
     };

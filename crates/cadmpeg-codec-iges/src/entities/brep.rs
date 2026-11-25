@@ -1177,18 +1177,27 @@ pub(super) fn project(
                 let face_definition = &faces[&face_sequence];
                 let surface_id =
                     crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
-                // A Type 142 reads a procedural support by its solved form;
-                // an edge-use parameter curve reads it the same way.
+                // A Type 128 states its parameters in the knots of its
+                // solved form, so an edge-use parameter curve reads it there.
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.geometry.surfaces.get(*position))
                     .map(|surface| match &surface.geometry {
                         cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+                            construction,
                             cache: Some(solved),
-                            ..
-                        } => std::borrow::Cow::Owned(
-                            cadmpeg_ir::geometry::SurfaceGeometry::Solved(solved.clone()),
-                        ),
+                        } if ir.geometry.procedural_surfaces.iter().any(|procedural| {
+                            procedural.id == *construction
+                                && matches!(
+                                    procedural.definition(),
+                                    cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Exact(_)
+                                )
+                        }) =>
+                        {
+                            std::borrow::Cow::Owned(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                                solved.clone(),
+                            ))
+                        }
                         geometry => std::borrow::Cow::Borrowed(geometry),
                     })
                 else {

@@ -5,7 +5,11 @@
 //! surfaces (CADIR §3.4).
 
 use super::degrade::{naming, Unwritten};
-use super::{is_decoder_free_geometry_body, lifted_pcurve, reverse_nurbs, rigid_placement};
+use super::{
+    curve_reference_span, edge_span, flatten_curve, is_decoder_free_geometry_body, lifted_pcurve,
+    pcurve_orientation_context, rigid_placement, solved_curve, topology_edge_explicit_tolerance,
+    TopologyIndex, UseDirection,
+};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FinitePoint3;
@@ -14,16 +18,18 @@ use cadmpeg_ir::geometry::analytic::{
     LineCurve, ParabolaCurve, PlaneSurface, SphereSurface, TorusSurface,
 };
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::geometry::sampled::GeometryLayoutError;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, IncreasingParameterInterval, LoopBoundary, LoopRing, ParameterInterval, Sense,
-    ShellMember,
+    AnchoredVertexUse, Body, BodyKind, IncreasingParameterInterval, LoopBoundary, LoopRing,
+    ParameterInterval, PcurveUse, Sense, ShellMember,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::UnitVector3;
@@ -34,6 +40,10 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Relative bound under which a linear map counts as a similarity: the bound
 /// that `Transform::is_proper_rigid` applies to a rigid motion.
 const SIMILARITY_TOLERANCE: f64 = 1.0e-9;
+
+/// Bound on the determinant of a linear map, relative to the product of its
+/// column lengths, under which the map is singular.
+const SINGULARITY_TOLERANCE: f64 = 1.0e-12;
 
 /// The transform that the writer places into the geometry of `body`. A solid
 /// keeps a rigid transform as the Type 124 of its Type 186.
@@ -55,12 +65,13 @@ struct Owned<'ir> {
     surfaces: BTreeSet<&'ir str>,
     faces: BTreeSet<&'ir str>,
     edges: BTreeSet<&'ir str>,
+    vertices: BTreeSet<&'ir str>,
+    coedges: BTreeSet<&'ir str>,
 }
 
 fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
     let geometry = &ir.geometry;
     let mut owned = Owned::default();
-    let mut vertices = BTreeSet::new();
     for region in geometry.stated_body_regions(&body.id) {
         for shell_id in region.stated_shells() {
             for shell in geometry.shells.iter().filter(|shell| shell.id == *shell_id) {
@@ -70,7 +81,7 @@ fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
                             owned.edges.insert(id.as_str());
                         }
                         ShellMember::FreeVertex { id } => {
-                            vertices.insert(id.as_str());
+                            owned.vertices.insert(id.as_str());
                         }
                         ShellMember::Subd { .. } => {}
                     }
@@ -84,12 +95,15 @@ fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
                     .stated()
                     .filter_map(|id| geometry.loops.iter().find(|loop_| loop_.id == *id))
                 {
-                    vertices.extend(loop_.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
+                    owned
+                        .vertices
+                        .extend(loop_.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
                     for coedge in loop_
                         .coedges()
                         .iter()
                         .filter_map(|id| geometry.coedges.iter().find(|coedge| coedge.id == *id))
                     {
+                        owned.coedges.insert(coedge.id.as_str());
                         owned.edges.insert(coedge.edge.as_str());
                         if let Some(use_curve) = &coedge.use_curve {
                             owned.curves.insert(use_curve.curve.as_str());
@@ -104,16 +118,34 @@ fn owned<'ir>(ir: &'ir CadIr, body: &Body) -> Owned<'ir> {
         .iter()
         .filter(|edge| owned.edges.contains(edge.id.as_str()))
     {
-        vertices.extend(edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
+        owned
+            .vertices
+            .extend(edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
         if let Some(curve) = edge.curve() {
             owned.curves.insert(curve.as_str());
+        }
+    }
+    let mut pending = owned.curves.iter().copied().collect::<Vec<_>>();
+    while let Some(id) = pending.pop() {
+        let Some(SolvedCurveGeometry::Composite { segments, .. }) = geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == id)
+            .and_then(|curve| curve.geometry.solved())
+        else {
+            continue;
+        };
+        for segment in segments {
+            if owned.curves.insert(segment.curve.as_str()) {
+                pending.push(segment.curve.as_str());
+            }
         }
     }
     owned.points.extend(
         geometry
             .vertices
             .iter()
-            .filter(|vertex| vertices.contains(vertex.id.as_str()))
+            .filter(|vertex| owned.vertices.contains(vertex.id.as_str()))
             .map(|vertex| vertex.point.as_str()),
     );
     owned
@@ -158,7 +190,7 @@ impl<'ir> Placements<'ir> {
                         owners.insert((arena, id), (transform, body_id))
                     {
                         if other != transform {
-                            return Err(naming(body_id)(CodecError::NotImplemented(format!(
+                            return Err(naming(id)(CodecError::NotImplemented(format!(
                                 "IGES writer places the transform of body {body_id} into its \
                                  geometry, and {arena} {id} is shared with body {other_body} \
                                  under another transform"
@@ -181,6 +213,218 @@ impl<'ir> Placements<'ir> {
         }
         Ok(placements)
     }
+}
+
+/// The document with a copy, for each body, of each point, curve and surface
+/// that the body shares with a body under another transform, and the body's
+/// references moved to its copies. Fails naming a vertex, edge, coedge,
+/// face or composite curve that two such bodies share.
+fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> {
+    let bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| (body, placed_transform(body), owned(ir, body)))
+        .collect::<Vec<_>>();
+    if bodies.iter().all(|(_, transform, _)| transform.is_none()) {
+        return Ok(Cow::Borrowed(ir));
+    }
+    let mut owners = BTreeMap::<(&str, &str), Option<Transform>>::new();
+    let mut topology = BTreeMap::<(&'static str, String), BTreeSet<&str>>::new();
+    let mut copies = Vec::new();
+    for (body, transform, owned) in &bodies {
+        let mut shared = BTreeMap::new();
+        for (arena, ids) in [
+            ("point", &owned.points),
+            ("curve", &owned.curves),
+            ("surface", &owned.surfaces),
+        ] {
+            for id in ids {
+                match owners.get(&(arena, *id)) {
+                    None => {
+                        owners.insert((arena, *id), *transform);
+                    }
+                    Some(first) if first != transform => {
+                        let copy = format!(
+                            "iges:writer:{arena}#{}@{}",
+                            id.replace('#', "/"),
+                            body.id.as_str().replace('#', "/")
+                        );
+                        shared.insert(*id, copy);
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+        for (arena, ids) in [
+            ("vertex", &owned.vertices),
+            ("edge", &owned.edges),
+            ("coedge", &owned.coedges),
+            ("face", &owned.faces),
+            ("curve", &owned.curves),
+        ] {
+            for id in ids {
+                topology
+                    .entry((arena, (*id).to_owned()))
+                    .or_default()
+                    .insert(body.id.as_str());
+            }
+        }
+        if !shared.is_empty() {
+            copies.push((body.id.as_str(), owned, shared));
+        }
+    }
+    if copies.is_empty() {
+        return Ok(Cow::Borrowed(ir));
+    }
+    let mut separated = ir.clone();
+    let geometry = &mut separated.geometry;
+    for (body, owned, shared) in copies {
+        let failure = |record: &str, reason: &str| {
+            naming(record)(CodecError::NotImplemented(format!(
+                "IGES writer places the transform of body {body} into its geometry, and {reason}"
+            )))
+        };
+        let exclusive = |arena: &'static str, id: &str| {
+            topology
+                .get(&(arena, id.to_owned()))
+                .is_none_or(|owners| owners.len() == 1)
+        };
+        let invalid = |id: &str| failure(id, &format!("the copy of {id} has no valid identity"));
+        for point in ir
+            .geometry
+            .points
+            .iter()
+            .filter(|point| shared.contains_key(point.id.as_str()))
+        {
+            let mut copy = point.clone();
+            copy.id = PointId::try_from(shared[point.id.as_str()].clone())
+                .map_err(|_| invalid(point.id.as_str()))?;
+            geometry.points.push(copy);
+        }
+        for curve in ir
+            .geometry
+            .curves
+            .iter()
+            .filter(|curve| shared.contains_key(curve.id.as_str()))
+        {
+            let mut copy = curve.clone();
+            copy.id = CurveId::try_from(shared[curve.id.as_str()].clone())
+                .map_err(|_| invalid(curve.id.as_str()))?;
+            geometry.curves.push(copy);
+        }
+        for surface in ir
+            .geometry
+            .surfaces
+            .iter()
+            .filter(|surface| shared.contains_key(surface.id.as_str()))
+        {
+            let mut copy = surface.clone();
+            copy.id = SurfaceId::try_from(shared[surface.id.as_str()].clone())
+                .map_err(|_| invalid(surface.id.as_str()))?;
+            geometry.surfaces.push(copy);
+        }
+        let moved = |arena: &'static str,
+                     record: &str,
+                     reference: &str|
+         -> Result<Option<String>, Unwritten> {
+            let Some(copy) = shared.get(reference) else {
+                return Ok(None);
+            };
+            if !exclusive(arena, record) {
+                return Err(failure(
+                    record,
+                    &format!("{arena} {record} is shared with a body under another transform"),
+                ));
+            }
+            Ok(Some(copy.clone()))
+        };
+        for vertex in geometry
+            .vertices
+            .iter_mut()
+            .filter(|vertex| owned.vertices.contains(vertex.id.as_str()))
+        {
+            if let Some(copy) = moved("vertex", vertex.id.as_str(), vertex.point.as_str())? {
+                vertex.point = PointId::try_from(copy).map_err(|_| invalid(vertex.id.as_str()))?;
+            }
+        }
+        for edge in geometry
+            .edges
+            .iter_mut()
+            .filter(|edge| owned.edges.contains(edge.id.as_str()))
+        {
+            let Some(curve) = edge.curve() else {
+                continue;
+            };
+            if let Some(copy) = moved("edge", edge.id.as_str(), curve.as_str())? {
+                let copy = CurveId::try_from(copy).map_err(|_| invalid(edge.id.as_str()))?;
+                edge.map_curve(|_| copy);
+            }
+        }
+        for coedge in geometry
+            .coedges
+            .iter_mut()
+            .filter(|coedge| owned.coedges.contains(coedge.id.as_str()))
+        {
+            let Some(use_curve) = &mut coedge.use_curve else {
+                continue;
+            };
+            if let Some(copy) = moved("coedge", coedge.id.as_str(), use_curve.curve.as_str())? {
+                use_curve.curve =
+                    CurveId::try_from(copy).map_err(|_| invalid(coedge.id.as_str()))?;
+            }
+        }
+        for face in geometry
+            .faces
+            .iter_mut()
+            .filter(|face| owned.faces.contains(face.id.as_str()))
+        {
+            if let Some(copy) = moved("face", face.id.as_str(), face.surface.as_str())? {
+                face.surface = SurfaceId::try_from(copy).map_err(|_| invalid(face.id.as_str()))?;
+            }
+        }
+        // Each composite of the body by its identity in the separated
+        // document, with the identity of its source record.
+        let composites = owned
+            .curves
+            .iter()
+            .filter(|id| !shared.contains_key(**id))
+            .map(|id| ((*id).to_owned(), (*id).to_owned()))
+            .chain(
+                shared
+                    .iter()
+                    .map(|(source, copy)| (copy.clone(), (*source).to_owned())),
+            )
+            .collect::<BTreeMap<_, _>>();
+        for curve in &mut geometry.curves {
+            let Some(source) = composites.get(curve.id.as_str()) else {
+                continue;
+            };
+            let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+                &mut curve.geometry
+            else {
+                continue;
+            };
+            let own_copy = shared.contains_key(source.as_str());
+            for segment in segments.iter_mut() {
+                let Some(copy) = shared.get(segment.curve.as_str()) else {
+                    continue;
+                };
+                if !own_copy && !exclusive("curve", source.as_str()) {
+                    return Err(failure(
+                        source.as_str(),
+                        &format!(
+                            "composite curve {source} is shared with a body under another \
+                             transform"
+                        ),
+                    ));
+                }
+                segment.curve =
+                    CurveId::try_from(copy.clone()).map_err(|_| invalid(source.as_str()))?;
+            }
+        }
+    }
+    Ok(Cow::Owned(separated))
 }
 
 /// The cylinder, cone, sphere and torus supports of bodies that the writer
@@ -218,14 +462,33 @@ pub(super) fn dissimilar_supports(ir: &CadIr) -> BTreeSet<String> {
 /// The document with the transform of each body that IGES does not state on
 /// the body placed into the geometry that the body owns, and a
 /// `procedural.reduced` note for each procedural carrier that the placement
-/// states by its solved form.
+/// states by its solved form. Geometry that a body shares with a body under
+/// another transform is placed as a copy for each body.
 pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), Unwritten> {
+    let separated = separated_bodies(ir)?;
+    match placed(separated.as_ref())? {
+        Some((placed, losses)) => Ok((Cow::Owned(placed), losses)),
+        None => Ok((separated, Vec::new())),
+    }
+}
+
+fn placed(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Unwritten> {
     let placements = Placements::of(ir)?;
     if placements.bodies.is_empty() {
-        return Ok((Cow::Borrowed(ir), Vec::new()));
+        return Ok(None);
     }
-    let failure = |body: &str, reason: String| {
-        naming(body)(CodecError::NotImplemented(format!(
+    if let Some(body) = placements
+        .bodies
+        .iter()
+        .find_map(|(body, transform)| Linear::of(*transform).singular().then_some(*body))
+    {
+        return Err(naming(body)(CodecError::NotImplemented(format!(
+            "IGES writer places the transform of body {body} into its geometry, and the \
+             transform is singular, so the geometry has no image of its dimension"
+        ))));
+    }
+    let failure = |record: &str, body: &str, reason: String| {
+        naming(record)(CodecError::NotImplemented(format!(
             "IGES writer places the transform of body {body} into its geometry, and {reason}"
         )))
     };
@@ -233,17 +496,38 @@ pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>
     let mut losses = Vec::new();
     let mut reduced = BTreeSet::new();
 
-    let mut curve_maps = BTreeMap::new();
+    let composite = |geometry: &CurveGeometry| {
+        matches!(
+            geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+        )
+    };
+    let mut curve_maps = BTreeMap::<String, (ParameterMap, &str)>::new();
     for curve in &mut placed.geometry.curves {
         let Some(&(transform, body)) = placements.curves.get(curve.id.as_str()) else {
             continue;
         };
-        let (geometry, map, construction) = placed_curve(&curve.geometry, transform)
-            .map_err(|reason| failure(body, format!("curve {} {reason}", curve.id)))?;
+        if composite(&curve.geometry) {
+            continue;
+        }
+        let (geometry, map, construction) =
+            placed_curve(&curve.geometry, transform).map_err(|reason| {
+                failure(
+                    curve.id.as_str(),
+                    body,
+                    format!("curve {} {reason}", curve.id),
+                )
+            })?;
         if let Some(range) = curve.parameter_range {
             curve.parameter_range = Some(
                 IncreasingParameterInterval::new(map.interval(range.endpoints())).ok_or_else(
-                    || failure(body, format!("curve {} has no placed range", curve.id)),
+                    || {
+                        failure(
+                            curve.id.as_str(),
+                            body,
+                            format!("curve {} has no placed range", curve.id),
+                        )
+                    },
                 )?,
             );
         }
@@ -257,36 +541,121 @@ pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>
         }
         curve_maps.insert(curve.id.as_str().to_owned(), (map, body));
     }
+    let mut pending = placed
+        .geometry
+        .curves
+        .iter()
+        .enumerate()
+        .filter(|(_, curve)| {
+            composite(&curve.geometry) && placements.curves.contains_key(curve.id.as_str())
+        })
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    while let Some(&first) = pending.first() {
+        let mut waiting = Vec::new();
+        for &position in &pending {
+            let curve = &placed.geometry.curves[position];
+            let (_, body) = placements.curves[curve.id.as_str()];
+            let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+                &curve.geometry
+            else {
+                continue;
+            };
+            if segments
+                .iter()
+                .any(|segment| !curve_maps.contains_key(segment.curve.as_str()))
+            {
+                waiting.push(position);
+                continue;
+            }
+            let map = composite_map(ir, segments, &curve_maps).map_err(|reason| {
+                failure(
+                    curve.id.as_str(),
+                    body,
+                    format!("composite curve {} {reason}", curve.id),
+                )
+            })?;
+            let range = curve
+                .parameter_range
+                .map(|range| {
+                    IncreasingParameterInterval::new(map.interval(range.endpoints())).ok_or_else(
+                        || {
+                            failure(
+                                curve.id.as_str(),
+                                body,
+                                format!("curve {} has no placed range", curve.id),
+                            )
+                        },
+                    )
+                })
+                .transpose()?;
+            let id = curve.id.as_str().to_owned();
+            placed.geometry.curves[position].parameter_range = range;
+            curve_maps.insert(id, (map, body));
+        }
+        if waiting.len() == pending.len() {
+            let curve = &placed.geometry.curves[first];
+            let (_, body) = placements.curves[curve.id.as_str()];
+            return Err(failure(
+                curve.id.as_str(),
+                body,
+                format!(
+                    "composite curve {} has a child that the writer does not place",
+                    curve.id
+                ),
+            ));
+        }
+        pending = waiting;
+    }
     for point in &mut placed.geometry.points {
         let Some(&(transform, body)) = placements.points.get(point.id.as_str()) else {
             continue;
         };
         let position = transform
             .apply_point(point.position().get())
-            .ok_or_else(|| failure(body, format!("point {} leaves the finite range", point.id)))?;
+            .ok_or_else(|| {
+                failure(
+                    point.id.as_str(),
+                    body,
+                    format!("point {} leaves the finite range", point.id),
+                )
+            })?;
         point.set_position(position);
     }
     for edge in &mut placed.geometry.edges {
         let (Some(curve), Some(range)) = (edge.curve(), edge.param_range()) else {
             continue;
         };
-        let Some(&(map, body)) = curve_maps.get(curve.as_str()) else {
+        let Some((map, body)) = curve_maps.get(curve.as_str()) else {
             continue;
         };
-        let range = ParameterInterval::new(map.interval(range.get()))
-            .map_err(|_| failure(body, format!("edge {} has no placed range", edge.id)))?;
+        let range = ParameterInterval::new(map.interval(range.get())).map_err(|_| {
+            failure(
+                edge.id.as_str(),
+                body,
+                format!("edge {} has no placed range", edge.id),
+            )
+        })?;
         edge.set_param_range(Some(range));
     }
     for coedge in &mut placed.geometry.coedges {
-        let Some(use_curve) = &mut coedge.use_curve else {
+        let Some(use_curve) = &coedge.use_curve else {
             continue;
         };
-        let Some(&(map, body)) = curve_maps.get(use_curve.curve.as_str()) else {
+        let Some((map, body)) = curve_maps.get(use_curve.curve.as_str()) else {
             continue;
         };
-        use_curve.parameter_range =
-            ParameterInterval::new(map.interval(use_curve.parameter_range.endpoints()))
-                .map_err(|_| failure(body, format!("coedge {} has no placed range", coedge.id)))?;
+        let range = ParameterInterval::new(map.interval(use_curve.parameter_range.endpoints()))
+            .map_err(|_| {
+                failure(
+                    coedge.id.as_str(),
+                    body,
+                    format!("coedge {} has no placed range", coedge.id),
+                )
+            })?;
+        if let Some(use_curve) = &mut coedge.use_curve {
+            use_curve.parameter_range = range;
+        }
     }
 
     let mut surface_maps = BTreeMap::new();
@@ -294,8 +663,14 @@ pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>
         let Some(&(transform, body)) = placements.surfaces.get(surface.id.as_str()) else {
             continue;
         };
-        let (geometry, map, construction) = placed_surface(&surface.geometry, transform)
-            .map_err(|reason| failure(body, format!("surface {} {reason}", surface.id)))?;
+        let (geometry, map, construction) =
+            placed_surface(&surface.geometry, transform).map_err(|reason| {
+                failure(
+                    surface.id.as_str(),
+                    body,
+                    format!("surface {} {reason}", surface.id),
+                )
+            })?;
         surface.geometry = geometry;
         if let Some(construction) = construction {
             losses.push(IgesLossCode::ProceduralReduced.note(format!(
@@ -306,6 +681,27 @@ pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>
         }
         surface_maps.insert(surface.id.as_str().to_owned(), (map, transform, body));
     }
+    let constructions = placed
+        .geometry
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Procedural { construction, .. } => Some(construction.as_str()),
+            CurveGeometry::Solved(_) => None,
+        })
+        .chain(
+            placed
+                .geometry
+                .surfaces
+                .iter()
+                .filter_map(|surface| match &surface.geometry {
+                    SurfaceGeometry::Procedural { construction, .. } => Some(construction.as_str()),
+                    SurfaceGeometry::Solved(_) => None,
+                }),
+        )
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    reduced.retain(|construction| !constructions.contains(construction));
     placed
         .geometry
         .procedural_curves
@@ -317,8 +713,8 @@ pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>
 
     // A reflection turns each loop against its face's placed normal, so the
     // writer reverses the loops of a reflected face.
-    let mut reversed_loops = BTreeMap::new();
-    let mut pcurve_maps = BTreeMap::<String, (UvMap, bool, &str)>::new();
+    let mut reflected_loops = BTreeMap::new();
+    let mut pcurve_maps = BTreeMap::<String, (UvMap, &str)>::new();
     for face in &mut placed.geometry.faces {
         if !placements.faces.contains(face.id.as_str()) {
             continue;
@@ -336,32 +732,13 @@ pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>
             .filter_map(|id| ir.geometry.loops.iter().find(|loop_| loop_.id == *id))
         {
             if reflected {
-                reversed_loops.insert(loop_.id.as_str(), body);
+                reflected_loops.insert(loop_.id.as_str(), body);
             }
-            let uses = match &loop_.boundary {
-                LoopBoundary::Vertex { pcurves, .. } => pcurves
-                    .iter()
-                    .map(|use_| (use_.pcurve.as_str(), false))
-                    .collect::<Vec<_>>(),
-                LoopBoundary::Ring(ring) => ring
-                    .coedges()
-                    .iter()
-                    .filter_map(|id| ir.geometry.coedges.iter().find(|coedge| coedge.id == *id))
-                    .flat_map(|coedge| coedge.pcurves.iter())
-                    .chain(
-                        ring.vertex_uses()
-                            .iter()
-                            .flat_map(|use_| use_.pcurves.iter()),
-                    )
-                    .map(|use_| (use_.pcurve.as_str(), reflected))
-                    .collect(),
-            };
-            for (pcurve, reversed) in uses {
-                if let Some((other_map, other, _)) =
-                    pcurve_maps.insert(pcurve.to_owned(), (map, reversed, body))
-                {
-                    if other != reversed || other_map != map {
+            for pcurve in loop_pcurves(ir, loop_) {
+                if let Some((other, _)) = pcurve_maps.insert(pcurve.to_owned(), (map, body)) {
+                    if other != map {
                         return Err(failure(
+                            pcurve,
                             body,
                             format!("pcurve {pcurve} has two placed images"),
                         ));
@@ -370,71 +747,256 @@ pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>
             }
         }
     }
-    for loop_ in &mut placed.geometry.loops {
-        let Some(&body) = reversed_loops.get(loop_.id.as_str()) else {
-            continue;
-        };
-        let LoopBoundary::Ring(ring) = &loop_.boundary else {
-            continue;
-        };
-        if !ring.vertex_uses().is_empty() {
-            return Err(failure(
-                body,
-                format!("reflected loop {} has pole vertex uses", loop_.id),
-            ));
-        }
-        let coedges = ring.coedges().iter().rev().cloned().collect();
-        loop_.boundary =
-            LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).map_err(|error| {
-                failure(
-                    body,
-                    format!("reflected loop {} is invalid: {error}", loop_.id),
-                )
-            })?);
-    }
-    for coedge in &mut placed.geometry.coedges {
-        if let Some(&body) = reversed_loops.get(coedge.owner_loop.as_str()) {
-            if coedge.use_curve.is_some()
-                || coedge
-                    .pcurves
-                    .iter()
-                    .any(|use_| use_.parameter_range.is_some())
-            {
-                return Err(failure(
-                    body,
-                    format!("reflected coedge {} states a directed use range", coedge.id),
-                ));
-            }
-            coedge.sense = opposite(coedge.sense);
-        }
-        for use_ in &mut coedge.pcurves {
+    let against = against_edge_chains(ir, &reflected_loops)?;
+    let unparametric = |uses: &mut [PcurveUse]| {
+        for use_ in uses {
             if pcurve_maps
                 .get(use_.pcurve.as_str())
-                .is_some_and(|(map, _, _)| !map.is_diagonal())
+                .is_some_and(|(map, _)| !map.is_diagonal())
             {
                 use_.isoparametric = None;
             }
         }
+    };
+    for loop_ in &mut placed.geometry.loops {
+        let reflected = reflected_loops.get(loop_.id.as_str()).copied();
+        let id = loop_.id.as_str().to_owned();
+        let flip = |uses: &[PcurveUse], body: &str| {
+            flipped(ir, uses)
+                .map_err(|reason| failure(&id, body, format!("reflected loop {id} {reason}")))
+        };
+        match &mut loop_.boundary {
+            LoopBoundary::Vertex { pcurves, .. } => {
+                unparametric(pcurves.as_mut_slice());
+                if let Some(body) = reflected {
+                    *pcurves = flip(pcurves.as_slice(), body)?;
+                }
+            }
+            LoopBoundary::Ring(ring) => {
+                let coedges = ring.coedges().to_vec();
+                let mut vertex_uses = ring.vertex_uses().to_vec();
+                for vertex_use in &mut vertex_uses {
+                    unparametric(vertex_use.pcurves.as_mut_slice());
+                }
+                let (coedges, vertex_uses) = match reflected {
+                    None => (coedges, vertex_uses),
+                    Some(body) => {
+                        // The pole after coedge `i` lies after coedge `i + 1` in the
+                        // reversed ring.
+                        let count = coedges.len();
+                        let mut anchored = Vec::new();
+                        for position in (0..count).rev() {
+                            for vertex_use in vertex_uses
+                                .iter()
+                                .rev()
+                                .filter(|vertex_use| vertex_use.after == coedges[position])
+                            {
+                                anchored.push(AnchoredVertexUse {
+                                    vertex: vertex_use.vertex.clone(),
+                                    after: coedges[(position + 1) % count].clone(),
+                                    pcurves: flip(vertex_use.pcurves.as_slice(), body)?,
+                                });
+                            }
+                        }
+                        (coedges.into_iter().rev().collect(), anchored)
+                    }
+                };
+                *ring = LoopRing::new(coedges, vertex_uses).map_err(|error| {
+                    failure(
+                        &id,
+                        reflected.unwrap_or_default(),
+                        format!("placed loop {id} is invalid: {error}"),
+                    )
+                })?;
+            }
+        }
     }
-    for pcurve in &mut placed.geometry.pcurves {
-        let Some(&(map, reversed, body)) = pcurve_maps.get(pcurve.id.as_str()) else {
+    for coedge in &mut placed.geometry.coedges {
+        unparametric(coedge.pcurves.as_mut_slice());
+        let Some(&body) = reflected_loops.get(coedge.owner_loop.as_str()) else {
             continue;
         };
-        if map == UvMap::IDENTITY && !reversed {
+        coedge.sense = opposite(coedge.sense);
+        if against.contains(coedge.id.as_str()) {
+            let pcurves = flipped(ir, &coedge.pcurves).map_err(|reason| {
+                failure(
+                    coedge.id.as_str(),
+                    body,
+                    format!("reflected coedge {} {reason}", coedge.id),
+                )
+            })?;
+            coedge.pcurves = pcurves;
+        }
+    }
+    for pcurve in &mut placed.geometry.pcurves {
+        let Some(&(map, body)) = pcurve_maps.get(pcurve.id.as_str()) else {
+            continue;
+        };
+        if map == UvMap::IDENTITY {
             continue;
         }
-        *pcurve = mapped_pcurve(pcurve, map, reversed)
-            .map_err(|reason| failure(body, format!("pcurve {} {reason}", pcurve.id)))?;
+        *pcurve = mapped_pcurve(pcurve, map).map_err(|reason| {
+            failure(
+                pcurve.id.as_str(),
+                body,
+                format!("pcurve {} {reason}", pcurve.id),
+            )
+        })?;
     }
     for body in &mut placed.geometry.bodies {
         if placements.bodies.contains_key(body.id.as_str()) {
             body.transform = None;
         }
     }
-    Ok((Cow::Owned(placed), losses))
+    Ok(Some((placed, losses)))
 }
 
-const fn opposite(sense: Sense) -> Sense {
+/// The parameter curves that `loop_` uses.
+fn loop_pcurves<'ir>(ir: &'ir CadIr, loop_: &'ir cadmpeg_ir::topology::Loop) -> Vec<&'ir str> {
+    match &loop_.boundary {
+        LoopBoundary::Vertex { pcurves, .. } => {
+            pcurves.iter().map(|use_| use_.pcurve.as_str()).collect()
+        }
+        LoopBoundary::Ring(ring) => ring
+            .coedges()
+            .iter()
+            .filter_map(|id| ir.geometry.coedges.iter().find(|coedge| coedge.id == *id))
+            .flat_map(|coedge| coedge.pcurves.iter())
+            .chain(
+                ring.vertex_uses()
+                    .iter()
+                    .flat_map(|use_| use_.pcurves.iter()),
+            )
+            .map(|use_| use_.pcurve.as_str())
+            .collect(),
+    }
+}
+
+/// The reversed coedges of `loops` whose parameter curve chain runs in the
+/// coedge's traversal, against its edge curve. A reflection makes each such
+/// coedge forward, so its chain must then run along the edge curve.
+fn against_edge_chains(
+    ir: &CadIr,
+    loops: &BTreeMap<&str, &str>,
+) -> Result<BTreeSet<String>, Unwritten> {
+    let mut against = BTreeSet::new();
+    if loops.is_empty() {
+        return Ok(against);
+    }
+    let index = TopologyIndex::new(ir);
+    for coedge in ir.geometry.coedges.iter().filter(|coedge| {
+        loops.contains_key(coedge.owner_loop.as_str())
+            && coedge.sense == Sense::Reversed
+            && !coedge.pcurves.is_empty()
+    }) {
+        let missing = || {
+            naming(coedge.id.as_str())(CodecError::malformed(format_args!(
+                "IGES reflected coedge {} references a missing record",
+                coedge.id
+            )))
+        };
+        let surface = index
+            .loops
+            .get(coedge.owner_loop.as_str())
+            .and_then(|loop_| index.faces.get(loop_.face.as_str()))
+            .and_then(|face| index.surfaces.get(face.surface.as_str()))
+            .copied()
+            .ok_or_else(missing)?;
+        let edge = index
+            .edges
+            .get(coedge.edge.as_str())
+            .copied()
+            .ok_or_else(missing)?;
+        let curve = edge
+            .curve()
+            .and_then(|curve| index.curves.get(curve.as_str()))
+            .copied()
+            .ok_or_else(missing)?;
+        let orientation = solved_curve(curve)
+            .and_then(flatten_curve)
+            .and_then(|geometry| edge_span(&index, edge, &geometry))
+            .and_then(|span| {
+                pcurve_orientation_context(
+                    &index,
+                    &surface.geometry,
+                    span.start,
+                    span.end,
+                    UseDirection::traversed(coedge.sense),
+                    topology_edge_explicit_tolerance(&index, edge),
+                    coedge.id.as_str(),
+                )
+                .orientation(&coedge.pcurves)
+            })
+            .map_err(naming(coedge.id.as_str()))?;
+        if orientation == Sense::Reversed {
+            against.insert(coedge.id.as_str().to_owned());
+        }
+    }
+    Ok(against)
+}
+
+/// `uses` traversed the other way: in reverse order, each use directed
+/// against its previous direction.
+fn flipped(ir: &CadIr, uses: &[PcurveUse]) -> Result<Vec<PcurveUse>, String> {
+    uses.iter()
+        .rev()
+        .map(|use_| {
+            let [start, end] = match use_.parameter_range {
+                Some(range) => range.endpoints(),
+                None => ir
+                    .geometry
+                    .pcurves
+                    .iter()
+                    .find(|pcurve| pcurve.id == use_.pcurve)
+                    .and_then(Pcurve::parameter_range)
+                    .ok_or_else(|| format!("uses pcurve {} with no parameter range", use_.pcurve))?
+                    .get(),
+            };
+            Ok(PcurveUse {
+                parameter_range: Some(
+                    DirectedParameterRange::new([end, start]).map_err(|error| error.to_string())?,
+                ),
+                ..use_.clone()
+            })
+        })
+        .collect()
+}
+
+/// The placed composite parameter of each composite parameter, which runs
+/// over the reference spans of the children in turn.
+fn composite_map(
+    ir: &CadIr,
+    segments: &[cadmpeg_ir::geometry::CompositeCurveSegment],
+    maps: &BTreeMap<String, (ParameterMap, &str)>,
+) -> Result<ParameterMap, String> {
+    let mut breaks = vec![[0.0, 0.0]];
+    for segment in segments {
+        let child = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == segment.curve)
+            .ok_or_else(|| format!("references missing child {}", segment.curve))?;
+        let geometry = solved_curve(child)
+            .and_then(flatten_curve)
+            .map_err(|error| error.to_string())?;
+        let span = curve_reference_span(ir, &segment.curve, &geometry)
+            .map_err(|error| error.to_string())?;
+        let [start, end] = span.range.finite_components().map(FiniteReal::get);
+        let (map, _) = maps
+            .get(segment.curve.as_str())
+            .ok_or_else(|| format!("has unplaced child {}", segment.curve))?;
+        let [placed_start, placed_end] = map.interval([start, end]);
+        let [source, target] = breaks.last().copied().unwrap_or([0.0, 0.0]);
+        breaks.push([
+            source + (end - start),
+            target + (placed_end - placed_start).abs(),
+        ]);
+    }
+    Ok(ParameterMap::Piecewise(breaks))
+}
+
+pub(super) const fn opposite(sense: Sense) -> Sense {
     match sense {
         Sense::Forward => Sense::Reversed,
         Sense::Reversed => Sense::Forward,
@@ -479,6 +1041,46 @@ impl Linear {
         }
     }
 
+    /// Whether the map collapses a direction.
+    fn singular(&self) -> bool {
+        let bound = self.columns.iter().map(Vector3::norm).product::<f64>();
+        self.determinant.abs() <= SINGULARITY_TOLERANCE * bound
+    }
+
+    /// The largest singular value: the square root of the largest eigenvalue
+    /// of the symmetric `MᵀM`, by the trigonometric solution of its
+    /// characteristic cubic.
+    fn largest_stretch(&self) -> f64 {
+        let [x, y, z] = self.columns;
+        let gram = [
+            [x.dot(x), x.dot(y), x.dot(z)],
+            [y.dot(x), y.dot(y), y.dot(z)],
+            [z.dot(x), z.dot(y), z.dot(z)],
+        ];
+        let mean = (gram[0][0] + gram[1][1] + gram[2][2]) / 3.0;
+        let off = gram[0][1].powi(2) + gram[0][2].powi(2) + gram[1][2].powi(2);
+        let spread = ((gram[0][0] - mean).powi(2)
+            + (gram[1][1] - mean).powi(2)
+            + (gram[2][2] - mean).powi(2)
+            + 2.0 * off)
+            / 6.0;
+        if spread <= 0.0 {
+            return mean.max(0.0).sqrt();
+        }
+        let width = spread.sqrt();
+        let shifted = |row: usize, column: usize| {
+            (gram[row][column] - if row == column { mean } else { 0.0 }) / width
+        };
+        let determinant = shifted(0, 0)
+            * shifted(1, 1).mul_add(shifted(2, 2), -(shifted(1, 2) * shifted(2, 1)))
+            - shifted(0, 1)
+                * shifted(1, 0).mul_add(shifted(2, 2), -(shifted(1, 2) * shifted(2, 0)))
+            + shifted(0, 2)
+                * shifted(1, 0).mul_add(shifted(2, 1), -(shifted(1, 1) * shifted(2, 0)));
+        let angle = (0.5 * determinant).clamp(-1.0, 1.0).acos() / 3.0;
+        (2.0 * width).mul_add(angle.cos(), mean).max(0.0).sqrt()
+    }
+
     fn apply(&self, vector: Vector3) -> Vector3 {
         self.columns[0].scale(vector.x)
             + self.columns[1].scale(vector.y)
@@ -486,24 +1088,38 @@ impl Linear {
     }
 }
 
-/// The placed curve parameter `scale t + shift` of curve parameter `t`.
-#[derive(Clone, Copy)]
-struct ParameterMap {
-    scale: f64,
-    shift: f64,
+/// The placed curve parameter of a curve parameter.
+#[derive(Clone)]
+enum ParameterMap {
+    /// `scale t + shift`.
+    Affine { scale: f64, shift: f64 },
+    /// Linear between consecutive `[source, target]` breaks, which increase.
+    Piecewise(Vec<[f64; 2]>),
 }
 
 impl ParameterMap {
-    const IDENTITY: Self = Self {
+    const IDENTITY: Self = Self::Affine {
         scale: 1.0,
         shift: 0.0,
     };
 
-    fn interval(self, [lower, upper]: [f64; 2]) -> [f64; 2] {
-        [
-            self.scale.mul_add(lower, self.shift),
-            self.scale.mul_add(upper, self.shift),
-        ]
+    fn at(&self, parameter: f64) -> f64 {
+        match self {
+            Self::Affine { scale, shift } => scale.mul_add(parameter, *shift),
+            Self::Piecewise(breaks) => breaks
+                .windows(2)
+                .find(|pair| parameter <= pair[1][0])
+                .or_else(|| breaks.windows(2).last())
+                .map_or(parameter, |pair| {
+                    let ([source, target], [next_source, next_target]) = (pair[0], pair[1]);
+                    (parameter - source)
+                        .mul_add((next_target - target) / (next_source - source), target)
+                }),
+        }
+    }
+
+    fn interval(&self, [lower, upper]: [f64; 2]) -> [f64; 2] {
+        [self.at(lower), self.at(upper)]
     }
 }
 
@@ -613,7 +1229,7 @@ fn placed_solved_curve(
             let line = LineCurve::try_new(origin, image.scale(1.0 / length)).map_err(invalid)?;
             Ok((
                 SolvedCurveGeometry::Line(line),
-                ParameterMap {
+                ParameterMap::Affine {
                     scale: snapped(length, 1.0),
                     shift: 0.0,
                 },
@@ -667,7 +1283,7 @@ fn placed_solved_curve(
             .map_err(invalid)?;
             Ok((
                 SolvedCurveGeometry::Hyperbola(hyperbola),
-                ParameterMap {
+                ParameterMap::Affine {
                     scale: 1.0,
                     shift: -shift,
                 },
@@ -706,7 +1322,7 @@ fn placed_solved_curve(
                 ParabolaCurve::try_new(vertex, axis, reference, focal).map_err(invalid)?;
             Ok((
                 SolvedCurveGeometry::Parabola(parabola),
-                ParameterMap { scale, shift },
+                ParameterMap::Affine { scale, shift },
             ))
         }
         SolvedCurveGeometry::Degenerate(degenerate) => Ok((
@@ -748,7 +1364,7 @@ fn placed_solved_curve(
             ))
         }
         SolvedCurveGeometry::Composite { .. } => {
-            Err("is a composite carrier, which the writer does not place".to_owned())
+            Err("is a transformed composite carrier, which the writer does not place".to_owned())
         }
         SolvedCurveGeometry::Unknown { .. } => {
             Err("has no exact form that the writer places".to_owned())
@@ -790,7 +1406,7 @@ fn elliptic(
     let (axis, reference) = unit_frame(major_image.cross(minor_image), major_image)?;
     let major_radius = major_image.norm();
     let minor_radius = minor_image.norm().min(major_radius);
-    let map = ParameterMap {
+    let map = ParameterMap::Affine {
         scale: 1.0,
         shift: -shift,
     };
@@ -841,8 +1457,7 @@ fn placed_solved_surface(
     let revolved = |frame: &cadmpeg_ir::units::OrthonormalFrame3| {
         let scale = linear.similarity.ok_or(
             "a cylinder, cone, sphere or torus under a transform that is not a similarity is \
-             written only as the rational Type 128 that the writer restates from isoparametric \
-             parameter curves of its faces",
+             written only as the rational Type 128 that the writer restates for its faces",
         )?;
         let (axis, reference) = unit_frame(
             linear.apply(*frame.axis().as_raw()),
@@ -946,15 +1561,42 @@ fn placed_solved_surface(
             })?;
             Ok((SolvedSurfaceGeometry::Nurbs(nurbs), UvMap::IDENTITY))
         }
-        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => {
+        SolvedSurfaceGeometry::Polygonal(polygonal) => {
+            let mut polygonal = polygonal.clone();
+            let failure = |error: GeometryLayoutError| invalid(&error.to_string());
+            polygonal
+                .edit_vertices(|vertices| {
+                    for vertex in vertices.iter_mut() {
+                        *vertex = transform
+                            .apply_point(*vertex)
+                            .ok_or_else(|| {
+                                GeometryLayoutError::EditRefused(
+                                    "a placed vertex leaves the finite range".to_owned(),
+                                )
+                            })?
+                            .get();
+                    }
+                    Ok(())
+                })
+                .map_err(failure)?;
+            // The image of a deviation is at most the largest singular value
+            // of the map times as long.
+            let stretch = linear
+                .similarity
+                .unwrap_or_else(|| linear.largest_stretch());
+            polygonal
+                .set_chordal_deflection(polygonal.chordal_deflection().get() * stretch)
+                .map_err(failure)?;
+            Ok((SolvedSurfaceGeometry::Polygonal(polygonal), UvMap::IDENTITY))
+        }
+        SolvedSurfaceGeometry::Unknown { .. } => {
             Err("has no exact form that the writer places".to_owned())
         }
     }
 }
 
-/// `pcurve` under the support parameter map `map`, reversed when its coedge
-/// is.
-fn mapped_pcurve(pcurve: &Pcurve, map: UvMap, reversed: bool) -> Result<Pcurve, String> {
+/// `pcurve` under the support parameter map `map`.
+fn mapped_pcurve(pcurve: &Pcurve, map: UvMap) -> Result<Pcurve, String> {
     if pcurve.uv_offset().is_some() {
         return Err("states a support chart offset".to_owned());
     }
@@ -968,11 +1610,6 @@ fn mapped_pcurve(pcurve: &Pcurve, map: UvMap, reversed: bool) -> Result<Pcurve, 
         FinitePoint3::new(Point3::new(image.u, image.v, 0.0))
             .ok_or_else(|| "has a non-finite placed control point".to_owned())
     })?;
-    let (nurbs, range) = if reversed {
-        reverse_nurbs(&nurbs, range).map_err(|error| error.to_string())?
-    } else {
-        (nurbs, range)
-    };
     let points = nurbs
         .control_points()
         .into_iter()

@@ -477,13 +477,15 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     let brep = has_brep_topology(ranged.as_ref());
     let dissimilar = placement::dissimilar_supports(ranged.as_ref());
     let admitted = |surface: &str| !brep || dissimilar.contains(surface);
-    let stated = exact::state_pcurves(ranged.as_ref(), admitted)?;
-    let restated = rational_support::rational_analytic_supports(stated.as_ref(), admitted)?;
+    let (stated, hints) = exact::state_pcurves(ranged.as_ref(), admitted)?;
+    let (restated, omitted_pcurves) =
+        rational_support::rational_analytic_supports(stated.as_ref(), admitted, &hints)?;
     let (placed, placement_losses) = placement::placed_bodies(restated.as_ref())?;
+    let forward = exact::forward_normals(placed.as_ref());
     let oriented = if brep {
-        Cow::Borrowed(placed.as_ref())
+        Cow::Borrowed(forward.as_ref())
     } else {
-        exact::forward_supports(placed.as_ref())
+        exact::forward_supports(forward.as_ref())
     };
     let ir = oriented.as_ref();
     let index = TopologyIndex::new(ir);
@@ -495,6 +497,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     let unbounded_analytic = validate_analytic_surface_context(ir)?;
     let mut losses = partial_losses;
     losses.extend(range_losses);
+    losses.extend(omitted_pcurves);
     losses.extend(placement_losses);
     losses.extend(unbounded_analytic);
     losses.extend(procedural_reduction_losses(ir)?);
@@ -3516,16 +3519,10 @@ fn validate_trimmed_sheet_topology<'a>(
                         ))
                         .into());
                     }
-                    if !trimmed && coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
+                    if coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
                         return Err(CodecError::NotImplemented(format!(
-                        "IGES Type 141 requires consistent parameter-curve presence per loop ({})",
-                        loop_.id
-                    ))
-                        .into());
-                    }
-                    if trimmed && coedge.pcurves.is_empty() {
-                        return Err(CodecError::NotImplemented(format!(
-                            "IGES Type 144 requires parameter curves for every coedge ({}); the writer computes them on a plane support from a line, conic, polyline or NURBS edge curve in that plane, and on a cylinder, cone, sphere or torus support from an edge line or circle that lies on one parameter line of the support, in loops that close in the parameter plane",
+                            "IGES Type {} requires consistent parameter-curve presence per loop ({})",
+                            if trimmed { 142 } else { 141 },
                             loop_.id
                         ))
                         .into());
@@ -4116,9 +4113,9 @@ fn curve_on_surface_entity(
                 .map(|(_, index)| index),
         );
     }
-    if model_children.is_empty() || pcurve_children.is_empty() {
+    if model_children.is_empty() {
         return Err(CodecError::NotImplemented(format!(
-            "IGES Type 144 loop {} requires model and parameter curve carriers",
+            "IGES Type 144 loop {} requires model curve carriers",
             boundary.loop_.id
         )));
     }
@@ -4132,15 +4129,15 @@ fn curve_on_surface_entity(
             EntityStatus::PhysicallyDependent,
         )?
     };
-    let parameter_curve = if pcurve_children.len() == 1 {
-        pcurve_children[0]
-    } else {
-        push_composite_entity(
+    let parameter_curve = match pcurve_children.as_slice() {
+        [] => "0".to_owned(),
+        [child] => reference_marker(*child),
+        children => reference_marker(push_composite_entity(
             entities,
-            &pcurve_children,
+            children,
             "PCURVE",
             EntityStatus::ParameterCurve,
-        )?
+        )?),
     };
     Ok(Entity {
         type_code: 142,
@@ -4150,7 +4147,7 @@ fn curve_on_surface_entity(
         parameter_body: format!(
             "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
-            reference_marker(parameter_curve),
+            parameter_curve,
             reference_marker(model_curve)
         )
         .into_bytes(),
