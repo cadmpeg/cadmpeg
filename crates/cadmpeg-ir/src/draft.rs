@@ -2,8 +2,10 @@
 //! Atomic staging for neutral entity transfer.
 
 use std::borrow::BorrowMut;
-use std::collections::{BTreeMap, HashMap};
-use std::hash::{Hash, Hasher};
+use std::collections::BTreeMap;
+
+type HashMap<K, V> = std::collections::HashMap<K, V, crate::index::identities::FastBuildHasher>;
+use std::hash::BuildHasher;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
@@ -152,9 +154,7 @@ struct IdentitySlot {
 type IdentityIndex = HashMap<u64, Vec<IdentitySlot>>;
 
 fn identity_hash(identity: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    identity.hash(&mut hasher);
-    hasher.finish()
+    crate::index::identities::FastBuildHasher::default().hash_one(identity)
 }
 
 fn insert_identity<T>(index: &mut HashMap<u64, Vec<T>>, hash: u64, value: T) {
@@ -162,7 +162,7 @@ fn insert_identity<T>(index: &mut HashMap<u64, Vec<T>>, hash: u64, value: T) {
 }
 
 fn index_model_identities(staged: &CadIr) -> Result<IdentityIndex, &str> {
-    let mut identity_index = IdentityIndex::new();
+    let mut identity_index = IdentityIndex::default();
     macro_rules! index_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (slot_index, entity) in staged.$home.$field.iter().enumerate() {
@@ -251,7 +251,7 @@ impl Default for ModelDraft {
     fn default() -> Self {
         Self {
             staged: CadIr::empty(),
-            insertion_index: Some(IdentityIndex::new()),
+            insertion_index: Some(IdentityIndex::default()),
             accounting: (),
         }
     }
@@ -1001,7 +1001,7 @@ fn index_committed_identities(
     unknowns: &[crate::unknown::UnknownRecord],
     unknown_namespace: Option<&str>,
 ) -> CommittedIdentityIndex {
-    let mut identities = CommittedIdentityIndex::new();
+    let mut identities = CommittedIdentityIndex::default();
     macro_rules! collect_model_identities {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.$home.$field.iter().enumerate() {
@@ -1099,7 +1099,7 @@ fn stage_committed_identities(
     native: Option<&crate::native::Native>,
     unknown_namespace: Option<&str>,
 ) -> CommittedIdentityIndex {
-    let mut staged = CommittedIdentityIndex::new();
+    let mut staged = CommittedIdentityIndex::default();
     let candidate = crate::document::Arenas {
         geometry,
         model,
