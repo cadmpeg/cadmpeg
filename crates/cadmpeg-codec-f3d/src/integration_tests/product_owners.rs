@@ -75,7 +75,7 @@ fn root_sketch_owner_follows_document_membership() {
     assert_eq!(holders.len(), 1);
     assert_eq!(
         crate::ids::member_definition_key(holders[0].id.as_str()),
-        Some(format!("role-{XREF_ROLE}/reference-0/occurrence-0").as_str())
+        Some("member.f3d")
     );
     assert!(model
         .occurrences

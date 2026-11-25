@@ -65,8 +65,9 @@ pub(super) fn ends_the_write(error: &CodecError) -> bool {
 
 /// Synthesizes `ir`, with each open shell that `version` does not define
 /// written as unjoined trimmed surfaces. Each time the write fails, drops the
-/// faces, else the bodies, that use a record the failure names and synthesizes
-/// again; when the failure names none, writes the empty file.
+/// faces, else the bodies, that use a record the failure names, else the
+/// curves it names that no face or body uses, and synthesizes again; when the
+/// failure names none, writes the empty file.
 pub(super) fn synthesize_dropping(
     ir: &CadIr,
     version: crate::IgesVersion,
@@ -91,7 +92,12 @@ pub(super) fn synthesize_dropping(
         };
         let culprits = Culprits::named(&Uses::new(&document), &unwritten.records);
         if culprits.faces.is_empty() && culprits.bodies.is_empty() {
-            return empty_file(&document, version, &unwritten.error, dropped);
+            let Some((smaller, mut notes)) = without_free_curves(&document, &unwritten) else {
+                return empty_file(&document, version, &unwritten.error, dropped);
+            };
+            dropped.append(&mut notes);
+            document = Cow::Owned(smaller);
+            continue;
         }
         let smaller = without_faces_and_bodies(
             &document,
@@ -106,6 +112,38 @@ pub(super) fn synthesize_dropping(
         dropped.extend(culprits.losses(&unwritten.error));
         document = Cow::Owned(smaller);
     }
+}
+
+/// `ir` without the curves that `unwritten` names, which no face or body
+/// uses, and without the constructions that define them, with a loss for each
+/// curve; `None` where `unwritten` names no curve.
+fn without_free_curves(ir: &CadIr, unwritten: &Unwritten) -> Option<(CadIr, Vec<LossNote>)> {
+    let named =
+        |curve: &&cadmpeg_ir::geometry::Curve| unwritten.records.contains(curve.id.as_str());
+    let curves = ir.geometry.curves.iter().filter(named).collect::<Vec<_>>();
+    if curves.is_empty() {
+        return None;
+    }
+    let constructions = curves
+        .iter()
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .collect::<BTreeSet<_>>();
+    let notes = curves
+        .iter()
+        .map(|curve| {
+            IgesLossCode::WriterFreeGeometryOmitted.note(format!(
+                "free record {} was not written: {}",
+                curve.id, unwritten.error
+            ))
+        })
+        .collect();
+    let mut smaller = ir.clone();
+    smaller.geometry.curves.retain(|curve| !named(&curve));
+    smaller
+        .geometry
+        .procedural_curves
+        .retain(|construction| !constructions.contains(&construction.id));
+    Some((smaller, notes))
 }
 
 /// The last step: every body goes, with each record that no body uses, and

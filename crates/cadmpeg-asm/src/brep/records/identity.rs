@@ -41,11 +41,11 @@ impl NativeRecordNamespace {
         }
     }
 
-    pub(super) fn rewrite<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    pub(super) fn rewrite(
         self,
         kind: &str,
         record_index: u32,
-        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let source = self.serialized_id(kind, record_index).to_string();
         let mut target = map.identity(&source)?;

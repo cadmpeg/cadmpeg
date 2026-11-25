@@ -10,7 +10,7 @@ use std::fmt;
 use crate::design::configuration::{Arrangement, DesignConfiguration};
 use crate::design::container::{Container, Rollback};
 use crate::design::evaluation::Evaluation;
-use crate::design::feature::{Feature, FeatureDefinition};
+use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use crate::design::parameter::DesignParameter;
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::scope::DesignScope;
@@ -119,6 +119,17 @@ pub(in crate::validate) struct DesignRecords<'a> {
     occurrence_owners: HashMap<&'a str, &'a str>,
 }
 
+/// How a feature names an occurrence (§6.7).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::validate) enum Namer {
+    /// A `Combine`'s `new_component`.
+    Combine,
+    /// A `Place` or a `PlaceSet`.
+    Placement,
+    /// A component pattern or mirror.
+    Creator,
+}
+
 /// A container's members: in order for an ordered container.
 pub(in crate::validate) fn members(container: &Container) -> Vec<&Member> {
     match container {
@@ -212,6 +223,51 @@ impl<'a> DesignRecords<'a> {
     /// The first product definition that lists `occurrence`.
     pub(in crate::validate) fn occurrence_owner(&self, occurrence: &str) -> Option<&'a str> {
         self.occurrence_owners.get(occurrence).copied()
+    }
+
+    /// The features that name each occurrence, in feature order, each with
+    /// how it names it and whether it is a `Place` (§6.7).
+    pub(in crate::validate) fn occurrence_namers(
+        &self,
+    ) -> BTreeMap<&'a str, Vec<(&'a str, Namer, bool)>> {
+        let mut named: BTreeMap<&str, Vec<(&str, Namer, bool)>> = BTreeMap::new();
+        for feature in &self.ir.design.features {
+            let id = feature.id.as_str();
+            let found: Vec<(&str, Namer, bool)> = match &feature.definition.operation {
+                FeatureOperation::Combine(combine) => combine
+                    .new_component
+                    .iter()
+                    .map(|new| (new.occurrence.as_str(), Namer::Combine, false))
+                    .collect(),
+                FeatureOperation::Place(place) => {
+                    vec![(place.occurrence.as_str(), Namer::Placement, true)]
+                }
+                FeatureOperation::PlaceSet(set) => set
+                    .occurrences
+                    .iter()
+                    .map(|occurrence| (occurrence.as_str(), Namer::Placement, false))
+                    .collect(),
+                FeatureOperation::ComponentPattern(pattern) => pattern
+                    .instances
+                    .iter()
+                    .flat_map(|instance| &instance.occurrences)
+                    .map(|occurrence| (occurrence.as_str(), Namer::Creator, false))
+                    .collect(),
+                FeatureOperation::MirrorComponents(mirror) => mirror
+                    .results
+                    .iter()
+                    .map(|result| (result.occurrence.as_str(), Namer::Creator, false))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for (occurrence, namer, place) in found {
+                named
+                    .entry(occurrence)
+                    .or_default()
+                    .push((id, namer, place));
+            }
+        }
+        named
     }
 
     /// Whether the member's record exists.

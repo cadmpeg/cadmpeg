@@ -214,10 +214,10 @@ impl RewriteIdentities for SwallowsElementErrors {
     ) -> Result<(), CodecError> {
         self.0.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         for identity in &self.0 {
             identity.clone().rewrite_identities(ctx, map).ok();

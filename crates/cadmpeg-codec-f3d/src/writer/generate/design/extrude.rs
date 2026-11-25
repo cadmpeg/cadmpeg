@@ -643,7 +643,7 @@ pub(super) fn name_result<'f>(
     let reference = i64::try_from(identity)
         .map_err(|_| CodecError::malformed(format_args!("{family} identity")))?;
     native.persistent_design_links.push(PersistentDesignLink {
-        id: format!("f3d:generated:{family}-body#0"),
+        id: format!("f3d:generated:{family}-body#{identity}"),
         target: AttributeTarget::Body(body.clone()),
         design_id: DesignPersistentIdText::try_from(identity.to_string())
             .map_err(CodecError::Malformed)?,
@@ -655,7 +655,7 @@ pub(super) fn name_result<'f>(
         native
             .persistent_subentity_tags
             .push(PersistentSubentityTag {
-                id: format!("f3d:generated:{family}-face#{token}"),
+                id: format!("f3d:generated:{family}-face#{identity}.{token}"),
                 target: AttributeTarget::Face(face.clone()),
                 selector: i64::try_from(text.len())
                     .map_err(|_| CodecError::NotImplemented("face token".into()))?,
