@@ -92,7 +92,7 @@ fn design_stream(id: &str) -> &str {
 }
 
 /// Report whether a native `stream` scope contains the design `entry`, either
-/// directly or through an `f3d:xref/` qualifier.
+/// directly or below the definition key of an archive member.
 fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
     ids::native_scope_matches(stream, entry)
 }

@@ -123,7 +123,7 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
         (97, 5, 69, 80, 67, true),
     ];
     for (segment, (length, version, backlink, wrapper, transform, construction)) in
-        ["f3d:Design", "f3d:xref/member/occurrence-0/Design"]
+        ["f3d:Design", "f3d:member/occurrence-0@Design"]
             .into_iter()
             .flat_map(|segment| cases.into_iter().map(move |case| (segment, case)))
     {
