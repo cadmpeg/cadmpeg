@@ -845,6 +845,7 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCoincidentBoundaryAssumed,
     FeatureProfileCrossingRunsAssumed,
     FeatureProfilePartialEntryAssumed,
+    FeatureProfileArcBridgeAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// A stored transition certifies regions with stale curve identities.
@@ -1941,6 +1942,7 @@ impl F3dLossCode {
         Self::FeatureProfileCoincidentBoundaryAssumed,
         Self::FeatureProfileCrossingRunsAssumed,
         Self::FeatureProfilePartialEntryAssumed,
+        Self::FeatureProfileArcBridgeAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
@@ -3026,6 +3028,7 @@ impl F3dLossCode {
                 "feature.profile-coincident-boundary-assumed"
             }
             Self::FeatureProfileCrossingRunsAssumed => "feature.profile-crossing-runs-assumed",
+            Self::FeatureProfileArcBridgeAssumed => "feature.profile-arc-bridge-assumed",
             Self::FeatureProfilePartialEntryAssumed => "feature.profile-partial-entry-assumed",
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileMemberReferenceLost => "feature.profile-member-reference-lost",
@@ -4077,6 +4080,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentBoundaryAssumed
             | Self::FeatureProfileCrossingRunsAssumed
             | Self::FeatureProfilePartialEntryAssumed
+            | Self::FeatureProfileArcBridgeAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileMemberReferenceLost
@@ -4854,6 +4858,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentBoundaryAssumed
             | Self::FeatureProfileCrossingRunsAssumed
             | Self::FeatureProfilePartialEntryAssumed
+            | Self::FeatureProfileArcBridgeAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileMemberReferenceLost
@@ -5818,6 +5823,7 @@ mod tests {
                 "feature.profile-coincident-boundary-assumed",
                 "feature.profile-crossing-runs-assumed",
                 "feature.profile-partial-entry-assumed",
+                "feature.profile-arc-bridge-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",

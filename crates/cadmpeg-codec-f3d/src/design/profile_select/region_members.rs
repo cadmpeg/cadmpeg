@@ -17,6 +17,27 @@ pub(super) fn resolve(
     resolution: ScopedExtrudeProfileResolution<'_>,
     allow_assumptions: bool,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
+    resolve_with_bridge(
+        stream,
+        profile,
+        sketch,
+        curves,
+        entities,
+        resolution,
+        (allow_assumptions, None),
+    )
+}
+
+fn resolve_with_bridge(
+    stream: &str,
+    profile: &DesignSketchProfileOperand,
+    sketch: &Sketch,
+    curves: &[SketchCurveIdentity],
+    entities: &[SketchEntity],
+    resolution: ScopedExtrudeProfileResolution<'_>,
+    policy: (bool, Option<SketchEntityUse>),
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    let (allow_assumptions, bridge) = policy;
     let Some(selection) = profile.planar_region_selection() else {
         return Ok(None);
     };
@@ -44,6 +65,12 @@ pub(super) fn resolve(
             ));
         }
         rings.push(members);
+    }
+    if let Some(bridge) = bridge {
+        let [ring] = rings.as_mut_slice() else {
+            return Ok(None);
+        };
+        ring.push((bridge, [1, 1]));
     }
     let Some(selected) = crate::design::geometry::arrangement_regions_matching_counted_rings(
         sketch,
@@ -275,3 +302,86 @@ fn assign_region(
     }
     false
 }
+
+pub(super) fn resolve_arc_bridges(
+    stream: &str,
+    profile: &DesignSketchProfileOperand,
+    sketch: &Sketch,
+    curves: &[SketchCurveIdentity],
+    entities: &[SketchEntity],
+    resolution: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    let Some(selection) = profile.planar_region_selection() else {
+        return Ok(None);
+    };
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
+    let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
+        return Ok(None);
+    };
+    let named = regions
+        .iter()
+        .flat_map(|region| &region.members)
+        .filter_map(|member| {
+            sketch_profile_member_entity(stream, owner, member, sketch, curves, entities).cloned()
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let mut endpoints = Vec::new();
+    for entity in entities.iter().filter(|entity| named.contains(entity.id())) {
+        if let Some(ends) =
+            crate::design::geometry::sketch_entity_endpoints(entity, resolution.ctx)?
+        {
+            endpoints.extend(ends);
+        }
+    }
+    let mut bridges = Vec::new();
+    for entity in entities.iter().filter(|entity| {
+        entity.sketch == sketch.id && !entity.construction && !named.contains(entity.id())
+    }) {
+        if !matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Arc { .. }
+        ) {
+            continue;
+        }
+        let Some(ends) = crate::design::geometry::sketch_entity_endpoints(entity, resolution.ctx)?
+        else {
+            continue;
+        };
+        if ends.iter().all(|end| {
+            endpoints.iter().any(|point| {
+                (end.u - point.u).hypot(end.v - point.v) <= resolution.linear_tolerance
+            })
+        }) {
+            bridges.push(entity.id().clone());
+        }
+    }
+    let [bridge] = bridges.as_slice() else {
+        return Ok(None);
+    };
+    for reversed in [false, true] {
+        let selected = resolve_with_bridge(
+            stream,
+            profile,
+            sketch,
+            curves,
+            entities,
+            resolution,
+            (
+                true,
+                Some(SketchEntityUse {
+                    entity: bridge.clone(),
+                    reversed,
+                }),
+            ),
+        )?;
+        if selected.is_some() {
+            return Ok(selected);
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests;

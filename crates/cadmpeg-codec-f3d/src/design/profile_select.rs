@@ -6754,15 +6754,35 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     .and_then(|indices| PlanarProfileRef::sketch_profiles(sketch, indices).ok())
                     {
                         Some(selected) => Some(selected),
-                        None => region_members::resolve(
-                            stream,
-                            &profile,
-                            source,
-                            resolution.curve_identities,
-                            resolution.sketch_entities,
-                            scoped,
-                            false,
-                        )?,
+                        None => {
+                            let selected = region_members::resolve(
+                                stream,
+                                &profile,
+                                source,
+                                resolution.curve_identities,
+                                resolution.sketch_entities,
+                                scoped,
+                                false,
+                            )?;
+                            if selected.is_some() {
+                                selected
+                            } else {
+                                let bridged = region_members::resolve_arc_bridges(
+                                    stream,
+                                    &profile,
+                                    source,
+                                    resolution.curve_identities,
+                                    resolution.sketch_entities,
+                                    scoped,
+                                )?;
+                                if bridged.is_some() {
+                                    losses.push(crate::loss::F3dLossCode::FeatureProfileArcBridgeAssumed.note(
+                                        "A unique unlisted arc joins selected profile endpoints.".to_owned()
+                                    ));
+                                }
+                                bridged
+                            }
+                        }
                     }
                 } else {
                     None
