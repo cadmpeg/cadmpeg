@@ -516,12 +516,14 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_font_family, String, "font_family");
 
 impl SemanticAnnotation {
-    /// Check reference-point population and dimension ownership.
+    /// The most reference anchors this annotation admits: two on a
+    /// `Dimension` with a `dimension_kind`, one on any other annotation.
     #[must_use]
-    pub fn reference_anchors_are_valid(&self) -> bool {
-        self.reference_anchors.is_empty()
-            || (self.reference_anchors.len() == 2
-                && self.kind == SemanticAnnotationKind::Dimension
-                && self.dimension_kind.is_some())
+    pub fn admitted_reference_anchors(&self) -> usize {
+        if self.kind == SemanticAnnotationKind::Dimension && self.dimension_kind.is_some() {
+            2
+        } else {
+            1
+        }
     }
 }

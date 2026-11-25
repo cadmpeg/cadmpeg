@@ -122,6 +122,7 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
                 entities: &[],
                 profile_bodies: &[],
                 result_model: None,
+                result_states: None,
             },
         )
         .expect("native history");

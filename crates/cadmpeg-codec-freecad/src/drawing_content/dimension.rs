@@ -94,12 +94,9 @@ pub(super) fn transfer(
             losses.push(FreecadLossCode::DrawingDimensionGeometryNotTransferred.note(format!("{owner}: no exact admitted saved reference geometry and page placement; value and anchors remain absent")));
         }
     }
-    if ir
-        .model
-        .semantic_annotations
-        .iter()
-        .any(|annotation| !annotation.reference_anchors_are_valid())
-    {
+    if ir.model.semantic_annotations.iter().any(|annotation| {
+        annotation.reference_anchors.len() > annotation.admitted_reference_anchors()
+    }) {
         return Err(CodecError::malformed("invalid dimension reference anchors"));
     }
     Ok(())
