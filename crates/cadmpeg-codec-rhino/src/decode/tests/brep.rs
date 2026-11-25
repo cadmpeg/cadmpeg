@@ -98,7 +98,6 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
         object_id: cadmpeg_core::nonblank_literal!("failed-brep"),
         instance_path: Vec::new(),
     };
-    let unknown = "rhino:object:record#failed".try_into().expect("identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -109,7 +108,6 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
             key: "failed",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: crate::test_support::millimeter_scale(1.0),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -245,7 +243,6 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
             key: "plane",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: crate::test_support::millimeter_scale(25.4),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -356,7 +353,6 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
             key: "free-vertex",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -412,9 +408,6 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
             .expect("nonempty source identity"),
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane"
-        .try_into()
-        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -425,7 +418,6 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
             key: "plane",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
@@ -587,9 +579,6 @@ fn brep_mesh_cache_stages_one_tessellation() {
             .expect("nonempty source identity"),
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane"
-        .try_into()
-        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -600,7 +589,6 @@ fn brep_mesh_cache_stages_one_tessellation() {
             key: "plane",
             association: &association,
             display: &ObjectDisplay::default(),
-            unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })

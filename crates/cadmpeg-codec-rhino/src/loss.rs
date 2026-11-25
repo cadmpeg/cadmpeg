@@ -231,6 +231,9 @@ pub(crate) enum RhinoLossCode {
     WriterMeshDataOmitted,
     /// One body is written as several Brep objects.
     WriterBodySplit,
+    /// An edge whose two uses run the same way is written as two edges, one
+    /// for each use.
+    WriterEdgeUnjoined,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -313,6 +316,7 @@ impl RhinoLossCode {
         Self::WriterRecordOmitted,
         Self::WriterMeshDataOmitted,
         Self::WriterBodySplit,
+        Self::WriterEdgeUnjoined,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
@@ -371,6 +375,7 @@ impl RhinoLossCode {
             Self::WriterRecordOmitted => "writer.record-omitted",
             Self::WriterMeshDataOmitted => "writer.mesh-data-omitted",
             Self::WriterBodySplit => "writer.body-split",
+            Self::WriterEdgeUnjoined => "writer.edge-unjoined",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
@@ -448,7 +453,9 @@ impl RhinoLossCode {
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
             Self::WriterRecordOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterMeshDataOmitted => LossTaxonomy::TessellationOmitted,
-            Self::WriterBodySplit => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterBodySplit | Self::WriterEdgeUnjoined => {
+                LossTaxonomy::TopologyNotTransferred
+            }
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -553,6 +560,7 @@ mod tests {
                 "writer.record-omitted",
                 "writer.mesh-data-omitted",
                 "writer.body-split",
+                "writer.edge-unjoined",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",

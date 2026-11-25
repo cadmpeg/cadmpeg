@@ -18,7 +18,8 @@ use cadmpeg_ir::geometry::procedural_curves::{
     CompoundCurveConstruction, ProceduralCurveDefinition,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CompositeCurveSegments, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -28,11 +29,12 @@ use cadmpeg_ir::topology::{Coedge, Edge};
 use super::exact::{self, ParameterMap, Spline};
 use super::EPS_WRITE_DEGENERATE;
 
-/// A Brep scope with its carriers in 3DM form, and each face the writer
-/// leaves out with the reason.
+/// A Brep scope with its carriers in 3DM form, each face the writer leaves
+/// out with the reason, and each edge it writes as one edge for each use.
 pub(super) struct ConvertedScope {
     pub(super) ir: CadIr,
     pub(super) dropped: Vec<(String, String)>,
+    pub(super) unjoined: Vec<String>,
 }
 
 /// The solved form of `geometry`: its solved carrier, or the cache of its
@@ -145,11 +147,35 @@ pub(super) fn curve_nurbs(
     }
 }
 
-/// The curves and compound constructions of the document that a Brep scope
-/// comes from. A compound edge curve names its components here.
+/// The curves and compound constructions of the document. A joined curve
+/// (a compound construction or a composite carrier) names its components
+/// here.
 pub(super) struct CompoundIndex<'a> {
     curves: HashMap<&'a str, &'a Curve>,
     compounds: HashMap<&'a str, &'a CompoundCurveConstruction>,
+}
+
+/// A joined curve: its components in order, each with whether it keeps its
+/// own parameter direction.
+enum Joint<'a> {
+    Compound(&'a CompoundCurveConstruction),
+    Composite(&'a CompositeCurveSegments),
+}
+
+impl<'a> Joint<'a> {
+    fn components(&self) -> Vec<(&'a str, bool)> {
+        match self {
+            Self::Compound(compound) => compound
+                .components()
+                .iter()
+                .map(|component| (component.component.as_str(), true))
+                .collect(),
+            Self::Composite(segments) => segments
+                .iter()
+                .map(|segment| (segment.curve.as_str(), segment.same_sense))
+                .collect(),
+        }
+    }
 }
 
 impl<'a> CompoundIndex<'a> {
@@ -175,20 +201,52 @@ impl<'a> CompoundIndex<'a> {
         }
     }
 
-    /// The compound construction of `curve`, where the construction is the
-    /// curve's only form.
-    fn compound(&self, curve: &Curve) -> Option<&'a CompoundCurveConstruction> {
-        match &curve.geometry {
-            CurveGeometry::Procedural {
-                construction,
-                cache: None | Some(SolvedCurveGeometry::Unknown { .. }),
-            } => self.compounds.get(construction.as_str()).copied(),
+    /// The joint of `curve`: its compound construction where its cache holds
+    /// no other solved form, else its composite carrier.
+    fn joint(&self, curve: &'a Curve) -> Option<Joint<'a>> {
+        if let CurveGeometry::Procedural {
+            construction,
+            cache:
+                None | Some(SolvedCurveGeometry::Unknown { .. } | SolvedCurveGeometry::Composite { .. }),
+        } = &curve.geometry
+        {
+            if let Some(compound) = self.compounds.get(construction.as_str()) {
+                return Some(Joint::Compound(compound));
+            }
+        }
+        match solved_curve(&curve.geometry) {
+            Some(SolvedCurveGeometry::Composite { segments, .. }) => {
+                Some(Joint::Composite(segments))
+            }
             _ => None,
         }
     }
 
-    /// The components of each compound among `curves`, through nested
-    /// compounds. The joined edge curve holds them.
+    /// Whether `curve` is a joined curve.
+    pub(super) fn is_joined(&self, id: &str) -> bool {
+        self.curves
+            .get(id)
+            .is_some_and(|curve| self.joint(curve).is_some())
+    }
+
+    /// The components of the joined curve `id` that are joined curves
+    /// themselves.
+    pub(super) fn joined_components(&self, id: &str) -> Vec<&'a str> {
+        self.curves
+            .get(id)
+            .and_then(|curve| self.joint(curve))
+            .map(|joint| joint.components())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(component, _)| {
+                let (id, _) = self.curves.get_key_value(component)?;
+                self.is_joined(id).then_some(*id)
+            })
+            .collect()
+    }
+
+    /// The components of each joined curve among `curves`, through nested
+    /// joints. The joined curve holds them.
     pub(super) fn components<'b>(
         &self,
         curves: impl IntoIterator<Item = &'b str>,
@@ -199,12 +257,12 @@ impl<'a> CompoundIndex<'a> {
             .collect::<Vec<_>>();
         let mut components = BTreeSet::new();
         while let Some(curve) = pending.pop() {
-            for component in self
-                .compound(curve)
-                .into_iter()
-                .flat_map(CompoundCurveConstruction::components)
+            for (component, _) in self
+                .joint(curve)
+                .map(|joint| joint.components())
+                .unwrap_or_default()
             {
-                if let Some((id, curve)) = self.curves.get_key_value(component.component.as_str()) {
+                if let Some((id, curve)) = self.curves.get_key_value(component) {
                     if components.insert(*id) {
                         pending.push(curve);
                     }
@@ -214,17 +272,64 @@ impl<'a> CompoundIndex<'a> {
         components
     }
 
-    /// The parameter interval of `curve` that a compound maps a component
-    /// interval onto.
-    fn domain(&self, curve: &Curve) -> Result<[f64; 2], String> {
+    /// The breaks of `joint`: component `i` runs over
+    /// `[breaks[i], breaks[i + 1]]`. A compound states them. A composite
+    /// lays its components end to end, each as long as its own domain, from
+    /// the start of `curve`'s range, else from the start of its first
+    /// component's domain.
+    fn breaks(
+        &self,
+        ctx: &DecodeContext<'_>,
+        curve: &Curve,
+        joint: &Joint<'_>,
+    ) -> Result<Vec<f64>, String> {
+        match joint {
+            Joint::Compound(compound) => Ok(compound
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.get())
+                .collect()),
+            Joint::Composite(_) => {
+                let _nested = ctx
+                    .enter_nested("Rhino writer composite curve")
+                    .map_err(|error| error.to_string())?;
+                let mut breaks = Vec::new();
+                for (id, _) in joint.components() {
+                    let component = self
+                        .curves
+                        .get(id)
+                        .ok_or_else(|| format!("its component {id} is missing"))?;
+                    let [d0, d1] = self.domain(ctx, component)?;
+                    let start = match breaks.last() {
+                        Some(last) => *last,
+                        None => {
+                            let start = curve
+                                .parameter_range
+                                .map_or(d0, |range| range.endpoints()[0]);
+                            breaks.push(start);
+                            start
+                        }
+                    };
+                    breaks.push(start + (d1 - d0));
+                }
+                Ok(breaks)
+            }
+        }
+    }
+
+    /// The parameter interval of `curve`.
+    pub(super) fn domain(
+        &self,
+        ctx: &DecodeContext<'_>,
+        curve: &Curve,
+    ) -> Result<[f64; 2], String> {
         if let Some(range) = curve.parameter_range {
             return Ok(range.endpoints());
         }
-        if let Some(compound) = self.compound(curve) {
-            if let (Some(first), Some(last)) =
-                (compound.parameters().first(), compound.parameters().last())
-            {
-                return Ok([first.get(), last.get()]);
+        if let Some(joint) = self.joint(curve) {
+            let breaks = self.breaks(ctx, curve, &joint)?;
+            if let (Some(first), Some(last)) = (breaks.first(), breaks.last()) {
+                return Ok([*first, *last]);
             }
         }
         match solved_curve(&curve.geometry) {
@@ -242,23 +347,33 @@ impl<'a> CompoundIndex<'a> {
         })
     }
 
-    /// The NURBS curve that equals `compound` over `range`: each component
-    /// over its part of `range`, joined end to end.
+    /// The NURBS curve that equals the joined curve `id` over `range`, where
+    /// `id` is a joined curve.
+    pub(super) fn joined_nurbs(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+        range: [f64; 2],
+    ) -> Option<Result<NurbsCurve, String>> {
+        let curve = self.curves.get(id)?;
+        let joint = self.joint(curve)?;
+        Some(self.nurbs(ctx, curve, &joint, range))
+    }
+
+    /// The NURBS curve that equals `curve`, joined by `joint`, over `range`:
+    /// each component over its part of `range`, joined end to end.
     fn nurbs(
         &self,
         ctx: &DecodeContext<'_>,
-        compound: &CompoundCurveConstruction,
+        curve: &Curve,
+        joint: &Joint<'_>,
         range: [f64; 2],
     ) -> Result<NurbsCurve, String> {
         let _nested = ctx
             .enter_nested("Rhino writer compound curve")
             .map_err(|error| error.to_string())?;
-        let parameters = compound
-            .parameters()
-            .iter()
-            .map(|parameter| parameter.get())
-            .collect::<Vec<_>>();
-        let components = compound.components();
+        let parameters = self.breaks(ctx, curve, joint)?;
+        let components = joint.components();
         if parameters.len() != components.len() + 1 {
             return Err("the compound states no interval for each component".into());
         }
@@ -273,30 +388,41 @@ impl<'a> CompoundIndex<'a> {
             ));
         }
         let mut pieces = Vec::new();
-        for (index, component) in components.iter().enumerate() {
+        for (index, (id, same_sense)) in components.into_iter().enumerate() {
             let [start, end] = [parameters[index], parameters[index + 1]];
             let span = [lo.max(start), hi.min(end)];
             if span[0] >= span[1] {
                 continue;
             }
-            let id = component.component.as_str();
-            let curve = self
+            let component = self
                 .curves
                 .get(id)
                 .ok_or_else(|| format!("its component {id} is missing"))?;
-            let [d0, d1] = self.domain(curve)?;
+            let [d0, d1] = self.domain(ctx, component)?;
             let local = span.map(|parameter| {
-                if parameter == start {
+                let (near, far) = if same_sense {
+                    (start, end)
+                } else {
+                    (end, start)
+                };
+                if parameter == near {
                     d0
-                } else if parameter == end {
+                } else if parameter == far {
                     d1
                 } else {
-                    d0 + (parameter - start) / (end - start) * (d1 - d0)
+                    let fraction = (parameter - start) / (end - start);
+                    let fraction = if same_sense { fraction } else { 1.0 - fraction };
+                    d0 + fraction * (d1 - d0)
                 }
             });
-            let piece = match self.compound(curve) {
-                Some(nested) => self.nurbs(ctx, nested, local)?,
-                None => match solved_curve(&curve.geometry) {
+            let local = if same_sense {
+                local
+            } else {
+                [local[1], local[0]]
+            };
+            let mut piece = match self.joint(component) {
+                Some(nested) => self.nurbs(ctx, component, &nested, local)?,
+                None => match solved_curve(&component.geometry) {
                     None | Some(SolvedCurveGeometry::Unknown { .. }) => {
                         return Err(format!("its component {id} has no solved form"));
                     }
@@ -304,6 +430,9 @@ impl<'a> CompoundIndex<'a> {
                         .map_err(|reason| format!("component {id}: {reason}"))?,
                 },
             };
+            if !same_sense {
+                piece.reverse_parameterization();
+            }
             let target = span
                 .map(FiniteReal::new)
                 .into_iter()
@@ -359,9 +488,9 @@ fn edge_curve(
     if range[0] == range[1] {
         return Err("the edge has a zero-length parameter range".into());
     }
-    if let Some(compound) = compounds.compound(curve) {
+    if let Some(joint) = compounds.joint(curve) {
         return compounds
-            .nurbs(ctx, compound, range)
+            .nurbs(ctx, curve, &joint, range)
             .map(|nurbs| Some(SolvedCurveGeometry::Nurbs(nurbs)))
             .map_err(|reason| format!("curve {}: {reason}", curve.id.as_str()));
     }
@@ -405,7 +534,7 @@ fn face_uses<'a>(
 }
 
 /// The interval of `pcurve` that `use_` runs over, in the coedge's direction.
-fn use_interval(
+pub(super) fn use_interval(
     use_: &cadmpeg_ir::topology::PcurveUse,
     pcurve: &Pcurve,
     edge_range: Option<[f64; 2]>,
@@ -429,6 +558,23 @@ fn use_interval(
     }
 }
 
+/// The knot domain of a NURBS pcurve.
+fn pcurve_knot_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
+        return None;
+    };
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    Some([
+        *nurbs.knots().get(degree)?,
+        *nurbs.knots().get(nurbs.pole_rows().count())?,
+    ])
+}
+
+/// `interval` with its ends in increasing order.
+fn increasing(interval: [f64; 2]) -> [f64; 2] {
+    [interval[0].min(interval[1]), interval[0].max(interval[1])]
+}
+
 /// Whether `pcurve`, used by `use_` on an unchanged plane or NURBS face, is
 /// written as it is: the form the Brep writer admits directly.
 fn written_as_is(
@@ -442,7 +588,7 @@ fn written_as_is(
     let stated = pcurve
         .parameter_range()
         .map(cadmpeg_ir::units::FiniteVector::get);
-    let Ok(interval) = use_interval(use_, pcurve, edge_range) else {
+    let Ok(interval) = use_interval(use_, pcurve, edge_range).map(increasing) else {
         return false;
     };
     if interval[0] >= interval[1] || stated.is_some_and(|stated| stated != interval) {
@@ -593,6 +739,8 @@ struct CoedgePcurve {
     /// The written pcurve in the stated surface parameters, `None` where the
     /// record is written as it is.
     spline: Option<Spline>,
+    /// Whether the coedge runs `spline` backwards.
+    against: bool,
 }
 
 /// How the face's surface takes its pcurves.
@@ -620,7 +768,9 @@ fn coedge_pcurve(
     if let [(use_, pcurve)] = uses.as_slice() {
         let as_is = written_as_is(use_, pcurve, edge_range);
         let kept = match rule {
-            PcurveRule::Plane => as_is && use_interval(use_, pcurve, edge_range).ok() == edge_range,
+            PcurveRule::Plane => {
+                as_is && use_interval(use_, pcurve, edge_range).ok().map(increasing) == edge_range
+            }
             PcurveRule::AsIs => as_is,
             PcurveRule::Rebuilt => false,
         };
@@ -628,6 +778,7 @@ fn coedge_pcurve(
             return Ok(Some(CoedgePcurve {
                 id: pcurve.id.as_str().to_owned(),
                 spline: None,
+                against: false,
             }));
         }
     }
@@ -637,10 +788,29 @@ fn coedge_pcurve(
     if rule == PcurveRule::Plane {
         return Ok(None);
     }
-    let mut joined: Option<Spline> = None;
+    let mut intervals = Vec::with_capacity(uses.len());
     for (use_, pcurve) in &uses {
         let interval = use_interval(use_, pcurve, edge_range)
             .map_err(|reason| format!("pcurve {}: {reason}", pcurve.id.as_str()))?;
+        intervals.push((interval, *pcurve));
+    }
+    let against = intervals
+        .first()
+        .is_some_and(|([start, end], _)| start > end);
+    if intervals
+        .iter()
+        .any(|([start, end], _)| (start > end) != against)
+    {
+        return Err(format!(
+            "the pcurves of coedge {} run in different directions",
+            coedge.id.as_str()
+        ));
+    }
+    if against {
+        intervals.reverse();
+    }
+    let mut joined: Option<Spline> = None;
+    for (interval, pcurve) in intervals {
         let spline = exact::pcurve_spline(&pcurve.geometry, interval)
             .map_err(|reason| format!("pcurve {}: {reason}", pcurve.id.as_str()))?;
         joined = Some(match joined {
@@ -656,6 +826,7 @@ fn coedge_pcurve(
     Ok(Some(CoedgePcurve {
         id: first.id.as_str().to_owned(),
         spline: joined,
+        against,
     }))
 }
 
@@ -664,6 +835,56 @@ struct FacePlan {
     surface: FaceSurface,
     /// For each coedge of the face, its pcurve.
     pcurves: Vec<(String, Option<CoedgePcurve>)>,
+}
+
+/// Gives each use of an edge whose two uses run the same way its own edge: a
+/// 3DM Brep joins two faces at an edge where their trims run opposite ways.
+/// The second use takes a copy of the edge, with the key of the use appended
+/// to its id. Returns the id of each edge it splits.
+fn unjoin_equal_uses(ir: &mut CadIr) -> Vec<String> {
+    let geometry = &mut ir.geometry;
+    let mut uses = BTreeMap::<String, Vec<usize>>::new();
+    for (index, coedge) in geometry.coedges.iter().enumerate() {
+        uses.entry(coedge.edge.as_str().to_owned())
+            .or_default()
+            .push(index);
+    }
+    let mut unjoined = Vec::new();
+    let mut copies = Vec::new();
+    for (edge, uses) in uses {
+        let [first, second] = uses[..] else {
+            continue;
+        };
+        let (one, other) = (&geometry.coedges[first], &geometry.coedges[second]);
+        if one.sense != other.sense || one.radial_next != other.id || other.radial_next != one.id {
+            continue;
+        }
+        let copy = other
+            .id
+            .as_str()
+            .split_once('#')
+            .and_then(|(_, key)| cadmpeg_ir::ids::EdgeId::mint(format!("{edge}.on-{key}")).ok())
+            .zip(
+                geometry
+                    .edges
+                    .iter()
+                    .find(|source| source.id.as_str() == edge),
+            );
+        let Some((id, source)) = copy else {
+            continue;
+        };
+        let mut copy = source.clone();
+        copy.id = id.clone();
+        copies.push(copy);
+        let other = &mut geometry.coedges[second];
+        other.edge = id;
+        other.radial_next = other.id.clone();
+        let one = &mut geometry.coedges[first];
+        one.radial_next = one.id.clone();
+        unjoined.push(edge);
+    }
+    geometry.edges.extend(copies);
+    unjoined
 }
 
 /// Gives each face its own surface record and each edge its own curve
@@ -728,6 +949,7 @@ pub(super) fn convert_scope(
     ir: &CadIr,
 ) -> ConvertedScope {
     let mut unshared = ir.clone();
+    let unjoined = unjoin_equal_uses(&mut unshared);
     let origins = unshare_carriers(&mut unshared);
     let ir = &unshared;
     let geometry = &ir.geometry;
@@ -935,7 +1157,7 @@ pub(super) fn convert_scope(
     }
     let mut kept_pcurves = BTreeSet::new();
     let mut new_pcurves = BTreeMap::<String, PcurveGeometry>::new();
-    let mut coedge_pcurves = BTreeMap::<String, Option<String>>::new();
+    let mut coedge_pcurves = BTreeMap::<String, Option<(String, bool)>>::new();
     let mut new_surfaces = BTreeMap::<String, SolvedSurfaceGeometry>::new();
     for face in &out.faces {
         let Some(plan) = plans.remove(face.id.as_str()) else {
@@ -975,7 +1197,7 @@ pub(super) fn convert_scope(
                     }
                 }
             }
-            coedge_pcurves.insert(coedge, Some(pcurve.id));
+            coedge_pcurves.insert(coedge, Some((pcurve.id, pcurve.against)));
         }
     }
     let late = dropped
@@ -993,12 +1215,21 @@ pub(super) fn convert_scope(
     }
     for coedge in &mut out.coedges {
         match coedge_pcurves.get(coedge.id.as_str()) {
-            Some(Some(id)) => {
+            Some(Some((id, against))) => {
                 coedge.pcurves.retain(|use_| use_.pcurve.as_str() == id);
                 coedge.pcurves.truncate(1);
-                if new_pcurves.contains_key(id) {
+                if let Some(geometry) = new_pcurves.get(id) {
                     if let Some(use_) = coedge.pcurves.first_mut() {
-                        use_.parameter_range = None;
+                        use_.parameter_range = if *against {
+                            pcurve_knot_domain(geometry).and_then(|[lo, hi]| {
+                                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                                    [hi, lo],
+                                )
+                                .ok()
+                            })
+                        } else {
+                            None
+                        };
                     }
                 }
             }
@@ -1008,17 +1239,7 @@ pub(super) fn convert_scope(
     }
     for pcurve in &mut out.pcurves {
         if let Some(geometry) = new_pcurves.remove(pcurve.id.as_str()) {
-            let range = match &geometry {
-                PcurveGeometry::Nurbs { nurbs } => {
-                    usize::try_from(nurbs.degree()).ok().and_then(|degree| {
-                        Some([
-                            *nurbs.knots().get(degree)?,
-                            *nurbs.knots().get(nurbs.pole_rows().count())?,
-                        ])
-                    })
-                }
-                _ => None,
-            };
+            let range = pcurve_knot_domain(&geometry);
             let mut metadata = PcurveMetadata::general(
                 None,
                 range.and_then(cadmpeg_ir::units::FiniteVector::new),
@@ -1048,6 +1269,7 @@ pub(super) fn convert_scope(
     ConvertedScope {
         ir: converted,
         dropped,
+        unjoined,
     }
 }
 

@@ -3014,13 +3014,22 @@ not assigned the current layout by CADIR; its containing object remains a
 retained native record with an unsupported-version loss. This is an admission
 decision, not a claim that the OpenNURBS reader rejects the bytes.
 
-CADIR emits one compound procedural-curve record for the polycurve and one
-neutral carrier curve for each child. Child geometry is converted to
-millimetres; child and polycurve parameters, the reserved values, and the
-reserved bounds are not converted. The parent retains the source object
-record. A bounded child gap is represented by the midpoint join repair and
-emits its geometry warning; a malformed child or parameter array does not
-enter the typed compound record.
+CADIR emits one composite curve for the polycurve and one neutral carrier
+curve for each child. The composite's parameter range is `[t[0], t[n]]`. Each
+segment keeps the direction of its child, and the segments state no
+continuity. Each child carrier takes its polycurve interval as its parameter
+domain: a NURBS child by an affine map of its knots, and a child of another
+form by its exact NURBS form. A child whose domain length equals its interval
+keeps its form. Child geometry is converted to millimetres; child and
+polycurve parameters, the reserved values, and the reserved bounds are not
+converted. The parent retains the source object record. A bounded child gap is
+represented by the midpoint join repair and emits its geometry warning; a
+malformed child or parameter array does not enter the typed composite curve.
+
+The writer writes a composite curve object as one NURBS curve by the
+conversion below, with each segment over its interval. The segment intervals
+lie end to end from the start of the composite's parameter range, each as
+long as its child's parameter domain.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
@@ -3699,6 +3708,16 @@ color-presence byte and, when nonzero, one `ON_Color` per face.
 The `reversed surface` field states whether the face normal is opposite to the
 surface normal. A region face-side direction identifies the side that contains
 the region and does not replace the face orientation.
+
+The trims of an outer loop run counterclockwise in the surface parameters,
+about the surface normal, on a face of either `reversed surface` value. A
+CADIR loop runs about the face normal. On a face with `reversed surface` 1,
+CADIR states each loop with the trims in reverse order, each coedge in the
+direction opposite to its trim, and each pcurve use over its trim domain in
+decreasing order. The writer applies the inverse map. Two trims that share an
+edge run in opposite directions along it. Where the two uses of a CADIR edge
+run in the same direction, the writer gives the second use a copy of the edge
+and charges `rhino/writer.edge-unjoined`.
 
 Negative material channels map to zero. A vertex, edge, trim, loop, or face
 array position is authoritative and replaces a disagreeing stored positional

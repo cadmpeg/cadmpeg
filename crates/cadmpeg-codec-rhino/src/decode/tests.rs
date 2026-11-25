@@ -734,17 +734,19 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
 }
 
 #[test]
-fn coedge_and_edge_proxy_reversals_are_independent() {
+fn coedge_trim_edge_proxy_and_face_reversals_are_independent() {
     for trim_reversed in [false, true] {
         for edge_proxy_reversed in [false, true] {
-            assert_eq!(
-                coedge_sense(trim_reversed, edge_proxy_reversed),
-                if trim_reversed ^ edge_proxy_reversed {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                }
-            );
+            for face_reversed in [false, true] {
+                assert_eq!(
+                    coedge_sense(trim_reversed, edge_proxy_reversed, face_reversed),
+                    if trim_reversed ^ edge_proxy_reversed ^ face_reversed {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    }
+                );
+            }
         }
     }
 }

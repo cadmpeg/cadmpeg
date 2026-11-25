@@ -1017,3 +1017,77 @@ fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
         );
     }
 }
+
+#[test]
+fn free_composite_curve_is_written_as_one_nurbs_curve() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
+        CurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+
+    let line = |key: &str, origin: Point3, direction: cadmpeg_ir::math::Vector3| Curve {
+        parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0]),
+        id: CurveId::mint(format!("rhino:test:curve#{key}")).expect("identity grammar"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).expect("a line"),
+        )),
+        source_object: None,
+        native_ref: None,
+    };
+    let first = line(
+        "first",
+        Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+    );
+    let second = line(
+        "second",
+        Point3::new(1.0, 0.0, 0.0),
+        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+    );
+    let segments = [&first, &second]
+        .into_iter()
+        .map(|curve| CompositeCurveSegment {
+            curve: curve.id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Discontinuous,
+        })
+        .collect::<Vec<_>>();
+    let joined = Curve {
+        parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 2.0]),
+        id: CurveId::mint("rhino:test:curve#joined").expect("identity grammar"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: CompositeCurveSegments::try_from(segments).expect("two segments"),
+            self_intersect: None,
+        }),
+        source_object: None,
+        native_ref: None,
+    };
+    let mut ir = CadIr::empty();
+    ir.geometry.curves.extend([first, second, joined]);
+
+    let (decoded, losses) = super::written(&ir);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
+    let [curve] = decoded.geometry.curves.as_slice() else {
+        panic!("one curve object: {:?}", decoded.geometry.curves);
+    };
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry else {
+        panic!("a NURBS curve: {:?}", curve.geometry);
+    };
+    let ends = [0, nurbs.pole_count() - 1].map(|index| {
+        nurbs
+            .pole_rows()
+            .point_at(index)
+            .expect("a control point")
+            .get()
+    });
+    assert_eq!(
+        ends,
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
+    );
+}

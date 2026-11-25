@@ -446,3 +446,120 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
         assert_eq!(planar_solid_orientation(&model), 2);
     }
 }
+
+/// `adjacent_quad_sheet` with its second face on a plane whose normal is
+/// `-z` and with the face reversed: the face keeps its `+z` side.
+fn adjacent_sheet_with_reversed_face() -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let mut ir = adjacent_quad_sheet();
+    ir.geometry.surfaces[1].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("a plane frame"),
+    ));
+    ir.geometry.faces[1].sense = cadmpeg_ir::topology::Sense::Reversed;
+    ir
+}
+
+/// The senses of the two uses of the edge two decoded faces share.
+fn shared_edge_senses(ir: &cadmpeg_ir::document::CadIr) -> Vec<cadmpeg_ir::topology::Sense> {
+    let shared = ir
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| {
+            ir.geometry
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+                .count()
+                == 2
+        })
+        .expect("the faces share an edge");
+    ir.geometry
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == shared.id)
+        .map(|coedge| coedge.sense)
+        .collect()
+}
+
+#[test]
+fn reversed_face_of_a_consistent_shell_keeps_its_shared_edge() {
+    let ir = adjacent_sheet_with_reversed_face();
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1, "{losses:?}");
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert_eq!(decoded.geometry.edges.len(), 7);
+    assert_eq!(
+        decoded
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.sense)
+            .collect::<Vec<_>>(),
+        [
+            cadmpeg_ir::topology::Sense::Forward,
+            cadmpeg_ir::topology::Sense::Reversed
+        ]
+    );
+    let senses = shared_edge_senses(&decoded);
+    assert_ne!(senses[0], senses[1]);
+    let validation =
+        cadmpeg_ir::validate_neutral(&decoded, Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")
+                && !loss.contains("writer.edge-unjoined")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn shared_edge_with_equal_uses_is_written_as_two_edges() {
+    use cadmpeg_ir::topology::Sense;
+
+    let mut ir = adjacent_sheet_with_reversed_face();
+    let ring = ir.geometry.loops[1]
+        .coedges()
+        .iter()
+        .rev()
+        .cloned()
+        .collect();
+    ir.geometry.loops[1]
+        .replace_ring(ring, Vec::new())
+        .expect("the reversed ring");
+    for coedge in &mut ir.geometry.coedges[4..8] {
+        coedge.sense = match coedge.sense {
+            Sense::Forward => Sense::Reversed,
+            Sense::Reversed => Sense::Forward,
+        };
+    }
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 2, "{losses:?}");
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert_eq!(decoded.geometry.edges.len(), 8);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.contains("writer.edge-unjoined")
+                && loss.contains("cadir:model:edge#adjacent.1")),
+        "{losses:?}"
+    );
+    assert!(
+        losses.iter().any(|loss| loss.contains("writer.body-split")),
+        "{losses:?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
+}
