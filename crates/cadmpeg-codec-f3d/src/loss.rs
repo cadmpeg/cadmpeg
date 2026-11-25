@@ -6142,6 +6142,7 @@ mod tests {
                 "writer.rollback-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
+                "writer.history-unrestored",
                 "writer.appearance-guid-allocated",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
