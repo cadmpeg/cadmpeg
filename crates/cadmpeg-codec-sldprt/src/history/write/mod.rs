@@ -62,13 +62,10 @@ pub(crate) fn feature_name_changes(
 pub(crate) fn native_parameters_match_source(
     digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: Option<&crate::native::SldprtNative>,
-    limits: ResourceLimits,
+    hash_ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let hash_arena = DecodeArena::new();
-    let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy { limits })?;
-
     Ok(native
-        .map(|native| native_parameter_hash(&hash_ctx, &native.feature_histories))
+        .map(|native| native_parameter_hash(hash_ctx, &native.feature_histories))
         .transpose()?
         .zip(crate::codec_digests::baseline(
             digests,
@@ -133,14 +130,13 @@ pub(crate) fn prepare_features_for_write(
     native: &mut Option<crate::native::SldprtNative>,
     edits: &mut SourceEdits<'_>,
 ) -> Result<features::PreparedFeatures, CodecError> {
-    let limits = edits.limits();
-    let hash_arena = DecodeArena::new();
-    let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy { limits })?;
+    let hash_ctx = edits.ctx();
+    let limits = hash_ctx.policy().limits;
 
-    let neutral_hash = feature_hash(&hash_ctx, &ir.model)?;
+    let neutral_hash = feature_hash(hash_ctx, &ir.model)?;
     let native_hash = native
         .as_ref()
-        .map(|value| history_hash(&hash_ctx, &value.feature_histories))
+        .map(|value| history_hash(hash_ctx, &value.feature_histories))
         .transpose()?;
     let baseline_neutral =
         crate::codec_digests::baseline(digests, "sldprt_neutral_feature_local_sha256");
@@ -167,7 +163,7 @@ pub(crate) fn prepare_features_for_write(
                 .map(|projection| Ok::<_, CodecError>(projection.into_model()?.0))
                 .transpose()?
                 .unwrap_or_default();
-            if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
+            if feature_hash(hash_ctx, &projected_model)? == neutral_hash {
                 Ok(features::PreparedFeatures::default())
             } else {
                 Err(CodecError::Malformed(
@@ -216,7 +212,7 @@ fn validate_embedded_helix_edits(
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native, edits.limits())?
+    let expected = project_features_with_native_inputs(native, edits.ctx().policy().limits)?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
@@ -270,7 +266,7 @@ fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let projected = project_features_with_native_inputs(native, edits.limits())?;
+    let projected = project_features_with_native_inputs(native, edits.ctx().policy().limits)?;
     let expected_paths = projected
         .iter()
         .filter_map(|feature| {

@@ -133,7 +133,7 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_core::decode::{DecodeContext, DecodeDepth, ResourceLimits, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ContainerSummary;
@@ -190,7 +190,7 @@ impl SldprtCodec {
         ir: &CadIr,
         fidelity: &SourceFidelity,
         records: &[SourceRecord<'_>],
-        limits: ResourceLimits,
+        ctx: &DecodeContext<'_>,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let image = records
@@ -198,7 +198,7 @@ impl SldprtCodec {
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
         let (annotations, digests) = (&fidelity.annotations, &fidelity.codec_digests);
-        if fidelity.edited(ir, limits)? {
+        if fidelity.edited(ctx, ir)? {
             if let Some((image, loss)) = image
                 .filter(|_| !ir.model.omitted_arenas_held())
                 .zip(Self::unrestored_loss())
@@ -213,7 +213,7 @@ impl SldprtCodec {
                 records,
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
-                limits,
+                ctx,
             )?;
             writer.write_all(&bytes)?;
             return Ok(written);
@@ -226,7 +226,7 @@ impl SldprtCodec {
                 records,
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
-                limits,
+                ctx,
             )?;
             writer.write_all(&bytes)?;
             return Ok(written);
@@ -261,7 +261,7 @@ impl SldprtCodec {
         records: &[SourceRecord<'_>],
         shaped: &[history::write::brep_agreement::ShapingEdit],
         fidelity: SemanticFidelity,
-        limits: ResourceLimits,
+        ctx: &DecodeContext<'_>,
     ) -> Result<(Written, Vec<u8>), CodecError> {
         if !ir.model.omitted_arenas_held()
             && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
@@ -318,6 +318,9 @@ impl SldprtCodec {
             } else {
                 &source.source_fidelity.codec_digests
             };
+            // The baseline is a check, so it runs in a session of its own.
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let check = DecodeContext::new(&arena, ctx.policy(), DecodeDepth::Full);
             let result = writer::write_semantic_with_records_cached(
                 &source.ir,
                 &source.source_fidelity.annotations,
@@ -326,26 +329,24 @@ impl SldprtCodec {
                 writer::SemanticWriteControls {
                     withheld: &[],
                     shaped: &[],
-                    limits,
+                    ctx: &check,
                 },
                 &mut cache,
                 &mut bytes,
-            );
+            )
+            .ok();
             let mut shared = shared_cache.borrow_mut();
             if shared.source_baseline.is_none() {
                 shared.source_baseline = cache.source_baseline;
             }
-            match result {
-                Ok(_) => Ok((image != Some(bytes.as_slice())).then_some(bytes)),
-                Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-                Err(_) => Ok(None),
-            }
+            result?;
+            (image != Some(bytes.as_slice())).then_some(bytes)
         };
         let ((bytes, output), read_back) = history::write::read_back::write_until_read_back(
             ir,
             digests,
             baseline_key,
-            limits,
+            ctx.policy().limits,
             &mut |withheld| {
                 let mut bytes = Vec::new();
                 let mut cache = shared_cache.borrow_mut();
@@ -357,7 +358,7 @@ impl SldprtCodec {
                     writer::SemanticWriteControls {
                         withheld,
                         shaped,
-                        limits,
+                        ctx,
                     },
                     &mut cache,
                     &mut bytes,
@@ -384,7 +385,8 @@ impl SldprtCodec {
                 .native
                 .namespace("sldprt")
                 .map(|namespace| {
-                    native::SldprtNative::load_under(namespace, limits).map_err(CodecError::from)
+                    native::SldprtNative::load_under(namespace, ctx.policy().limits)
+                        .map_err(CodecError::from)
                 })
                 .transpose()?,
         };
@@ -400,7 +402,7 @@ impl SldprtCodec {
             source,
             &written,
             &read_back.misread,
-            limits,
+            ctx,
         )?
         .losses;
         let written = Written::Semantic {
@@ -618,20 +620,22 @@ impl EncoderBackend for SldprtCodec {
 
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 
     fn restore(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: &ResolvedWrite<'_>,
         notes: &mut Vec<String>,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target, notes, losses)
+        writer::saved::restore(ctx, input, target, notes, losses)
     }
 }
 

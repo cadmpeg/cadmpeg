@@ -121,17 +121,12 @@ pub(crate) fn prepare_parameters_for_write(
     feature_parameter_changes_authorized: bool,
     edits: &mut SourceEdits<'_>,
 ) -> Result<(), CodecError> {
-    let policy = cadmpeg_core::decode::DecodePolicy {
-        limits: edits.limits(),
-    };
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &hash_arena, &policy)?;
+    let hash_ctx = edits.ctx();
 
-    let neutral_hash = parameter_hash(&hash_ctx, &ir.model.parameters)?;
+    let neutral_hash = parameter_hash(hash_ctx, &ir.model.parameters)?;
     let native_hash = native
         .as_ref()
-        .map(|value| native_parameter_hash(&hash_ctx, &value.feature_histories))
+        .map(|value| native_parameter_hash(hash_ctx, &value.feature_histories))
         .transpose()?;
     let baseline_neutral =
         crate::codec_digests::baseline(digests, "sldprt_neutral_parameter_local_sha256");
@@ -163,14 +158,17 @@ pub(crate) fn prepare_parameters_for_write(
                 .flat_map(|lane| lane.native_payload.iter().copied())
                 .collect::<Vec<_>>();
             let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane_bytes, &arena, &policy)?;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &lane_bytes,
+                &arena,
+                hash_ctx.policy(),
+            )?;
             let projected = native
                 .as_ref()
                 .map(|value| project_parameters(&ctx, &value.feature_histories))
                 .transpose()?
                 .unwrap_or_default();
-            if parameter_hash(&hash_ctx, &projected)? == neutral_hash {
+            if parameter_hash(hash_ctx, &projected)? == neutral_hash {
                 Ok(())
             } else {
                 Err(CodecError::Malformed(
@@ -247,9 +245,7 @@ fn sync_neutral_parameters(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lane_bytes,
         &arena,
-        &cadmpeg_core::decode::DecodePolicy {
-            limits: edits.limits(),
-        },
+        edits.ctx().policy(),
     )?;
     let global_owners = global_parameter_owners(&ir.model.features);
     if let Some(native) = native.as_ref() {

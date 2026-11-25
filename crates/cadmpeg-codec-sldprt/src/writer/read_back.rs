@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::ResourceLimits;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -65,7 +64,7 @@ impl SourceDefinitions {
         ir: &CadIr,
         native: Option<&SldprtNative>,
         limits: ResourceLimits,
-    ) -> Result<Vec<LossNote>, CodecError> {
+    ) -> Vec<LossNote> {
         let kept = ir
             .model
             .features
@@ -73,7 +72,7 @@ impl SourceDefinitions {
             .filter_map(|feature| Some((feature, self.0.get(&feature.id)?)))
             .collect::<Vec<_>>();
         let Some(native) = native.filter(|_| !kept.is_empty()) else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         let ids = kept
             .iter()
@@ -90,7 +89,6 @@ impl SourceDefinitions {
         let projected =
             match crate::history::write::project_features_with_native_inputs(native, limits) {
                 Ok(projected) => projected,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
                         "the SLDPRT history writer cannot read its written history records back \
@@ -99,7 +97,7 @@ impl SourceDefinitions {
                         ids.len(),
                         ids.join(", ")
                     )));
-                    return Ok(notes);
+                    return notes;
                 }
             };
         let projected = projected
@@ -178,7 +176,7 @@ impl SourceDefinitions {
                 named(&bodiless)
             )));
         }
-        Ok(notes)
+        notes
     }
 }
 

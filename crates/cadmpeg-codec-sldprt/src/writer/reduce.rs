@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, output_empty, record_invalid, rule_invalid};
 use cadmpeg_ir::design::refs::EntityRef;
@@ -37,14 +37,12 @@ const DOMAIN_END_ROUNDOFF_RELATIVE: f64 = 1.0e-9;
 /// A generated partition bounds every edge by its vertices. A range the
 /// decode derives from those vertices is stated by them; any other range is
 /// not written. A line edge decodes with no range, so its range is not
-/// written either. Each range is evaluated under `limits`.
+/// written either. Each range is evaluated in the encode session `ctx`.
 pub(super) fn edge_ranges_omitted(
     ir: &CadIr,
     annotations: &Annotations,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<LossNote>, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
     let points = ir
         .geometry
         .points
@@ -83,7 +81,7 @@ pub(super) fn edge_ranges_omitted(
         let stated = match curves.get(curve.as_str()) {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => false,
             Some(CurveGeometry::Solved(geometry)) => {
-                range_stated_by_vertices(&ctx, edge, geometry, &vertices)?
+                range_stated_by_vertices(ctx, edge, geometry, &vertices)?
             }
             Some(_) => false,
         };
@@ -185,12 +183,14 @@ fn range_stated_by_vertices(
         return Ok(false);
     };
     // A point the carrier states no finite value for fixes no range end.
-    let at =
-        |parameter| match curve_point_solved(EvaluationAdmission::Decode(ctx), geometry, parameter)
-        {
-            Ok(point) => Ok(Some(point.get())),
-            Err(failure) => failure.non_finite().map(|_| None),
-        };
+    let at = |parameter| match curve_point_solved(
+        EvaluationAdmission::Write(ctx),
+        geometry,
+        parameter,
+    ) {
+        Ok(point) => Ok(Some(point.get())),
+        Err(failure) => failure.non_finite().map(|_| None),
+    };
     let (Some(at_start), Some(at_end)) = (at(start_t)?, at(end_t)?) else {
         return Ok(false);
     };
@@ -872,9 +872,7 @@ fn unwritable_surface(geometry: &SurfaceGeometry) -> Option<String> {
 mod tests {
     use std::collections::HashMap;
 
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimits,
-    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::analytic::CircleCurve;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -932,13 +930,9 @@ mod tests {
     }
 
     #[test]
-    fn range_evaluation_refuses_past_the_callers_nesting_limit() {
+    fn range_evaluation_nests_apart_from_the_session_recursion_limit() {
         let mut limits = ResourceLimits::desktop();
         limits.max_recursion_depth = 0;
-        assert!(matches!(
-            quarter_arc_stated(limits),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RecursionDepth
-        ));
+        assert!(quarter_arc_stated(limits).unwrap());
     }
 }

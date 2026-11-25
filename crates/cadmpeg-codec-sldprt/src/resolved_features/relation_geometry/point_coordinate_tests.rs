@@ -405,7 +405,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
         &cadmpeg_ir::Annotations::default(),
         &mut crate::history::write::edits::SourceEdits::without_source(
             &ir,
-            cadmpeg_core::decode::ResourceLimits::default(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         ),
         |_| Ok(None),
     )

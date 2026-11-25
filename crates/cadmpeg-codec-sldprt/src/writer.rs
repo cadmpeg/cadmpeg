@@ -120,12 +120,12 @@ pub(crate) struct SemanticWriteCache {
 }
 
 /// Per-pass withheld features and shaping edits for one semantic write, and
-/// the caller's resource limits.
+/// the encode session it reads in.
 #[derive(Clone, Copy)]
 pub(crate) struct SemanticWriteControls<'a> {
     pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
     pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
-    pub(crate) limits: ResourceLimits,
+    pub(crate) ctx: &'a DecodeContext<'a>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -145,6 +145,11 @@ pub(crate) fn write_semantic_with_records(
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let mut cache = SemanticWriteCache::default();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: ResourceLimits::desktop(),
+    };
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
     write_semantic_with_records_cached(
         ir,
         annotations,
@@ -153,7 +158,7 @@ pub(crate) fn write_semantic_with_records(
         SemanticWriteControls {
             withheld,
             shaped,
-            limits: ResourceLimits::desktop(),
+            ctx: &ctx,
         },
         &mut cache,
         writer,
@@ -178,12 +183,11 @@ pub(crate) fn write_semantic_with_records_cached(
     let SemanticWriteControls {
         withheld,
         shaped,
-        limits,
+        ctx,
     } = controls;
     let source_baseline = &mut cache.source_baseline;
-    let policy = DecodePolicy { limits };
-    let digest_arena = DecodeArena::new();
-    let (digest_ctx, _) = DecodeContext::from_root_bytes(&[], &digest_arena, &policy)?;
+    let policy = *ctx.policy();
+    let limits = policy.limits;
     if matches!(cache.native, CachedNative::Unloaded) {
         let loaded = ir
             .native
@@ -291,7 +295,7 @@ pub(crate) fn write_semantic_with_records_cached(
         digests,
         source_scan.as_ref(),
         native.as_ref(),
-        limits,
+        ctx,
     )?;
     if native
         .as_ref()
@@ -318,6 +322,9 @@ pub(crate) fn write_semantic_with_records_cached(
     }
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
     let reducible = history_drop::HistoryDrop::applies(digests);
+    if reducible {
+        losses.extend(history_drop::features_without_result(&mut normalized));
+    }
     let mut displayed_values = history_drop::DisplayedValues::default();
     let mut renamed = history_drop::Renamed::default();
     let mut source_definitions = None;
@@ -338,7 +345,7 @@ pub(crate) fn write_semantic_with_records_cached(
             native.as_ref(),
             source_baseline.as_ref().map(|baseline| &baseline.ir),
             withheld,
-            limits,
+            ctx,
         )?;
         match prepare_history(
             &mut normalized,
@@ -388,7 +395,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 )),
                 &written,
                 &HashSet::new(),
-                limits,
+                ctx,
             )?
             .shaped,
         );
@@ -401,13 +408,13 @@ pub(crate) fn write_semantic_with_records_cached(
         losses.extend(keywords_text::readable_keywords(&normalized, native));
     }
     if let Some(source_definitions) = &source_definitions {
-        losses.extend(source_definitions.notes(&normalized, native.as_ref(), limits)?);
+        losses.extend(source_definitions.notes(&normalized, native.as_ref(), limits));
     }
     let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
     losses.extend(reduce::invalid_records(ir, &validation));
     if !retain_native_brep {
-        losses.extend(reduce::edge_ranges_omitted(ir, annotations, limits)?);
+        losses.extend(reduce::edge_ranges_omitted(ir, annotations, ctx)?);
         losses.extend(reduce::producer_attributes_omitted(ir));
     }
     losses.extend(reduce::empty_output(ir));
@@ -479,11 +486,11 @@ pub(crate) fn write_semantic_with_records_cached(
     };
     let replay_swobjects = if owners.replay() {
         let baseline = crate::codec_digests::baseline(digests, SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE);
-        let current = swobjects_local_sha256(&digest_ctx, ir)?;
+        let current = swobjects_local_sha256(ctx, ir)?;
         if baseline != Some(current.as_str()) {
             let material_baseline =
                 crate::codec_digests::baseline(digests, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
-            let material = swobjects_material_local_sha256(&digest_ctx, ir)?;
+            let material = swobjects_material_local_sha256(ctx, ir)?;
             if material_baseline != Some(material.as_str()) {
                 let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
                 losses.extend(materials::retained_materials_kept(
@@ -1533,12 +1540,12 @@ fn retained_partition(
     digests: &CodecDigests,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     let Some(expected) = crate::codec_digests::baseline(digests, "brep_local_sha256") else {
         return Ok(None);
     };
-    if crate::decode::brep_local_sha256(ir, limits)? != expected {
+    if crate::decode::brep_local_sha256(ctx, ir)? != expected {
         return Ok(None);
     }
     let Some(scan) = source_scan else {
@@ -2554,11 +2561,12 @@ fn prepare_history(
     cut: &mut Vec<String>,
     edits: &mut crate::history::write::edits::SourceEdits<'_>,
 ) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
-    let limits = edits.limits();
+    let ctx = edits.ctx();
+    let limits = ctx.policy().limits;
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::write::native_parameters_match_source(digests, native.as_ref(), limits)?;
+        && crate::history::write::native_parameters_match_source(digests, native.as_ref(), ctx)?;
     crate::history::write::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,

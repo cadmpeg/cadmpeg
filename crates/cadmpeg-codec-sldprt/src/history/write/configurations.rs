@@ -2,7 +2,7 @@
 //! Configuration records for native write.
 
 use crate::records::{Configuration, FeatureHistory};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, ParameterValue};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -44,16 +44,9 @@ pub(crate) fn prepare_configurations_for_write(
     )
         -> Result<Option<crate::resolved_features::profiles::ExactProfiles>, CodecError>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy {
-            limits: edits.limits(),
-        },
-    )?;
+    let hash_ctx = edits.ctx();
 
-    let feature_state_hash = configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
+    let feature_state_hash = configuration_feature_state_hash(hash_ctx, &ir.model.configurations)?;
     let baseline_feature_states =
         crate::codec_digests::baseline(digests, "sldprt_configuration_feature_states_local_sha256");
     let feature_states_changed = baseline_feature_states
@@ -65,7 +58,7 @@ pub(crate) fn prepare_configurations_for_write(
                 .iter()
                 .any(|configuration| !configuration.feature_states.is_empty());
     let parameter_value_hash =
-        configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?;
+        configuration_parameter_value_hash(hash_ctx, &ir.model.configurations)?;
     let baseline_parameter_values = crate::codec_digests::baseline(
         digests,
         "sldprt_configuration_parameter_values_local_sha256",
@@ -78,10 +71,10 @@ pub(crate) fn prepare_configurations_for_write(
                 .configurations
                 .iter()
                 .any(|configuration| !configuration.parameter_values.is_empty());
-    let neutral_hash = configuration_hash(&hash_ctx, &ir.model.configurations)?;
+    let neutral_hash = configuration_hash(hash_ctx, &ir.model.configurations)?;
     let native_hash = native
         .as_ref()
-        .map(|value| native_configuration_hash(&hash_ctx, &value.feature_histories))
+        .map(|value| native_configuration_hash(hash_ctx, &value.feature_histories))
         .transpose()?;
     let baseline_neutral =
         crate::codec_digests::baseline(digests, "sldprt_neutral_configuration_local_sha256");
@@ -105,7 +98,7 @@ pub(crate) fn prepare_configurations_for_write(
                     .map(|value| project_configurations(&value.feature_histories))
                     .transpose()?
                     .unwrap_or_default();
-                if configuration_hash(&hash_ctx, &projected)? != neutral_hash {
+                if configuration_hash(hash_ctx, &projected)? != neutral_hash {
                     return Err(CodecError::Malformed(
                         "conflicting neutral and native SLDPRT configuration edits".into(),
                     ));
@@ -160,14 +153,10 @@ fn sync_configuration_design_state(
     exact: Option<&crate::resolved_features::profiles::ExactProfiles>,
     edits: &mut super::edits::SourceEdits<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    let policy = DecodePolicy {
-        limits: edits.limits(),
-    };
+    let policy = *edits.ctx().policy();
     let unbound = crate::resolved_features::profiles::ExactProfiles::default();
     let profiles = exact.unwrap_or(&unbound);
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &hash_arena, &policy)?;
+    let hash_ctx = edits.ctx();
 
     let form_padding = ir
         .source
@@ -260,13 +249,13 @@ fn sync_configuration_design_state(
         ));
     }
     let current_parameter_hash =
-        configuration_parameter_value_hash(&hash_ctx, &current_projection.model.configurations)?;
+        configuration_parameter_value_hash(hash_ctx, &current_projection.model.configurations)?;
     let current_feature_hash =
-        configuration_feature_state_hash(&hash_ctx, &current_projection.model.configurations)?;
+        configuration_feature_state_hash(hash_ctx, &current_projection.model.configurations)?;
     let current_matches = current_parameter_hash
-        == configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?
+        == configuration_parameter_value_hash(hash_ctx, &ir.model.configurations)?
         && current_feature_hash
-            == configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
+            == configuration_feature_state_hash(hash_ctx, &ir.model.configurations)?;
     if current_matches {
         return Ok(relation_point_charges(relation_points));
     }
@@ -378,10 +367,10 @@ fn sync_configuration_design_state(
         ));
     }
     relation_points.extend(projected_points);
-    if configuration_parameter_value_hash(&hash_ctx, &projected.model.configurations)?
-        != configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?
-        || configuration_feature_state_hash(&hash_ctx, &projected.model.configurations)?
-            != configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?
+    if configuration_parameter_value_hash(hash_ctx, &projected.model.configurations)?
+        != configuration_parameter_value_hash(hash_ctx, &ir.model.configurations)?
+        || configuration_feature_state_hash(hash_ctx, &projected.model.configurations)?
+            != configuration_feature_state_hash(hash_ctx, &ir.model.configurations)?
     {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration design-state edit has no complete native lane encoding".into(),

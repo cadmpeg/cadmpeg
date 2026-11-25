@@ -62,8 +62,8 @@ fn assert_root(decoded: &EditableDecodeResult, id: &str) {
     assert!(!decoded
         .source_fidelity()
         .edited(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             decoded.ir(),
-            cadmpeg_core::decode::ResourceLimits::desktop()
         )
         .expect("final document digest"));
 }

@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
@@ -76,7 +76,7 @@ pub(crate) enum Source<'a> {
 /// stale-solid loss calls them written. Without the retained source image,
 /// [`imageless_losses`] names what it can tell, and no edit is known to
 /// shape the solid. `digests` are the codec digests the decode recorded; the
-/// comparison runs under `limits`.
+/// comparison runs in the encode session `hash_ctx`.
 pub(crate) fn agreement(
     ir: &CadIr,
     digests: &CodecDigests,
@@ -84,28 +84,27 @@ pub(crate) fn agreement(
     source: Option<Source<'_>>,
     unwritten: &UnwrittenEdits,
     misread: &HashSet<(FeatureId, String)>,
-    limits: ResourceLimits,
+    hash_ctx: &DecodeContext<'_>,
 ) -> Result<Agreement, CodecError> {
+    let limits = hash_ctx.policy().limits;
     let kept_definitions = &unwritten.kept_definitions;
     let Some(native) = native else {
         return Ok(Agreement::default());
     };
-    let hash_arena = DecodeArena::new();
-    let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy { limits })?;
     let features_changed = differs(digests, "sldprt_neutral_feature_local_sha256", || {
-        feature_hash(&hash_ctx, &ir.model)
+        feature_hash(hash_ctx, &ir.model)
     })?;
     let parameters_changed = differs(digests, "sldprt_neutral_parameter_local_sha256", || {
-        parameter_hash(&hash_ctx, &ir.model.parameters)
+        parameter_hash(hash_ctx, &ir.model.parameters)
     })?;
     let native_changed = differs(digests, "sldprt_native_history_sha256", || {
-        history_hash(&hash_ctx, &native.feature_histories)
+        history_hash(hash_ctx, &native.feature_histories)
     })?;
     let Some(source) = source else {
         let losses = imageless_losses(
             ir,
             digests,
-            &hash_ctx,
+            hash_ctx,
             [
                 (features_changed, "features"),
                 (parameters_changed, "parameters"),
@@ -119,7 +118,7 @@ pub(crate) fn agreement(
     };
     let configurations_changed =
         differs(digests, "sldprt_neutral_configuration_local_sha256", || {
-            configuration_hash(&hash_ctx, &ir.model.configurations)
+            configuration_hash(hash_ctx, &ir.model.configurations)
         })?;
     if !(features_changed || parameters_changed || native_changed || configurations_changed) {
         return Ok(Agreement::default());
@@ -150,7 +149,7 @@ pub(crate) fn agreement(
             ir,
             digests,
             baseline,
-            &hash_ctx,
+            hash_ctx,
             (kept_definitions, misread),
             &mut named,
             &mut out,

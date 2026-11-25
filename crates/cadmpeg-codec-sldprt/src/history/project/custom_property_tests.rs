@@ -52,7 +52,7 @@ fn custom_properties_are_document_attributes_not_model_features() {
         &mut native,
         &mut crate::history::write::edits::SourceEdits::without_source(
             &cadmpeg_ir::CadIr::empty(),
-            cadmpeg_core::decode::ResourceLimits::default(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         ),
     )
     .expect("required invariant");

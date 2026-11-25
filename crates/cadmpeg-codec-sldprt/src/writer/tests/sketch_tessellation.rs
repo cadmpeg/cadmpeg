@@ -72,8 +72,8 @@ fn semantic_writer_patch_declines_retained_sketch_constraint_edits() {
     assert!(decoded
         .source_fidelity()
         .edited(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             decoded.ir(),
-            cadmpeg_core::decode::ResourceLimits::desktop()
         )
         .unwrap());
 

@@ -139,11 +139,109 @@ fn a_part_stored_in_its_own_file_is_written_as_an_output_of_its_own() {
         .iter()
         .filter(|loss| loss.code.local_code() == "definition.placed")
         .collect::<Vec<_>>();
-    assert_eq!(placed.len(), 1, "{:?}", report.losses);
-    assert!(placed[0]
-        .message
-        .split([' ', ','])
-        .any(|token| token == "test:model:definition#loose"));
+    assert!(placed.is_empty(), "{:?}", report.losses);
+}
+
+/// [`assembly_and_part`] as a decode of a Fusion archive states it: the part
+/// is a design of the archive, and each definition holds one feature, which
+/// produces the definition's body.
+fn archive_of_two_designs() -> CadIr {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+    let mut ir = assembly_and_part();
+    let mut produced = Vec::new();
+    for stated in &mut ir.model.product_definitions {
+        if let Storage::File {
+            document,
+            source: source @ Some(_),
+        } = &mut stated.storage
+        {
+            *document = ExternalDocument::path("part.f3d");
+            *source = serde_json::from_value(serde_json::json!({
+                "identity": {"kind": "unclassified", "format": "f3d"},
+                "attributes": {},
+            }))
+            .unwrap();
+        }
+        if let Some(body) = stated.bodies.first() {
+            produced.push((stated.id.clone(), body.clone()));
+        }
+    }
+    for (ordinal, (holder, body)) in (0..).zip(produced) {
+        let mut evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        ));
+        evaluation.edit(|_, outputs| {
+            outputs.insert(body);
+        });
+        ir.model.features.push(Feature {
+            product_definition: Some(holder),
+            id: format!("test:model:feature#{ordinal}").try_into().unwrap(),
+            ordinal,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation,
+            native_ref: None,
+        });
+    }
+    ir
+}
+
+#[test]
+fn each_design_of_an_archive_is_written_with_its_own_features() {
+    let ir = archive_of_two_designs();
+    let root = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap()
+        .id
+        .clone();
+    let names = OutputNames::from([
+        (
+            root,
+            cadmpeg_core::text::NonBlankString::new("assembly.sldprt").unwrap(),
+        ),
+        (
+            definition("part"),
+            cadmpeg_core::text::NonBlankString::new("part.sldprt").unwrap(),
+        ),
+    ]);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
+        .unwrap();
+    let mut outputs = Vec::new();
+    let report = plan
+        .write_each(|output, bytes| {
+            outputs.push((
+                output.name.as_ref().map(|name| name.as_str().to_owned()),
+                decoded_faces(bytes),
+            ));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        outputs,
+        [
+            (Some("assembly.sldprt".to_owned()), (1, 6)),
+            (Some("part.sldprt".to_owned()), (1, 6)),
+        ]
+    );
+    // Each output holds the body of each feature it writes.
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "writer.feature-result-absent"),
+        "{:?}",
+        report.losses
+    );
 }
 
 #[test]

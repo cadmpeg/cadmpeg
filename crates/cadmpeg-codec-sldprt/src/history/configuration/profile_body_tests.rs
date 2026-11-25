@@ -138,7 +138,7 @@ fn the_writer_projects_configuration_states_with_the_decoded_profile_bodies() {
             &fidelity.annotations,
             &mut crate::history::write::edits::SourceEdits::without_source(
                 ir,
-                cadmpeg_core::decode::ResourceLimits::default(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
             ),
             |_| Ok(profiles),
         )

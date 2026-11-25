@@ -454,6 +454,9 @@ pub(crate) enum SldprtLossCode {
     WriterActiveConfigurationAssumed,
     /// Export writes no history record for the named design records.
     WriterFeaturesOmitted,
+    /// Export writes no history record for the named features, whose result
+    /// body the output does not hold, nor for the records that need them.
+    WriterFeatureResultAbsent,
     /// Export writes the sketches without the named constraints.
     WriterSketchConstraintsOmitted,
     /// Export bounds the named edges by their vertices, without their range.
@@ -797,6 +800,7 @@ impl SldprtLossCode {
         Self::WriterSubdOmitted,
         Self::WriterActiveConfigurationAssumed,
         Self::WriterFeaturesOmitted,
+        Self::WriterFeatureResultAbsent,
         Self::WriterSketchConstraintsOmitted,
         Self::WriterEdgeRangesOmitted,
         Self::WriterPmiOmitted,
@@ -1036,6 +1040,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => "writer.subd-omitted",
             Self::WriterActiveConfigurationAssumed => "writer.active-configuration-assumed",
             Self::WriterFeaturesOmitted => "writer.features-omitted",
+            Self::WriterFeatureResultAbsent => "writer.feature-result-absent",
             Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
             Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
             Self::WriterPmiOmitted => "writer.pmi-omitted",
@@ -1139,6 +1144,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => Severity::Warning,
             Self::WriterActiveConfigurationAssumed => Severity::Warning,
             Self::WriterFeaturesOmitted => Severity::Warning,
+            Self::WriterFeatureResultAbsent => Severity::Warning,
             Self::WriterSketchConstraintsOmitted => Severity::Warning,
             Self::WriterEdgeRangesOmitted => Severity::Warning,
             Self::WriterPmiOmitted => Severity::Warning,
@@ -1372,6 +1378,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
             Self::WriterActiveConfigurationAssumed => LossTaxonomy::MetadataNotTransferred,
             Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureResultAbsent => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
@@ -1940,6 +1947,7 @@ mod tests {
                 "writer.subd-omitted",
                 "writer.active-configuration-assumed",
                 "writer.features-omitted",
+                "writer.feature-result-absent",
                 "writer.sketch-constraints-omitted",
                 "writer.edge-ranges-omitted",
                 "writer.pmi-omitted",

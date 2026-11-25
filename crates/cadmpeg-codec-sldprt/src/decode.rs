@@ -6662,10 +6662,7 @@ pub(crate) fn stamp_local_digests(
 /// whether the retained Parasolid partition may be replayed verbatim while the
 /// rest of the document is written. It carries every limitation
 /// [`cadmpeg_ir::hash::document_local_sha256`] states.
-pub(crate) fn brep_local_sha256(
-    ir: &CadIr,
-    limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<String, CodecError> {
+pub(crate) fn brep_local_sha256(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
     let mut geometry = cadmpeg_ir::document::Topology::default();
@@ -6692,13 +6689,7 @@ pub(crate) fn brep_local_sha256(
     model
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy { limits },
-    )?;
-    brep_partition_sha256(&ctx, ir.tolerances, geometry, model).0
+    brep_partition_sha256(ctx, ir.tolerances, geometry, model).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -6897,8 +6888,7 @@ mod digest_tests {
         ));
         let appearances = ir.model.appearances.clone();
         let bindings = ir.model.appearance_bindings.clone();
-        let expected_hash =
-            super::brep_local_sha256(&ir, cadmpeg_core::decode::ResourceLimits::desktop()).unwrap();
+        let expected_hash = super::brep_local_sha256(&ctx, &ir).unwrap();
         let actual_hash = brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
         assert_eq!(actual_hash, expected_hash);
         assert_eq!(ir.model.appearances, appearances);

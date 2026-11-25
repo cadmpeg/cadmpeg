@@ -24,9 +24,8 @@ pub(crate) fn plan_inherited_write(
 
 /// Plans an inherited write whose patch path declines the edited document:
 /// the writer synthesizes it without its `SolidWorks` history (§3.4, Paths).
-/// Checks that the output decodes, and returns the
-/// `export:native.records-omitted` message, which states why the patch
-/// declined.
+/// Checks that the output decodes, and returns the synthesis cause the
+/// report states, which says why the patch declined.
 pub(crate) fn plan_inherited_write_declined(ir: &CadIr, fidelity: &SourceFidelity) -> String {
     let mut output = Vec::new();
     let report = SldprtCodec
@@ -60,16 +59,12 @@ fn declined(report: &cadmpeg_ir::report::export::ExportReport, output: Vec<u8>) 
         report.write_path()
     );
     decode_bytes(output);
-    report
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code.local_code() == "native.records-omitted"
-                && loss.message.contains("because the patch of the document")
-        })
-        .unwrap_or_else(|| panic!("{:?}", report.losses))
-        .message
-        .clone()
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) =
+        report.synthesis_cause()
+    else {
+        panic!("the write states no synthesis cause: {:?}", report.losses)
+    };
+    reason.clone()
 }
 
 /// The messages of a write's unwritten-attribute losses, by code.

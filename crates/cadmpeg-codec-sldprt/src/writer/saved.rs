@@ -27,12 +27,18 @@ use crate::history::literals::{dimension_display, parse_parameter_literal};
 /// `losses` names each other edit by its path. Where the retained source
 /// cannot be restored from, the part is left as read and `notes` says why.
 pub(crate) fn restore(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
-    let Some(image) = saved_source(input, crate::SOURCE_IMAGE_ID, target.preserves_source())?
+    let Some(image) = saved_source(
+        ctx,
+        input,
+        crate::SOURCE_IMAGE_ID,
+        target.preserves_source(),
+    )?
     else {
         return Ok(None);
     };
@@ -40,9 +46,7 @@ pub(crate) fn restore(
         .decode(
             &mut Cursor::new(image),
             &DecodeOptions {
-                policy: cadmpeg_core::decode::DecodePolicy {
-                    limits: input.limits,
-                },
+                policy: *ctx.policy(),
                 ..DecodeOptions::default()
             },
         )
