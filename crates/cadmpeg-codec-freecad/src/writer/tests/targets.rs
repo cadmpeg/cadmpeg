@@ -310,63 +310,84 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     );
 }
 
-/// An explicit `--to` is the escape from the inherit refusal only where the
-/// retained graph can deliver the target. Where it cannot, `plan` refuses
-/// by name, with the catalog, before any byte is written.
+/// An explicit `--to` that the retained graph cannot deliver is written as the
+/// dialect the retained graph declares (§3.4, Refusals).
 ///
-/// This is where the codec's synthesis gap is visible: it patches the
-/// retained `Document.xml` and regenerates none, so schema 2 to schema 4 is
-/// a transcode it cannot perform at any request. A degraded schema-4 write
-/// built from schema-2 records is not the alternative — there is no
-/// synthesis path to degrade to, so the honest answer is the same typed
-/// refusal every sibling gives, not a bare message string from deep inside
-/// `write`.
+/// This writer patches the retained `Document.xml` and regenerates none, so a
+/// schema-2 source asked for schema 4 is written as schema 2. The report names
+/// that dialect, `fcstd/target.request-displaced` names both, and the output
+/// decodes back as schema 2.
 #[test]
-fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
+fn an_explicit_schema_four_target_writes_a_schema_two_source_as_schema_two() {
+    let source = schema_two_archive();
     let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(schema_two_archive()),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .expect("decode schema 2");
-    let error = Encoder::plan(
+    let plan = Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit("fcstd:schema-4"),
     )
-    .expect_err("this writer regenerates no Document.xml");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "fcstd");
+    .expect("the retained schema-2 document is written");
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).expect("write");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("fcstd:schema-4")
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
     );
+    let displaced: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .map(|loss| {
+            (
+                loss.code.namespace(),
+                loss.code.local_code(),
+                loss.severity,
+                loss.message.as_str(),
+            )
+        })
+        .collect();
+    let [(namespace, code, severity, message)] = displaced.as_slice() else {
+        panic!("expected one target loss, got {displaced:?}");
+    };
     assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
-        "explicit_unavailable"
+        (*namespace, *code, *severity),
+        (
+            "fcstd",
+            "target.request-displaced",
+            cadmpeg_ir::report::Severity::Warning
+        )
     );
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "fcstd:schema-4"),
-        "{:?}",
-        refusal.available()
+        message.contains("fcstd:schema-4") && message.contains("fcstd:schema-2"),
+        "{message}"
+    );
+    assert_eq!(entry_payloads(&written), entry_payloads(&source));
+
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("decode output");
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
+            .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
     );
 }
 
-/// An `FCStd` source that records no dialect refuses `Inherit`, uniformly
-/// with every other encoder, and quotes no dialect id because none exists.
+/// An `FCStd` source that records no dialect refuses `Inherit`: the catalog
+/// declares no default to write it as, and the refusal quotes no dialect id
+/// because none exists.
 #[test]
 fn inherit_refuses_a_source_that_records_no_dialect() {
     let mut ir = CORE_DESIGN.ir().clone();
@@ -386,20 +407,8 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     };
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        None
-    );
-    assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
-        "unrecorded_source"
+        serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
+        serde_json::json!({"kind": "no_default", "source": {"kind": "unrecorded_dialect"}})
     );
     assert!(
         refusal

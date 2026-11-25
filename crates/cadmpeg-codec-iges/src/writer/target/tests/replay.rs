@@ -3,7 +3,6 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
@@ -69,7 +68,13 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    "iges",
+                    cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("version displacement is charged");
     assert!(displacement
         .message

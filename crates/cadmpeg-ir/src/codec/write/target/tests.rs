@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::resolve_write_request;
-use super::TargetRequest;
+use super::{
+    TargetRequest, TargetResolution, WrittenRow, REQUEST_DISPLACED, SOURCE_DIALECT_DISPLACED,
+};
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::CadIr;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
@@ -143,20 +145,142 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
     assert_eq!(resolved.displaced_source(), None);
 }
 
-#[test]
-fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
-    let ir = catalog_write_ir(Some(("test", None)));
-    let error =
-        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, &[]).unwrap_err();
+/// The codes of the losses `report_target` charges, and the report target.
+fn charged(
+    resolved: &impl TargetResolution,
+    synthesized: bool,
+    row: Option<WrittenRow>,
+) -> (String, Vec<(String, String)>) {
+    let (target, losses) = resolved.report_target("test", synthesized, row);
+    (
+        target
+            .expect("a catalog write names its target")
+            .to_string(),
+        losses
+            .into_iter()
+            .map(|loss| {
+                assert_eq!(loss.severity, crate::report::Severity::Warning);
+                assert_eq!(loss.code.namespace(), "test");
+                (loss.code.local_code().to_owned(), loss.message)
+            })
+            .collect(),
+    )
+}
 
+#[test]
+fn write_request_inherit_writes_a_same_format_unrecorded_source_as_the_default() {
+    let ir = catalog_write_ir(Some(("test", None)));
+    let resolved =
+        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, &[]).unwrap();
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:new");
+    assert!(!resolved.preserves_source());
+    assert!(!resolved.source_preservation_eligible());
+
+    let (target, losses) = charged(&resolved, true, None);
+    assert_eq!(target, "test:new");
+    assert_eq!(
+        losses,
+        [(
+            SOURCE_DIALECT_DISPLACED.to_owned(),
+            "the test source records no dialect; the file is written as test:new".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn write_request_inherit_with_an_unrecorded_source_and_no_default_names_both() {
+    let ir = catalog_write_ir(Some(("test", None)));
+    let error = resolve_write_request(
+        &ir,
+        TargetRequest::Inherit,
+        TargetCatalog::new(CATALOG_WRITE_TARGETS, None),
+        &[],
+    )
+    .unwrap_err();
     let CodecError::UnsupportedTarget(refusal) = error else {
-        panic!("an unrecorded same-format source must produce a target refusal")
+        panic!("a catalog without a default has nothing to write")
     };
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
-        "unrecorded_source"
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
+        serde_json::json!({"kind": "no_default", "source": {"kind": "unrecorded_dialect"}})
     );
-    assert_eq!(refusal.format(), "test");
+}
+
+#[test]
+fn a_preserved_source_synthesized_is_written_as_the_default_and_charged() {
+    let ir = catalog_write_ir(Some(("test", Some("test:future"))));
+    let resolved =
+        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, &[]).unwrap();
+    assert_eq!(
+        resolved
+            .synthesized_row()
+            .map(|(_, entry)| entry.id.as_str()),
+        Some("test:new")
+    );
+
+    assert_eq!(
+        charged(&resolved, false, None),
+        ("test:future".into(), vec![])
+    );
+    let (target, losses) = charged(&resolved, true, None);
+    assert_eq!(target, "test:new");
+    assert_eq!(
+        losses,
+        [(
+            SOURCE_DIALECT_DISPLACED.to_owned(),
+            "source dialect test:future was displaced by target dialect test:new; the source \
+             dialect identity is not preserved"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_row_the_writer_states_is_the_report_target_and_names_the_displacement() {
+    let row = |target: &str| {
+        Some(WrittenRow {
+            target: DialectId::parse(target).unwrap(),
+            reason: "the stored envelope decides the row".into(),
+        })
+    };
+    let ir = catalog_write_ir(Some(("test", Some("test:old"))));
+    let explicit = resolve_write_request(
+        &ir,
+        TargetRequest::Explicit("new"),
+        CATALOG_WRITE_CATALOG,
+        &[],
+    )
+    .unwrap();
+    let (target, losses) = charged(&explicit, true, row("test:old"));
+    assert_eq!(target, "test:old");
+    assert_eq!(
+        losses,
+        [(
+            REQUEST_DISPLACED.to_owned(),
+            "requested target new (test:new) is a row the writer cannot reach from this \
+             document; the file is written as test:old; the stored envelope decides the row"
+                .to_owned()
+        )]
+    );
+
+    let inherited =
+        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, &[]).unwrap();
+    let (target, losses) = charged(&inherited, true, row("test:new"));
+    assert_eq!(target, "test:new");
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].0, SOURCE_DIALECT_DISPLACED);
+    assert!(
+        losses[0].1.contains("test:old")
+            && losses[0].1.contains("test:new")
+            && losses[0].1.ends_with("the stored envelope decides the row"),
+        "{}",
+        losses[0].1
+    );
+
+    assert_eq!(
+        charged(&inherited, true, row("test:old")),
+        ("test:old".into(), vec![])
+    );
 }
 
 #[test]
@@ -220,9 +344,13 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
     assert_eq!(displaced, &cadmpeg_core::dialect_id!("test:old"));
     assert!(!resolved.source_preservation_eligible());
     assert_eq!(
-        resolved.displacement_message().as_deref(),
-        Some(
-        "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved"
+        charged(&resolved, true, None),
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved".to_owned()
+            )]
         )
     );
 }

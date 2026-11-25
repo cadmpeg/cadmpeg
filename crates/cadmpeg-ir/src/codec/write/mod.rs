@@ -134,17 +134,22 @@ impl<E: EncoderBackend> Encoder for E {
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError> {
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
-        let identity = target.export_target().cloned();
-        let synthesized_identity = target.synthesized_target().cloned();
-        let body = self.plan_resolved(input, target)?;
+        let body = self.plan_resolved(input, target.clone())?;
         let ExportBody {
             bytes,
             census,
             write_path,
             coverage,
-            mut losses,
+            losses: body_losses,
             mut notes,
+            written_row,
         } = body;
+        let (identity, mut losses) = target.report_target(
+            E::FORMAT.as_str(),
+            matches!(write_path, WritePath::Synthesized { .. }),
+            written_row,
+        );
+        losses.extend(body_losses);
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
         if !input.ir.model.omitted_arenas_held() && coverage.reads_wire_omitted() {
             notes.push(format!(
@@ -167,10 +172,6 @@ impl<E: EncoderBackend> Encoder for E {
                 E::REQUEST
             ));
         }
-        let identity = match write_path {
-            WritePath::Synthesized { .. } => synthesized_identity,
-            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
-        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
@@ -348,6 +349,9 @@ pub struct ExportBody {
     pub losses: Vec<LossNote>,
     /// Free-form notes.
     pub notes: Vec<String>,
+    /// The catalog row the payload is, where the writer wrote another row
+    /// than the resolution names; `None` for the resolved row.
+    pub written_row: Option<target::WrittenRow>,
 }
 
 impl ExportBody {
@@ -366,6 +370,7 @@ impl ExportBody {
             coverage,
             losses: Vec::new(),
             notes: Vec::new(),
+            written_row: None,
         }
     }
 }

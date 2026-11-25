@@ -22,7 +22,8 @@ use crate::{ids, F3dCodec, PreservedWritePath};
 /// multi-document row and the recovery row included, which the generator
 /// could never synthesize. Where the baseline is not usable, or the patch
 /// cannot carry an edit, the document is synthesized; an off-catalog source
-/// is then written as the catalog default with a displacement loss.
+/// is then written as the catalog default, and the sealed encoder charges
+/// the displacement.
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
@@ -62,19 +63,9 @@ pub(crate) fn plan(
             Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
             Err(error) => SynthesisCause::PatchDeclined(error.to_string()),
         };
-        let displaced = off_catalog.then(|| {
-            F3dLossCode::SourceDialectDisplaced.note(format!(
-                "source dialect {} is not a dialect the generator writes; the file is written as \
-                 the catalog default {}",
-                target.target_id(),
-                crate::dialect::TARGETS[0].id
-            ))
-        });
-        return synthesized_body(input, cause, displaced);
+        return synthesized_body(input, cause);
     }
-    let cause = if let Some(message) = target.displacement_message() {
-        SynthesisCause::Displaced(message)
-    } else if target.source_preservation_eligible()
+    let cause = if target.source_preservation_eligible()
         && input
             .fidelity
             .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
@@ -84,10 +75,7 @@ pub(crate) fn plan(
     } else {
         SynthesisCause::Fresh
     };
-    let requested = target
-        .request_displacement_message()
-        .map(|message| F3dLossCode::TargetRequestDisplaced.note(message));
-    synthesized_body(input, cause, requested)
+    synthesized_body(input, cause)
 }
 
 enum Preservation {
@@ -146,7 +134,6 @@ fn preserved_body(
 
 enum SynthesisCause {
     Fresh,
-    Displaced(String),
     SourceImageUnavailable,
     /// The retained source could not carry the document; the reason names
     /// the edit or the missing baseline.
@@ -157,10 +144,6 @@ impl SynthesisCause {
     fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::report::loss::LossNote>) {
         match self {
             Self::Fresh => (Consumption::NotConsumed, None),
-            Self::Displaced(message) => (
-                Consumption::NotConsumed,
-                Some(F3dLossCode::SourceDialectDisplaced.note(message)),
-            ),
             Self::SourceImageUnavailable => (
                 Consumption::Degraded {
                     reason: "preserved F3D source image is unavailable".into(),
@@ -186,12 +169,11 @@ impl SynthesisCause {
 fn synthesized_body(
     input: EncodeInput<'_>,
     cause: SynthesisCause,
-    displaced: Option<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
     let generated = super::generate::write_new(input.ir, &mut bytes)?;
     let (consumption, loss) = cause.into_fidelity();
-    let mut losses: Vec<_> = loss.into_iter().chain(displaced).collect();
+    let mut losses: Vec<_> = loss.into_iter().collect();
     losses.extend(generated.losses);
     for appearance in &input.ir.model.appearances {
         let written: &[&str] = match appearance.schema.as_deref().unwrap_or("GenericSchema") {
@@ -252,5 +234,6 @@ fn body(
             path_note.into(),
             "entity counts are derived from the IR".into(),
         ],
+        written_row: None,
     }
 }

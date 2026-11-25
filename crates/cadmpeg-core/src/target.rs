@@ -286,8 +286,6 @@ pub enum TargetRefusalKind {
         /// Input-conditioned reason the writer cannot preserve it.
         reason: String,
     },
-    /// Same-format inheritance found source metadata without a dialect.
-    UnrecordedSource,
     /// Inheritance had no same-format source and the catalog declares no default.
     NoDefault {
         /// Why no same-format source identity was available to inherit.
@@ -339,6 +337,8 @@ pub enum DefaultSource {
     NoSource,
     /// The document's source belongs to another format.
     ForeignFormat(String),
+    /// The document's source is of this format and records no dialect.
+    UnrecordedDialect,
 }
 
 impl TargetRefusal {
@@ -406,10 +406,6 @@ impl fmt::Display for TargetRefusal {
                 f,
                 "{format} cannot preserve source dialect {source}: {reason}"
             )?,
-            TargetRefusalKind::UnrecordedSource => write!(
-                f,
-                "{format} cannot inherit a write target: the {format} source records no dialect; name an explicit target"
-            )?,
             TargetRefusalKind::NoDefault {
                 source: DefaultSource::ForeignFormat(source_format),
             } => write!(
@@ -421,6 +417,12 @@ impl fmt::Display for TargetRefusal {
             } => write!(
                 f,
                 "{format} cannot select an inherited write target: the document records no source format and this encoder declares no default"
+            )?,
+            TargetRefusalKind::NoDefault {
+                source: DefaultSource::UnrecordedDialect,
+            } => write!(
+                f,
+                "{format} cannot select an inherited write target: the {format} source records no dialect and this encoder declares no default"
             )?,
             TargetRefusalKind::DefaultUnavailable {
                 target,
@@ -625,15 +627,21 @@ mod tests {
     }
 
     #[test]
-    fn unrecorded_same_format_source_is_not_a_missing_default() {
+    fn an_unrecorded_same_format_source_with_no_default_names_the_missing_dialect() {
         let refusal = TargetRefusal::new(
-            TargetRefusalKind::UnrecordedSource,
+            TargetRefusalKind::NoDefault {
+                source: DefaultSource::UnrecordedDialect,
+            },
             TargetCatalog::new(TARGETS, None),
         );
 
         assert_eq!(
+            serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
+            serde_json::json!({"kind": "no_default", "source": {"kind": "unrecorded_dialect"}})
+        );
+        assert_eq!(
             refusal.to_string(),
-            "fcstd cannot inherit a write target: the fcstd source records no dialect; name an explicit target; available targets: fcstd:schema-4"
+            "fcstd cannot select an inherited write target: the fcstd source records no dialect and this encoder declares no default; available targets: fcstd:schema-4"
         );
     }
 }

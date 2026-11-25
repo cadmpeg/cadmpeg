@@ -11,8 +11,9 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses, edit_unverified, target::ResolvedWrite, ArenaCoverage, Consumption,
-    EncodeInput, ExportBody, PatchConsumption, WritePath,
+    carried_source_losses, edit_unverified,
+    target::{ResolvedWrite, WrittenRow},
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -25,8 +26,8 @@ use crate::native::DocumentFacts;
 ///
 /// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
-/// the one the retained document already declares. Every other resolution is a
-/// refusal, not a degraded write: there is no synthesis path to degrade to.
+/// the one the retained document already declares. A request for another row
+/// is written as that dialect (§3.4, Refusals).
 /// Only [`resolve`] builds one: its fields are private, so a `Resolution` in
 /// hand proves that the retained document graph delivers the options it carries.
 /// [`write_seekable`] takes that proof instead of raw options, which is why it
@@ -38,6 +39,8 @@ pub(super) struct Resolution<'a> {
     document: DocumentFacts,
     schema_version: String,
     target: DialectId,
+    /// The source dialect written in place of the requested row.
+    displaced: Option<WrittenRow>,
 }
 
 impl<'a> Resolution<'a> {
@@ -65,16 +68,16 @@ impl<'a> Resolution<'a> {
 const BASELINE_UNAVAILABLE: &str =
     "the retained FCStd document graph is unavailable, and this writer regenerates no \
      Document.xml, so the target cannot be written";
-const TRANSCODE_UNAVAILABLE: &str =
-    "the resolved target displaces the retained FCStd source dialect, and this writer \
-     regenerates no Document.xml, so the target cannot be written";
+const PATCH_ONLY: &str =
+    "this writer patches the retained FCStd Document.xml and regenerates none, so it writes \
+     the dialect the retained document declares";
 
 /// Resolve the request against the source, then plan the export it names.
 ///
 /// `Explicit(id)` refuses an id outside the synthesis catalog. It is otherwise
-/// the replay law's compare: the retained document is written back exactly when
-/// the retained graph can deliver `id`, and any other id is a transcode this
-/// writer cannot perform, refused by name with the catalog.
+/// the replay law's compare: the retained document is written back as `id`
+/// when the retained graph delivers it, and as the source's own dialect when
+/// `id` displaces it, with `target.request-displaced` naming both.
 ///
 /// `Inherit` asks for preservation instead. This writer repacks the retained
 /// entry set and patches `Document.xml` inside it, which reproduces whatever
@@ -87,9 +90,10 @@ const TRANSCODE_UNAVAILABLE: &str =
 /// but no request can override the retained graph's deliverability.
 ///
 /// An `FCStd` source that records no dialect is refused too: there is nothing to
-/// preserve, and no identity to default to. A source of another format is also
-/// refused because this catalog intentionally has no cross-format default: the
-/// writer cannot synthesize the retained `FCStd` graph that its only row needs.
+/// preserve, and the catalog declares no default. A source of another format is
+/// also refused because this catalog intentionally has no cross-format default:
+/// the writer cannot synthesize the retained `FCStd` graph that its only row
+/// needs.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
@@ -203,19 +207,26 @@ fn finish(
         write_path,
         coverage: ArenaCoverage::Complete,
         notes: outcome.notes,
+        written_row: resolution.displaced.clone(),
     })
 }
 
 /// Decide what to write, from the request and the source.
 fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution<'a>, CodecError> {
-    if !resolved.source_preservation_eligible() {
-        return Err(resolved.unavailable(TRANSCODE_UNAVAILABLE));
-    }
     // Target resolution already classified the source declaration. The
     // accepted Resolution threads that witness to the byte writer; the byte
     // writer does not classify the native declaration again.
-    retained_baseline(ir, resolved.target_id())
-        .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))
+    let displaced = resolved.displaced_source().map(|source| WrittenRow {
+        target: source.clone(),
+        reason: PATCH_ONLY.to_owned(),
+    });
+    let target = displaced
+        .as_ref()
+        .map_or_else(|| resolved.target_id(), |row| &row.target);
+    let mut resolution =
+        retained_baseline(ir, target).ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))?;
+    resolution.displaced = displaced;
+    Ok(resolution)
 }
 
 /// The write options and dialect witnessed by the retained document graph.
@@ -257,5 +268,6 @@ pub(super) fn retained_baseline<'a>(ir: &'a CadIr, target: &DialectId) -> Option
         document: document.clone(),
         schema_version,
         target: target.clone(),
+        displaced: None,
     })
 }

@@ -1340,10 +1340,6 @@ pub(crate) enum F3dLossCode {
     SourceDialectUnverified,
     /// Export omits records named by the counted loss message.
     WriterAppearancePropertiesOmitted,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
-    /// An explicitly requested row was written as another.
-    TargetRequestDisplaced,
     /// A procedural carrier with no native encoding was written as its solved geometry.
     WriterProceduralReduced,
     /// A pcurve with no native encoding was omitted; the target recomputes it.
@@ -2229,8 +2225,6 @@ impl F3dLossCode {
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::WriterAppearancePropertiesOmitted,
-        Self::SourceDialectDisplaced,
-        Self::TargetRequestDisplaced,
         Self::WriterProceduralReduced,
         Self::WriterPcurveOmitted,
         Self::WriterSubdOmitted,
@@ -3465,8 +3459,6 @@ impl F3dLossCode {
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
-            Self::TargetRequestDisplaced => "target.request-displaced",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::WriterPcurveOmitted => "writer.pcurve-omitted",
             Self::WriterSubdOmitted => "writer.subd-omitted",
@@ -3578,7 +3570,6 @@ impl F3dLossCode {
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::TargetRequestDisplaced => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterPcurveOmitted => Severity::Info,
             Self::WriterSubdOmitted => Severity::Warning,
@@ -4333,7 +4324,6 @@ impl F3dLossCode {
             | Self::TsplineRecordUntyped
             | Self::TsplineRadialMapUnresolved
             | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
             | Self::KernelDialectUnverified
             | Self::KernelCarrierUnparseable
             | Self::DialectLayerCollision
@@ -5187,8 +5177,6 @@ impl F3dLossCode {
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
-            Self::TargetRequestDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TextHeaderNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -6106,8 +6094,6 @@ mod tests {
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "writer.appearance-properties-omitted",
-                "target.source-dialect-displaced",
-                "target.request-displaced",
                 "writer.procedural-reduced",
                 "writer.pcurve-omitted",
                 "writer.subd-omitted",

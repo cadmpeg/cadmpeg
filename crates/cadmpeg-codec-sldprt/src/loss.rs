@@ -531,7 +531,6 @@ pub(crate) enum SldprtLossCode {
     /// An edit cleared a decoded extrusion reversal, and the writer cleared
     /// the flag in a lane outside the active configuration.
     WriterExtrudeReversalConfigurationCleared,
-    SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
     SourcePropertyKeyBlank,
@@ -831,7 +830,6 @@ impl SldprtLossCode {
         Self::WriterReadBackUnread,
         Self::WriterExtrudeReversalUnwritten,
         Self::WriterExtrudeReversalConfigurationCleared,
-        Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
         Self::AssemblyMatesNotTransferred,
@@ -1077,7 +1075,6 @@ impl SldprtLossCode {
             Self::WriterExtrudeReversalConfigurationCleared => {
                 "writer.extrude-reversal-configuration-cleared"
             }
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
             Self::MetadataConfigurationManagerOpaque => "metadata.configuration-manager-opaque",
@@ -1320,7 +1317,6 @@ impl SldprtLossCode {
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
             | Self::DialectLayerCollision
-            | Self::SourceDialectDisplaced
             | Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -1429,7 +1425,6 @@ impl SldprtLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -1986,7 +1981,6 @@ mod tests {
                 "writer.read-back-unread",
                 "writer.extrude-reversal-unwritten",
                 "writer.extrude-reversal-configuration-cleared",
-                "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
                 "assembly.mates-not-transferred",

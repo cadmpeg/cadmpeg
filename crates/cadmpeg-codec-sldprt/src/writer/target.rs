@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! SLDPRT target resolution, write dispatch, and honesty checking.
+//! SLDPRT target resolution, write dispatch, and the row each write is.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses, edit_unverified, target::ResolvedWrite, EncodeInput, ExportBody,
-    WritePath,
+    carried_source_losses, edit_unverified,
+    target::{ResolvedWrite, WrittenRow},
+    EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::Annotations;
@@ -23,9 +24,9 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 /// writer could never synthesize. Where the image is not usable the semantic
 /// writer still preserves the dialect whenever the retained blocks carry the
 /// source's own `swSolidWorks` envelope, because that envelope is passed
-/// through unchanged. Where neither holds, the write lands on the totality row
-/// and the request is refused by name. There is no fall-through to the catalog
-/// default: a same-format conversion never silently changes what the file is.
+/// through unchanged. Where neither holds, the write lands on the row the
+/// emitted envelope states, and the sealed encoder names that row and charges
+/// the displacement (§3.4, Refusals).
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
@@ -49,28 +50,8 @@ pub(crate) fn plan(
             (&of_document, false)
         }
     };
-    let (written, bytes) = match write(input, resolved, digests) {
-        Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
-            let synthesis_targets = crate::dialect::TARGETS
-                .iter()
-                .map(|entry| entry.id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(resolved.unavailable(format!(
-                "cannot preserve {}; synthesis catalog targets: {synthesis_targets}; {error}",
-                resolved.target_id()
-            )));
-        }
-        result => result?,
-    };
-    check_honesty(resolved, &written)?;
-    let mut body = finish(
-        input,
-        resolved.displacement_message(),
-        &written,
-        bytes,
-        digests,
-    );
+    let (written, bytes) = write(input, resolved, digests)?;
+    let mut body = finish(input, &written, bytes, digests);
     if unverified {
         body.losses.push(edit_unverified(
             "the SLDPRT part comes with no decode sidecar, so its edits since decode are not \
@@ -129,24 +110,22 @@ fn write(
     Ok((written, bytes))
 }
 
-/// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land
-/// on the resolved target.
-fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> Result<(), CodecError> {
-    let Written::Semantic { dialect: got, .. } = written else {
-        return Ok(());
+/// The row a semantic write is: the dialect its emitted `swSolidWorks`
+/// envelope states.
+fn written_row(written: &Written) -> Option<WrittenRow> {
+    let Written::Semantic { dialect, .. } = written else {
+        return None;
     };
-    if got == resolved.target_id() {
-        return Ok(());
-    }
-    Err(resolved.unavailable(format!(
-        "the retained document blocks decide the swSolidWorks envelope this writer emits, \
-             and from this input that envelope is {got}"
-    )))
+    Some(WrittenRow {
+        target: dialect.clone(),
+        reason: "the retained document blocks decide the swSolidWorks envelope this writer \
+                 emits"
+            .to_owned(),
+    })
 }
 
 fn finish(
     input: EncodeInput<'_>,
-    displacement: Option<String>,
     written: &Written,
     bytes: Vec<u8>,
     digests: &CodecDigests,
@@ -194,9 +173,6 @@ fn finish(
     if let Written::StoredCompoundFile { loss } = written {
         losses.push(loss.clone());
     }
-    if let Some(message) = displacement {
-        losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
-    }
     losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
         WritePath::VerbatimReplay if matches!(written, Written::StoredCompoundFile { .. }) => {
@@ -219,5 +195,6 @@ fn finish(
             path_note.into(),
             "entity counts are derived from the IR".into(),
         ],
+        written_row: written_row(written),
     }
 }

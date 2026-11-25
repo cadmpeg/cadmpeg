@@ -118,6 +118,63 @@ fn a_written_package_reads_back() {
     assert_eq!(model(&bytes, "package"), model(written.as_bytes(), "layer"));
 }
 
+/// A legacy `sdf` layer is outside the synthesis catalog, so `Inherit` writes
+/// it as the catalog default `usda-1.0` (§3.4, Refusals). The report names
+/// that row, `usd/target.source-dialect-displaced` names both dialects, and
+/// the written layer reads back as `usda-1.0`.
+#[test]
+fn inherit_writes_an_off_catalog_source_as_the_default() {
+    use cadmpeg_ir::codec::write::target::{
+        target_loss_kind, TargetRequest, SOURCE_DIALECT_DISPLACED,
+    };
+    let (_, text) = inputs("usda")
+        .into_iter()
+        .find(|(name, _)| name == "sdf_legacy")
+        .expect("fixture");
+    let dialect = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(|dialect| dialect.dialect().to_string())
+    };
+    let decoded = crate::test_support::decode_bytes(&text);
+    let source = dialect(&decoded).expect("the source records a dialect");
+    let plan = cadmpeg_ir::codec::write::Encoder::plan(
+        &UsdCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), None),
+        TargetRequest::Inherit,
+    )
+    .expect("the source is written as the catalog default");
+    assert_eq!(
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("usd:usda-1.0".to_owned())
+    );
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == target_loss_kind("usd", SOURCE_DIALECT_DISPLACED))
+        .expect("the source dialect displacement is charged");
+    assert!(
+        loss.message.contains(&source) && loss.message.contains("usd:usda-1.0"),
+        "{}",
+        loss.message
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert_eq!(
+        dialect(&crate::test_support::decode_bytes(&bytes)).as_deref(),
+        Some("usd:usda-1.0")
+    );
+}
+
 /// A model written as a USDC layer reads back as the same model as when it
 /// is written as a USDA layer.
 #[test]

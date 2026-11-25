@@ -10,16 +10,6 @@ use cadmpeg_ir::codec::write::{
 use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
 
-/// Why this writer cannot reproduce a source archive version outside
-/// [`RhinoArchiveVersion::TARGETS`].
-///
-/// Archives 1, 2, 3, 4, 5 and 90 decode without a writer, unknown words decode
-/// as residual, and 3DM has no retained-image path that could write any of
-/// them back.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
-     path that could preserve it";
-
 /// The document with each partial face left out (§3.4), and the losses that
 /// name what it leaves out. A Brep whose faces close is a solid in 3DM, and
 /// this writer joins every face of a body into one Brep, so a marked region
@@ -64,16 +54,16 @@ fn partial_free(
 /// Synthesize the resolved archive version.
 ///
 /// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
-/// position; the preserved resolution has no row and is refused here because
-/// 3DM has no replay path.
+/// position. 3DM has no replay path, so a source archive version outside the
+/// catalog is written as the catalog default (§3.4, Refusals, `Inherit`).
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let Some(index) = target.index() else {
-        return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
-    };
-    let version = RhinoArchiveVersion::ALL[index];
+    let version = target
+        .synthesized_row()
+        .and_then(|(index, _)| RhinoArchiveVersion::ALL.get(index).copied())
+        .ok_or_else(|| target.unavailable("the Rhino catalog declares no row to synthesize"))?;
     let (complete, partial_losses) = partial_free(input.ir)?;
     let ir = complete.as_ref().unwrap_or(input.ir);
     let mut bytes = Vec::new();
@@ -204,9 +194,6 @@ pub(crate) fn plan(
             "{points} support point record(s) and {curves} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry"
         )));
     }
-    if let Some(message) = target.displacement_message() {
-        losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
-    }
     if vertex_quantization {
         losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(
             "archive version 50 stores standalone mesh vertices as f32; \
@@ -232,6 +219,7 @@ pub(crate) fn plan(
         coverage: ArenaCoverage::Declared(COVERAGE),
         losses,
         notes: vec![format!("3DM archive version {}", version.value())],
+        written_row: None,
     })
 }
 

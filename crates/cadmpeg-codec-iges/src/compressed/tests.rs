@@ -236,7 +236,13 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    "iges",
+                    cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("representation displacement is charged");
     assert!(displacement.message.contains("iges:5.3-compressed-ascii"));
     assert!(displacement.message.contains("iges:5.3-fixed-ascii"));

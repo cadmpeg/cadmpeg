@@ -203,13 +203,10 @@ pub(crate) fn plan(
     packaged: bool,
 ) -> Result<(ExportBody, Vec<Member>), CodecError> {
     let Some(version) = target
-        .index()
-        .and_then(|index| crate::TARGET_VERSIONS.get(index).copied())
+        .synthesized_row()
+        .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied())
     else {
-        return Err(target.unavailable(
-            "the source text version is one this writer cannot synthesize, and a USD layer \
-             has no byte-replay path",
-        ));
+        return Err(target.unavailable("the USD catalog declares no row to synthesize"));
     };
     let metres = match input.scene.meters_per_unit {
         None => 1.0,
@@ -240,6 +237,7 @@ pub(crate) fn plan(
         coverage: ArenaCoverage::Declared(COVERAGE),
         losses,
         notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
+        written_row: None,
     };
     Ok((body, members))
 }

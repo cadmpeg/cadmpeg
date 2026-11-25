@@ -250,8 +250,6 @@ pub(crate) enum RhinoLossCode {
     /// and checksum mechanics. No declared archive row is substituted, and
     /// nothing verified that the observed word means those mechanics.
     SourceDialectUnverified,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
     /// Body kind came from the closed-shell gauge or from an unverified stored
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
@@ -307,7 +305,6 @@ impl RhinoLossCode {
         Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
-        Self::SourceDialectDisplaced,
         Self::TopologyBodyKindGaugeSubstituted,
     ];
 
@@ -363,7 +360,6 @@ impl RhinoLossCode {
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
         }
     }
@@ -434,7 +430,6 @@ impl RhinoLossCode {
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
     }
@@ -536,7 +531,6 @@ mod tests {
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
                 "topology.body-kind-gauge-substituted",
             ]
         );
