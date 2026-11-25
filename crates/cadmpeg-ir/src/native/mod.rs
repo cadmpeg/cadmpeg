@@ -381,6 +381,15 @@ impl NativeRecord {
         ctx: &DecodeContext<'_>,
         record: &T,
     ) -> Result<Self, NativeConvertError> {
+        Self::canonical_erased(ctx, &|adapter| record.serialize(adapter))
+    }
+
+    fn canonical_erased(
+        ctx: &DecodeContext<'_>,
+        write: &dyn Fn(
+            cadmpeg_core::serde_erase::SerAdapter<'_>,
+        ) -> Result<(), cadmpeg_core::serde_erase::SerError>,
+    ) -> Result<Self, NativeConvertError> {
         use std::cell::RefCell;
         thread_local! {
             static CANON_SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -396,13 +405,11 @@ impl NativeRecord {
                 Err(_) => &mut fallback,
             };
             let mut min_remaining = MAX_NATIVE_NESTING_DEPTH + 1;
-            let serialized = record
-                .serialize(canon::CanonText::for_record_tracking(
-                    ctx,
-                    out,
-                    &mut min_remaining,
-                ))
-                .map_err(|error| error.into_native(ctx))?;
+            let serialized = cadmpeg_core::serde_erase::serialize_with(
+                canon::CanonText::for_record_tracking(ctx, out, &mut min_remaining),
+                write,
+            )
+            .map_err(|error| error.into_native(ctx))?;
             let canon::Written::Object(members) = serialized else {
                 return Err(NativeConvertError::NonObject);
             };
@@ -624,16 +631,7 @@ impl NativeRecord {
             privacy::observe::<T>(self.id(), &self.json);
             return Ok(value);
         }
-        let mut deserializer = serde_json::Deserializer::from_str(&self.json);
-        deserializer.disable_recursion_limit();
-        let value = T::deserialize(&mut deserializer)
-            .and_then(|value| deserializer.end().map(|()| value))
-            .map_err(|source| NativeConvertError::ReadRecord {
-                id: self.id.clone(),
-                source: without_position(source),
-            })?;
-        privacy::observe::<T>(self.id(), &self.json);
-        Ok(value)
+        self.to_typed(ctx)
     }
 
     /// Compare a typed serialization against this record's stored text
