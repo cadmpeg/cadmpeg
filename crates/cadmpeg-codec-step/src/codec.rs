@@ -40,8 +40,8 @@ impl EncoderBackend for StepCodec {
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(StepSchema::DEFAULT_INDEX));
 
-    /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
-    /// because every emitted schema stamps object-identifier arcs.
+    /// Synthesis-only encoder. Every emitted schema stamps object-identifier
+    /// arcs, so an off-catalog STEP source is written as the catalog default.
     fn plan_resolved(
         &self,
         ctx: &DecodeContext<'_>,

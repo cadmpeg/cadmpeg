@@ -10,14 +10,6 @@ use crate::pmi::PmiDefinition;
 use crate::references::{InstanceTarget, ReferenceSelection, ReferenceTarget};
 use crate::schema::ArenaRecord;
 
-/// The first model arena holding a record that references the design
-/// class.
-pub(super) fn first(model: &Model) -> Option<ArenaName> {
-    holders(model)
-        .into_iter()
-        .find_map(|(arena, ids)| (!ids.is_empty()).then_some(arena))
-}
-
 /// Each model arena with the ids of its records that reference the design
 /// class: an instance target's or a tessellation's state, a declared
 /// measure of a state, a reference to a feature, a solver target that names

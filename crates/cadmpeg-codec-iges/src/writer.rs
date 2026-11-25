@@ -189,6 +189,7 @@ fn body(
         coverage,
         losses,
         notes: vec![note.into()],
+        written_row: None,
     }
 }
 

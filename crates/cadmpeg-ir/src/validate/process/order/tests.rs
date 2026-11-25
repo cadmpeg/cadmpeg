@@ -185,6 +185,6 @@ fn step_folders_nest_to_the_document_bound() {
 #[test]
 fn an_empty_process_is_not_checked() {
     let mut ir = crate::validate::design::fixture::document();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     assert_no_process_finding(&ir);
 }

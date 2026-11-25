@@ -793,24 +793,35 @@ fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty(
     }
 }
 
+/// A decode that holds records of a class its scope excludes keeps them and
+/// the scope; the breach is a part 10 finding (§2.1).
 #[test]
-fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
+fn the_wrapper_keeps_records_of_a_class_the_scope_excludes() {
+    use crate::document::{ArenaName, ScopeViolation};
+
     let ir = with_parameter(unit_cube().expect("valid unit cube fixture"));
-    for (depth, expected) in [
-        (DecodeDepth::Container, "model arena `bodies`"),
-        (DecodeDepth::Geometry, "design arena `parameters`"),
+    for (depth, arena) in [
+        (DecodeDepth::Container, "bodies"),
+        (DecodeDepth::Geometry, "parameters"),
     ] {
         let mut decoded = decoded(ir.clone());
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(depth, true);
-        let error = DecodeResult::new(
+        let result = DecodeResult::new(
             decoded,
             FormatId::new("test"),
             depth,
             &DecodePolicy::default(),
         )
-        .unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(_)), "{error}");
-        assert!(error.to_string().contains(expected), "{error}");
+        .expect("a breach of the scope does not refuse the decode");
+        assert_eq!(result.ir().scope(), depth.scope());
+        assert_eq!(result.ir().model.parameters.len(), 1);
+        let violations = result.ir().scope_violations();
+        assert!(
+            violations.contains(&ScopeViolation::Populated {
+                arena: ArenaName::parse(arena).unwrap(),
+            }),
+            "{violations:?}"
+        );
     }
 
     let mut decoded = decoded(ir.clone());
@@ -950,7 +961,7 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
     let (mut ir, _, fidelity) = result.into_parts();
     let mut scope = ContentScope::full();
     scope.process = false;
-    ir.set_scope(scope).unwrap();
+    ir.set_scope(scope);
     assert!(
         fidelity.edited(&ctx, &ir).unwrap(),
         "a change of scope alone is an edit"

@@ -20,7 +20,7 @@ use crate::report::{
         CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
         SynthesisCause, SynthesisFidelity, WritePath as ReportWritePath,
     },
-    loss::LossNote,
+    loss::{LossNamespace, LossNote},
     strictness::Strictness,
     Severity,
 };
@@ -240,8 +240,6 @@ fn plan_output<E: EncoderBackend>(
     let target = E::TARGET
         .resolve(input.ir, input.target, E::FORMAT)
         .map_err(EncodeError::from_backend)?;
-    let identity = target.export_target().cloned();
-    let synthesized_identity = target.synthesized_target().cloned();
     let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
     let restored = encoder
         .restore(ctx, input, &target, &mut restore_notes, &mut restore_losses)
@@ -251,17 +249,33 @@ fn plan_output<E: EncoderBackend>(
         None => input,
     };
     let body = encoder
-        .plan_resolved(ctx, input, target)
+        .plan_resolved(ctx, input, target.clone())
         .map_err(EncodeError::from_backend)?;
     let ExportBody {
         bytes,
         census,
         write_path,
         coverage,
-        mut losses,
+        losses: body_losses,
         mut notes,
         synthesis_cause,
+        written_row,
     } = body;
+    let namespace = const {
+        match LossNamespace::new(E::FORMAT.as_str()) {
+            Ok(namespace) => namespace,
+            Err(_) => panic!("an encoder format is a loss namespace"),
+        }
+    };
+    let (identity, mut losses) = target.report_target(
+        namespace,
+        matches!(write_path, WritePath::Synthesized { .. }),
+        written_row,
+    );
+    let displaced = losses
+        .iter()
+        .any(|loss| loss.code.local_code() == target::SOURCE_DIALECT_DISPLACED);
+    losses.extend(body_losses);
     notes.extend(restore_notes);
     losses.extend(restore_losses);
     losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
@@ -301,15 +315,19 @@ fn plan_output<E: EncoderBackend>(
     }
     let synthesis_cause = match &write_path {
         WritePath::Synthesized { consumption } if E::REUSES_SOURCE && same_format => {
-            Some(synthesis_cause.unwrap_or_else(|| consumption.patch_declined(input.fidelity)))
+            Some(synthesis_cause.unwrap_or_else(|| {
+                if displaced {
+                    SynthesisCause::PatchDeclined {
+                        reason: "the write target displaces the source dialect".to_owned(),
+                    }
+                } else {
+                    consumption.patch_declined(input.fidelity)
+                }
+            }))
         }
         WritePath::Synthesized { .. } | WritePath::Patched { .. } | WritePath::VerbatimReplay => {
             None
         }
-    };
-    let identity = match write_path {
-        WritePath::Synthesized { .. } => synthesized_identity,
-        WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
     };
     let write_path = write_path.into_report(input.fidelity.is_some());
     let mut report = match identity {
@@ -900,8 +918,12 @@ pub struct ExportBody {
     pub notes: Vec<String>,
     /// Why a writer with a patch or replay path synthesized a file of a
     /// same-format source. The wrapper reports it only for such a writer and
-    /// such a file, and states the fidelity's reason where this is `None`.
+    /// such a file. Where this is `None`, it states the source-dialect
+    /// displacement it charges, or else the fidelity's reason.
     pub synthesis_cause: Option<SynthesisCause>,
+    /// The catalog row the payload is, where the writer wrote another row
+    /// than the resolution names; `None` for the resolved row.
+    pub written_row: Option<target::WrittenRow>,
 }
 
 impl ExportBody {
@@ -921,6 +943,7 @@ impl ExportBody {
             losses: Vec::new(),
             notes: Vec::new(),
             synthesis_cause: None,
+            written_row: None,
         }
     }
 }

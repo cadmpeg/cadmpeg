@@ -243,9 +243,8 @@ impl EncoderBackend for F3dCodec {
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0))
-        .with_replay_rows(dialect::REPLAY_ROWS)
-        .synthesizing_preserved_as_default();
+    const TARGET: Catalog =
+        Catalog::new(dialect::TARGETS, Some(0)).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,

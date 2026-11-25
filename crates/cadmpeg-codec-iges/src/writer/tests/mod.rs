@@ -91,6 +91,7 @@ fn synthesize(ir: &CadIr, version: IgesVersion) -> Result<super::Synthesis, supe
 
 mod cages;
 mod closed_edge_range;
+mod covered_uses;
 mod design_content;
 mod encode;
 mod exact_equivalents;
