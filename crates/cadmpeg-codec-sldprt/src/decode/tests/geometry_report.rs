@@ -685,7 +685,10 @@ fn an_assumed_relation_class_charges_one_note_naming_its_dimension() {
         let [note] = notes.as_slice() else {
             panic!("one note: {notes:?}");
         };
-        assert_eq!(note.code.local_code(), "sketch.dimension-class-assumed");
+        assert_eq!(
+            note.code,
+            crate::loss::SldprtLossCode::SketchDimensionClassAssumed.kind()
+        );
         assert!(
             note.message.contains("`sgPntPntDist`") && note.message.contains("EV-05"),
             "{}",
