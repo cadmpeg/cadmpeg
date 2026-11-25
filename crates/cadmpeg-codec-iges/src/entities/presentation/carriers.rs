@@ -287,7 +287,6 @@ impl<'a> UsedCarriers<'a> {
             match member {
                 ShellMember::WireEdge { id } => wire_edges.insert(id.as_str()),
                 ShellMember::FreeVertex { id } => free_vertices.insert(id.as_str()),
-                // A cage names no carrier.
                 ShellMember::Subd { .. } => false,
             };
         }
