@@ -532,7 +532,12 @@ fn metres_per_unit_is_a_finite_positive_number() {
             TargetRequest::Explicit("usda-1.0"),
         );
         assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::InvalidInput(_))),
+            matches!(
+                result,
+                Err(cadmpeg_ir::codec::write::EncodeError::Backend(
+                    cadmpeg_core::CodecError::InvalidInput(_)
+                ))
+            ),
             "{metres}"
         );
     }

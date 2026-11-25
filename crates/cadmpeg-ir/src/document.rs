@@ -2194,6 +2194,46 @@ impl ProceduralCarrierError {
 }
 
 impl Topology {
+    /// Adds `surface`, a cage that the source holds as an object of its own,
+    /// with the body, region, and shell that hold it (§5.6): the shell's
+    /// `members` list the cage and nothing else, and the body is a solid where
+    /// every edge of the cage borders two of its faces and a sheet otherwise.
+    /// Returns the body, for the caller to state the object's display name,
+    /// colour, and visibility.
+    pub fn push_cage_object(
+        &mut self,
+        surface: SubdSurface,
+        body: crate::ids::BodyId,
+        region: crate::ids::RegionId,
+        shell: crate::ids::ShellId,
+    ) -> &mut Body {
+        let kind = if surface.cage.is_closed() {
+            crate::topology::BodyKind::Solid
+        } else {
+            crate::topology::BodyKind::Sheet
+        };
+        let mut cage_shell = Shell::new(shell.clone(), region.clone());
+        cage_shell.members.push(crate::topology::ShellMember::Subd {
+            id: surface.id.clone(),
+        });
+        self.subds.push(surface);
+        self.shells.push(cage_shell);
+        self.regions
+            .push(Region::new(region, body.clone(), vec![shell]));
+        let index = self.bodies.len();
+        self.bodies.push(Body {
+            id: body,
+            kind,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            unstated: None,
+            native_ref: None,
+        });
+        &mut self.bodies[index]
+    }
+
     /// Returns the unique surface that carries `construction`.
     #[must_use]
     pub fn procedural_surface_owner(

@@ -631,7 +631,7 @@ fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::Valid
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/design_history.FCStd");
     let options = cadmpeg_ir::codec::DecodeOptions::default();
-    let document = crate::loader::load_artifact(&inputs, &path, options, None)
+    let document = crate::loader::load_artifact(&inputs, &path, &options, None)
         .expect("load the FreeCAD design-history fixture");
     let validation = crate::application::validators::validate_loaded(
         &inputs,

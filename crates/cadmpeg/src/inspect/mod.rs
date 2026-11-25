@@ -757,10 +757,7 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
     let file_path = args.file.path();
     let limits = args.limits.limits(args.max_input_bytes);
     let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits,
-        ..DecodePolicy::default()
-    };
+    let policy = DecodePolicy { limits };
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut file =
         File::open(file_path).with_context(|| format!("reading {}", file_path.display()))?;

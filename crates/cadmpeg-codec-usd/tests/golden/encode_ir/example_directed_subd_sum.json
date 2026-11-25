@@ -106,13 +106,26 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "output.empty",
+            "kind": "no_exportable_solids",
+            "namespace": "export",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "the written USD layer holds no prim: the document states no occurrence, body, mesh, curve, point, material, or physics record this writer encodes",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "arena.omitted",
             "kind": "subd_omitted",
             "namespace": "export",
             "strict_floor": "warning"
           }
         },
-        "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted: synthetic:v2:subd#directed",
+        "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted: synthetic:v2:subd#directed; 1 body record(s) that hold only these cages are not written: synthetic:v2:body#directed",
         "severity": "warning"
       },
       {
