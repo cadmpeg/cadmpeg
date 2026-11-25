@@ -22,8 +22,8 @@ use crate::design::ops::shared::{
 use crate::design::ops::sheet_metal::SheetMetalKind;
 use crate::design::options::Boolean;
 use crate::design::selection::{
-    Keyed, Members, OccurrencePath, OrderedSelection, PathStep, PickContext, PickTarget, Picked,
-    Picks, SelectionRule, SetSelection, StepRef,
+    Keyed, Members, OccurrencePath, OrderedSelection, PickContext, PickTarget, Picked, Picks,
+    SelectionRule, SetSelection, StepRef,
 };
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
@@ -575,26 +575,26 @@ fn owner_definition(site: Site<'_>) -> Option<&str> {
         .or(site.scope)
 }
 
-/// A pick's occurrence path from the definition it starts at: the owner's
+/// A pick's occurrences from the definition it starts at: the owner's
 /// definition for an `Occurrence` context, the assembly for `InContext`,
-/// with `own`, the owner's own place in that assembly (§5.8).
-struct Rooted<'a, T> {
+/// with `own`, the owner's own place in that assembly (§5.8). A step's
+/// configuration selects a variant of its occurrence, and the occurrence
+/// alone places the pick.
+struct Rooted<'a> {
     root: &'a str,
-    own: Option<Vec<T>>,
-    steps: Vec<T>,
+    own: Option<Vec<&'a str>>,
+    steps: Vec<&'a str>,
 }
 
-impl<'a, T: Clone + PartialEq> Rooted<'a, T> {
-    fn of(
-        pick: &'a Picked,
-        owner: Option<&'a str>,
-        steps: impl Fn(&'a OccurrencePath) -> Option<Vec<T>>,
-    ) -> Option<Self> {
+impl<'a> Rooted<'a> {
+    /// `None` where the pick has no occurrence path from a definition, or a
+    /// step is `Native`.
+    fn of(pick: &'a Picked, owner: Option<&'a str>) -> Option<Self> {
         match pick.context.as_ref()? {
             PickContext::Occurrence(path) => Some(Self {
                 root: owner?,
                 own: None,
-                steps: steps(path)?,
+                steps: path_occurrences(path)?,
             }),
             PickContext::InContext {
                 assembly,
@@ -603,10 +603,10 @@ impl<'a, T: Clone + PartialEq> Rooted<'a, T> {
             } => Some(Self {
                 root: assembly.definition.as_str(),
                 own: match own {
-                    Some(own) => Some(steps(own)?),
+                    Some(own) => Some(path_occurrences(own)?),
                     None => None,
                 },
-                steps: steps(target)?,
+                steps: path_occurrences(target)?,
             }),
             _ => None,
         }
@@ -614,7 +614,7 @@ impl<'a, T: Clone + PartialEq> Rooted<'a, T> {
 
     /// The steps of `self` from the root of `frame`, where `self` starts at
     /// that root or at the owner's definition that `frame` places by `own`.
-    fn steps_from_root_of(&self, frame: &Self, owner: Option<&str>) -> Option<Vec<T>> {
+    fn steps_from_root_of(&self, frame: &Self, owner: Option<&str>) -> Option<Vec<&'a str>> {
         if self.root == frame.root {
             return Some(self.steps.clone());
         }
@@ -649,12 +649,8 @@ fn check_chain_seeds(
     findings: &mut Vec<Finding>,
 ) {
     let owner = owner_definition(site);
-    let seeds: Option<Vec<_>> = picks::named(seeds).and_then(|seeds| {
-        seeds
-            .iter()
-            .map(|seed| Rooted::of(seed, owner, path_occurrences))
-            .collect()
-    });
+    let seeds: Option<Vec<_>> = picks::named(seeds)
+        .and_then(|seeds| seeds.iter().map(|seed| Rooted::of(seed, owner)).collect());
     let off_seeds = |selection: &OrderedSelection| {
         let Some(seeds) = seeds.as_ref().filter(|seeds| !seeds.is_empty()) else {
             return false;
@@ -662,7 +658,7 @@ fn check_chain_seeds(
         picks::named(selection)
             .unwrap_or_default()
             .iter()
-            .filter_map(|pick| Rooted::of(pick, owner, path_occurrences))
+            .filter_map(|pick| Rooted::of(pick, owner))
             .any(|pick| {
                 seeds
                     .iter()
@@ -1403,23 +1399,21 @@ fn check_participant_operands(
                 return;
             };
             let owner = owner_definition(site);
-            let rooted = |pick| {
-                Rooted::of(pick, owner, |path| {
-                    Some(path.0.iter().collect::<Vec<&PathStep>>())
-                })
-            };
-            let participants: Vec<_> = context
+            let participants: Option<Vec<_>> = context
                 .participants
                 .values()
                 .filter_map(listed_participants)
                 .flatten()
-                .filter_map(rooted)
+                .map(|pick| Rooted::of(pick, owner))
                 .collect();
+            let Some(participants) = participants else {
+                return;
+            };
             for list in [keep, remove].into_iter().flatten() {
                 let Some(pieces) = picks::named(list) else {
                     continue;
                 };
-                for piece in pieces.iter().filter_map(rooted) {
+                for piece in pieces.iter().filter_map(|pick| Rooted::of(pick, owner)) {
                     let off = participants
                         .iter()
                         .all(|member| piece.under(member, owner) == Some(false));

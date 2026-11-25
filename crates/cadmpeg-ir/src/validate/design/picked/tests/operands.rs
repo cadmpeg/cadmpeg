@@ -18,7 +18,7 @@ use crate::design::ops::shared::{JointConnector, JointKind};
 use crate::design::ops::sheet_metal::{CornerBreak, SheetMetalKind};
 use crate::design::ops::surface::Knit;
 use crate::design::options::SheetOutput;
-use crate::design::refs::EntityRef;
+use crate::design::refs::{ConfigurationRef, EntityRef};
 use crate::design::selection::{
     Anchor, DefinitionRef, MemberOrder, Members, OccurrencePath, PathStep, PickContext, PickTarget,
     Picked, Picks, Selection, StepRef,
@@ -67,31 +67,41 @@ fn a_split_piece_pick_lies_in_the_split_targets() {
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
+/// The path through the occurrences `keys`.
+fn steps(keys: &[&str]) -> OccurrencePath {
+    let steps = keys.iter().map(|key| PathStep {
+        occurrence: StepRef::Occurrence(id("occurrence", key)),
+        configuration: None,
+    });
+    OccurrencePath(steps.collect())
+}
+
+/// A pick of the component that `context` reads.
+fn component(context: Option<PickContext>) -> Picked {
+    Picked {
+        target: PickTarget::Component,
+        context,
+        native: None,
+        domain: None,
+        witness: None,
+        resolved: None,
+    }
+}
+
+fn named<O: MemberOrder>(picks: Vec<Picked>) -> Selection<O> {
+    Selection {
+        at: Anchor::Current,
+        picks: Picks::Named(Members::new(picks).unwrap()),
+        native: None,
+    }
+}
+
 /// The component under the occurrences `path` steps through.
 fn under<O: MemberOrder>(
     path: &[&str],
     context: fn(OccurrencePath) -> PickContext,
 ) -> Selection<O> {
-    let steps = path
-        .iter()
-        .map(|key| PathStep {
-            occurrence: StepRef::Occurrence(id("occurrence", key)),
-            configuration: None,
-        })
-        .collect();
-    let pick = Picked {
-        target: PickTarget::Component,
-        context: Some(context(OccurrencePath(steps))),
-        native: None,
-        domain: None,
-        witness: None,
-        resolved: None,
-    };
-    Selection {
-        at: Anchor::Current,
-        picks: Picks::Named(Members::new(vec![pick]).unwrap()),
-        native: None,
-    }
+    named(vec![component(Some(context(steps(path))))])
 }
 
 /// A piece pick of a split without targets that lies under no participant
@@ -175,6 +185,54 @@ fn an_in_context_piece_pick_is_read_through_its_own_place_in_the_assembly() {
     assert_eq!(ruled(&ir, participant).len(), 1);
     with(&mut ir, |_| split(&["a", "c"]));
     assert_eq!(ruled(&ir, participant).len(), 1);
+}
+
+/// A step's configuration selects a variant of its occurrence, so a piece
+/// lies under a participant by its occurrences alone. A participant with no
+/// occurrence path from a definition leaves every piece unjudged.
+#[test]
+fn a_piece_pick_is_judged_by_its_occurrences_against_every_participant() {
+    let split = |piece: Selection<_>| {
+        FeatureOperation::Split(Box::new(Split {
+            mode: SplitMode::ByTools {
+                targets: None,
+                tools: SplitTool::Plane(Box::new(empty())),
+                method: None,
+                kept: Some(Kept::Pieces {
+                    keep: Some(Box::new(piece)),
+                    remove: None,
+                }),
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let participants = |extra: Vec<Picked>| {
+        let mut picks = vec![component(Some(PickContext::Occurrence(steps(&["a"]))))];
+        picks.extend(extra);
+        Some(AssemblyContext {
+            participants: BTreeMap::from([(Some(ContextEffect::Definitions), named(picks))]),
+        })
+    };
+    let rule = "design.piece-pick-targets-entity-no-participant";
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.assembly = participants(Vec::new());
+    let mut variant = steps(&["a", "c"]);
+    let large = NonBlankString::new("large").unwrap();
+    variant.0[0].configuration = Some(ConfigurationRef::Named(large));
+    let variant = component(Some(PickContext::Occurrence(variant)));
+    with(&mut ir, |_| split(named(vec![variant])));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |_| split(under(&["b"], PickContext::Occurrence)));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+    let definition = PickContext::Definition(DefinitionRef {
+        definition: id("definition", "part"),
+        configuration: None,
+    });
+    for unrooted in [Some(definition), None] {
+        ir.design.features[0].definition.assembly = participants(vec![component(unrooted)]);
+        assert!(ruled(&ir, rule).is_empty());
+    }
 }
 
 #[test]
