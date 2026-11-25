@@ -31,6 +31,11 @@ const MAX_JOIN_DEGREE: usize = 64;
 const MAX_JOIN_ELEVATED_POLES: usize = 1 << 20;
 /// Acceptance tolerance for circle plane axes and evaluated radius points.
 const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;
+/// `ON_ZERO_TOLERANCE`, the absolute coordinate difference of coincident points.
+pub(crate) const COINCIDENCE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
+/// `ON_RELATIVE_TOLERANCE`, the coordinate difference of coincident points
+/// relative to the sum of their magnitudes.
+const COINCIDENCE_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
 
 const POINT: Uuid = Uuid::from_canonical([
     0xc3, 0x10, 0x1a, 0x1d, 0xf1, 0x57, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -859,6 +864,90 @@ pub(crate) fn fit_polycurve_pieces(
         fit_polycurve_piece(ctx, child, target, offset)?;
     }
     Ok(())
+}
+
+/// Whether two points are coincident as `ON_PointsAreCoincident` tests them:
+/// each pair of coordinates differs by at most an absolute or a relative
+/// tolerance.
+pub(crate) fn points_coincident(first: Point3, second: Point3) -> bool {
+    [
+        (first.x, second.x),
+        (first.y, second.y),
+        (first.z, second.z),
+    ]
+    .into_iter()
+    .all(|(a, b)| {
+        let difference = (a - b).abs();
+        difference <= COINCIDENCE_ABSOLUTE_TOLERANCE
+            || difference <= (a.abs() + b.abs()) * COINCIDENCE_RELATIVE_TOLERANCE
+    })
+}
+
+/// The transition into each piece of a polycurve whose pieces
+/// [`fit_polycurve_pieces`] fitted: `Continuous` where the piece before ends
+/// at a point coincident with the start of the piece, and `Discontinuous`
+/// for the first piece and at a gap.
+pub(crate) fn polycurve_transitions(
+    ctx: &DecodeContext<'_>,
+    children: &[(FiniteReal, DecodedCurve)],
+) -> Result<Vec<cadmpeg_ir::geometry::CompositeCurveTransition>, GeometryError> {
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    let mut previous_end = None;
+    children
+        .iter()
+        .map(|(_, child)| {
+            let ends = piece_ends(ctx, child)?;
+            let continuous = matches!(
+                (previous_end, ends),
+                (Some(end), Some([start, _])) if points_coincident(end, start)
+            );
+            previous_end = ends.map(|[_, end]| end);
+            Ok(if continuous {
+                CompositeCurveTransition::Continuous
+            } else {
+                CompositeCurveTransition::Discontinuous
+            })
+        })
+        .collect()
+}
+
+/// The start and end points of a fitted polycurve piece. A leaf other than a
+/// NURBS curve or a full circle, and a piece that does not evaluate, has none.
+fn piece_ends(
+    ctx: &DecodeContext<'_>,
+    piece: &DecodedCurve,
+) -> Result<Option<[Point3; 2]>, GeometryError> {
+    let _nested = ctx.enter_nested("Rhino polycurve piece ends")?;
+    let geometry = match piece {
+        DecodedCurve::Compound { children, .. } => {
+            let (Some((_, first)), Some((_, last))) = (children.first(), children.last()) else {
+                return Ok(None);
+            };
+            return Ok(piece_ends(ctx, first)?
+                .zip(piece_ends(ctx, last)?)
+                .map(|([start, _], [_, end])| [start, end]));
+        }
+        DecodedCurve::Leaf { geometry, .. } => geometry,
+    };
+    let domain = match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            match cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs) {
+                Some(domain) => domain.endpoints(),
+                None => return Ok(None),
+            }
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => [0.0, TAU],
+        _ => return Ok(None),
+    };
+    let point = |parameter| match cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter) {
+        Ok(point) => Ok(Some(point.get())),
+        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+            Err(GeometryError::Codec(limit.into()))
+        }
+        Err(_) => Ok(None),
+    };
+    Ok(point(domain[0])?.zip(point(domain[1])?).map(Into::into))
 }
 
 fn fit_polycurve_piece(

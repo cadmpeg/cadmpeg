@@ -3016,22 +3016,26 @@ decision, not a claim that the OpenNURBS reader rejects the bytes.
 
 CADIR emits one composite curve for the polycurve and one neutral carrier
 curve for each child. The composite's parameter range is `[t[0], t[n]]`. Each
-segment keeps the direction of its child, and the segments state no
-continuity. Each child carrier takes its polycurve interval as its parameter
-domain: a NURBS child by an affine map of its knots, and a child of another
-form by its exact NURBS form. A child whose domain equals its interval keeps
-its form. Child geometry is converted to millimetres; child and
-polycurve parameters, the reserved values, and the reserved bounds are not
-scaled. The parent retains the source object record. A bounded child gap is
-represented by the midpoint join repair and emits its geometry warning; a
-malformed child or parameter array does not enter the typed composite curve.
+segment keeps the direction of its child. Each child carrier takes its
+polycurve interval as its parameter domain: a NURBS child by an affine map of
+its knots, and a child of another form by its exact NURBS form. A child whose
+domain equals its interval keeps its form. Child geometry is converted to
+millimetres; child and polycurve parameters, the reserved values, and the
+reserved bounds are not scaled. A segment after the first states the
+`continuous` transition where the end point of the previous child and the
+start point of its own child are coincident (point coincidence of §16, on the
+millimetre coordinates); the first segment, and a segment after a gap, state
+`discontinuous`. The composite keeps each child as stored, gaps included. The
+parent retains the source object record. A malformed child or parameter array
+does not enter the typed composite curve.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
 lower degree are elevated to the maximum segment degree. At each join, the last
 control point of the accumulated curve and the first control point of the next
-segment move to their midpoint. The first control point of the next segment is
-then omitted. The appended knots are translated by the difference between the
+segment move to their midpoint, and a join of two distinct points emits the
+`curve.polycurve-join-gap` warning. The first control point of the next segment
+is then omitted. The appended knots are translated by the difference between the
 accumulated end parameter and the next segment start parameter. The internal
 join has `degree` equal knots. The result has this identity:
 

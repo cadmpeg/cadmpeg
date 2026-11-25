@@ -1798,3 +1798,56 @@ fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 mod brep;
+
+#[test]
+fn polycurve_states_continuity_where_adjacent_pieces_meet() {
+    use crate::test_support::test_archive as support;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    let children = [
+        (
+            support::LINE_CLASS,
+            support::line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([1.0, 1.5, 0.0], [0.0, 2.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let bytes = support::archive(&[support::object_record(
+        4,
+        support::POLYCURVE_CLASS,
+        &support::polycurve_payload(&[0.0, 1.0, 2.0, 3.0], &children),
+    )]);
+    let decoded = crate::RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the polycurve archive decodes");
+    let transitions = decoded
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .find_map(|curve| match &curve.geometry {
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => Some(
+                segments
+                    .iter()
+                    .map(|segment| segment.transition)
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("the polycurve decodes to a composite curve");
+    assert_eq!(
+        transitions,
+        [
+            CompositeCurveTransition::Discontinuous,
+            CompositeCurveTransition::Continuous,
+            CompositeCurveTransition::Discontinuous,
+        ]
+    );
+}

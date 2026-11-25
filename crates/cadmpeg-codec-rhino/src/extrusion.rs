@@ -17,7 +17,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
-use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
+use crate::curves::{
+    decode_embedded_curve_2d, error, exact_nurbs, points_coincident, DecodedCurve, GeometryError,
+};
 use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{interval, point, vector, MillimeterScale};
 use crate::wire::Uuid;
@@ -36,8 +38,6 @@ const ON_V5_EXTRUSION_DISPLAY_MESH_CACHE: Uuid = Uuid::from_canonical([
 ]);
 const UNIT_TOLERANCE: f64 = EPS_EXTRUSION_DEGENERATE;
 const MITER_Z_MINIMUM: f64 = 1.0 / 64.0;
-const CLOSURE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
-const CLOSURE_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
 
 /// One exact profile boundary at both effective path ends.
 #[derive(Debug, Clone)]
@@ -572,20 +572,6 @@ fn evaluate_profile_point(
         })
 }
 
-fn points_coincident(first: Point3, second: Point3) -> bool {
-    [
-        (first.x, second.x),
-        (first.y, second.y),
-        (first.z, second.z),
-    ]
-    .into_iter()
-    .all(|(a, b)| {
-        let difference = (a - b).abs();
-        difference <= CLOSURE_ABSOLUTE_TOLERANCE
-            || difference <= (a.abs() + b.abs()) * CLOSURE_RELATIVE_TOLERANCE
-    })
-}
-
 fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
     if profile_off_plane(curve) {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
@@ -1032,12 +1018,13 @@ pub(crate) mod tests {
 
     use super::{
         active_miter, cap_frame, exact_orientation, mitered_local, read_mesh_cache,
-        read_v5_mesh_cache, split_profiles, ExtrusionFormat, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
+        read_v5_mesh_cache, split_profiles, ExtrusionFormat, ANONYMOUS,
         ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
     use crate::curves::DecodedCurve;
     use crate::curves::GeometryError;
+    use crate::curves::COINCIDENCE_ABSOLUTE_TOLERANCE;
     use crate::layout::anonymous_version_prefix as anon_ver;
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
@@ -1382,7 +1369,7 @@ pub(crate) mod tests {
             Point3::new(-radius, -radius, 0.0),
             Point3::new(0.0, -radius, 0.0),
             Point3::new(radius, -radius, 0.0),
-            Point3::new(radius, CLOSURE_ABSOLUTE_TOLERANCE / 2.0, 0.0),
+            Point3::new(radius, COINCIDENCE_ABSOLUTE_TOLERANCE / 2.0, 0.0),
         ];
         let mut weights = vec![
             1.0,
