@@ -5,7 +5,7 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{anyhow, Context};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
+use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
 use cadmpeg_ir::{CadIr, DecodeSidecar};
 
@@ -37,7 +37,8 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 /// JSON object is parsed as CADIR when no native codec recognizes it.
 ///
 /// Every command loads through here, so here is where the load's notices go
-/// to stderr: a decode sidecar the load ignored, and a detection below high
+/// to stderr: a decode sidecar the load ignored, a document whose scope
+/// excludes a class the command requested, and a detection below high
 /// confidence.
 pub(crate) fn load_artifact(
     catalog: &InputCatalog,
@@ -45,14 +46,18 @@ pub(crate) fn load_artifact(
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
+    let requested = options.depth.scope();
     let document = load(catalog, path, options, forced)?;
-    print_load_notice(&document);
+    print_load_notice(path, &document, requested);
     Ok(document)
 }
 
-fn print_load_notice(document: &LoadedDocument) {
+fn print_load_notice(path: &Path, document: &LoadedDocument, requested: ContentScope) {
     if let Some(loss) = &document.stale_sidecar {
         eprintln!("warning: {}: {}", loss.code, loss.message);
+    }
+    if let Some(note) = scope_note(document.ir.scope(), requested) {
+        eprintln!("note: {}: {note}", path.display());
     }
     let LoadOrigin::Decoded {
         selection: Selection::Detected { confidence },
@@ -68,6 +73,18 @@ fn print_load_notice(document: &LoadedDocument) {
             "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
         );
     }
+}
+
+/// The note for a document whose scope excludes a class `requested` holds:
+/// the arenas of an excluded class state nothing about the source.
+fn scope_note(scope: ContentScope, requested: ContentScope) -> Option<String> {
+    let excluded = scope.missing_from(requested);
+    (!excluded.is_empty()).then(|| {
+        format!(
+            "the document's scope excludes {excluded}; the arenas of an excluded class state \
+             nothing about the source"
+        )
+    })
 }
 
 fn load(
@@ -166,6 +183,27 @@ mod tests {
     use cadmpeg_ir::CadIr;
     use cadmpeg_ir::{report::decode::DecodeReport, DecodeSidecar, SourceFidelity};
     use cadmpeg_registry::{ForcedInput, InputCatalog};
+
+    #[test]
+    fn a_scope_that_excludes_a_requested_class_is_noted() {
+        use cadmpeg_core::decode::ContentScope;
+
+        assert_eq!(
+            super::scope_note(ContentScope::geometry(), ContentScope::full()).as_deref(),
+            Some(
+                "the document's scope excludes design, process; the arenas of an excluded class \
+                 state nothing about the source"
+            )
+        );
+        assert_eq!(
+            super::scope_note(ContentScope::full(), ContentScope::full()),
+            None
+        );
+        assert_eq!(
+            super::scope_note(ContentScope::geometry(), ContentScope::geometry()),
+            None
+        );
+    }
 
     #[test]
     fn input_acquisition_resource_refusal_stays_typed() {

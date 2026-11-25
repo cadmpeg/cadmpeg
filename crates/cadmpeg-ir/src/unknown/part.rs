@@ -47,6 +47,7 @@ pub struct Part<'a> {
     holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
+    marked: Vec<Identity>,
     lost: Vec<String>,
     consequence: Option<String>,
     digest_only: bool,
@@ -94,6 +95,7 @@ impl<'a> Part<'a> {
             holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
+            marked: Vec::new(),
             lost: Vec::new(),
             consequence: None,
             digest_only: false,
@@ -127,6 +129,15 @@ impl<'a> Part<'a> {
     #[must_use]
     pub fn dropping(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
         self.dropped.extend(records);
+        self
+    }
+
+    /// Names records the decoder keeps and marks because a child of each
+    /// needs this part, so the document does not state that child (§5.6,
+    /// Unstated children).
+    #[must_use]
+    pub fn marking(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
+        self.marked.extend(records);
         self
     }
 
@@ -495,9 +506,12 @@ impl DecodeParts for DecodeContext<'_> {
             .map_or(SourceOwner::Root, SourceOwner::from);
         let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?
             .with_untyped(part.holds.iter().copied());
-        let mut dropped: Vec<&str> = part.dropped.iter().map(Identity::as_str).collect();
-        dropped.sort_unstable();
-        dropped.dedup();
+        let sorted = |records: &[Identity]| {
+            let mut ids: Vec<&str> = records.iter().map(Identity::as_str).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids.join(", ")
+        };
         let stream = part.stream.as_ref().map_or("", StreamName::as_str);
         let name = part
             .name
@@ -515,10 +529,11 @@ impl DecodeParts for DecodeContext<'_> {
             format!("; lost=[{}]", part.lost.join(", "))
         };
         let message = format!(
-            "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}{consequence}; dropped=[{}]{lost}",
+            "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}{consequence}; dropped=[{}]; marked=[{}]{lost}",
             part.kind,
             part.offset(),
-            dropped.join(", ")
+            sorted(&part.dropped),
+            sorted(&part.marked)
         );
         self.retain_bytes(u64_from_index(message.len()), "given-up part loss")?;
         let provenance = match part.stream.clone() {

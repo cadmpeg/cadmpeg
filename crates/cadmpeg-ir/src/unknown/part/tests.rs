@@ -52,6 +52,11 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
         identity("synthetic:model:face#2"),
         identity("synthetic:model:edge#1"),
         identity("synthetic:model:face#2"),
+    ])
+    .marking([
+        identity("synthetic:model:shell#9"),
+        identity("synthetic:model:region#3"),
+        identity("synthetic:model:shell#9"),
     ]);
     let id = part.id().expect("part id");
     let Err(given_up) = decode_part(&ctx, part, || {
@@ -74,7 +79,8 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
         loss.message,
         format!(
             "part record \"Body/7\" stream=\"Body.bin\" offset=4 length=14 record={id}: malformed container: \
-             record length runs past its stream; dropped=[synthetic:model:edge#1, synthetic:model:face#2]"
+             record length runs past its stream; dropped=[synthetic:model:edge#1, synthetic:model:face#2]; \
+             marked=[synthetic:model:region#3, synthetic:model:shell#9]"
         )
     );
     assert_eq!(
@@ -218,7 +224,7 @@ fn the_loss_states_lost_entries_and_what_else_the_part_cost() {
         given_up.loss().message,
         format!(
             "part record stream=\"\" offset=4 length=14 record={id}: malformed container: damaged; \
-             none of its 2 members was placed; dropped=[]; lost=[#7 entry #3, #9 entry #3]"
+             none of its 2 members was placed; dropped=[]; marked=[]; lost=[#7 entry #3, #9 entry #3]"
         )
     );
 }
@@ -464,7 +470,7 @@ fn a_part_of_a_nested_document_is_restated_in_its_container_stream() {
         loss.message,
         format!(
             "part record stream=\"Embedded/Body.bin\" offset=4 length=14 record={id}: \
-             malformed container: damaged; dropped=[]"
+             malformed container: damaged; dropped=[]; marked=[]"
         )
     );
     assert_eq!(
