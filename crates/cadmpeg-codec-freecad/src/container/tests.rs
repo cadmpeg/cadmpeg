@@ -161,7 +161,7 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
         loss.message
             .starts_with("part archive-entry \"thumbnails/Thumbnail.png\" stream=\"\" offset=")
             && loss.message.contains("per-expansion allowance")
-            && loss.message.ends_with("; dropped=[]; marked=[]"),
+            && loss.message.ends_with("; dropped=[]"),
         "{}",
         loss.message
     );

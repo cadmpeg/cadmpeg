@@ -120,7 +120,7 @@ fn a_given_up_statement_names_the_records_that_need_it() {
         panic!("one record.unreadable loss");
     };
     assert!(loss.message.ends_with(&format!(
-        "; dropped=[step:file:omitted#{dependent}, step:file:omitted#{transitive}]; marked=[]; lost=[#6 entry #3]"
+        "; dropped=[step:file:omitted#{dependent}, step:file:omitted#{transitive}]; lost=[#6 entry #3]"
     )));
     let omissions = decoded
         .report()
@@ -204,7 +204,7 @@ fn a_polyline_that_loses_a_point_is_dropped_and_named() {
     let polyline = source.find("#10=").expect("polyline");
     assert!(
         message.ends_with(&format!(
-            "; dropped=[step:file:omitted#{polyline}]; marked=[]; lost=[#11 entry #10]"
+            "; dropped=[step:file:omitted#{polyline}]; lost=[#11 entry #10]"
         )),
         "{message}"
     );
@@ -263,7 +263,7 @@ fn a_closed_shell_that_loses_a_face_keeps_the_rest_and_the_loss_names_both() {
     };
     assert!(
         loss.message
-            .ends_with("; dropped=[]; marked=[]; lost=[#30 entry #21, #31 entry #21]"),
+            .ends_with("; dropped=[]; lost=[#30 entry #21, #31 entry #21]"),
         "{}",
         loss.message
     );

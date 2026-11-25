@@ -47,7 +47,6 @@ pub struct Part<'a> {
     holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
-    marked: Vec<Identity>,
     lost: Vec<String>,
     consequence: Option<String>,
     digest_only: bool,
@@ -95,7 +94,6 @@ impl<'a> Part<'a> {
             holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
-            marked: Vec::new(),
             lost: Vec::new(),
             consequence: None,
             digest_only: false,
@@ -129,15 +127,6 @@ impl<'a> Part<'a> {
     #[must_use]
     pub fn dropping(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
         self.dropped.extend(records);
-        self
-    }
-
-    /// Names records the decoder keeps and marks because a child of each
-    /// needs this part, so the document does not state that child (§5.6,
-    /// Unstated children).
-    #[must_use]
-    pub fn marking(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
-        self.marked.extend(records);
         self
     }
 
@@ -650,14 +639,9 @@ impl DecodeParts for DecodeContext<'_> {
             .map_or(SourceOwner::Root, SourceOwner::from);
         let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?
             .with_untyped(part.holds.iter().copied());
-        let sorted = |records: &[Identity]| {
-            let mut ids = Vec::new();
-            join_sorted(
-                &mut ids,
-                records.iter().map(|record| record.as_str().to_owned()),
-            );
-            ids
-        };
+        let mut dropped: Vec<&str> = part.dropped.iter().map(Identity::as_str).collect();
+        dropped.sort_unstable();
+        dropped.dedup();
         let stream = part.stream.as_ref().map_or("", StreamName::as_str);
         let name = part
             .name
@@ -675,8 +659,8 @@ impl DecodeParts for DecodeContext<'_> {
             part.offset(),
         );
         let tail = Tail {
-            dropped: sorted(&part.dropped),
-            marked: Some(sorted(&part.marked)),
+            dropped: dropped.into_iter().map(str::to_owned).collect(),
+            marked: None,
             stated: Vec::new(),
             lost: part.lost.clone(),
         };

@@ -128,7 +128,7 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
         message.starts_with("part archive-entry \"model.pvs\" stream=\"\" offset=")
             && message.ends_with(
                 "; the package carries no product structure, and none of its 1 .ol geometry \
-                 members was placed; dropped=[]; marked=[]"
+                 members was placed; dropped=[]"
             ),
         "{message}"
     );
@@ -317,7 +317,7 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
     assert!(malformed[0]
         .message
         .starts_with("part archive-entry \"bracket.ol\" stream=\"\" offset="));
-    assert!(malformed[0].message.ends_with("; dropped=[]; marked=[]"));
+    assert!(malformed[0].message.ends_with("; dropped=[]"));
     assert_eq!(result.ir().model.tessellations.len(), 1);
     // §8.1: the root definition owns the three placements.
     assert_eq!(result.ir().model.occurrences.len(), 3);
