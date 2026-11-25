@@ -1962,6 +1962,17 @@ fn source_native_record_reduction_is_reported() {
             )
             .expect("valid native identity")],
         );
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("unknowns"),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("f3d:test:unknown#0").expect("valid identity"),
+                Default::default(),
+            )
+            .expect("valid native identity")],
+        );
     ir.finalize();
 
     let mut buf = Vec::new();
@@ -1972,8 +1983,22 @@ fn source_native_record_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            .contains("source-native record(s) were not represented in STEP")
-    }));
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("f3d:test:unknown#0")),
+        "a given-up part's stub incurs no omission loss: {:?}",
+        report.losses
+    );
+    assert!(
+        report.losses.iter().any(
+            |loss| loss.code.to_string() == "export/native.records-omitted"
+                && loss.message
+                    == "the step write omits 1 native record(s) of `f3d` arena `asm_histories`: \
+                    f3d:test:asm-history#0"
+        ),
+        "{:?}",
+        report.losses
+    );
 }

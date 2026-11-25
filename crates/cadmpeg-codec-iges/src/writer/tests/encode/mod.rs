@@ -410,10 +410,14 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     ));
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == IgesLossCode::PassthroughRecordOmitted.kind() }));
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/native.records-omitted"),
+        "{:?}",
+        report.losses
+    );
     let round_trip = IgesCodec
         .decode(
             &mut Cursor::new(written.as_slice()),

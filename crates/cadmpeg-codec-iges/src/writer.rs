@@ -12,8 +12,8 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    native_records_omitted, ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody,
-    WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, NativeDisposition,
+    NativeDispositions, WritePath,
 };
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
@@ -50,21 +50,41 @@ use records::{ModelRecords, TopologyIndex};
 const EPS_WRITE_POSITION: f64 = 1.0e-8;
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
-const ALLOWED_NATIVE_ARENAS: &[&str] = &[
+/// Native arenas the semantic writer states from the neutral model.
+const REGENERATED_NATIVE_ARENAS: &[&str] = &[
     "boundary_vertex_sewing",
     "cards",
     "copious_data",
     "directions",
-    "display_attributes",
     "entities",
     // Type 186 sits in this writer's encodable entity-type list and
     // `brep_entities` emits complete 186 records, void pairs included, so
     // the typed arena never blocks a semantic write.
     "manifold_solids",
-    "product_occurrence_expansion",
-    "quarantined_directory_records",
-    "quarantined_parameter_records",
     "transformations",
+];
+
+/// Native arenas the semantic writer does not regenerate, with the reason the
+/// loss gives.
+const DROPPED_NATIVE_ARENAS: &[(&str, &str)] = &[
+    (
+        "display_attributes",
+        "which the bounded semantic writer does not regenerate",
+    ),
+    (
+        "product_occurrence_expansion",
+        "which the bounded semantic writer does not regenerate",
+    ),
+    (
+        "quarantined_directory_records",
+        "which the bounded semantic writer does not regenerate, because a record that failed \
+         typing has no fields to write",
+    ),
+    (
+        "quarantined_parameter_records",
+        "which the bounded semantic writer does not regenerate, because a record that failed \
+         typing has no fields to write",
+    ),
 ];
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // Roundoff guard for geometric plane classification. This is not serialized
@@ -163,6 +183,7 @@ fn body(
     bytes: Vec<u8>,
     write_path: WritePath,
     coverage: ArenaCoverage,
+    native: NativeDispositions,
     losses: Vec<LossNote>,
     note: &str,
     counts: BTreeMap<String, usize>,
@@ -175,6 +196,7 @@ fn body(
         },
         write_path,
         coverage,
+        native,
         losses,
         notes: vec![note.into()],
     }
@@ -273,6 +295,7 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
 struct Synthesis {
     bytes: Vec<u8>,
     counts: BTreeMap<String, usize>,
+    native: NativeDispositions,
     losses: Vec<LossNote>,
 }
 
@@ -469,7 +492,8 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let mut losses = partial_losses;
     losses.extend(unbounded_analytic.clone());
     losses.extend(procedural_reduction_losses(ir)?);
-    losses.extend(reject_unsupported_native(ir)?);
+    let (native_losses, native) = reject_unsupported_native(ir)?;
+    losses.extend(native_losses);
     for body in ir
         .geometry
         .bodies
@@ -683,6 +707,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     Ok(Synthesis {
         bytes: encode_file(&entities, &body_presentations, version, minimum_resolution)?,
         counts,
+        native,
         losses,
     })
 }
@@ -5052,48 +5077,44 @@ fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
     endpoints[0] == endpoints[3] && endpoints[1] == endpoints[4] && endpoints[2] == endpoints[5]
 }
 
-fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+/// What the semantic writer does with each native arena (§3.4, Rule W3), and
+/// the losses of the native records it regenerates only in part. An arena
+/// this declares nothing for is dropped, and the export wrapper charges it.
+fn reject_unsupported_native(
+    ir: &CadIr,
+) -> Result<(Vec<LossNote>, NativeDispositions), CodecError> {
+    let mut native = NativeDispositions::dropped();
     let Some(namespace) = ir.native.namespace("iges") else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), native));
     };
+    for arena in REGENERATED_NATIVE_ARENAS {
+        native.arena("iges", arena, NativeDisposition::Regenerated);
+    }
+    for (arena, reason) in DROPPED_NATIVE_ARENAS {
+        native.drop_arena("iges", arena, reason);
+    }
     let represented_name_properties = represented_name_properties(ir, namespace);
     let mut losses = Vec::new();
     let mut omitted_property_sources = BTreeSet::new();
-    if represented_name_properties.is_none() {
-        for arena in ["product_properties", "properties"] {
-            let Some(records) = namespace.arenas().get(arena) else {
-                continue;
-            };
-            if records.is_empty() {
-                continue;
-            }
-            for record in records {
-                if let Some(source) = record
-                    .field("source_entity")
-                    .and_then(|value| value.as_str().map(str::to_owned))
-                {
-                    omitted_property_sources.insert(source);
-                }
-            }
-            losses.push(IgesLossCode::PassthroughRecordOmitted.note(format!(
-                "IGES native arena {arena} holds {} name-property record(s) that the semantic writer omits; body names transfer through the neutral model",
-                records.len()
-            )));
-        }
-    }
-    // W1: a native record the semantic writer does not encode is dropped and
-    // named, never refused for.
-    for (arena, records) in namespace.arenas() {
-        if ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
-            || matches!(arena.as_str(), "product_properties" | "properties")
-        {
+    for arena in ["product_properties", "properties"] {
+        if represented_name_properties.is_some() {
+            native.arena("iges", arena, NativeDisposition::Regenerated);
             continue;
         }
-        losses.extend(native_records_omitted(
-            "IGES",
-            &format!("of native arena `{arena}`, which the semantic writer does not encode"),
-            records.iter().map(|record| record.id().to_owned()),
-        ));
+        native.drop_arena(
+            "iges",
+            arena,
+            "whose name properties the semantic writer omits; body names transfer through the \
+             neutral model",
+        );
+        for record in namespace.arenas().get(arena).into_iter().flatten() {
+            if let Some(source) = record
+                .field("source_entity")
+                .and_then(|value| value.as_str().map(str::to_owned))
+            {
+                omitted_property_sources.insert(source);
+            }
+        }
     }
     let unencoded_entities = namespace
         .arenas()
@@ -5148,11 +5169,11 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                 )
         })
         .map(|record| record.id().to_owned());
-    losses.extend(native_records_omitted(
-        "IGES",
+    native.drop_records(
+        "iges",
         "whose entity the semantic writer does not encode",
         unencoded_entities,
-    ));
+    );
     let mut native_entities = namespace.arenas().get("entities").into_iter().flatten();
     for record in native_entities.clone().filter(|record| {
         let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
@@ -5161,10 +5182,11 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             || (entity_type == Some(106) && matches!(form, Some(1..=3 | 11..=13 | 63)))
     }) {
         if degenerate_native_line(record) {
-            losses.push(IgesLossCode::PassthroughRecordOmitted.note(format!(
-                "IGES native line {} has coincident endpoints; the semantic writer omits zero-length lines",
-                record.id()
-            )));
+            native.drop_records(
+                "iges",
+                "that are lines with coincident endpoints, which the semantic writer omits",
+                [record.id()],
+            );
             continue;
         }
         let Some(sequence) = record
@@ -5265,33 +5287,17 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             "IGES native topology records have no neutral projection; the semantic writer omits unprojected trimming".to_owned(),
         ));
     }
-    for (arena, records) in namespace.arenas() {
-        if records.is_empty() {
-            continue;
-        }
-        let message = match arena.as_str() {
-            "directions" => {
-                "IGES direction records are regenerated only for required \
-                 analytic-surface support; native direction identities and unrelated \
-                 records are omitted".to_owned()
-            }
-            "display_attributes" => {
-                "IGES display attributes are not regenerated by the bounded semantic writer".to_owned()
-            }
-            "product_occurrence_expansion" => {
-                "IGES product occurrence expansion is not regenerated by the bounded semantic writer".to_owned()
-            }
-            "quarantined_directory_records" | "quarantined_parameter_records" => format!(
-                "IGES native arena {arena} holds {} quarantined record(s) that the \
-                 bounded semantic writer does not regenerate, because a record that \
-                 failed typing has no fields to write",
-                records.len()
-            ),
-            _ => continue,
-        };
-        losses.push(IgesLossCode::PassthroughRecordOmitted.note(message));
+    if namespace
+        .arenas()
+        .get("directions")
+        .is_some_and(|records| !records.is_empty())
+    {
+        losses.push(IgesLossCode::PassthroughRecordOmitted.note(
+            "IGES direction records are regenerated only for required analytic-surface \
+             support; native direction identities and unrelated records are omitted",
+        ));
     }
-    Ok(losses)
+    Ok((losses, native))
 }
 
 #[derive(Clone, Copy)]

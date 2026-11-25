@@ -6884,20 +6884,6 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let unknown_count = self
-            .ir
-            .native
-            .loss_counts()
-            .into_iter()
-            .filter(|count| count.kind == "unknowns")
-            .map(|count| count.count.get())
-            .sum::<usize>();
-        if unknown_count > 0 {
-            self.loss(
-                StepLossCode::PassthroughRecordOmitted,
-                format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
-            );
-        }
         if self.unstyled_colors > 0 {
             self.loss(
                 StepLossCode::DisplayColorUnstyled,
@@ -7148,22 +7134,6 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::ProceduralDefinitionNotWritten,
                 format!("{omitted_surface_count} procedural surface definition(s) and {omitted_curve_count} procedural curve definition(s) had no emitted STEP construction or solved carrier"),
-            );
-        }
-        let source_native_records: usize = self
-            .ir
-            .native
-            .loss_counts()
-            .iter()
-            .filter(|loss| loss.kind != "unknowns")
-            .map(|loss| loss.count.get())
-            .sum();
-        if source_native_records > 0 {
-            self.loss(
-                StepLossCode::SourceNativeRecordOmitted,
-                format!(
-                    "{source_native_records} source-native record(s) were not represented in STEP"
-                ),
             );
         }
     }

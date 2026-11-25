@@ -146,7 +146,7 @@ use std::io::Write;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
     ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
-    PatchConsumption, WritePath,
+    NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -478,6 +478,25 @@ impl Written {
             }
             Self::Semantic { coverage, .. } => ArenaCoverage::Declared(*coverage),
         }
+    }
+
+    /// What the output does with each native arena (§3.4, Rule W3). A replay
+    /// holds every record of the source; a semantic write states the records
+    /// of the arenas it loads from neutral and native content. Neither holds a
+    /// record of another format.
+    fn native(&self) -> NativeDispositions {
+        let mut native = NativeDispositions::dropped();
+        match self {
+            Self::Replayed | Self::StoredCompoundFile { .. } => {
+                native.namespace("sldprt", NativeDisposition::Written);
+            }
+            Self::Semantic { .. } => {
+                for arena in crate::native::SLDPRT_ARENA_NAMES {
+                    native.arena("sldprt", arena, NativeDisposition::Regenerated);
+                }
+            }
+        }
+        native
     }
 
     /// The semantic path that ran instead of an eligible replay, with why.

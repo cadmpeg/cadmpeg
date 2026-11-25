@@ -763,20 +763,21 @@ fn prepare_write(
     })
 }
 
+/// The `rhino` arenas whose records the writer states itself, from the
+/// neutral records and its own defaults.
+const REGENERATED_NATIVE_ARENAS: &[&str] = &[
+    "byte_spans",
+    "document_settings",
+    "layers",
+    "object_presentation",
+    "opaque_records",
+    "unknowns",
+];
+
 fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bool {
-    const REGENERATED: &[&str] = &[
-        "byte_spans",
-        "document_settings",
-        "layers",
-        "object_presentation",
-        "opaque_records",
-        "unknowns",
-    ];
-    if namespace
-        .arenas()
-        .iter()
-        .any(|(name, records)| !records.is_empty() && !REGENERATED.contains(&name.as_str()))
-    {
+    if namespace.arenas().iter().any(|(name, records)| {
+        !records.is_empty() && !REGENERATED_NATIVE_ARENAS.contains(&name.as_str())
+    }) {
         return false;
     }
     let opaque = namespace.arenas().get("opaque_records");

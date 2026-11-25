@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    native_records_omitted, output_empty, partial_topology_omitted, record_invalid,
+    output_empty, partial_topology_omitted, record_invalid, NativeDisposition, NativeDispositions,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
@@ -136,6 +136,8 @@ impl Failure {
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
     losses: Vec<LossNote>,
+    /// The `f3d` records are written but those a fallback drops (W1).
+    native: NativeDispositions,
     design_dropped: bool,
     neutral_dropped: bool,
     /// The parts of the design scope's form dropped after a failure.
@@ -150,9 +152,12 @@ pub(super) struct Reduction<'a> {
 
 impl<'a> Reduction<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
+        let mut native = NativeDispositions::dropped();
+        native.namespace("f3d", NativeDisposition::Written);
         Self {
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
+            native,
             design_dropped: false,
             neutral_dropped: false,
             fallback: super::design::Fallback::default(),
@@ -191,8 +196,9 @@ impl<'a> Reduction<'a> {
         &self.fallback
     }
 
-    /// The losses, with `export:output.empty` when no geometry is written.
-    pub(super) fn finish(mut self) -> Vec<LossNote> {
+    /// The losses, with `export:output.empty` when no geometry is written,
+    /// and what the write does with each native record.
+    pub(super) fn finish(mut self) -> (Vec<LossNote>, NativeDispositions) {
         for (body, faces) in std::mem::take(&mut self.opened) {
             let Some(row) = self
                 .ir
@@ -254,7 +260,7 @@ impl<'a> Reduction<'a> {
         } else {
             self.losses.extend(unranged_open_edges(geometry));
         }
-        self.losses
+        (self.losses, self.native)
     }
 
     /// Remove every item the generator has no form for. Idempotent: it runs
@@ -330,11 +336,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_arenas(|arena| UNWRITTEN_ARENAS.contains(&arena));
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that the source-less generator has no form for (ACT records and mesh-surface sentinels need the retained MetaStream registry and ASM record)",
             dropped,
-        ));
+        );
     }
 
     /// Neutral records the generator writes only from native Design records.
@@ -1553,11 +1559,11 @@ impl<'a> Reduction<'a> {
             return false;
         }
         self.design_dropped = true;
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             &format!("of the Design stream, because the source-less generator cannot write them consistently ({reason})"),
             dropped,
-        ));
+        );
         true
     }
 
@@ -1594,13 +1600,13 @@ impl<'a> Reduction<'a> {
             .flatten()
             .map(|record| record.id().to_owned())
             .collect::<Vec<_>>();
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             &format!(
                 "because the source-less generator cannot write the document with them ({reason})"
             ),
             dropped,
-        ));
+        );
         true
     }
 
@@ -1751,11 +1757,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_records_naming(&named);
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that name topology or geometry the write omits",
             dropped,
-        ));
+        );
     }
 
     /// Remove the named native arenas; returns the removed record ids.

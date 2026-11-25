@@ -31,6 +31,7 @@ mod carried;
 mod coverage;
 pub mod edge_recovery;
 mod loss;
+mod native;
 pub use loss::{
     carried_source_losses, edit_dropped, edit_unverified, evaluation_missing, evaluation_stale,
     face_partial, native_records_omitted, output_empty, parameter_flattened, parameter_renamed,
@@ -49,6 +50,7 @@ pub use coverage::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
     ProcessArenaDispositions,
 };
+pub use native::{NativeDisposition, NativeDispositions};
 pub use scene::{SceneOptions, UpAxis};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
@@ -142,10 +144,12 @@ impl<E: EncoderBackend> Encoder for E {
             census,
             write_path,
             coverage,
+            native,
             mut losses,
             mut notes,
         } = body;
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+        losses.extend(native.omission_losses(input.ir, E::FORMAT.as_str()));
         if !input.ir.model.omitted_arenas_held() && coverage.reads_wire_omitted() {
             notes.push(format!(
                 "the document was read from CADIR, which does not carry the arenas {}; the {} \
@@ -344,6 +348,9 @@ pub struct ExportBody {
     /// Which model arenas the payload carries. The wrapper charges a loss for
     /// every non-empty arena this coverage omits.
     pub coverage: ArenaCoverage,
+    /// What the payload does with each native record. The wrapper charges
+    /// `export:native.records-omitted` for every record this drops.
+    pub native: NativeDispositions,
     /// Losses charged while planning.
     pub losses: Vec<LossNote>,
     /// Free-form notes.
@@ -353,7 +360,12 @@ pub struct ExportBody {
 impl ExportBody {
     /// A synthesized payload counted on IR arenas that consumes no fidelity.
     #[must_use]
-    pub fn synthesized(bytes: Vec<u8>, ir: &CadIr, coverage: ArenaCoverage) -> Self {
+    pub fn synthesized(
+        bytes: Vec<u8>,
+        ir: &CadIr,
+        coverage: ArenaCoverage,
+        native: NativeDispositions,
+    ) -> Self {
         Self {
             bytes,
             census: EntityCensus {
@@ -364,6 +376,7 @@ impl ExportBody {
                 consumption: Consumption::NotConsumed,
             },
             coverage,
+            native,
             losses: Vec::new(),
             notes: Vec::new(),
         }
@@ -465,6 +478,7 @@ impl EncoderBackend for CadirEncoder {
             bytes,
             input.ir,
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
+            NativeDispositions::written(),
         ))
     }
 }

@@ -159,17 +159,19 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         "{refusal:?}"
     );
     let message = refusal.evidence().message;
-    assert!(message.contains("source-native record(s)"), "{message}");
+    assert!(message.contains("f3d:test:asm-history#0"), "{message}");
     let report = refusal
         .evidence()
         .reports
         .export
         .expect("the refusal retains the completed export plan report");
     assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+        report.losses.iter().any(
+            |loss| loss.code.to_string() == "export/native.records-omitted"
+                && loss
+                    .message
+                    .ends_with("of `f3d` arena `asm_histories`: f3d:test:asm-history#0")
+        ),
         "{:?}",
         report.losses
     );
@@ -193,7 +195,12 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+            .any(
+                |loss| loss.code.to_string() == "export/native.records-omitted"
+                    && loss
+                        .message
+                        .ends_with("of `f3d` arena `asm_histories`: f3d:test:asm-history#0")
+            ),
         "{:?}",
         planned.plan.report().losses
     );

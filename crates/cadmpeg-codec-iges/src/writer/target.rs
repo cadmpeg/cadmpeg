@@ -5,7 +5,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses,
     target::{ResolvedTarget, ResolvedWrite},
-    ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, NativeDisposition, NativeDispositions,
+    WritePath,
 };
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
@@ -65,11 +66,14 @@ fn replay_or_synthesize(
 }
 
 fn replayed_body(input: EncodeInput<'_>, bytes: Vec<u8>) -> ExportBody {
+    let mut native = NativeDispositions::dropped();
+    native.namespace("iges", NativeDisposition::Written);
     super::body(
         bytes,
         WritePath::VerbatimReplay,
         // Replay runs only while the document digest matches its decode baseline.
         ArenaCoverage::Complete,
+        native,
         carried_source_losses(input.fidelity, &WritePath::VerbatimReplay),
         "preserved source container replayed verbatim",
         super::counts_for_ir(input.ir),
@@ -102,6 +106,7 @@ fn synthesized_body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(super::SYNTHESIS_COVERAGE),
+        synthesis.native,
         losses,
         "IGES Fixed ASCII container regenerated from supported neutral geometry",
         synthesis.counts,

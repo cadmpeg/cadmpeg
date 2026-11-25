@@ -6,7 +6,7 @@ use crate::test_support::wire;
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
     ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
-    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    Encoder, EncoderBackend, ExportBody, NativeDispositions, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
@@ -70,6 +70,7 @@ impl EncoderBackend for NeutralEncoder {
             Vec::new(),
             input.ir,
             ArenaCoverage::Complete,
+            NativeDispositions::written(),
         ))
     }
 }
@@ -127,7 +128,12 @@ impl EncoderBackend for CatalogEncoder {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        let mut body = ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        );
         body.notes
             .push(format!("resolved {}", target.target_id().as_str()));
         body.write_path = WritePath::Synthesized {
@@ -339,7 +345,12 @@ impl EncoderBackend for CoverageEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            self.0,
+            NativeDispositions::written(),
+        ))
     }
 }
 
@@ -701,7 +712,12 @@ impl EncoderBackend for F3dCoverageEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            self.0,
+            NativeDispositions::written(),
+        ))
     }
 }
 

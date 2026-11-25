@@ -214,6 +214,7 @@ fn finish(
         },
         write_path,
         coverage: written.coverage(),
+        native: written.native(),
         losses,
         notes: vec![
             path_note.into(),

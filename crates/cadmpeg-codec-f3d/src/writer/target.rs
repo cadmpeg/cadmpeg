@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
-    ExportBody, PatchConsumption, WritePath,
+    ExportBody, NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -139,7 +139,16 @@ fn preserved_body(
     // target document, so every arena is carried. Bytes the decode kept
     // without decoding are carried too, and reported.
     let losses = carried_source_losses(input.fidelity, &write_path);
-    let mut body = body(input.ir, write_path, ArenaCoverage::Complete, losses, bytes);
+    let mut native = NativeDispositions::dropped();
+    native.namespace("f3d", NativeDisposition::Written);
+    let mut body = body(
+        input.ir,
+        write_path,
+        ArenaCoverage::Complete,
+        native,
+        losses,
+        bytes,
+    );
     body.notes.extend(notes);
     body
 }
@@ -222,6 +231,7 @@ fn synthesized_body(
         input.ir,
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(generated.coverage),
+        generated.native,
         losses,
         bytes,
     ))
@@ -231,6 +241,7 @@ fn body(
     ir: &CadIr,
     write_path: WritePath,
     coverage: ArenaCoverage,
+    native: NativeDispositions,
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     bytes: Vec<u8>,
 ) -> ExportBody {
@@ -247,6 +258,7 @@ fn body(
         },
         write_path,
         coverage,
+        native,
         losses,
         notes: vec![
             path_note.into(),

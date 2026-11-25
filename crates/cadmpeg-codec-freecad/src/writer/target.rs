@@ -12,7 +12,7 @@ use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, edit_unverified, target::ResolvedWrite, ArenaCoverage, Consumption,
-    EncodeInput, ExportBody, PatchConsumption, WritePath,
+    EncodeInput, ExportBody, NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -196,12 +196,17 @@ fn finish(
              carried native records and holds no other edit"
         )));
     }
+    // The patched archive holds every record of the retained graph; a
+    // namespace of another format has no place in it.
+    let mut native = NativeDispositions::dropped();
+    native.namespace("fcstd", NativeDisposition::Written);
     Ok(ExportBody {
         bytes,
         census: outcome.census,
         losses,
         write_path,
         coverage: ArenaCoverage::Complete,
+        native,
         notes: outcome.notes,
     })
 }
