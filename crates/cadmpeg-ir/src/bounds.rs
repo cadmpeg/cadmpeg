@@ -192,6 +192,22 @@ impl Place {
             Self::Native { codec, arena, .. } => format!("native.{codec}.{arena}"),
         }
     }
+
+    /// The place `index` of the same arena.
+    pub(crate) fn at(&self, index: usize) -> Self {
+        match self {
+            Self::Home { home, arena, .. } => Self::Home {
+                home: home.clone(),
+                arena: arena.clone(),
+                index,
+            },
+            Self::Native { codec, arena, .. } => Self::Native {
+                codec: codec.clone(),
+                arena: arena.clone(),
+                index,
+            },
+        }
+    }
 }
 
 /// A record given up for a bound it passes, with the ids of the records

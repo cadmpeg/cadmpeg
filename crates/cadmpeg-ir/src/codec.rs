@@ -385,8 +385,8 @@ impl DecodeResult {
     /// The same walk finds each record the decoder stated past a bound of
     /// §2.5, which §2.8 states none of. Each such record is given up, with a
     /// `decode/record.unreadable` Error that names it, and the document is
-    /// digested again without it. A procedural construction whose carrier is
-    /// given up goes with it. Other records that reference a given-up record
+    /// digested again without it. A procedural construction and its owning
+    /// carrier are given up together. Other records that reference a given-up record
     /// keep the reference (interim: the shared give-up pass of §2.8 does not
     /// exist yet). The walk admits at least
     /// [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's

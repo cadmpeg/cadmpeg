@@ -2894,35 +2894,54 @@ impl CadIr {
     }
 
     /// Gives up each record of `records`, placed in this document's identity
-    /// order, last first in each arena so that the places of the others
-    /// hold. A give-up that drops other records moves places, so it ends the
-    /// batch, and the caller walks the document again for the records still
-    /// past a bound. The document is finalized first.
+    /// order. Each place is read as its record's id before any record is
+    /// removed, and each record is removed where that id then sits, so a
+    /// give-up that drops or moves other records leaves the rest found. A
+    /// record already dropped with an earlier one is named in that one's
+    /// `dropped`. The document is finalized first.
     pub(crate) fn give_up_past_the_bounds(
         &mut self,
         records: BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
     ) -> Vec<crate::bounds::GivenUp> {
-        let mut given_up = Vec::new();
         if records.is_empty() {
-            return given_up;
+            return Vec::new();
         }
         self.finalize();
-        for (place, bound) in records.into_iter().rev() {
+        let records = records
+            .into_iter()
+            .filter_map(|(place, bound)| {
+                let id = self.record_at(&place)?.to_owned();
+                Some((place, bound, id))
+            })
+            .collect::<Vec<_>>();
+        let mut given_up = Vec::new();
+        for (place, bound, id) in records.into_iter().rev() {
+            let Some(place) = self.locate(&place, &id) else {
+                continue;
+            };
             let Some((id, dropped)) = self.remove_record(&place) else {
                 continue;
             };
-            let moved = !dropped.is_empty();
             given_up.push(crate::bounds::GivenUp {
                 id,
                 arena: place.arena(),
                 bound,
                 dropped,
             });
-            if moved {
-                break;
-            }
         }
         given_up
+    }
+
+    /// The place of record `id` in the arena of `place`, looked up first at
+    /// `place` itself.
+    fn locate(&self, place: &crate::bounds::Place, id: &str) -> Option<crate::bounds::Place> {
+        if self.record_at(place) == Some(id) {
+            return Some(place.clone());
+        }
+        (0..)
+            .map(|index| place.at(index))
+            .map_while(|at| self.record_at(&at).map(|found| (found == id, at)))
+            .find_map(|(found, at)| found.then_some(at))
     }
 
     /// The id of the record at `place`.
@@ -2945,15 +2964,17 @@ impl CadIr {
     }
 
     /// Removes the record at `place`, returning its id and the ids of the
-    /// procedural constructions it was the owning carrier of, which are
-    /// removed with it: the document states no construction without its
-    /// carrier.
+    /// records removed with it: the procedural constructions it was the
+    /// owning carrier of, or the carrier that owned it. The document states
+    /// no construction without its carrier and no carrier without its
+    /// construction.
     pub(crate) fn remove_record(
         &mut self,
         place: &crate::bounds::Place,
     ) -> Option<(String, Vec<String>)> {
         use crate::bounds::Place;
         let owned = self.owned_constructions();
+        let held = self.held_constructions();
         let id = match place {
             Place::Home { home, arena, index } => match home.as_str() {
                 "geometry" => self.geometry.remove_record(arena, *index),
@@ -2968,25 +2989,62 @@ impl CadIr {
                 index,
             } => self.native.remove_record(codec, arena, *index),
         }?;
-        let still = self.owned_constructions();
-        let lost =
-            |construction: &str| owned.contains(construction) && !still.contains(construction);
+        let ownerless = &owned - &self.owned_constructions();
+        let removed = &held - &self.held_constructions();
         let mut dropped = Vec::new();
-        self.geometry.procedural_curves.retain(|procedural| {
-            let keep = !lost(procedural.id.as_str());
-            if !keep {
-                dropped.push(procedural.id.as_str().to_owned());
+        let mut keep = |record: &str, gone: bool| {
+            if gone {
+                dropped.push(record.to_owned());
             }
-            keep
+            !gone
+        };
+        self.geometry.procedural_curves.retain(|procedural| {
+            keep(
+                procedural.id.as_str(),
+                ownerless.contains(procedural.id.as_str()),
+            )
         });
         self.geometry.procedural_surfaces.retain(|procedural| {
-            let keep = !lost(procedural.id.as_str());
-            if !keep {
-                dropped.push(procedural.id.as_str().to_owned());
-            }
-            keep
+            keep(
+                procedural.id.as_str(),
+                ownerless.contains(procedural.id.as_str()),
+            )
         });
+        self.geometry.curves.retain(|curve| {
+            keep(
+                curve.id.as_str(),
+                curve
+                    .geometry
+                    .procedural_construction()
+                    .is_some_and(|construction| removed.contains(construction.as_str())),
+            )
+        });
+        self.geometry.surfaces.retain(|surface| {
+            keep(
+                surface.id.as_str(),
+                surface
+                    .geometry
+                    .procedural_construction()
+                    .is_some_and(|construction| removed.contains(construction.as_str())),
+            )
+        });
+        dropped.sort_unstable();
         Some((id, dropped))
+    }
+
+    /// The ids of the procedural constructions the document holds.
+    fn held_constructions(&self) -> std::collections::BTreeSet<String> {
+        let curves = self
+            .geometry
+            .procedural_curves
+            .iter()
+            .map(|procedural| procedural.id.as_str().to_owned());
+        let surfaces = self
+            .geometry
+            .procedural_surfaces
+            .iter()
+            .map(|procedural| procedural.id.as_str().to_owned());
+        curves.chain(surfaces).collect()
     }
 
     /// The ids of the procedural constructions a curve or surface carrier

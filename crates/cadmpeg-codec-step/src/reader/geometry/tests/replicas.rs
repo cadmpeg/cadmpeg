@@ -13,6 +13,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{model_curve_point_by_id, model_surface_point_by_id};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    MAX_GEOMETRY_NESTING,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
@@ -1095,6 +1096,101 @@ fn a_surface_replica_chain_past_the_document_depth_is_given_up_at_decode() {
                 Some(SolvedSurfaceGeometry::Transformed(_))
             )
     }));
+}
+
+/// Whether `message` names STEP record `#step`, and not a record whose number
+/// starts with the same digits.
+fn names_record(message: &str, step: usize) -> bool {
+    let token = format!("#{step}");
+    message
+        .match_indices(&token)
+        .any(|(at, _)| !message[at + token.len()..].starts_with(|next: char| next.is_ascii_digit()))
+}
+
+/// A replica one placement past [`MAX_GEOMETRY_NESTING`] keeps its record with
+/// unknown geometry, and one loss names it. The records of its chain past the
+/// document depth are given up whole.
+#[test]
+fn a_curve_replica_past_the_geometry_nesting_keeps_its_record_as_unknown() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_POINT('',(10.,20.,30.));
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
+",
+    );
+    // #9 carries one placement more than the IR admits.
+    let last = 9 + MAX_GEOMETRY_NESTING;
+    for id in 9..last {
+        writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
+    }
+    writeln!(records, "#{last}=CURVE_REPLICA('',#6,#8);").expect("append curve replica");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#9"
+            && matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Unknown { .. })
+            )
+    }));
+    let naming: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| names_record(&loss.message, 9))
+        .collect();
+    assert_eq!(naming.len(), 1, "{naming:?}");
+    assert_ne!(naming[0].code, record_unreadable_kind());
+}
+
+/// A surface replica one placement past [`MAX_GEOMETRY_NESTING`] keeps its
+/// record with unknown geometry, and one loss names it.
+#[test]
+fn a_surface_replica_past_the_geometry_nesting_keeps_its_record_as_unknown() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#6=PLANE('',#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,1.,#4);
+",
+    );
+    // #8 carries one placement more than the IR admits.
+    let last = 8 + MAX_GEOMETRY_NESTING;
+    for id in 8..last {
+        writeln!(records, "#{id}=SURFACE_REPLICA('',#{},#7);", id + 1)
+            .expect("append surface replica");
+    }
+    write!(
+        records,
+        "#{last}=SURFACE_REPLICA('',#6,#7);\n#{}=GEOMETRIC_SET('',(#8));",
+        last + 1
+    )
+    .expect("append surface replica");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#8"
+            && matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            )
+    }));
+    let naming: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| names_record(&loss.message, 8))
+        .collect();
+    assert_eq!(naming.len(), 1, "{naming:?}");
+    assert_ne!(naming[0].code, record_unreadable_kind());
 }
 
 #[test]

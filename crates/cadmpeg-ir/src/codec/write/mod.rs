@@ -459,8 +459,9 @@ impl EncoderBackend for CadirEncoder {
     }
 }
 
-/// The canonical JSON of `ir` within the bounds of §2.5, with its losses. A record past a bound is content CADIR cannot
-/// hold (§3.4): the writer drops it, with the constructions it owns, and
+/// The canonical JSON of `ir` within the bounds of §2.5, with its losses. A
+/// record past a bound is content CADIR cannot hold (§3.4): the writer drops
+/// it, with the procedural construction or carrier it is coupled to, and
 /// `repro` past a bound is written unstated. Each charges
 /// `export:value.unwritable` naming it. A record that references a dropped
 /// record keeps the reference (interim, as in the decode wrapper).
