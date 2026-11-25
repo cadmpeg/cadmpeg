@@ -29,6 +29,8 @@ pub(super) fn termination(
                 .ok()?
                 .into(),
         }),
+        // Hole extent 4 shares the extrusion code but keeps the through-next
+        // meaning: no stored hole settles a first-face end.
         EXTENT_TO_NEXT => Some(LinearTermination::ThroughNext {}),
         EXTENT_THROUGH_ALL => Some(LinearTermination::ThroughAll {}),
         EXTENT_TO => {
