@@ -636,7 +636,7 @@ fn written_as_is(
     pcurve: &Pcurve,
     edge_range: Option<[f64; 2]>,
 ) -> bool {
-    if pcurve.wrapper_reversed() == Some(true) || pcurve.native_tail_flags().is_some() {
+    if pcurve.native_tail_flags().is_some() {
         return false;
     }
     let stated = pcurve

@@ -2281,8 +2281,8 @@ fn admit_pcurve(
 ) -> Result<WritablePcurve<'_>, CodecError> {
     let unsupported =
         |what: &str| CodecError::NotImplemented(format!("pcurve {} {what}", pcurve.id.as_str()));
-    if pcurve.wrapper_reversed() == Some(true) || pcurve.native_tail_flags().is_some() {
-        return Err(unsupported("has a reversed wrapper or tail flags"));
+    if pcurve.native_tail_flags().is_some() {
+        return Err(unsupported("has tail flags"));
     }
     let knot_domain = match &pcurve.geometry {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => {
