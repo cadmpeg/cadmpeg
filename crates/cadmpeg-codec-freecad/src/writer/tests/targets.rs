@@ -9,9 +9,8 @@ use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DE
 use crate::writer::target::UNCARRIED_DIGEST;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::DecodeDepth;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
+use cadmpeg_ir::codec::write::{EncodeError, Encoder};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
 use std::sync::LazyLock;
@@ -30,7 +29,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
             TargetRequest::Explicit("fcstd:schema-3"),
         )
         .expect_err("unsupported target must fail");
-    let CodecError::UnsupportedTarget(refusal) = &unsupported else {
+    let EncodeError::UnsupportedTarget(refusal) = &unsupported else {
         panic!("expected a target refusal, got {unsupported}");
     };
     assert_eq!(refusal.format(), "fcstd");
@@ -62,7 +61,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         .plan(EncodeInput::new(&step_source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
-    let CodecError::UnsupportedTarget(refusal) = &missing_graph else {
+    let EncodeError::UnsupportedTarget(refusal) = &missing_graph else {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert_eq!(
@@ -91,7 +90,7 @@ fn schema_two_archive() -> Vec<u8> {
 fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
     Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(ir, fidelity),
@@ -331,7 +330,7 @@ fn an_explicit_target_writes_fcstd_entries_under_a_source_of_another_format() {
     let mut schema_two = decoded.ir().clone();
     schema_two.source = step_source;
     let error = explicit(&schema_two).expect_err("this writer regenerates no Document.xml");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(
@@ -365,7 +364,7 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
         TargetRequest::Explicit("fcstd:schema-4"),
     )
     .expect_err("this writer regenerates no Document.xml");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "fcstd");
@@ -411,7 +410,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     );
 
     let error = inherit(&ir, None).expect_err("a source with no recorded dialect is refused");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "fcstd");
@@ -644,7 +643,7 @@ fn a_container_document_is_an_unsupported_target() {
     let decoded = decode_at(DecodeDepth::Container);
     let error =
         inherit(decoded.ir(), Some(decoded.source_fidelity())).expect_err("no entry is retained");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "fcstd");
