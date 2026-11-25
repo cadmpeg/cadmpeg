@@ -202,11 +202,13 @@ fn finish(
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",
         WritePath::Synthesized { .. } => "source container regenerated from IR",
     };
+    // The SLDPRT form holds no cage, so the census counts no cage body (§5.6).
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
     ExportBody {
         bytes,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: cageless.as_ref().unwrap_or(input.ir).census(),
         },
         write_path,
         coverage: written.coverage(),
