@@ -321,6 +321,26 @@ fn a_suppressed_feature_makes_no_sheet_and_cuts_none() {
     assert_eq!(ruled(&ir, rule), 1);
 }
 
+/// A suppression bound to a parameter stores no value (§10, Bounded values),
+/// and the rules that read it judge no state that holds the feature.
+#[test]
+fn a_suppression_bound_to_a_parameter_is_not_judged() {
+    let bound = || Some(Dimension::Parameter(id("parameter", "p")));
+    let mut ir = grouped(apply("a", Some(0)), apply("b", Some(0)));
+    feature_mut(&mut ir, "first").suppressed = bound();
+    assert_eq!(ruled(&ir, GOVERN), 0);
+    let rule = "design.sheet-cut-no-sheet-metal-body";
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.operation = wall();
+    ir.design.features[1].definition.operation = cutting();
+    ir.design.features[0].suppressed = bound();
+    assert_eq!(ruled(&ir, rule), 0);
+    ir.design.features[0].suppressed = Some(Dimension::Literal(true));
+    assert_eq!(ruled(&ir, rule), 1);
+    ir.design.features[1].suppressed = bound();
+    assert_eq!(ruled(&ir, rule), 0);
+}
+
 /// A `DeleteBodies` that removes the results of the feature "extrude",
 /// narrowed to `resolved` where that is stated.
 fn delete_extrude(retain: Retention, resolved: Option<Vec<EntityRef>>) -> FeatureOperation {

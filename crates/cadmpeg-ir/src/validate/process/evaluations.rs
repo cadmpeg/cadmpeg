@@ -314,7 +314,7 @@ fn check_state_feature(
         let removal = matches!(
             records
                 .design
-                .definition_in(record, configuration)
+                .definition_in(record, configuration, None)
                 .operation,
             FeatureOperation::MaterialRemoval
                 | FeatureOperation::Unresolved {

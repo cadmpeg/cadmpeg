@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::design::configuration::{Arrangement, FeatureStateOverride};
+use crate::design::configuration::Arrangement;
 use crate::design::container::Container;
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use crate::design::ids::SheetMetalRuleId;
@@ -18,7 +18,6 @@ use crate::design::ops::sheet_metal::{Flange, Hem, SheetMetalKind};
 use crate::design::options::{Boolean, BooleanOp, Thickness};
 use crate::design::refs::Member;
 use crate::design::selection::{PickTarget, Picks, SetSelection};
-use crate::features::FeatureId;
 use crate::report::check::Finding;
 
 use super::index::{DesignIndex, StateAt};
@@ -86,40 +85,12 @@ impl<'a> Reading<'a> {
         }
     }
 
-    /// The overrides of a feature that apply, nearest first: the
-    /// arrangement's, then those of the configuration and its parents.
-    fn overrides(
-        self,
-        index: &DesignIndex<'a>,
-        feature: &FeatureId,
-    ) -> Vec<&'a FeatureStateOverride> {
-        self.arrangement
-            .map(|arrangement| &arrangement.overrides)
-            .into_iter()
-            .chain(
-                index
-                    .records
-                    .configuration_chain(self.configuration)
-                    .into_iter()
-                    .map(|configuration| &configuration.overrides),
-            )
-            .filter_map(|overrides| overrides.features.get(feature))
-            .collect()
-    }
-
-    /// The definition of a feature in force.
-    fn definition(self, index: &DesignIndex<'a>, feature: &'a Feature) -> &'a FeatureDefinition {
-        self.overrides(index, &feature.id)
-            .into_iter()
-            .find_map(|stated| stated.definition.as_ref())
-            .unwrap_or(&feature.definition)
-    }
-
     /// Whether a feature is suppressed; `None` where that is a dimension
     /// that is not literal (§10, Bounded values).
     fn suppressed(self, index: &DesignIndex<'a>, feature: &Feature) -> Option<bool> {
-        match self
-            .overrides(index, &feature.id)
+        match index
+            .records
+            .feature_overrides(&feature.id, self.configuration, self.arrangement)
             .into_iter()
             .find_map(|stated| stated.suppressed)
         {
@@ -159,7 +130,13 @@ pub(super) fn entering<'a>(
         if suppressed == Some(true) {
             continue;
         }
-        match effect(index, &reading.definition(index, record).operation) {
+        match effect(
+            index,
+            &index
+                .records
+                .definition_in(record, reading.configuration, reading.arrangement)
+                .operation,
+        ) {
             Effect::Keeps => {}
             Effect::Reshapes => {
                 thicknesses = None;
@@ -377,7 +354,11 @@ pub(super) fn check(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
             .into_iter()
             .any(|reading| {
                 reading.suppressed(index, feature) == Some(false)
-                    && sheet_cut(reading.definition(index, feature))
+                    && sheet_cut(index.records.definition_in(
+                        feature,
+                        reading.configuration,
+                        reading.arrangement,
+                    ))
                     && entering(index, id, reading).is_some_and(|state| !state.sheet_metal)
             });
         if uncut {
@@ -420,8 +401,10 @@ fn check_applied_rules<'a>(
             if reading.suppressed(index, feature) != Some(false) {
                 continue;
             }
-            if let FeatureOperation::SheetMetal(sheet) =
-                &reading.definition(index, feature).operation
+            if let FeatureOperation::SheetMetal(sheet) = &index
+                .records
+                .definition_in(feature, reading.configuration, reading.arrangement)
+                .operation
             {
                 if let SheetMetalKind::ApplyRule {
                     rule,
