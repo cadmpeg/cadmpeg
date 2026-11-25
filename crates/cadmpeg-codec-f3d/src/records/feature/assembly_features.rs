@@ -856,6 +856,16 @@ impl DesignComponentOccurrence {
         matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame) if !frame.property_names.is_empty() && frame.guid_marker.is_none())
     }
 
+    /// Whether this occurrence was read from an untyped attributed frame that
+    /// stores the path terminator in place of the attribute run.
+    pub(crate) fn lacks_attribute_run(&self) -> bool {
+        matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame)
+        if frame.component_guid_offset.checked_sub(self.byte_offset)
+            == Some(cadmpeg_core::decode::u64_from_index(
+                crate::layout::local_component_occurrence_unmarked_prefix::CARRIER_GUID + 4,
+            )))
+    }
+
     /// Whether the stored body frame follows an object prelude and a source
     /// marker, a form placed from its closing matrix without a proof.
     pub(crate) fn has_marked_object_prelude(&self) -> bool {

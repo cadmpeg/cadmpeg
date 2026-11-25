@@ -7596,6 +7596,24 @@ pub(crate) mod local_component_occurrence_attributed_prefix {
     pub(crate) const ATTRIBUTE_COUNT: usize = 40;
 }
 
+/// Byte offsets for the `local_component_occurrence_unmarked_prefix` record.
+///
+/// Spec §3.1. Record length 121 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header. The path terminator replaces the attribute run, and the one-byte ordinal prefix follows it.
+/// ```
+pub(crate) mod local_component_occurrence_unmarked_prefix {
+    /// Offset of `path_terminator` (`u8`). Spec §3.1.
+    pub(crate) const PATH_TERMINATOR: usize = 39;
+    /// Stated value of `path_terminator` (`u8`). Spec §3.1.
+    pub(crate) const PATH_TERMINATOR_VALUE: u8 = 0;
+    /// Offset of `ordinal_prefix` (`u8`). Spec §3.1.
+    pub(crate) const ORDINAL_PREFIX: usize = 40;
+    /// Offset of `carrier_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const CARRIER_GUID: usize = 45;
+}
+
 /// Byte offsets for the `sheet_metal_region_carrier_prefix` record.
 ///
 /// Spec §3.1. Record length 36 B.
