@@ -26,6 +26,7 @@ use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
 pub mod approximation;
+mod canonical;
 pub mod capacity;
 mod carried;
 mod coverage;
@@ -458,15 +459,19 @@ impl EncoderBackend for CadirEncoder {
         let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
             CodecError::Malformed(error.to_string())
         };
+        let (canonical, mut losses) = match canonical::canonical_form(input.ir)? {
+            Some((ir, losses)) => (Some(ir), losses),
+            None => (None, Vec::new()),
+        };
+        let source = canonical.as_ref().unwrap_or(input.ir);
         let (mut bytes, measured) =
-            crate::hash::measured_canonical_json(input.ir).map_err(malformed)?;
-        let mut losses = Vec::new();
+            crate::hash::measured_canonical_json(source).map_err(malformed)?;
         let written;
         let ir = if measured.records.is_empty() {
-            input.ir
+            source
         } else {
-            let (ir, dropped) = drop_records_past_the_bounds(input.ir, &measured.records)?;
-            losses = dropped;
+            let (ir, dropped) = drop_records_past_the_bounds(source, &measured.records)?;
+            losses.extend(dropped);
             bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
                 .map_err(malformed)?
                 .into_bytes();

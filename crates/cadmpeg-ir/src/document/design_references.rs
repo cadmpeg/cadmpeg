@@ -7,70 +7,67 @@ use crate::declared_measures::DeclaredTarget;
 use crate::physics::solver::SolverValue;
 use crate::pmi::PmiDefinition;
 use crate::references::{InstanceTarget, ReferenceSelection};
+use crate::schema::ArenaRecord;
 
 /// The first model arena holding a record that references the design
+/// class.
+pub(super) fn first(model: &Model) -> Option<ArenaName> {
+    holders(model)
+        .into_iter()
+        .find_map(|(arena, ids)| (!ids.is_empty()).then_some(arena))
+}
+
+/// Each model arena with the ids of its records that reference the design
 /// class: an instance target's or a tessellation's state, a declared
 /// measure of a state, a reference to a feature, an attribute on a
 /// configuration, a feature, a sketch, or a parameter, or an attribute's
 /// parameter value or expression.
-pub(super) fn first(model: &Model) -> Option<ArenaName> {
-    let arenas: [(&str, bool); 14] = [
+pub(super) fn holders(model: &Model) -> Vec<(ArenaName, Vec<&str>)> {
+    let arenas: [(&str, Vec<&str>); 14] = [
         (
             "appearance_bindings",
-            model
-                .appearance_bindings
-                .iter()
-                .any(|binding| binding.target.reads_design()),
+            reading(&model.appearance_bindings, |binding| {
+                binding.target.reads_design()
+            }),
         ),
         (
             "attributes",
-            model.attributes.iter().any(attribute_reads_design),
+            reading(&model.attributes, attribute_reads_design),
         ),
         (
             "pmi",
-            model.pmi.iter().any(|annotation| {
+            reading(&model.pmi, |annotation| {
                 annotation.targets.iter().any(InstanceTarget::reads_design)
                     || pmi_definition_reads_design(&annotation.definition)
             }),
         ),
         (
             "presentation_layers",
-            model
-                .presentation_layers
-                .iter()
-                .any(|layer| layer.items.iter().any(InstanceTarget::reads_design)),
+            reading(&model.presentation_layers, |layer| {
+                layer.items.iter().any(InstanceTarget::reads_design)
+            }),
         ),
         (
             "mass_properties",
-            model
-                .mass_properties
-                .iter()
-                .any(|record| record.target.reads_design()),
+            reading(&model.mass_properties, |record| {
+                record.target.reads_design()
+            }),
         ),
         (
             "rigid_bodies",
-            model
-                .rigid_bodies
-                .iter()
-                .any(|record| record.target.reads_design()),
+            reading(&model.rigid_bodies, |record| record.target.reads_design()),
         ),
         (
             "colliders",
-            model
-                .colliders
-                .iter()
-                .any(|record| record.target.reads_design()),
+            reading(&model.colliders, |record| record.target.reads_design()),
         ),
         (
             "articulations",
-            model
-                .articulations
-                .iter()
-                .any(|record| record.root.reads_design()),
+            reading(&model.articulations, |record| record.root.reads_design()),
         ),
         (
             "solver_settings",
-            model.solver_settings.iter().any(|record| {
+            reading(&model.solver_settings, |record| {
                 record.target.reads_design()
                     || record.values.values().any(|value| {
                         matches!(value, SolverValue::Targets { targets }
@@ -80,7 +77,7 @@ pub(super) fn first(model: &Model) -> Option<ArenaName> {
         ),
         (
             "product_definitions",
-            model.product_definitions.iter().any(|definition| {
+            reading(&model.product_definitions, |definition| {
                 definition
                     .representations
                     .iter()
@@ -89,36 +86,42 @@ pub(super) fn first(model: &Model) -> Option<ArenaName> {
         ),
         (
             "tessellations",
-            model
-                .tessellations
-                .iter()
-                .any(|tessellation| tessellation.state.is_some()),
+            reading(&model.tessellations, |tessellation| {
+                tessellation.state.is_some()
+            }),
         ),
         (
             "declared_measures",
-            model
-                .declared_measures
-                .iter()
-                .any(|measure| matches!(measure.target, DeclaredTarget::State(_))),
+            reading(&model.declared_measures, |measure| {
+                matches!(measure.target, DeclaredTarget::State(_))
+            }),
         ),
         (
             "drawings",
-            model
-                .drawings
-                .iter()
-                .any(|drawing| references_read_design(drawing.relationships.values())),
+            reading(&model.drawings, |drawing| {
+                references_read_design(drawing.relationships.values())
+            }),
         ),
         (
             "semantic_annotations",
-            model
-                .semantic_annotations
-                .iter()
-                .any(|annotation| references_read_design(annotation.references.values())),
+            reading(&model.semantic_annotations, |annotation| {
+                references_read_design(annotation.references.values())
+            }),
         ),
     ];
     arenas
         .into_iter()
-        .find_map(|(name, reads)| reads.then(|| ArenaName::parse(name)).flatten())
+        .filter_map(|(name, ids)| Some((ArenaName::parse(name)?, ids)))
+        .collect()
+}
+
+/// The ids of the `records` for which `reads` holds.
+fn reading<T: ArenaRecord>(records: &[T], reads: impl Fn(&T) -> bool) -> Vec<&str> {
+    records
+        .iter()
+        .filter(|record| reads(*record))
+        .map(ArenaRecord::record_identity)
+        .collect()
 }
 
 /// Whether an attribute targets a design record or a state, or holds a

@@ -1125,9 +1125,12 @@ impl Native {
     }
 
     /// States one record of each id in each sorted namespace arena whose
-    /// copies hold one value, and returns each id whose copies differ, all of
-    /// whose copies it keeps.
-    pub(crate) fn repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
+    /// copies hold one value, and returns each id whose copies differ, whose
+    /// copies `differing` keeps.
+    pub(crate) fn repeated_ids(
+        &mut self,
+        differing: crate::document::DifferingCopies,
+    ) -> Vec<crate::document::RepeatedId> {
         let mut repeated = Vec::new();
         for (format, namespace) in &mut self.0 {
             for (arena, records) in &mut namespace.arenas {
@@ -1138,6 +1141,7 @@ impl Native {
                         codec: format.as_str().to_owned(),
                         arena: arena.as_str().to_owned(),
                     },
+                    differing,
                     &mut repeated,
                 );
             }

@@ -113,6 +113,163 @@ fn cadir_encoder_drops_a_record_past_the_document_bound() {
     assert_eq!(written.geometry.points.len(), ir.geometry.points.len());
 }
 
+/// A document whose scope excludes a class it holds records of writes
+/// without those records and without the model records that reference the
+/// excluded design class. Each loss names what the write leaves out, and
+/// the strict reader reads the output.
+#[test]
+fn cadir_encoder_drops_the_records_its_scope_excludes() {
+    use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    const PARAMETER: &str = "synthetic:test:parameter#depth";
+    const NAMES_PARAMETER: &str = "synthetic:test:attribute#depth-value";
+    const ON_CONFIGURATION: &str = "synthetic:test:attribute#large";
+    const ON_DOCUMENT: &str = "synthetic:test:attribute#part-number";
+    let attribute = |id: &str, entity: AttributeTarget, values| SourceAttribute {
+        id: crate::ids::AttributeId::mint(id).unwrap(),
+        target: entity.into(),
+        name: "Part Number".into(),
+        values,
+        native_ref: None,
+    };
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.design
+        .parameters
+        .push(crate::design::parameter::DesignParameter {
+            id: crate::features::ParameterId::mint(PARAMETER).unwrap(),
+            scope: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
+                .unwrap(),
+            owner: None,
+            name: None,
+            kind: crate::design::units::ValueKind::Text,
+            unit: None,
+            definition: crate::design::parameter::ParameterDefinition::Driven,
+            value: None,
+            display: None,
+            tolerance: None,
+            decimals: None,
+            comment: None,
+            native_options: std::collections::BTreeMap::new(),
+            source_settings: std::collections::BTreeMap::new(),
+            native_ref: None,
+        });
+    ir.model.attributes.extend([
+        attribute(
+            NAMES_PARAMETER,
+            AttributeTarget::Document,
+            vec![Some(AttributeValue::Parameter(
+                crate::features::ParameterId::mint(PARAMETER).unwrap(),
+            ))],
+        ),
+        attribute(
+            ON_CONFIGURATION,
+            AttributeTarget::Configuration(
+                crate::features::ConfigurationId::mint("synthetic:test:configuration#large")
+                    .unwrap(),
+            ),
+            Vec::new(),
+        ),
+        attribute(ON_DOCUMENT, AttributeTarget::Document, Vec::new()),
+    ]);
+    let mut value = serde_json::to_value(&ir).unwrap();
+    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
+    let read = CadIr::read(
+        value.to_string().as_bytes(),
+        &crate::document::read::ReadOptions::default(),
+    )
+    .expect("the read keeps the scope as written");
+
+    let plan = CadirEncoder
+        .plan(
+            EncodeInput::new(&read.document, None),
+            TargetRequest::Inherit,
+        )
+        .expect("a scope breach does not refuse the write");
+    let messages = |code: &str| {
+        plan.report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == code)
+            .map(|loss| loss.message.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        messages("arena.omitted"),
+        [
+            format!(
+                "the cadir write drops the records of arena `attributes` that the document's \
+                 scope excludes or that need one: 2 record(s) omitted: {NAMES_PARAMETER}, \
+                 {ON_CONFIGURATION}"
+            ),
+            format!(
+                "the cadir write drops the records of arena `design.parameters` that the \
+                 document's scope excludes or that need one: 1 record(s) omitted: {PARAMETER}"
+            ),
+        ]
+    );
+    assert!(messages("value.unwritable").is_empty());
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(
+        written.scope(),
+        cadmpeg_core::decode::ContentScope::geometry()
+    );
+    assert!(written.design.parameters.is_empty());
+    let attributes = written
+        .model
+        .attributes
+        .iter()
+        .map(|attribute| attribute.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(attributes, [ON_DOCUMENT]);
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(written.geometry.points.len(), ir.geometry.points.len());
+}
+
+/// A CADIR write states each id of an arena once: equal copies write once
+/// with no loss, and of copies that differ the first in arena order is
+/// written, with an `export:record.invalid` naming the id. The strict reader
+/// reads the output.
+#[test]
+fn cadir_encoder_writes_a_repeated_id_once() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let equal = ir.geometry.points[0].clone();
+    let original = ir.geometry.points[1].clone();
+    let differing =
+        crate::topology::Point::new(original.id.clone(), ir.geometry.points[2].position(), None);
+    ir.geometry.points.extend([equal.clone(), differing]);
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a repeated id does not refuse the write");
+    let invalid = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.invalid")
+        .collect::<Vec<_>>();
+    let [loss] = invalid.as_slice() else {
+        panic!("one loss for the id whose copies differ: {invalid:?}");
+    };
+    assert!(
+        loss.message.contains(original.id.as_str()) && !loss.message.contains(equal.id.as_str()),
+        "{}",
+        loss.message
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(written.geometry.points.len(), ir.geometry.points.len() - 2);
+    let kept = written
+        .geometry
+        .points
+        .iter()
+        .find(|point| point.id == original.id)
+        .unwrap();
+    assert_eq!(kept, &original);
+}
+
 #[test]
 fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum().unwrap();
