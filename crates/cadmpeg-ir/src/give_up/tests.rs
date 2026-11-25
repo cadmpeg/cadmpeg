@@ -19,9 +19,9 @@ use crate::NativeUnknownRecord;
 
 const CODEC: &str = "test";
 
-/// What one give-up left: its stub, the records it dropped and marked, and
-/// the records of the delta of each stored state it dropped and marked, by
-/// the state's path.
+/// What one give-up left: its stub, the records it dropped and marked, the
+/// records of the delta of each stored state it dropped and marked, by the
+/// state's path, and the tail of its loss message.
 #[derive(Debug, Default)]
 struct Outcome {
     stub: String,
@@ -29,6 +29,7 @@ struct Outcome {
     dropped: BTreeSet<String>,
     marked: BTreeSet<String>,
     states: BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)>,
+    tail: String,
 }
 
 fn seed(home: &str, field: &str, id: &str) -> Seed {
@@ -65,6 +66,7 @@ fn run(ir: &mut CadIr, seed: Seed) -> (Outcome, SourceFidelity) {
                         (path.clone(), (state.dropped.clone(), state.marked.clone()))
                     })
                     .collect(),
+                tail: released.tail(&[]),
             };
             LossNote::new(record_unreadable_kind(), released.tail(&[]))
         },
@@ -1189,13 +1191,13 @@ fn an_owner_entry_of_a_given_up_definition_takes_its_body_out_of_the_state() {
     assert_no_dangling_reference(&ir);
 }
 
-/// A member entry of a delta that names a given-up definition takes its
-/// occurrence out of the state with the bodies of its instances: the delta
-/// keeps no entry keyed by the occurrence or a path through it, and lists the
-/// instance's body and every record only it reaches as removed (§5.4, §5.6,
-/// §8.1).
+/// A member entry of a delta that names a given-up definition, for an
+/// occurrence that stays, has no form: the state holds no occurrence without
+/// its owner (§8.1), and no delta states that an occurrence leaves a state
+/// (§5.4, §6.7). The give-up drops the whole stored state and names the
+/// occurrence in its loss.
 #[test]
-fn a_member_entry_of_a_given_up_definition_takes_its_occurrence_out_of_the_state() {
+fn a_member_entry_of_a_given_up_definition_drops_the_state() {
     use crate::design::selection::{OccurrencePath, PathStep, StepRef};
     use crate::ids::{OccurrenceId, ProductDefinitionId};
     use crate::products::{ProductDefinition, Storage};
@@ -1218,19 +1220,27 @@ fn a_member_entry_of_a_given_up_definition_takes_its_occurrence_out_of_the_state
         .expect("the fixture stores the state")
         .delta;
     stored.members = BTreeMap::from([(occurrence.clone(), Some(other.clone()))]);
-    stored.instance_bodies = BTreeMap::from([(path, Some(vec![base.clone()]))]);
+    stored.instance_bodies = BTreeMap::from([(path, Some(vec![base]))]);
     ir.finalize();
-    let before = resolved_findings(&ir);
+    let evaluation = after_extrude(&ir).id.as_str().to_owned();
 
     let (outcome, _) = run(
         &mut ir,
         seed("model", "product_definitions", other.as_str()),
     );
-    let evaluation = after_extrude(&ir).id.as_str().to_owned();
-    assert!(outcome.dropped.is_empty(), "{outcome:?}");
-    assert_eq!(outcome.marked, BTreeSet::from([evaluation.clone()]));
-    let (dropped, _) = &outcome.states[&state_path(&evaluation)];
-    assert!(dropped.contains(base.as_str()), "{dropped:?}");
-    assert_base_withdrawn(&ir);
-    assert!(resolved_findings(&ir).is_subset(&before));
+    assert!(outcome.dropped.contains(&evaluation), "{outcome:?}");
+    assert!(!ir
+        .design
+        .evaluations
+        .iter()
+        .any(|stored| stored.id.as_str() == evaluation));
+    assert!(
+        outcome.tail.contains(&format!(
+            "state {evaluation} dropped: its delta cannot state that [{}] leave it",
+            occurrence.as_str()
+        )),
+        "{}",
+        outcome.tail
+    );
+    assert_closed(&ir, other.as_str(), &outcome);
 }

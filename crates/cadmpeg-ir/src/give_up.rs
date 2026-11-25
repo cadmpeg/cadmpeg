@@ -24,7 +24,7 @@ use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
 use crate::design::refs::{EntityRef, Member, RecordRef};
 use crate::document::{ArenaHome, ArenaName, CadIr};
-use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
+use crate::ids::{BodyId, ProductDefinitionId};
 use crate::report::loss::LossNote;
 use crate::schema::ArenaRecord;
 use crate::source_fidelity::SourceFidelity;
@@ -112,6 +112,10 @@ pub(crate) struct Released {
     /// and marked, by the state's path. A record of a delta is the state's
     /// own: the document's record of the same id keeps its own outcome.
     pub(crate) states: BTreeMap<String, Released>,
+    /// The stored states dropped whole, each with the occurrences whose
+    /// member entry names a removed definition: no delta states that an
+    /// occurrence leaves a state (§5.4, §6.7).
+    pub(crate) unstatable: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// The part a given-up seed leaves.
@@ -130,6 +134,7 @@ impl Released {
             dropped: BTreeSet::new(),
             marked: BTreeSet::new(),
             states: BTreeMap::new(),
+            unstatable: BTreeMap::new(),
         }
     }
 
@@ -155,6 +160,12 @@ impl Released {
                 "delta of {path}: dropped=[{}]; marked=[{}]",
                 list(state.dropped.iter().map(String::as_str)),
                 list(state.marked.iter().map(String::as_str))
+            ));
+        }
+        for (state, occurrences) in &self.unstatable {
+            parts.push(format!(
+                "state {state} dropped: its delta cannot state that [{}] leave it",
+                list(occurrences.iter().map(String::as_str))
             ));
         }
         parts.join("; ")
@@ -839,6 +850,12 @@ fn release(
                 .iter()
                 .any(|(path, _)| under(path, STATE_DELTA))
             {
+                let unstatable = unstatable_members(ir, &holder, here);
+                if !unstatable.is_empty() {
+                    released.unstatable.insert(holder.id.clone(), unstatable);
+                    drops.entry(holder.arena).or_default().insert(holder.id);
+                    continue;
+                }
                 let changed = release_states(ctx, ir, references, lazy, &holder, here, released)?;
                 holder.names.retain(|(path, _)| !under(path, STATE_DELTA));
                 if holder.names.is_empty() {
@@ -889,6 +906,24 @@ fn release(
         .marked
         .retain(|record| !released.dropped.contains(record));
     Ok(all_gone)
+}
+
+/// The occurrences whose member entry, in the delta of a copy of `holder`,
+/// names an id of `gone` while the occurrence stays. A state holds no
+/// occurrence without its owner (§8.1), and no delta states that an
+/// occurrence leaves a state (§5.4, §6.7), so such a state has no form.
+fn unstatable_members(ir: &CadIr, holder: &Holder, gone: &BTreeSet<String>) -> BTreeSet<String> {
+    deltas(ir, &holder.arena, &holder.id)
+        .into_iter()
+        .flat_map(|delta| &delta.members)
+        .filter(|(occurrence, owner)| {
+            !gone.contains(occurrence.as_str())
+                && owner
+                    .as_ref()
+                    .is_some_and(|owner| gone.contains(owner.as_str()))
+        })
+        .map(|(occurrence, _)| occurrence.as_str().to_owned())
+        .collect()
 }
 
 /// The path in a stored state of its delta.
@@ -991,14 +1026,12 @@ fn release_states(
     Ok(changed)
 }
 
-/// What a stored state withdraws because an owner or member entry of its
-/// delta names a gone definition: the state holds no body or occurrence
-/// without its owner (§8.1).
+/// What a stored state withdraws because an owner entry of its delta names
+/// a gone definition: the state holds no body without its owner (§8.1).
 struct Withdrawn {
     /// The gone ids with the withdrawn ids.
     gone: BTreeSet<String>,
-    /// The withdrawn ids: the bodies, the occurrences, and the records only
-    /// the bodies reach.
+    /// The withdrawn ids: the bodies and the records only they reach.
     ids: BTreeSet<String>,
     /// The withdrawn records that the document geometry or another stored
     /// state holds, which the delta lists as removed.
@@ -1007,18 +1040,14 @@ struct Withdrawn {
     names: Vec<EntityRef>,
     /// The owner entries of withdrawn bodies that a base can hold.
     owners: Vec<BodyId>,
-    /// The member entries of withdrawn occurrences that a base can hold.
-    members: Vec<OccurrenceId>,
 }
 
-/// The plan of what `delta`, of the stored state `holder`, withdraws. An
-/// occurrence whose member entry names an id of `gone` is withdrawn with
-/// the bodies of its instances. A body whose owner entry names one is
-/// withdrawn with the records it reaches that no other body reaches
-/// (§5.6), in the document geometry and the records of every stored state,
-/// as `remove_member` removes an extent (§8.1). A base entry is cleared
-/// where the document's name table or another stored state holds an entry
-/// of its key.
+/// The plan of what `delta`, of the stored state `holder`, withdraws. A
+/// body whose owner entry names an id of `gone` is withdrawn with the
+/// records it reaches that no other body reaches (§5.6), in the document
+/// geometry and the records of every stored state, as `remove_member`
+/// removes an extent (§8.1). A base entry is cleared where the document's
+/// name table or another stored state holds an entry of its key.
 fn withdrawn(
     ir: &CadIr,
     holder: &str,
@@ -1030,32 +1059,20 @@ fn withdrawn(
     let named = |owner: Option<&ProductDefinitionId>| {
         owner.is_some_and(|owner| gone.contains(owner.as_str()))
     };
-    let occurrences: BTreeSet<String> = delta
-        .members
-        .iter()
-        .filter(|(_, owner)| named(owner.as_ref()))
-        .map(|(occurrence, _)| occurrence.as_str().to_owned())
-        .collect();
-    let mut bodies: BTreeSet<String> = delta
+    let bodies: BTreeSet<String> = delta
         .owners
         .iter()
         .filter(|(_, owner)| named(owner.as_ref()))
         .map(|(body, _)| body.as_str().to_owned())
         .collect();
-    for (path, listed) in &delta.instance_bodies {
-        if mentions(path, &occurrences) {
-            bodies.extend(listed.iter().flatten().map(|body| body.as_str().to_owned()));
-        }
-    }
     let mut plan = Withdrawn {
         gone: gone.clone(),
         ids: BTreeSet::new(),
         removed: Vec::new(),
         names: Vec::new(),
         owners: Vec::new(),
-        members: Vec::new(),
     };
-    if bodies.is_empty() && occurrences.is_empty() {
+    if bodies.is_empty() {
         return Ok(plan);
     }
     let others: Vec<&StateDelta> = stored(ir)
@@ -1107,19 +1124,7 @@ fn withdrawn(
         .filter(|body| others.iter().any(|delta| delta.owners.contains_key(*body)))
         .cloned()
         .collect();
-    plan.members = delta
-        .members
-        .keys()
-        .filter(|occurrence| occurrences.contains(occurrence.as_str()))
-        .filter(|occurrence| {
-            others
-                .iter()
-                .any(|delta| delta.members.contains_key(*occurrence))
-        })
-        .cloned()
-        .collect();
     plan.ids = bodies;
-    plan.ids.extend(occurrences);
     plan.ids.extend(leaving);
     plan.gone.extend(plan.ids.iter().cloned());
     Ok(plan)
@@ -1290,11 +1295,6 @@ fn release_delta(
     delta
         .owners
         .extend(plan.owners.iter().map(|body| (body.clone(), None)));
-    delta.members.extend(
-        plan.members
-            .iter()
-            .map(|occurrence| (occurrence.clone(), None)),
-    );
     state
         .marked
         .retain(|record| !state.dropped.contains(record));
