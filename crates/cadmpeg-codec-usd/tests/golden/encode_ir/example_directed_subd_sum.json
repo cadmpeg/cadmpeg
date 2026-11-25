@@ -9,7 +9,7 @@
         "assembly_joints": 0,
         "assets": 0,
         "attributes": 0,
-        "bodies": 1,
+        "bodies": 0,
         "coedges": 0,
         "colliders": 0,
         "configurations": 0,
@@ -64,10 +64,10 @@
         "process.toolpaths": 0,
         "process.tools": 0,
         "product_definitions": 0,
-        "regions": 1,
+        "regions": 0,
         "rigid_bodies": 0,
         "semantic_annotations": 0,
-        "shells": 1,
+        "shells": 0,
         "sketch_constraints": 0,
         "sketch_entities": 0,
         "sketches": 0,
@@ -112,7 +112,7 @@
             "strict_floor": "warning"
           }
         },
-        "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted: synthetic:v2:subd#directed",
+        "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted: synthetic:v2:subd#directed; 1 body record(s) that hold only these cages are not written: synthetic:v2:body#directed",
         "severity": "warning"
       },
       {

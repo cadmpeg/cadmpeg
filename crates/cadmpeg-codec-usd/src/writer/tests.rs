@@ -288,3 +288,12 @@ fn an_extent_keeps_the_zero_bound_it_holds() {
         [0.0_f32, -0.0, 1.0].map(f32::to_bits)
     );
 }
+
+#[test]
+fn a_cage_body_is_left_out_with_its_cage() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut ir, "usd");
+    let (text, report) = encode(&ir);
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    assert_eq!(decode(&text).ir().geometry.bodies.len(), 1, "{text}");
+}
