@@ -284,8 +284,8 @@ fn cadir_encoder_clears_a_native_link_to_an_omitted_record() {
 
     const FEATURE: &str = "synthetic:test:feature#detail-view";
     const ANNOTATION: &str = "test:native:annotation#1";
+    const NOTE: &str = "test:native:annotation#2";
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let face = ir.geometry.faces[0].id.as_str().to_owned();
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint(FEATURE).unwrap(),
@@ -305,20 +305,21 @@ fn cadir_encoder_clears_a_native_link_to_an_omitted_record() {
         native_ref: None,
     });
     let links = |record: &crate::native::NativeRecord| record.field("links");
-    let annotation = crate::native::NativeRecord::new(
-        crate::ids::Identity::new(ANNOTATION).unwrap(),
-        serde_json::json!({"links": [FEATURE, face]})
-            .as_object()
-            .cloned()
-            .unwrap(),
-    )
-    .unwrap();
+    let record = |id: &str, fields: serde_json::Value| {
+        crate::native::NativeRecord::new(
+            crate::ids::Identity::new(id).unwrap(),
+            fields.as_object().cloned().unwrap(),
+        )
+        .unwrap()
+    };
+    let annotation = record(ANNOTATION, serde_json::json!({"links": [FEATURE, NOTE]}));
+    let note = record(NOTE, serde_json::json!({}));
     ir.native
         .namespace_mut(crate::codec_id!("test"))
         .arenas_mut()
         .insert(
             cadmpeg_core::nonblank_literal!("annotations"),
-            vec![annotation],
+            vec![annotation, note],
         );
 
     let plan = CadirEncoder
@@ -342,7 +343,7 @@ fn cadir_encoder_clears_a_native_link_to_an_omitted_record() {
     plan.write_to(&mut encoded).unwrap();
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
     let records = &written.native.namespace("test").unwrap().arenas()["annotations"];
-    assert_eq!(links(&records[0]), Some(serde_json::json!([face])));
+    assert_eq!(links(&records[0]), Some(serde_json::json!([NOTE])));
     let errors = |ir: &CadIr| {
         validate_neutral(ir, Vec::new())
             .unwrap()
