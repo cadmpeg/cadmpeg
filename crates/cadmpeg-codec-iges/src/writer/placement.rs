@@ -335,7 +335,10 @@ pub(super) fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> 
     let references = |arena: Arena, id: &str| match arena {
         Arena::Pcurve => pcurves
             .get(id)
-            .and_then(|pcurve| support_surface(pcurve))
+            .and_then(|pcurve| match &pcurve.metadata {
+                PcurveMetadata::General { form } => form.support_surface.as_ref(),
+                PcurveMetadata::AsmInline { .. } => None,
+            })
             .map(|surface| vec![(Arena::Surface, surface.as_str())])
             .unwrap_or_default(),
         Arena::Curve => match curves.get(id).and_then(|curve| curve.geometry.solved()) {
@@ -701,14 +704,6 @@ pub(super) fn separated_bodies(ir: &CadIr) -> Result<Cow<'_, CadIr>, Unwritten> 
         radial_rings_by_edge(ir, &mut separated, &copied_edges);
     }
     Ok(Cow::Owned(separated))
-}
-
-/// The support surface that the metadata of `pcurve` names.
-fn support_surface(pcurve: &Pcurve) -> Option<&SurfaceId> {
-    match &pcurve.metadata {
-        PcurveMetadata::General { form } => form.support_surface.as_ref(),
-        PcurveMetadata::AsmInline { .. } => None,
-    }
 }
 
 /// Moves the radial ring of each coedge whose source edge is in `edges` to
