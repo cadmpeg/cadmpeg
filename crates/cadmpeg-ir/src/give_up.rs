@@ -22,8 +22,9 @@ use serde::Serialize;
 
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
-use crate::design::refs::Member;
+use crate::design::refs::{EntityRef, Member, RecordRef};
 use crate::document::{ArenaHome, ArenaName, CadIr};
+use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::report::loss::LossNote;
 use crate::schema::ArenaRecord;
 use crate::source_fidelity::SourceFidelity;
@@ -531,21 +532,7 @@ fn orphans(
     if orphans.is_empty() {
         return Ok(Vec::new());
     }
-    let stated: Vec<&StateDelta> = ir
-        .design
-        .evaluations
-        .iter()
-        .filter_map(|evaluation| evaluation.content.as_ref())
-        .map(|content| &content.delta)
-        .chain(
-            ir.process
-                .states
-                .iter()
-                .filter_map(|state| state.content.as_ref())
-                .map(|content| &content.delta),
-        )
-        .collect();
-    for delta in stated {
+    for (_, delta) in stored(ir) {
         if let Ok(delta) = crate::hash::finite_json::to_json_value(delta) {
             unname(&delta, &mut orphans);
         }
@@ -987,9 +974,16 @@ fn release_states(
         .states
         .remove(&path)
         .unwrap_or_else(|| Released::new(path.clone()));
+    let plans: Vec<Withdrawn> = deltas(ir, &holder.arena, &holder.id)
+        .into_iter()
+        .map(|delta| withdrawn(ir, &holder.id, delta, here))
+        .collect::<Result<_, _>>()?;
     let mut changed = false;
-    for delta in deltas_mut(ir, &holder.arena, &holder.id) {
-        changed |= release_delta(ctx, references, lazy, &elsewhere, delta, here, &mut state)?;
+    for (delta, plan) in deltas_mut(ir, &holder.arena, &holder.id)
+        .into_iter()
+        .zip(&plans)
+    {
+        changed |= release_delta(ctx, references, lazy, &elsewhere, delta, plan, &mut state)?;
     }
     if !state.dropped.is_empty() || !state.marked.is_empty() {
         released.states.insert(path, state);
@@ -997,19 +991,150 @@ fn release_states(
     Ok(changed)
 }
 
+/// What a stored state withdraws because an owner or member entry of its
+/// delta names a gone definition: the state holds no body or occurrence
+/// without its owner (§8.1).
+struct Withdrawn {
+    /// The gone ids with the withdrawn ids.
+    gone: BTreeSet<String>,
+    /// The withdrawn ids: the bodies, the occurrences, and the records only
+    /// the bodies reach.
+    ids: BTreeSet<String>,
+    /// The withdrawn records that the document geometry or another stored
+    /// state holds, which the delta lists as removed.
+    removed: Vec<RecordRef>,
+    /// The name entries of withdrawn entities that a base can hold.
+    names: Vec<EntityRef>,
+    /// The owner entries of withdrawn bodies that a base can hold.
+    owners: Vec<BodyId>,
+    /// The member entries of withdrawn occurrences that a base can hold.
+    members: Vec<OccurrenceId>,
+}
+
+/// The plan of what `delta`, of the stored state `holder`, withdraws. An
+/// occurrence whose member entry names an id of `gone` is withdrawn with
+/// the bodies of its instances. A body whose owner entry names one is
+/// withdrawn with the records it reaches that no other body reaches
+/// (§5.6), in the document geometry and the records of every stored state,
+/// as `remove_member` removes an extent (§8.1). A base entry is cleared
+/// where the document's name table or another stored state holds an entry
+/// of its key.
+fn withdrawn(
+    ir: &CadIr,
+    holder: &str,
+    delta: &StateDelta,
+    gone: &BTreeSet<String>,
+) -> Result<Withdrawn, CodecError> {
+    use crate::design::edit::states::{ids, reached, record_refs, select, upsert};
+
+    let named = |owner: Option<&ProductDefinitionId>| {
+        owner.is_some_and(|owner| gone.contains(owner.as_str()))
+    };
+    let occurrences: BTreeSet<String> = delta
+        .members
+        .iter()
+        .filter(|(_, owner)| named(owner.as_ref()))
+        .map(|(occurrence, _)| occurrence.as_str().to_owned())
+        .collect();
+    let mut bodies: BTreeSet<String> = delta
+        .owners
+        .iter()
+        .filter(|(_, owner)| named(owner.as_ref()))
+        .map(|(body, _)| body.as_str().to_owned())
+        .collect();
+    for (path, listed) in &delta.instance_bodies {
+        if mentions(path, &occurrences) {
+            bodies.extend(listed.iter().flatten().map(|body| body.as_str().to_owned()));
+        }
+    }
+    let mut plan = Withdrawn {
+        gone: gone.clone(),
+        ids: BTreeSet::new(),
+        removed: Vec::new(),
+        names: Vec::new(),
+        owners: Vec::new(),
+        members: Vec::new(),
+    };
+    if bodies.is_empty() && occurrences.is_empty() {
+        return Ok(plan);
+    }
+    let others: Vec<&StateDelta> = stored(ir)
+        .filter(|(state, _)| *state != holder)
+        .map(|(_, delta)| delta)
+        .collect();
+    let mut every = ir.geometry.clone();
+    for other in &others {
+        upsert(&mut every, other.records.clone());
+    }
+    let outside = ids(&every);
+    upsert(&mut every, delta.records.clone());
+    let (leaving, staying): (Vec<BodyId>, Vec<BodyId>) = every
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .partition(|body| bodies.contains(body.as_str()));
+    let malformed =
+        |error: crate::design::edit::EditError| CodecError::Malformed(error.to_string());
+    let kept = reached(&every, &staying).map_err(malformed)?;
+    let leaving: BTreeSet<String> = reached(&every, &leaving)
+        .map_err(malformed)?
+        .into_iter()
+        .filter(|id| !kept.contains(id))
+        .collect();
+    let held: BTreeSet<String> = leaving.intersection(&outside).cloned().collect();
+    plan.removed = record_refs(&select(&every, &held));
+    for record in record_refs(&select(&every, &leaving)) {
+        let entity = match record {
+            RecordRef::Body(id) => EntityRef::Body(id),
+            RecordRef::Face(id) => EntityRef::Face(id),
+            RecordRef::Edge(id) => EntityRef::Edge(id),
+            RecordRef::Vertex(id) => EntityRef::Vertex(id),
+            RecordRef::Surface(id) => EntityRef::Surface(id),
+            RecordRef::Curve(id) => EntityRef::Curve(id),
+            RecordRef::Subd(id) => EntityRef::Subd(id),
+            _ => continue,
+        };
+        if ir.design.names.entries().contains_key(&entity)
+            || others.iter().any(|delta| delta.names.contains_key(&entity))
+        {
+            plan.names.push(entity);
+        }
+    }
+    plan.owners = delta
+        .owners
+        .keys()
+        .filter(|body| bodies.contains(body.as_str()))
+        .filter(|body| others.iter().any(|delta| delta.owners.contains_key(*body)))
+        .cloned()
+        .collect();
+    plan.members = delta
+        .members
+        .keys()
+        .filter(|occurrence| occurrences.contains(occurrence.as_str()))
+        .filter(|occurrence| {
+            others
+                .iter()
+                .any(|delta| delta.members.contains_key(*occurrence))
+        })
+        .cloned()
+        .collect();
+    plan.ids = bodies;
+    plan.ids.extend(occurrences);
+    plan.ids.extend(leaving);
+    plan.gone.extend(plan.ids.iter().cloned());
+    Ok(plan)
+}
+
+/// Whether the JSON of `value` names an id of `gone`.
+fn mentions<T: Serialize + ?Sized>(value: &T, gone: &BTreeSet<String>) -> bool {
+    crate::hash::finite_json::to_json_value(value).is_ok_and(|value| names(&value, gone))
+}
+
 /// The stored states of `ir` whose delta names each id, as a value or as a
 /// key, by id.
 fn states_naming(ir: &CadIr) -> HashMap<String, BTreeSet<String>> {
-    let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
-        let content = evaluation.content.as_ref()?;
-        Some((evaluation.id.as_str(), &content.delta))
-    });
-    let states = ir.process.states.iter().filter_map(|state| {
-        let content = state.content.as_ref()?;
-        Some((state.id.as_str(), &content.delta))
-    });
     let mut naming: HashMap<String, BTreeSet<String>> = HashMap::new();
-    for (state, delta) in evaluations.chain(states) {
+    for (state, delta) in stored(ir) {
         let Ok(delta) = crate::hash::finite_json::to_json_value(delta) else {
             continue;
         };
@@ -1020,6 +1145,20 @@ fn states_naming(ir: &CadIr) -> HashMap<String, BTreeSet<String>> {
         }
     }
     naming
+}
+
+/// The id and delta of each stored state of `ir`: each evaluation and process
+/// state with content.
+fn stored(ir: &CadIr) -> impl Iterator<Item = (&str, &StateDelta)> {
+    let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
+        let content = evaluation.content.as_ref()?;
+        Some((evaluation.id.as_str(), &content.delta))
+    });
+    let states = ir.process.states.iter().filter_map(|state| {
+        let content = state.content.as_ref()?;
+        Some((state.id.as_str(), &content.delta))
+    });
+    evaluations.chain(states)
 }
 
 /// Adds to `ids` each text `value` holds, as a value or as a key.
@@ -1043,49 +1182,63 @@ fn named(value: &serde_json::Value, ids: &mut BTreeSet<String>) {
     }
 }
 
-/// Drops, transitively, each record of `delta` that needs an id of `gone`,
-/// as [`release`] drops a record of the document, and marks each that holds
-/// one in a form that keeps the rest, recording both in `state`. A body of
-/// the delta whose owner entry names an id of `gone` is dropped with it. A
-/// record the delta drops is gone for it where no record of the document,
-/// as `references` counts them, holds its id. Then drops each carrier of the
-/// delta that the drops leave with no user, other than one the document
-/// holds or another stored state names (`elsewhere`). Then removes each
-/// removal, name, owner, member, instance body, and pose of the delta that
-/// names a gone id: each is an entry of a collection keyed by its members'
-/// own ids (§3.3). An entry of the name table whose name names one keeps
-/// its native name alone (§5.7), and an owner or member entry whose
-/// definition is gone states none. Returns whether the delta changed.
+/// Drops, transitively, each record of `delta` that needs a gone or
+/// withdrawn id of `plan`, as [`release`] drops a record of the document,
+/// and marks each that holds one in a form that keeps the rest, recording
+/// both in `state`. Each record of the delta that `plan` withdraws is dropped with
+/// them. A record the delta drops is gone for it where no record of the
+/// document, as `references` counts them, holds its id. Then drops each
+/// carrier of the delta that the drops leave with no user, other than one
+/// the document holds or another stored state names (`elsewhere`). Then
+/// removes each removal, name, owner, member, instance body, and pose of
+/// the delta that names a gone or withdrawn id: each is an entry of a
+/// collection keyed by its members' own ids (§3.3). An entry of the name
+/// table whose name names one keeps its native name alone (§5.7). Then
+/// lists the records `plan` withdraws as removed and clears the base
+/// entries it names (§5.4). Returns whether the delta changed.
 fn release_delta(
     ctx: &DecodeContext<'_>,
     references: &References,
     lazy: &Lazy,
     elsewhere: &dyn Fn(&str) -> bool,
     delta: &mut StateDelta,
-    gone: &BTreeSet<String>,
+    plan: &Withdrawn,
     state: &mut Released,
 ) -> Result<bool, CodecError> {
     let mut stated = CadIr::empty();
     stated.geometry = std::mem::take(&mut delta.records);
     stated.geometry.finalize();
     let unreached = crate::validate::carriers_parameterization::unreached_carriers(ctx, &stated)?;
-    let bodies = Arena::Home {
-        home: "geometry",
-        field: "bodies",
-    };
-    let assigned: Vec<(Arena, String)> = delta
-        .owners
-        .iter()
-        .filter(|(body, owner)| {
-            owner
-                .as_ref()
-                .is_some_and(|owner| gone.contains(owner.as_str()))
-                && !records(&stated.geometry.bodies, body.as_str()).is_empty()
-        })
-        .map(|(body, _)| (bodies.clone(), body.as_str().to_owned()))
-        .collect();
+    let mut assigned = Vec::new();
+    for field in [
+        "bodies",
+        "regions",
+        "shells",
+        "faces",
+        "loops",
+        "coedges",
+        "edges",
+        "vertices",
+        "points",
+        "surfaces",
+        "curves",
+        "subds",
+        "pcurves",
+        "procedural_surfaces",
+        "procedural_curves",
+    ] {
+        let arena = Arena::Home {
+            home: "geometry",
+            field,
+        };
+        for id in &plan.ids {
+            if text(&stated, &arena, id).is_some() {
+                assigned.push((arena.clone(), id.clone()));
+            }
+        }
+    }
     let mut local = References::default();
-    for id in gone {
+    for id in &plan.gone {
         local.name(id);
     }
     for id in stated.geometry.identities() {
@@ -1100,7 +1253,7 @@ fn release_delta(
         &mut stated,
         &mut local,
         lazy,
-        gone.clone(),
+        plan.gone.clone(),
         assigned.clone(),
         &mut inner,
     )?;
@@ -1121,26 +1274,38 @@ fn release_delta(
         )?);
     }
     delta.records = stated.geometry;
-    let changed = !inner.dropped.is_empty() || !inner.marked.is_empty();
+    let changed = !inner.dropped.is_empty() || !inner.marked.is_empty() || !plan.ids.is_empty();
     state.dropped.extend(inner.dropped);
     state.marked.extend(inner.marked);
+    let pruned = prune(delta, &all_gone);
+    for record in &plan.removed {
+        delta.removed.push(record.clone());
+        state
+            .dropped
+            .insert(crate::design::edit::states::record_ref_id(record).to_owned());
+    }
+    delta
+        .names
+        .extend(plan.names.iter().map(|entity| (entity.clone(), None)));
+    delta
+        .owners
+        .extend(plan.owners.iter().map(|body| (body.clone(), None)));
+    delta.members.extend(
+        plan.members
+            .iter()
+            .map(|occurrence| (occurrence.clone(), None)),
+    );
     state
         .marked
         .retain(|record| !state.dropped.contains(record));
-    let assigned: BTreeSet<String> = assigned.into_iter().map(|(_, body)| body).collect();
-    Ok(prune(delta, &all_gone, &assigned) || changed)
+    Ok(pruned || changed)
 }
 
 /// Removes each entry of `delta` outside its records that names an id of
-/// `gone`, and each owner entry of a body of `assigned`, and returns whether
-/// it removed or changed one. An entry of the name table whose name names
-/// one keeps its native name alone, and is removed where it has none. An
-/// owner or member entry whose definition is gone states none: the state
-/// keeps the record and states no owner of it.
-fn prune(delta: &mut StateDelta, gone: &BTreeSet<String>, assigned: &BTreeSet<String>) -> bool {
-    fn mentions<T: Serialize + ?Sized>(value: &T, gone: &BTreeSet<String>) -> bool {
-        crate::hash::finite_json::to_json_value(value).is_ok_and(|value| names(&value, gone))
-    }
+/// `gone`, and returns whether it removed or changed one. An entry of the
+/// name table whose name names one keeps its native name alone, and is
+/// removed where it has none.
+fn prune(delta: &mut StateDelta, gone: &BTreeSet<String>) -> bool {
     let before = [
         delta.removed.len(),
         delta.names.len(),
@@ -1168,29 +1333,10 @@ fn prune(delta: &mut StateDelta, gone: &BTreeSet<String>, assigned: &BTreeSet<St
         renamed = true;
         true
     });
-    let mut unowned = |owner: &mut Option<crate::ids::ProductDefinitionId>| {
-        if owner
-            .as_ref()
-            .is_some_and(|owner| gone.contains(owner.as_str()))
-        {
-            *owner = None;
-            renamed = true;
-        }
-    };
-    delta.owners.retain(|body, owner| {
-        if gone.contains(body.as_str()) || assigned.contains(body.as_str()) {
-            return false;
-        }
-        unowned(owner);
-        true
-    });
-    delta.members.retain(|occurrence, owner| {
-        if gone.contains(occurrence.as_str()) {
-            return false;
-        }
-        unowned(owner);
-        true
-    });
+    delta.owners.retain(|body, _| !gone.contains(body.as_str()));
+    delta
+        .members
+        .retain(|occurrence, _| !gone.contains(occurrence.as_str()));
     delta
         .instance_bodies
         .retain(|path, bodies| !mentions(path, gone) && !mentions(bodies, gone));

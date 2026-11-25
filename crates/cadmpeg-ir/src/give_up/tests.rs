@@ -1098,11 +1098,53 @@ fn a_carrier_a_delta_leaves_with_no_user_is_dropped() {
     assert!(naming.is_empty(), "{naming:#?}");
 }
 
-/// An owner entry of a delta that names a given-up definition goes with the
-/// body of the delta it assigns, and an entry of a body of the base states
-/// no owner: the state falls back to no owner the source did not state.
+/// The validation findings on resolved states.
+fn resolved_findings(ir: &CadIr) -> BTreeSet<String> {
+    crate::validate::validate_neutral(ir, Vec::new())
+        .expect("validation runs")
+        .findings
+        .into_iter()
+        .map(|finding| finding.message)
+        .filter(|message| message.contains("resolved state"))
+        .collect()
+}
+
+/// Asserts that the fixture's stored state lists every record of the
+/// document geometry as removed, and keeps no entry that names one: the
+/// geometry's one body reaches each of its records, so a state without that
+/// body holds none of them (§5.4, §5.6, §8.1).
+fn assert_base_withdrawn(ir: &CadIr) {
+    let ids = crate::design::edit::states::ids(&ir.geometry);
+    let removed: BTreeSet<String> = delta(ir)
+        .removed
+        .iter()
+        .map(|record| crate::design::edit::states::record_ref_id(record).to_owned())
+        .collect();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(removed, ids);
+    assert_eq!(delta(ir).removed.len(), ids.len());
+    assert!(delta(ir).owners.is_empty(), "{:?}", delta(ir).owners);
+    assert!(delta(ir).members.is_empty(), "{:?}", delta(ir).members);
+    assert!(delta(ir).instance_bodies.is_empty());
+    for (entity, entry) in &delta(ir).names {
+        assert!(
+            !ids.contains(entity.id()) || entry.is_none(),
+            "the state names the withdrawn {entity:?}"
+        );
+    }
+    for entity in ir.design.names.entries().keys() {
+        if ids.contains(entity.id()) {
+            assert_eq!(delta(ir).names.get(entity), Some(&None), "{entity:?}");
+        }
+    }
+}
+
+/// An owner entry of a delta that names a given-up definition takes its body
+/// out of the state: the delta drops its own body, lists the base body and
+/// every record only it reaches as removed, and keeps no owner entry of
+/// either (§5.4, §5.6, §8.1).
 #[test]
-fn an_owner_entry_of_a_given_up_definition_takes_the_body_it_assigns() {
+fn an_owner_entry_of_a_given_up_definition_takes_its_body_out_of_the_state() {
     use crate::ids::{BodyId, ProductDefinitionId};
     use crate::products::{ProductDefinition, Storage};
     use crate::validate::design::fixture::id;
@@ -1129,6 +1171,7 @@ fn an_owner_entry_of_a_given_up_definition_takes_the_body_it_assigns() {
     ]);
     ir.finalize();
     assert_no_dangling_reference(&ir);
+    let before = resolved_findings(&ir);
 
     let (outcome, _) = run(
         &mut ir,
@@ -1138,8 +1181,56 @@ fn an_owner_entry_of_a_given_up_definition_takes_the_body_it_assigns() {
     assert!(outcome.dropped.is_empty(), "{outcome:?}");
     assert_eq!(outcome.marked, BTreeSet::from([evaluation.clone()]));
     let (dropped, _) = &outcome.states[&state_path(&evaluation)];
-    assert_eq!(dropped, &BTreeSet::from([own.id.as_str().to_owned()]));
+    assert!(dropped.contains(own.id.as_str()), "{dropped:?}");
+    assert!(dropped.contains(base.as_str()), "{dropped:?}");
     assert!(delta(&ir).records.bodies.is_empty());
-    assert_eq!(delta(&ir).owners, BTreeMap::from([(base, None)]));
+    assert_base_withdrawn(&ir);
+    assert!(resolved_findings(&ir).is_subset(&before));
     assert_no_dangling_reference(&ir);
+}
+
+/// A member entry of a delta that names a given-up definition takes its
+/// occurrence out of the state with the bodies of its instances: the delta
+/// keeps no entry keyed by the occurrence or a path through it, and lists the
+/// instance's body and every record only it reaches as removed (§5.4, §5.6,
+/// §8.1).
+#[test]
+fn a_member_entry_of_a_given_up_definition_takes_its_occurrence_out_of_the_state() {
+    use crate::design::selection::{OccurrencePath, PathStep, StepRef};
+    use crate::ids::{OccurrenceId, ProductDefinitionId};
+    use crate::products::{ProductDefinition, Storage};
+    use crate::validate::design::fixture::id;
+
+    let mut ir = crate::validate::design::fixture::document();
+    let other: ProductDefinitionId = id("definition", "other");
+    ir.model
+        .product_definitions
+        .push(ProductDefinition::new(other.clone(), Storage::Embedded));
+    let base = ir.geometry.bodies[0].id.clone();
+    let occurrence: OccurrenceId = id("occurrence", "member");
+    let path = OccurrencePath(vec![PathStep {
+        occurrence: StepRef::Occurrence(occurrence.clone()),
+        configuration: None,
+    }]);
+    let stored = &mut ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta;
+    stored.members = BTreeMap::from([(occurrence.clone(), Some(other.clone()))]);
+    stored.instance_bodies = BTreeMap::from([(path, Some(vec![base.clone()]))]);
+    ir.finalize();
+    let before = resolved_findings(&ir);
+
+    let (outcome, _) = run(
+        &mut ir,
+        seed("model", "product_definitions", other.as_str()),
+    );
+    let evaluation = after_extrude(&ir).id.as_str().to_owned();
+    assert!(outcome.dropped.is_empty(), "{outcome:?}");
+    assert_eq!(outcome.marked, BTreeSet::from([evaluation.clone()]));
+    let (dropped, _) = &outcome.states[&state_path(&evaluation)];
+    assert!(dropped.contains(base.as_str()), "{dropped:?}");
+    assert_base_withdrawn(&ir);
+    assert!(resolved_findings(&ir).is_subset(&before));
 }
