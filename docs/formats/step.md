@@ -625,9 +625,9 @@ accessors resolve inherited attributes against that representation.
 
 A complex instance whose partial records are not in ascending entity-name order
 does not conform to Part 21. CADIR salvage retains the observed partial order,
-resolves attributes by partial name, and reports `NoncanonicalSourceSyntax`
-with the containing record's byte offset. A full strict decode rejects the
-record.
+resolves attributes by partial name, and reports `step/parse.noncanonical-syntax`
+with the containing record's byte offset. That code has strict floor Warning
+(CADIR §3.2), so a full strict decode rejects the record.
 
 Part 21 simple-entity mapping supplies one parameter for each explicit
 attribute, in declaration order. Internal complex mapping supplies inherited
@@ -856,7 +856,7 @@ parameter is neither a string nor `$`. It inserts an empty string at parameter
 position zero. It does not shift complex records, non-carrier entities, or
 records whose first parameter is already a string or `$`. The reader reports
 this source repair as
-`NoncanonicalSourceSyntax` with the containing record's byte offset; salvage
+`step/parse.noncanonical-syntax` with the containing record's byte offset; salvage
 decode retains the recovered record and a full strict decode rejects the loss.
 
 REFERENCE entries bind an external entity or value occurrence name to a resource URI. Resource names and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.

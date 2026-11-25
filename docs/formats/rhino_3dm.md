@@ -7114,3 +7114,7 @@ grammar, but it does not by itself admit the object. All positional slots,
 cross-record references, finite-value gates, and topology invariants required
 by that grammar must pass. If one required invariant fails, the complete
 object record remains opaque and no partial typed topology is committed.
+
+## 21. Strict floors
+
+`rhino/object.framing-undecodable` records a framed object record that the decoder gave up (CADIR §3.3), and carries strict floor Warning (CADIR §3.2).

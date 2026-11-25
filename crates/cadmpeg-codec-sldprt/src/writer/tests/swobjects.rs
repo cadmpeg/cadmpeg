@@ -1616,6 +1616,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
             &fidelity.codec_digests,
             &records,
             &[],
+            &[],
             &mut written,
         )
         .unwrap();
@@ -1655,6 +1656,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
         &baseline,
         &fidelity.annotations,
         &fidelity.codec_digests,
+        &[],
         &[],
         &[],
         &mut Vec::new(),

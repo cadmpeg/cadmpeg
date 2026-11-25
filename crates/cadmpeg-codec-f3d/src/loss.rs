@@ -3636,7 +3636,8 @@ impl F3dLossCode {
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven
             | Self::ReferenceImageFlagAssumed
-            | Self::DecalMappingAssumed => Severity::Info,
+            | Self::DecalMappingAssumed
+            | Self::VertexToleranceWidened => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -4328,7 +4329,6 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
-            | Self::VertexToleranceWidened
             | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
@@ -5204,32 +5204,32 @@ impl F3dLossCode {
         }
     }
 
-    /// Strict floor pinned by this local code.
-    ///
-    /// Defaults to [`cadmpeg_ir::report::loss::code_strict_floor`].
-    /// `DesignIntentUndecoded` pins Warning
-    /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
-    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
-    /// edge written over an arc the source does not state.
-    /// The other listed undecoded-record codes also pin Warning so strict
-    /// mode rejects partial Design decoding.
-    fn strict_floor(self) -> Option<Severity> {
+    /// The strict floor `f3d.md` §4 states: each code that records a given-up
+    /// Design record pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::DesignIntentUndecoded
-            | Self::PrimaryRecordUndecoded
+            | Self::SketchCurveUndecoded
+            | Self::SketchSurfaceUndecoded
+            | Self::SketchTextUndecoded
+            | Self::SketchRelationUndecoded
+            | Self::SketchFolderUndecoded
+            | Self::SketchOrdinalCollectionUndecoded
+            | Self::SketchContainerUndecoded
+            | Self::SketchGeometryGroupUndecoded
             | Self::FeatureTimelineUndecoded
+            | Self::PrimaryRecordUndecoded
+            | Self::ConfigurationProjectionNative
+            | Self::SketchOwnerConflict
+            | Self::SketchRelationOwnerUnresolved
             | Self::ConfigurationDocumentUndecoded
             | Self::BendSettingsUndecoded
-            | Self::ConfigurationProjectionNative
-            | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
-            other => {
-                cadmpeg_ir::report::loss::code_strict_floor(other.code(), other.shared_taxonomy())
-            }
+            | Self::DesignBodyBoundsUndecoded => Some(Severity::Warning),
+            _ => None,
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         NamespacedLossKind::new(
@@ -5244,7 +5244,7 @@ impl F3dLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `f3d/<local>`. Severity comes from the local
-    /// code; the strict floor comes from [`Self::strict_floor`].
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())

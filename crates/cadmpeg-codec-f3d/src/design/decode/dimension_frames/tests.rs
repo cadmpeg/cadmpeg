@@ -424,7 +424,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     );
     let stream_tags = [
         PersistentSubentityTag {
-            id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
+            id: "f3d:A/occurrence-0@design:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Face(
                 FaceId::mint("test:model:face#face-a").expect("identity grammar"),
             ),
@@ -435,7 +435,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
+            id: "f3d:B/occurrence-0@design:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Face(
                 FaceId::mint("test:model:face#face-b").expect("identity grammar"),
             ),
@@ -450,7 +450,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
             &mut bound,
             &stream_tags,
-            Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
+            Some("f3d:A/occurrence-0@Asset/Design1/BulkStream.dat:dimension-recipe#1"),
         );
     };
     assert_eq!(

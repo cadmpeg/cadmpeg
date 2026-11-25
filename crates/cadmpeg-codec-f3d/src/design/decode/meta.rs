@@ -1165,7 +1165,8 @@ pub(super) fn stream_types_by_class_tag<'a>(
 }
 
 /// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
-/// name without materializing either name.
+/// name without materializing either name. The `@` that qualifies the scope of
+/// an archive member's record matches itself.
 pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
         return false;
@@ -1176,11 +1177,14 @@ pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> boo
     else {
         return false;
     };
-    let mut observed = encoded.bytes();
+    let mut observed = encoded.bytes().peekable();
     for character in prefix.chars() {
+        if character == '@' && observed.next_if_eq(&b'@').is_some() {
+            continue;
+        }
         let mut buffer = [0; 4];
         let bytes = character.encode_utf8(&mut buffer).as_bytes();
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+        if cadmpeg_ir::ids::IdentityKeyTail::escapes(character) {
             const HEX: &[u8; 16] = b"0123456789ABCDEF";
             for byte in bytes {
                 if observed.next() != Some(b'%')

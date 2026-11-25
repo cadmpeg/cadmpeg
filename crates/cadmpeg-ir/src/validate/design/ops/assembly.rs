@@ -16,19 +16,20 @@ use crate::design::ops::assembly::{
 use crate::design::ops::body::{Kept, ScaleFactors, SplitMode};
 use crate::design::ops::dressup::StageHole;
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
+    AxisLimits, Bounds, ChainLinks, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
     PathRollControl,
 };
 use crate::design::ops::sheet_metal::SheetMetalKind;
 use crate::design::options::Boolean;
 use crate::design::selection::{
-    Keyed, Members, OccurrencePath, PickContext, PickTarget, Picked, Picks, SelectionRule,
-    SetSelection, StepRef,
+    Keyed, Members, OccurrencePath, OrderedSelection, PickContext, PickTarget, Picked, Picks,
+    SelectionRule, SetSelection, StepRef,
 };
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
 
+use super::super::constructions::input_selections;
 use super::super::dimensions::Bound;
 use super::super::records::{DesignRecords, MemberKey};
 
@@ -507,6 +508,9 @@ pub(super) fn check_component_pattern(
             }
         }
     }
+    if let crate::design::ops::shared::PatternLayout::Chain(chain) = &pattern.layout {
+        check_chain_seeds(site, &pattern.seeds, &chain.links, findings);
+    }
     let indices: Vec<_> = pattern
         .instances
         .iter()
@@ -546,6 +550,94 @@ pub(super) fn check_component_pattern(
                 occurrence.as_str(),
                 findings,
             );
+        }
+    }
+}
+
+/// The occurrences a path steps through, where every step names one.
+fn path_occurrences(path: &OccurrencePath) -> Option<Vec<&str>> {
+    path.0
+        .iter()
+        .map(|step| match &step.occurrence {
+            StepRef::Occurrence(id) => Some(id.as_str()),
+            StepRef::Native(_) => None,
+        })
+        .collect()
+}
+
+/// A chain's pins are two distinct axes, and its pins and native picks pick
+/// the geometry of the pattern's seeds (§6.7). A pick is judged where it and
+/// every seed name their occurrences by paths of occurrence steps.
+fn check_chain_seeds(
+    site: Site<'_>,
+    seeds: &OrderedSelection,
+    links: &ChainLinks,
+    findings: &mut Vec<Finding>,
+) {
+    let seeds: Option<Vec<Vec<&str>>> = picks::named(seeds).and_then(|seeds| {
+        seeds
+            .iter()
+            .map(|seed| path_occurrences(pick_path(seed)?))
+            .collect()
+    });
+    let off_seeds = |selection: &OrderedSelection| {
+        let Some(seeds) = seeds.as_ref().filter(|seeds| !seeds.is_empty()) else {
+            return false;
+        };
+        picks::named(selection)
+            .unwrap_or_default()
+            .iter()
+            .any(|pick| {
+                let Some(PickContext::Occurrence(path)) = &pick.context else {
+                    return false;
+                };
+                path_occurrences(path)
+                    .is_some_and(|steps| !seeds.iter().any(|seed| steps.starts_with(seed)))
+            })
+    };
+    match links {
+        ChainLinks::Connected(links) => {
+            for (at, link) in links.iter().enumerate() {
+                let [first, second] = &link.pins;
+                if first == second
+                    || (first.resolved.is_some() && first.resolved == second.resolved)
+                {
+                    error(
+                        findings,
+                        site.entity,
+                        crate::rule!(
+                            "design.chain-link-pins-one-axis",
+                            "the two pins of ChainLink {at} are one axis"
+                        ),
+                    );
+                }
+                let mut selections = link
+                    .pins
+                    .iter()
+                    .flat_map(|pin| input_selections(&pin.inputs));
+                if selections.any(&off_seeds) {
+                    error(
+                        findings,
+                        site.entity,
+                        crate::rule!(
+                            "design.chain-link-pin-off-seeds",
+                            "a pin of ChainLink {at} picks geometry of no seed of its pattern"
+                        ),
+                    );
+                }
+            }
+        }
+        ChainLinks::Native { picks, .. } => {
+            if off_seeds(picks) {
+                error(
+                    findings,
+                    site.entity,
+                    crate::rule!(
+                        "design.chain-native-picks-off-seeds",
+                        "ChainLinks::Native picks geometry of no seed of its pattern"
+                    ),
+                );
+            }
         }
     }
 }

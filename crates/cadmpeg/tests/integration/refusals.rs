@@ -12,7 +12,7 @@ use crate::support::fixture;
 #[cfg(all(feature = "creo", any(feature = "step", feature = "iges")))]
 use crate::support::geometryless_creo;
 #[cfg(feature = "rhino")]
-use crate::support::minimal_rhino_archive;
+use crate::support::rhino_archive_with_unreadable_point;
 
 #[test]
 fn garbage_reports_supported_formats() {
@@ -105,7 +105,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
 #[test]
 fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
     let dir = tempdir().unwrap();
-    let input = minimal_rhino_archive(dir.path(), "undeclared.3dm", "100");
+    let input = rhino_archive_with_unreadable_point(dir.path(), "unreadable.3dm");
 
     for (command, extra) in [
         ("dump", Vec::<&str>::new()),
@@ -136,7 +136,7 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .iter()
             .any(|loss| {
                 loss["code"]["value"]["namespace"] == "rhino"
-                    && loss["code"]["value"]["code"] == "source.dialect-unverified"
+                    && loss["code"]["value"]["code"] == "object.framing-undecodable"
             }));
     }
 }
@@ -730,4 +730,47 @@ fn closed_stdout_pipe_exits_on_sigpipe_without_panic() {
         Some(13),
         "expected SIGPIPE, got {status:?}; stderr={err}"
     );
+}
+
+/// `--reject-lossy=decode` judges the report of a CADIR read: a read that
+/// repairs a spelling is refused under it, and written with the repair
+/// reported without it.
+#[test]
+fn reject_lossy_decode_judges_the_cadir_read_report() {
+    let dir = tempdir().unwrap();
+    let mut value = serde_json::to_value(unit_cube().expect("unit cube fixture is admitted"))
+        .expect("the unit cube writes");
+    value["geometry"]["points"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    let input = dir.path().join("unsorted.cadir.json");
+    fs::write(&input, value.to_string()).unwrap();
+    let output = dir.path().join("out.cadir.json");
+    let args = [
+        "convert",
+        input.to_str().unwrap(),
+        "-o",
+        output.to_str().unwrap(),
+    ];
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(args)
+        .arg("--reject-lossy=decode")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "the read's strictness refuses read/spelling.normalized",
+        ));
+    assert!(!output.exists());
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(args)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "warning: read/spelling.normalized: geometry.points",
+        ));
 }

@@ -88,8 +88,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:surface#D5) has no exported owner and was withheld",
@@ -101,8 +100,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D11) has no exported owner and was withheld",
@@ -114,8 +112,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D13) has no exported owner and was withheld",
@@ -127,8 +124,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D19) was withheld because its parameter-space carrier has no exported owner",
@@ -140,8 +136,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D21) was withheld because its parameter-space carrier has no exported owner",
@@ -153,8 +148,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D7) has no exported owner and was withheld",
@@ -166,8 +160,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D9) has no exported owner and was withheld",

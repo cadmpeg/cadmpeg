@@ -68,7 +68,13 @@ fn with_parameter(mut ir: CadIr) -> CadIr {
 struct RejectFloorCodec;
 
 fn reject_floor_kind() -> LossKind {
-    LossKind::shared(LossTaxonomy::TopologyNotTransferred)
+    crate::report::loss::NamespacedLossKind::new(
+        crate::loss_namespace!("test"),
+        "synthetic.reject-floor",
+        LossTaxonomy::TopologyNotTransferred,
+    )
+    .with_strict_floor(Some(crate::report::Severity::Warning))
+    .into()
 }
 
 impl CodecBackend for RejectFloorCodec {
@@ -894,6 +900,33 @@ fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_ch
 }
 
 #[test]
+fn a_pinned_decode_refuses_a_given_up_repeated_id_and_an_unpinned_decode_admits_it() {
+    let id_repeated = super::loss::DecodeLossCode::IdRepeated.note("").code;
+    let error = RepeatedIdentityCodec { differ: true }
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &strict_options(DecodeDepth::Full),
+        )
+        .unwrap_err();
+    assert_eq!(refused_code(error), id_repeated);
+
+    let result = RepeatedIdentityCodec { differ: true }
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &DecodeOptions {
+                depth: DecodeDepth::Full,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("an unpinned decode admits a given-up id");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == id_repeated));
+}
+
+#[test]
 fn the_sealed_wrapper_states_one_record_for_equal_copies_of_an_id_and_charges_nothing() {
     let result = RepeatedIdentityCodec { differ: false }
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
@@ -1125,4 +1158,18 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
         let text = serde_json::to_string(result.ir()).unwrap();
         assert!(CadIr::from_json(&text).is_ok());
     }
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_record_given_up_past_the_document_bound() {
+    let error = PastTheBoundCodec
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &strict_options(DecodeDepth::Full),
+        )
+        .unwrap_err();
+    assert_eq!(
+        refused_code(error),
+        crate::unknown::part::record_unreadable_kind()
+    );
 }

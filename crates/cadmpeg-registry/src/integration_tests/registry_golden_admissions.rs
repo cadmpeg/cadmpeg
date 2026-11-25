@@ -9,7 +9,6 @@ use cadmpeg_core::dialect::{
     Admission, DialectLayers, DialectMatch, FormatIdentity, LayerInstance,
 };
 use cadmpeg_ir::report::loss::{LossNote, LossTaxonomy};
-use cadmpeg_ir::report::strictness::Strictness;
 use cadmpeg_parasolid::{Carrier, OwnedSchemaToken, DECLARED_CARRIER, DECLARED_SCHEMA};
 
 use crate::{dialect_table, ReadDisposition};
@@ -624,17 +623,6 @@ fn check_kernel_loss_counts(
                                 format!(
                                     "kernel loss must use the {host} namespaced source_dialect_unverified code"
                                 ),
-                            ));
-                        }
-                        let pinned = Strictness {
-                            pinned: true,
-                            ..Strictness::default()
-                        };
-                        if !pinned.refuses(&loss, false) {
-                            return Err(AdmissionViolation::new(
-                                snapshot,
-                                loss_pointer,
-                                "kernel loss must reject strict mode",
                             ));
                         }
                         observed = observed.checked_add(1).ok_or_else(|| {

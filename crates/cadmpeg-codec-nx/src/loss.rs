@@ -182,22 +182,16 @@ loss_codes! {
 }
 
 impl NxLossCode {
-    /// Strict floor pinned from this local code.
-    ///
-    /// Defaults to [`cadmpeg_ir::report::loss::code_strict_floor`].
-    /// `NativeAttachmentFailed` pins Error
-    /// above its `DecodeDiagnostic` taxonomy, which strict mode otherwise
-    /// tolerates.
-    fn strict_floor(self) -> Option<Severity> {
+    /// The strict floor `siemens_nx.md` §10 states: a given-up native object
+    /// model pins Error.
+    const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::NativeAttachmentFailed => Some(Severity::Error),
-            other => {
-                cadmpeg_ir::report::loss::code_strict_floor(other.code(), other.shared_taxonomy())
-            }
+            _ => None,
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         cadmpeg_ir::report::loss::NamespacedLossKind::new(
@@ -217,7 +211,7 @@ impl NxLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `nx/<local>`. Severity comes from the local
-    /// code; the strict floor comes from [`Self::strict_floor`].
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -323,16 +317,14 @@ mod tests {
         }
     }
 
-    /// Only an attachment failure pins a floor above its taxonomy floor.
+    /// `siemens_nx.md` §10 states a strict floor for an attachment failure
+    /// and for no other code.
     #[test]
-    fn strict_floor_follows_taxonomy_except_attachment_failure() {
+    fn only_an_attachment_failure_pins_a_strict_floor() {
         for code in NxLossCode::ALL {
             let expected = match code {
                 NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
-                other => cadmpeg_ir::report::loss::code_strict_floor(
-                    other.code(),
-                    other.shared_taxonomy(),
-                ),
+                _ => None,
             };
             assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
         }

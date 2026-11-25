@@ -749,27 +749,6 @@ Ignored tests stay out of the normal fast suite, so routine verification misses 
 an environment with its prerequisites and record the outcome, or check in a
 runnable witness set with the same totals so the fast suite covers the floor.
 
-### QA-17. Strict-floor overrides for dialect and integrity losses bypass QA-15
-
-**Question.** What does strict mode refuse when a decode reports
-`source.writer-stamp-unverified`, `source.dialect-unverified`, or
-`container.integrity-failure`?
-
-**Known.** `loss.rs:355-362` assigns `IntegrityFailure` (and
-`ObjectFramingUndecodable`) error severity, while `loss.rs:429-435` pins
-their strict floor to warning and leaves `SourceWriterStampUnverified` floorless; `SourceDialectUnverified` inherits its shared taxonomy floor. Under a
-pinned `Strictness` (`Strictness::refuses`), strict mode
-rejects a loss whose severity reaches its floor and tolerates any loss with no
-floor. The missing-stamp loss stays at record level (`dialect.rs:59-69`), so strict mode always tolerates it, while the
-residual-dialect loss is charged once per archive at admission
-(`dialect.rs:140-158`) and follows the taxonomy floor. QA-15 settles only the
-non-strict `check` verdict, which ignores losses entirely; these strict-mode consequences are separate questions.
-
-**Need.** State the intended strict consequence for each of the three codes and
-tie each pin to its QA-15-independent verdict rule. If the missing-stamp loss
-must stay strict-tolerated while the residual-dialect loss can reject, the
-specification must state that asymmetry and its ground as a prose rule.
-
 ### TP-01. Decoder output fails geometric-consistency validation
 
 **Question.** Which topology and geometry can the decoder return as a

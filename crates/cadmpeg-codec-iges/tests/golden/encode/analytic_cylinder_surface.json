@@ -28,8 +28,7 @@
           "value": {
             "code": "writer.free-geometry-omitted",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 analytic surface record(s) on no face were withheld: Types 192 through 198 have no bounded form outside a B-rep face: iges:model:surface#D7",

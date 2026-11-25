@@ -937,9 +937,13 @@ fn a_refused_code_refuses_the_write_and_another_code_admits_it() {
 #[test]
 fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
     let ir = CadIr::empty();
-    let kind = crate::report::loss::LossKind::shared(
+    let kind: crate::report::loss::LossKind = crate::report::loss::NamespacedLossKind::new(
+        crate::loss_namespace!("test"),
+        "synthetic.reject-floor",
         crate::report::loss::LossTaxonomy::TopologyNotTransferred,
-    );
+    )
+    .with_strict_floor(Some(crate::report::Severity::Warning))
+    .into();
     let encoder = LossyEncoder(vec![crate::report::loss::LossNote::new(
         kind.clone(),
         "synthetic reject floor",

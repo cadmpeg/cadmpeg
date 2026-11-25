@@ -10,8 +10,8 @@ use crate::report::check::Ruled;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::construction::{
-    CurveValue, FrameValue, InputReference, PlaneValue, PostStep, Relation, ScalarDimension,
-    Subject,
+    AnyConstruction, ConstructionInput, CurveValue, FrameValue, InputReference, PlaneValue,
+    PostStep, Relation, ScalarDimension, Subject,
 };
 use crate::design::dimension::Dimension;
 use crate::design::feature::FeatureOperation;
@@ -21,7 +21,7 @@ use crate::design::ops::sketch::{
     EntityDefinition, EntityForm, PlanarCurve, SketchSpace, SpatialCurve,
 };
 use crate::design::selection::{
-    DatumPart, PickContext, PickTarget, Picked, Picks, PrincipalEntity,
+    DatumPart, OrderedSelection, PickContext, PickTarget, Picked, Picks, PrincipalEntity,
 };
 use crate::math::portable::Portable;
 use crate::math::{Point3, Vector3};
@@ -1013,4 +1013,28 @@ fn arc_ok(curve: &CurveValue, geometry: Geometry) -> bool {
             && offset.dot(normal).abs() <= geometry.linear
     };
     on_circle(start.get()) && on_circle(end.get())
+}
+
+/// The selections the inputs of a construction pick, through every
+/// construction nested in them.
+pub(super) fn input_selections(inputs: &[ConstructionInput]) -> Vec<&OrderedSelection> {
+    let mut pending = vec![inputs];
+    let mut found = Vec::new();
+    while let Some(inputs) = pending.pop() {
+        for input in inputs {
+            match &input.reference {
+                Some(InputReference::Picks(selection)) => found.push(selection),
+                Some(InputReference::Built(built)) => pending.push(match built.as_ref() {
+                    AnyConstruction::Point(nested) => &nested.inputs,
+                    AnyConstruction::Direction(nested) => &nested.inputs,
+                    AnyConstruction::Axis(nested) => &nested.inputs,
+                    AnyConstruction::Plane(nested) => &nested.inputs,
+                    AnyConstruction::Frame(nested) => &nested.inputs,
+                    AnyConstruction::Curve(nested) => &nested.inputs,
+                }),
+                None => {}
+            }
+        }
+    }
+    found
 }

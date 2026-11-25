@@ -28,8 +28,7 @@
           "value": {
             "code": "writer.free-geometry-omitted",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 analytic surface record(s) on no face were withheld: Types 192 through 198 have no bounded form outside a B-rep face: iges:model:surface#D5",
@@ -113,8 +112,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D13) was withheld because its parameter-space carrier has no exported owner",
@@ -126,8 +124,7 @@
           "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "1 support geometry record (iges:model:curve#D7) has no exported owner and was withheld",

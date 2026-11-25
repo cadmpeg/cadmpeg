@@ -2,9 +2,11 @@
 //! The parameter each named scalar's own record states (`docs/formats/sldprt.md`
 //! §2): the class of its parameter object, written immediately before its
 //! name record as a class declaration or a class token, and its value read in
-//! that class's cell.
+//! that class's cell; and the relation class a sketch dimension's relation
+//! object names with a class token.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::iter;
 
 use cadmpeg_core::decode::View;
 
@@ -248,6 +250,272 @@ pub(super) fn relation_kind(name: &str) -> Option<ArchiveParameterClass> {
         "sgCircularPattCntDim" | "sgLinearPattCntDim" => ArchiveParameterClass::Integer,
         _ => return None,
     })
+}
+
+/// Whether `name` is a class of the relation slot of a sketch dimension's
+/// relation object (§2).
+fn takes_relation_slot(name: &str) -> bool {
+    relation_kind(name).is_some() || matches!(name, "sgArcLenDist" | "sgBsOrdHDim" | "sgBsOrdVDim")
+}
+
+/// The relation class that the relation-class token of each display or
+/// driving scalar of a feature in `features` names (§2), by scalar id. The
+/// lane's own class tokens of those relation slots and of the parameter
+/// slots of its display and driving scalars, ascending, map onto the lane's
+/// declarations of the classes that take those slots, in stream order, with
+/// each token first used after its declaration and given a class of its own
+/// slot. A token to which every such mapping gives one declaration names
+/// that declaration's class. A compound-file lane does not state which
+/// tokens are its own (open item EV-05), so its tokens name none.
+pub(super) fn token_relation_classes<'l>(
+    lane: &'l FeatureInputLane,
+    features: &HashSet<&str>,
+) -> HashMap<&'l str, &'l FeatureInputClass> {
+    let payload = lane.native_payload.as_slice();
+    if compound_opening(payload) {
+        return HashMap::new();
+    }
+    let held = resolved_count(payload);
+    let name_offsets = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name.offset))
+        .collect::<HashMap<_, _>>();
+    let parameter_declarations = lane
+        .classes
+        .iter()
+        .filter(|class| ArchiveParameterClass::from_class_name(&class.name).is_some())
+        .filter_map(|class| {
+            let length = u64::try_from(class.name.len()).ok()?;
+            Some((
+                class
+                    .offset
+                    .checked_add(DECLARATION_PREFIX)?
+                    .checked_add(length)?,
+                class.offset,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let tokens = lane
+        .scalars
+        .iter()
+        .filter(|scalar| {
+            matches!(
+                scalar.role,
+                FeatureInputScalarRole::Driving | FeatureInputScalarRole::Display
+            ) && scalar
+                .feature_ref
+                .as_deref()
+                .is_some_and(|feature| features.contains(feature))
+        })
+        .filter_map(|scalar| {
+            let name = *name_offsets.get(scalar.name.as_str())?;
+            let token = relation_token(payload, &parameter_declarations, name)?;
+            held.is_none_or(|count| u32::from(token) >= count)
+                .then_some((scalar.id.as_str(), name, token))
+        })
+        .collect::<Vec<_>>();
+    let mut first_use = BTreeMap::<u16, (u64, ClassSlot)>::new();
+    for &(_, name, token) in &tokens {
+        first_use
+            .entry(token)
+            .and_modify(|(first, _)| *first = (*first).min(name))
+            .or_insert((name, ClassSlot::Relation));
+    }
+    let ends = lane
+        .classes
+        .iter()
+        .filter_map(|class| Some((declaration_end(class)?, class.name.as_str())))
+        .collect::<HashMap<_, _>>();
+    let mut parameter_use = BTreeMap::<u16, u64>::new();
+    let mut framed = BTreeSet::new();
+    for scalar in &lane.scalars {
+        let Some(&name) = name_offsets.get(scalar.name.as_str()) else {
+            continue;
+        };
+        let Some(Slot::Token(token)) = slot(payload, &ends, name) else {
+            continue;
+        };
+        if held.is_some_and(|count| u32::from(token) < count) {
+            continue;
+        }
+        parameter_use
+            .entry(token)
+            .and_modify(|first| *first = (*first).min(name))
+            .or_insert(name);
+        if matches!(
+            scalar.role,
+            FeatureInputScalarRole::Driving | FeatureInputScalarRole::Display
+        ) {
+            framed.insert(token);
+        }
+    }
+    for (token, name) in parameter_use {
+        if !framed.contains(&token) {
+            continue;
+        }
+        if first_use
+            .insert(token, (name, ClassSlot::Parameter))
+            .is_some()
+        {
+            return HashMap::new();
+        }
+    }
+    let mut declared = lane
+        .classes
+        .iter()
+        .filter_map(|class| {
+            if takes_relation_slot(&class.name) {
+                Some((class, ClassSlot::Relation))
+            } else {
+                ArchiveParameterClass::from_class_name(&class.name)
+                    .map(|_| (class, ClassSlot::Parameter))
+            }
+        })
+        .collect::<Vec<_>>();
+    declared.sort_by_key(|(class, _)| class.offset);
+    let redeclared = declared.iter().enumerate().any(|(index, (class, _))| {
+        declared[..index]
+            .iter()
+            .any(|(earlier, _)| earlier.name == class.name)
+    });
+    if redeclared {
+        return HashMap::new();
+    }
+    let ordered = first_use
+        .into_iter()
+        .map(|(token, (first, slot))| (token, first, slot))
+        .collect::<Vec<_>>();
+    let slots = declared
+        .iter()
+        .map(|&(class, slot)| (class.offset, slot))
+        .collect::<Vec<_>>();
+    let named = ordered
+        .iter()
+        .zip(only_assignments(&ordered, &slots))
+        .filter_map(|(&(token, _, slot), declaration)| {
+            (slot == ClassSlot::Relation).then_some((token, declared[declaration?].0))
+        })
+        .collect::<HashMap<_, _>>();
+    tokens
+        .into_iter()
+        .filter_map(|(scalar, _, token)| Some((scalar, *named.get(&token)?)))
+        .collect()
+}
+
+/// The relation-class token of the relation object before the name record
+/// at `name` (§2): at prefix +0, followed by the zero u32, where the
+/// parameter class at prefix +6 is a token or a declaration that ends at the
+/// name record. `parameter_declarations` holds the offset of each
+/// parameter-class declaration by its end.
+fn relation_token(
+    payload: &[u8],
+    parameter_declarations: &HashMap<u64, u64>,
+    name: u64,
+) -> Option<u16> {
+    let parameter = match parameter_declarations.get(&name) {
+        Some(&declaration) => declaration,
+        None => {
+            name.checked_sub(u64::try_from(prefix::LEN - prefix::PARAMETER_CLASS_TOKEN).ok()?)?
+        }
+    };
+    let start = usize::try_from(parameter)
+        .ok()?
+        .checked_sub(prefix::PARAMETER_CLASS_TOKEN)?;
+    let token = View::u16_le_at(payload, start.checked_add(prefix::RELATION_CLASS_TOKEN)?)?;
+    let zero = View::u32_le_at(payload, start.checked_add(prefix::ZERO)?)?;
+    (is_class_token(token) && zero == 0).then_some(token & 0x7fff)
+}
+
+/// The slot of a sketch dimension's relation object that a class takes (§2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClassSlot {
+    Relation,
+    Parameter,
+}
+
+/// The offset at which the class declaration `class` ends.
+pub(super) fn declaration_end(class: &FeatureInputClass) -> Option<u64> {
+    class
+        .offset
+        .checked_add(DECLARATION_PREFIX)?
+        .checked_add(u64::try_from(class.name.len()).ok()?)
+}
+
+/// For each of `tokens`, `(index, first use, slot)` ascending by index, the
+/// one declaration of `declarations`, `(offset, slot)` in stream order, that
+/// every order-preserving assignment gives it, where each token is assigned
+/// a declaration of its slot before its first use; `None` where the
+/// assignments differ or none exists.
+fn only_assignments(
+    tokens: &[(u16, u64, ClassSlot)],
+    declarations: &[(u64, ClassSlot)],
+) -> Vec<Option<usize>> {
+    let fits = |first_use: u64, slot: ClassSlot| {
+        declarations
+            .iter()
+            .map(move |&(offset, taken)| taken == slot && offset < first_use)
+    };
+    // `forward[t][d]`: the tokens up to `t` have an assignment that gives
+    // `t` the declaration `d`; `backward[t][d]`: the tokens from `t` on.
+    let mut forward = Vec::<Vec<bool>>::new();
+    for &(_, first_use, slot) in tokens {
+        let previous = forward.last();
+        let mut earlier = previous.is_none();
+        let row = fits(first_use, slot)
+            .zip(
+                previous
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .chain(iter::repeat(false)),
+            )
+            .map(|(fit, reached)| {
+                let here = earlier && fit;
+                earlier |= reached;
+                here
+            })
+            .collect();
+        forward.push(row);
+    }
+    let mut backward = Vec::<Vec<bool>>::new();
+    for &(_, first_use, slot) in tokens.iter().rev() {
+        let next = backward.last();
+        let mut later = next.is_none();
+        let mut row = fits(first_use, slot)
+            .rev()
+            .zip(
+                next.into_iter()
+                    .flat_map(|row| row.iter().rev())
+                    .copied()
+                    .chain(iter::repeat(false)),
+            )
+            .map(|(fit, reached)| {
+                let here = later && fit;
+                later |= reached;
+                here
+            })
+            .collect::<Vec<_>>();
+        row.reverse();
+        backward.push(row);
+    }
+    backward.reverse();
+    forward
+        .iter()
+        .zip(&backward)
+        .map(|(forward, backward)| {
+            let mut both = forward
+                .iter()
+                .zip(backward)
+                .enumerate()
+                .filter(|&(_, (&forward, &backward))| forward && backward)
+                .map(|(declaration, _)| declaration);
+            match (both.next(), both.next()) {
+                (Some(declaration), None) => Some(declaration),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 /// The parameter-class slot before the name record at `name`: a declaration
