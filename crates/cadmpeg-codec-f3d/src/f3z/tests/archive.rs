@@ -97,16 +97,12 @@ fn f3z_archive_merges_identity_occurrences() {
         decoded.ir().geometry.points.len(),
         component_alone.ir().geometry.points.len()
     );
-    let prefix = format!("f3d:role-{XREF_ROLE}/reference-0/occurrence-0@");
+    let prefix = "f3d:comp.f3d@";
     let body = &decoded.ir().geometry.bodies[0];
-    assert!(
-        body.id.as_str().starts_with(&prefix),
-        "{}",
-        body.id.as_str()
-    );
+    assert!(body.id.as_str().starts_with(prefix), "{}", body.id.as_str());
     for shell_owner in &decoded.ir().geometry.shells {
         assert!(
-            shell_owner.id.as_str().starts_with(&prefix),
+            shell_owner.id.as_str().starts_with(prefix),
             "occurrence graph must stay internally consistent: {}",
             shell_owner.id.as_str()
         );
@@ -128,7 +124,7 @@ fn f3z_archive_merges_identity_occurrences() {
         .annotations
         .provenance
         .keys()
-        .all(|id| id.starts_with(&prefix)));
+        .all(|id| id.starts_with(prefix)));
     // A merged F3Z has no retained image of itself, so there is nothing to
     // preserve, and `f3d:f3z-multi-document` is not a row the generator can
     // synthesize. `Inherit` writes the catalog default and says so.
@@ -233,12 +229,11 @@ fn duplicate_role_references_keep_archive_occurrences_disjoint() {
     assert_eq!(decoded.ir().geometry.bodies.len(), 2);
     let first = decoded.ir().geometry.bodies[0].id.as_str();
     let second = decoded.ir().geometry.bodies[1].id.as_str();
-    assert!(first.contains(&format!("role-{XREF_ROLE}/reference-0/occurrence-0@")));
-    assert!(second.contains(&format!("role-{XREF_ROLE}/reference-1/occurrence-0@")));
+    assert!(first.starts_with("f3d:first.f3d@"), "{first}");
+    assert!(second.starts_with("f3d:second.f3d@"), "{second}");
     assert_ne!(first, second);
-    for (ordinal, expected) in [(0, first), (1, second)] {
-        let source_image =
-            format!("f3d:role-{XREF_ROLE}/reference-{ordinal}/occurrence-0@file:source-image#0");
+    for (key, expected) in [("first.f3d", first), ("second.f3d", second)] {
+        let source_image = format!("f3d:{key}@file:source-image#0");
         assert_eq!(
             decoded
                 .source_fidelity()
@@ -327,12 +322,12 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     )
     .unwrap();
 
-    let prefix = format!("f3d:role-{XREF_ROLE}/reference-0/occurrence-0@");
+    let prefix = "f3d:comp.f3d@";
     let merged_unknowns = decoded.ir().native_unknowns("f3d").unwrap();
     assert_eq!(merged_unknowns.len(), component_unknowns.len());
     assert!(merged_unknowns
         .iter()
-        .all(|record| record.id.as_str().starts_with(&prefix)));
+        .all(|record| record.id.as_str().starts_with(prefix)));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(
@@ -451,9 +446,7 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         .iter()
         .any(|note| note.contains("merged 2 external occurrence")));
     let body_id = &decoded.ir().geometry.bodies[0].id.as_str();
-    assert!(body_id.contains(&format!(
-        "role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0@"
-    )));
+    assert!(body_id.starts_with("f3d:component.f3d@"), "{body_id}");
 }
 
 #[test]

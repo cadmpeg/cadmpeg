@@ -2,7 +2,10 @@
 //! Analytic face supports restated as exact rational B-spline surfaces, which
 //! a trimmed surface (Type 144 over Type 128) can bound.
 
+use super::exact::nurbs_form;
+use super::{edge_span, flatten_curve, solved_curve, TopologyIndex};
 use crate::entities::curve_conversion::{elliptical_arc_nurbs, ANGULAR_TOLERANCE};
+use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
@@ -13,24 +16,39 @@ use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+use cadmpeg_ir::topology::{Face, LoopBoundary, LoopRing, PcurveUse, Sense};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::f64::consts::TAU;
+use std::f64::consts::{FRAC_PI_2, PI, TAU};
+
+/// The largest degree `|p| + |q|` of the exact image of a parameter line of
+/// slope `p / q` on a sphere or torus that the writer states.
+const RATIONAL_SLOPE_DEGREE: i32 = 6;
+
+/// The number of times the writer halves a piece of a rational image whose
+/// Bernstein weights are not all positive.
+const RATIONAL_PIECE_SPLITS: u32 = 8;
 
 /// The document with each cylinder, cone, sphere or torus face support
-/// restated as the rational B-spline surface that equals it over the domain
-/// its faces' parameter curves bound, and those curves restated on it. A
-/// support whose parameter curves are not all isoparametric stays analytic.
+/// restated as the rational B-spline surface that equals it over a domain
+/// that holds its faces, and the parameter curves of those faces restated
+/// on it. A face whose parameter curves are not all exact on the restated
+/// support keeps its model-space boundary: its parameter curves are removed
+/// and each is charged `writer.pcurve-omitted`. Only the supports that
+/// `admit` names are restated.
 pub(super) fn rational_analytic_supports<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir CadIr,
-) -> Result<Cow<'ir, CadIr>, CodecError> {
+    admit: impl Fn(&str) -> bool,
+) -> Result<(Cow<'ir, CadIr>, Vec<LossNote>), CodecError> {
     let forms = ir
         .geometry
         .surfaces
         .iter()
+        .filter(|surface| admit(surface.id.as_str()))
         .filter_map(|surface| match &surface.geometry {
             SurfaceGeometry::Solved(geometry) => {
                 Some((surface.id.as_str(), Revolved::of(geometry)?))
@@ -39,13 +57,15 @@ pub(super) fn rational_analytic_supports<'ir>(
         })
         .collect::<Vec<_>>();
     if forms.is_empty() {
-        return Ok(Cow::Borrowed(ir));
+        return Ok((Cow::Borrowed(ir), Vec::new()));
     }
     let ends = pcurve_ends(ctx, ir)?;
+    let index = TopologyIndex::new(ir);
     let mut surfaces = Vec::new();
     let mut pcurves = BTreeMap::new();
+    let mut model_space = Vec::new();
     for (surface, form) in forms {
-        let Some(restated) = restated_support(&ends, ir, surface, &form) else {
+        let Some(restated) = restated_support(ctx, &ends, &index, surface, &form) else {
             continue;
         };
         if restated
@@ -57,9 +77,10 @@ pub(super) fn rational_analytic_supports<'ir>(
         }
         surfaces.push((surface, restated.surface));
         pcurves.extend(restated.pcurves);
+        model_space.extend(restated.model_space);
     }
     if surfaces.is_empty() {
-        return Ok(Cow::Borrowed(ir));
+        return Ok((Cow::Borrowed(ir), Vec::new()));
     }
     let mut restated = ir.clone();
     for (id, nurbs) in surfaces {
@@ -77,7 +98,80 @@ pub(super) fn rational_analytic_supports<'ir>(
             pcurve.geometry = PcurveGeometry::Nurbs { nurbs };
         }
     }
-    Ok(Cow::Owned(restated))
+    let losses = model_space_boundaries(&mut restated, &model_space);
+    Ok((Cow::Owned(restated), losses))
+}
+
+/// Removes the parameter curve uses of each face in `faces`, and each
+/// parameter curve record that no use then references, with one
+/// `writer.pcurve-omitted` note per removed record.
+fn model_space_boundaries(ir: &mut CadIr, faces: &[ModelSpaceFace]) -> Vec<LossNote> {
+    let owners = faces
+        .iter()
+        .flat_map(|face| face.loops.iter().map(move |loop_| (loop_.as_str(), face)))
+        .collect::<BTreeMap<_, _>>();
+    let mut removed = BTreeMap::<String, &ModelSpaceFace>::new();
+    let mut remove = |uses: &mut Vec<PcurveUse>, face| {
+        for pcurve_use in uses.drain(..) {
+            removed
+                .entry(pcurve_use.pcurve.as_str().to_owned())
+                .or_insert(face);
+        }
+    };
+    for coedge in &mut ir.geometry.coedges {
+        if let Some(&face) = owners.get(coedge.owner_loop.as_str()) {
+            remove(&mut coedge.pcurves, face);
+        }
+    }
+    for loop_ in &mut ir.geometry.loops {
+        let Some(&face) = owners.get(loop_.id.as_str()) else {
+            continue;
+        };
+        match &mut loop_.boundary {
+            LoopBoundary::Vertex { pcurves, .. } => remove(pcurves, face),
+            LoopBoundary::Ring(ring) => {
+                let mut vertex_uses = ring.vertex_uses().to_vec();
+                for vertex_use in &mut vertex_uses {
+                    remove(&mut vertex_use.pcurves, face);
+                }
+                if let Ok(replaced) = LoopRing::new(ring.coedges().to_vec(), vertex_uses) {
+                    *ring = replaced;
+                }
+            }
+        }
+    }
+    let geometry = &ir.geometry;
+    let referenced = geometry
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .chain(geometry.loops.iter().flat_map(|loop_| {
+            match &loop_.boundary {
+                LoopBoundary::Vertex { pcurves, .. } => pcurves.iter().collect::<Vec<_>>(),
+                LoopBoundary::Ring(ring) => ring
+                    .vertex_uses()
+                    .iter()
+                    .flat_map(|vertex_use| vertex_use.pcurves.iter())
+                    .collect(),
+            }
+        }))
+        .map(|pcurve_use| pcurve_use.pcurve.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    let notes = removed
+        .iter()
+        .filter(|(pcurve, _)| !referenced.contains(pcurve.as_str()))
+        .map(|(pcurve, face)| {
+            IgesLossCode::WriterPcurveOmitted.note(format!(
+                "parameter curve {pcurve} of face {} was not written: the face is written on \
+                 the rational Type 128 of support {} with its model-space boundary, because {}",
+                face.face, face.surface, face.reason
+            ))
+        })
+        .collect();
+    ir.geometry.pcurves.retain(|pcurve| {
+        referenced.contains(pcurve.id.as_str()) || !removed.contains_key(pcurve.id.as_str())
+    });
+    notes
 }
 
 /// The finite start and end points of each bounded parameter curve.
@@ -106,11 +200,11 @@ fn pcurve_ends<'ir>(
 }
 
 /// An analytic surface as `O + ρ(v)(cos u X + k sin u Y) + h(v) Z`.
-struct Revolved {
+pub(super) struct Revolved {
     origin: Point3,
     x_axis: Vector3,
     y_axis: Vector3,
-    z_axis: Vector3,
+    pub(super) z_axis: Vector3,
     profile: Profile,
 }
 
@@ -122,7 +216,7 @@ enum Profile {
 }
 
 impl Revolved {
-    fn of(geometry: &SolvedSurfaceGeometry) -> Option<Self> {
+    pub(super) fn of(geometry: &SolvedSurfaceGeometry) -> Option<Self> {
         let (origin, frame, profile) = match geometry {
             SolvedSurfaceGeometry::Cylinder(cylinder) => (
                 cylinder.origin(),
@@ -170,28 +264,381 @@ impl Revolved {
             profile,
         })
     }
+
+    /// The parameters of `point` on the surface, with the azimuth in
+    /// `(-π, π]`. Absent on the axis.
+    pub(super) fn parameters(&self, point: Point3) -> Option<Point2> {
+        let offset = Vector3::new(
+            point.x - self.origin.x,
+            point.y - self.origin.y,
+            point.z - self.origin.z,
+        );
+        let (x, y, h) = (
+            offset.dot(self.x_axis),
+            offset.dot(self.y_axis),
+            offset.dot(self.z_axis),
+        );
+        match self.profile {
+            Profile::Ruled {
+                radius,
+                slope,
+                ratio,
+            } => {
+                let rho = slope.mul_add(h, radius);
+                (rho != 0.0).then(|| Point2::new((y / (ratio * rho)).atan2(x / rho), h))
+            }
+            Profile::Circular { offset, radius } => {
+                let rho = x.hypot(y);
+                (rho != 0.0)
+                    .then(|| Point2::new(y.atan2(x), (h / radius).atan2((rho - offset) / radius)))
+            }
+        }
+    }
+
+    /// Whether the second parameter is an angle, which a torus states.
+    pub(super) fn v_periodic(&self) -> bool {
+        matches!(self.profile, Profile::Circular { offset, .. } if offset != 0.0)
+    }
+
+    /// The sign of `S_u × S_v` along the outward normal where `ρ > 0`.
+    pub(super) fn orientation(&self) -> f64 {
+        match self.profile {
+            Profile::Ruled { ratio, .. } => ratio.signum(),
+            Profile::Circular { .. } => 1.0,
+        }
+    }
+
+    /// The face side of each loop in `loops` that winds once around the
+    /// support, as the whole periods each loop moves by so that the upper
+    /// loop on a periodic parameter lies above the lower one, and the
+    /// parameter values the domain must reach past the loops: a pole or apex
+    /// that bounds the face, or one period past a lone loop on a periodic
+    /// parameter. None where the loops do not bound one face on the support.
+    pub(super) fn face_sides(
+        &self,
+        sense: Sense,
+        loops: &[LoopSpan],
+    ) -> Option<(Vec<Point2>, [Vec<f64>; 2])> {
+        let orientation = self.orientation() * if sense == Sense::Reversed { -1.0 } else { 1.0 };
+        let mut sides: [(Vec<usize>, Vec<usize>); 2] = Default::default();
+        for (position, span) in loops.iter().enumerate() {
+            let (axis, side) = match span.winding {
+                [0, 0] => continue,
+                [turn, 0] => (1, f64::from(turn) * orientation),
+                [0, turn] => (0, -f64::from(turn) * orientation),
+                _ => return None,
+            };
+            let (lowers, uppers) = &mut sides[axis];
+            if side > 0.0 {
+                lowers.push(position);
+            } else {
+                uppers.push(position);
+            }
+        }
+        let mut shifts = vec![Point2::new(0.0, 0.0); loops.len()];
+        let mut reach: [Vec<f64>; 2] = Default::default();
+        for (axis, (lowers, uppers)) in sides.into_iter().enumerate() {
+            let periodic = axis == 0 || self.v_periodic();
+            let poles = if periodic { Vec::new() } else { self.poles() };
+            match (lowers.as_slice(), uppers.as_slice()) {
+                ([], []) => {}
+                ([lower], [upper]) => {
+                    let [_, low] = loops[*lower].extent[axis];
+                    let [high, _] = loops[*upper].extent[axis];
+                    if periodic {
+                        let gap = high - low;
+                        let moved = gap - TAU * ((gap / TAU).ceil() - 1.0);
+                        let shift = moved - gap;
+                        let shifted = &mut shifts[*upper];
+                        if axis == 0 {
+                            shifted.u += shift;
+                        } else {
+                            shifted.v += shift;
+                        }
+                    } else if high <= low {
+                        return None;
+                    }
+                }
+                ([lower], []) => {
+                    let [_, low] = loops[*lower].extent[axis];
+                    reach[axis].push(if periodic {
+                        low + TAU
+                    } else {
+                        poles
+                            .into_iter()
+                            .filter(|pole| *pole > low)
+                            .min_by(f64::total_cmp)?
+                    });
+                }
+                ([], [upper]) => {
+                    let [high, _] = loops[*upper].extent[axis];
+                    reach[axis].push(if periodic {
+                        high - TAU
+                    } else {
+                        poles
+                            .into_iter()
+                            .filter(|pole| *pole < high)
+                            .max_by(f64::total_cmp)?
+                    });
+                }
+                _ => return None,
+            }
+        }
+        Some((shifts, reach))
+    }
+
+    /// The second parameters of the poles of a sphere and the apex of a cone.
+    pub(super) fn poles(&self) -> Vec<f64> {
+        match self.profile {
+            Profile::Ruled { radius, slope, .. } if slope != 0.0 => vec![-radius / slope],
+            Profile::Circular { offset: 0.0, .. } => vec![-FRAC_PI_2, FRAC_PI_2],
+            Profile::Ruled { .. } | Profile::Circular { .. } => Vec::new(),
+        }
+    }
+}
+
+/// One closed loop of a face in the parameter plane of a revolved support:
+/// its winding about each parameter in whole turns, and its least and
+/// greatest value of each parameter.
+pub(super) struct LoopSpan {
+    pub(super) winding: [i32; 2],
+    pub(super) extent: [[f64; 2]; 2],
 }
 
 struct Restated {
     surface: NurbsSurface,
     pcurves: BTreeMap<String, PcurveNurbs>,
+    model_space: Vec<ModelSpaceFace>,
 }
 
-/// One isoparametric parameter curve: its parameter range and its end points.
-struct Isoparametric {
+/// A face written with its model-space boundary only.
+struct ModelSpaceFace {
+    face: String,
+    surface: String,
+    loops: Vec<String>,
+    reason: String,
+}
+
+/// One exact parameter curve: its parameter range, its end points and, for a
+/// line that is not isoparametric, its slope `p / q` in whole numbers.
+struct Exact {
     id: String,
     range: [f64; 2],
     start: Point2,
     end: Point2,
+    slope: Option<Slope>,
 }
 
-fn restated_support(
+/// The slope `p / q` of a parameter line in lowest whole numbers, `q > 0`.
+#[derive(Clone, Copy)]
+struct Slope {
+    p: i32,
+    q: i32,
+}
+
+impl Slope {
+    /// The degree `|p| + q` of the exact image of the line.
+    fn degree(self) -> Option<usize> {
+        usize::try_from(self.p.unsigned_abs() + self.q.unsigned_abs()).ok()
+    }
+}
+
+/// The exact parameter curves of one loop, and the loop's winding about
+/// each parameter in whole turns.
+struct LoopImages {
+    images: Vec<Exact>,
+    winding: [i32; 2],
+}
+
+impl LoopImages {
+    fn span(&self) -> LoopSpan {
+        let extent = |coordinate: fn(&Point2) -> f64| {
+            self.images
+                .iter()
+                .flat_map(|image| [&image.start, &image.end])
+                .map(coordinate)
+                .fold([f64::INFINITY, f64::NEG_INFINITY], |[low, high], value| {
+                    [low.min(value), high.max(value)]
+                })
+        };
+        LoopSpan {
+            winding: self.winding,
+            extent: [extent(|point| point.u), extent(|point| point.v)],
+        }
+    }
+}
+
+/// The parameter curves of each loop of one face on a revolved support, or
+/// the reason the face keeps its model-space boundary.
+fn face_images(
     ends: &BTreeMap<&str, [Point2; 2]>,
-    ir: &CadIr,
+    index: &TopologyIndex<'_>,
+    face: &Face,
+    circular: bool,
+) -> Option<Result<Vec<LoopImages>, String>> {
+    let mut loops = Vec::new();
+    for loop_id in face.loops.stated() {
+        let loop_ = index.loops.get(loop_id.as_str()).copied()?;
+        let mut uses = Vec::<&PcurveUse>::new();
+        match &loop_.boundary {
+            LoopBoundary::Vertex { pcurves, .. } => uses.extend(pcurves),
+            LoopBoundary::Ring(ring) => {
+                for coedge_id in ring.coedges() {
+                    let coedge = index.coedges.get(coedge_id.as_str()).copied()?;
+                    if coedge.pcurves.is_empty() {
+                        return Some(Err(format!("coedge {coedge_id} has no parameter curve")));
+                    }
+                    uses.extend(&coedge.pcurves);
+                }
+                for vertex_use in ring.vertex_uses() {
+                    uses.extend(&vertex_use.pcurves);
+                }
+            }
+        }
+        let mut images = Vec::new();
+        let mut travel = [0.0; 2];
+        for pcurve_use in uses {
+            let image = match exact_image(ends, index, pcurve_use, circular)? {
+                Ok(image) => image,
+                Err(reason) => return Some(Err(reason)),
+            };
+            let backward = pcurve_use.parameter_range.is_some_and(|range| {
+                let [start, end] = range.endpoints();
+                end < start
+            });
+            let sign = if backward { -1.0 } else { 1.0 };
+            travel[0] += sign * (image.end.u - image.start.u);
+            travel[1] += sign * (image.end.v - image.start.v);
+            images.push(image);
+        }
+        let winding = travel.map(|travel| {
+            let turns = (travel / TAU).round();
+            if turns >= 1.0 {
+                1
+            } else if turns <= -1.0 {
+                -1
+            } else {
+                0
+            }
+        });
+        loops.push(LoopImages { images, winding });
+    }
+    Some(Ok(loops))
+}
+
+/// The exact image of one parameter curve use on the restated support, or
+/// the reason it has none.
+fn exact_image(
+    ends: &BTreeMap<&str, [Point2; 2]>,
+    index: &TopologyIndex<'_>,
+    pcurve_use: &PcurveUse,
+    circular: bool,
+) -> Option<Result<Exact, String>> {
+    let pcurve = index.pcurves.get(pcurve_use.pcurve.as_str()).copied()?;
+    let id = pcurve.id.as_str();
+    let Some(range) = pcurve
+        .parameter_range()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+    else {
+        return Some(Err(format!("parameter curve {id} states no range")));
+    };
+    if let Some(used) = pcurve_use.parameter_range {
+        let used = used.endpoints();
+        if used != range && used != [range[1], range[0]] {
+            return Some(Err(format!(
+                "a use of parameter curve {id} restricts its range"
+            )));
+        }
+    }
+    let Some(&[start, end]) = ends.get(id) else {
+        return Some(Err(format!(
+            "parameter curve {id} has no finite end points"
+        )));
+    };
+    let points = match &pcurve.geometry {
+        PcurveGeometry::Line(_) => vec![start, end],
+        PcurveGeometry::Nurbs { nurbs } => nurbs
+            .control_points()
+            .into_iter()
+            .map(cadmpeg_ir::units::FinitePoint2::get)
+            .collect(),
+        _ => {
+            return Some(Err(format!(
+                "parameter curve {id} is not a line or a B-spline"
+            )))
+        }
+    };
+    let exact = |slope| {
+        Some(Ok(Exact {
+            id: id.to_owned(),
+            range,
+            start,
+            end,
+            slope,
+        }))
+    };
+    let along = |coordinate: fn(&Point2) -> f64| {
+        let first = coordinate(&points[0]);
+        let constant = points
+            .iter()
+            .all(|point| (coordinate(point) - first).abs() <= ANGULAR_TOLERANCE);
+        let steps = points
+            .windows(2)
+            .map(|pair| coordinate(&pair[1]) - coordinate(&pair[0]))
+            .collect::<Vec<_>>();
+        let monotone =
+            steps.iter().all(|step| *step >= 0.0) || steps.iter().all(|step| *step <= 0.0);
+        (constant, monotone)
+    };
+    let (constant_u, monotone_u) = along(|point| point.u);
+    let (constant_v, monotone_v) = along(|point| point.v);
+    if constant_u != constant_v && ((constant_u && monotone_v) || (constant_v && monotone_u)) {
+        return exact(None);
+    }
+    let delta = Point2::new(end.u - start.u, end.v - start.v);
+    let length = delta.u.hypot(delta.v);
+    let straight = length > 0.0
+        && points.iter().all(|point| {
+            let offset = Point2::new(point.u - start.u, point.v - start.v);
+            (offset.u * delta.v - offset.v * delta.u).abs() <= ANGULAR_TOLERANCE * length
+        })
+        && monotone_u
+        && monotone_v;
+    if circular && straight {
+        if let Some(slope) = whole_slope(delta) {
+            return exact(Some(slope));
+        }
+    }
+    Some(Err(format!(
+        "parameter curve {id} has no exact image on the rational parameters of its support"
+    )))
+}
+
+/// The slope `p / q` with `|p| + q` at most [`RATIONAL_SLOPE_DEGREE`] of a
+/// parameter line of extent `delta`.
+fn whole_slope(delta: Point2) -> Option<Slope> {
+    if delta.u == 0.0 || delta.v == 0.0 {
+        return None;
+    }
+    (1..RATIONAL_SLOPE_DEGREE).find_map(|q| {
+        (-RATIONAL_SLOPE_DEGREE..=RATIONAL_SLOPE_DEGREE)
+            .filter(|p| *p != 0 && p.abs() + q <= RATIONAL_SLOPE_DEGREE)
+            .find(|p| (delta.u - f64::from(*p) / f64::from(q) * delta.v).abs() <= ANGULAR_TOLERANCE)
+            .map(|p| Slope { p, q })
+    })
+}
+
+/// The rational form of the revolved support `surface` over a domain that
+/// holds its faces, with the exact image of each parameter curve on it. A
+/// face that states no loop on a sphere or torus covers the whole support.
+fn restated_support(
+    ctx: &DecodeContext<'_>,
+    ends: &BTreeMap<&str, [Point2; 2]>,
+    index: &TopologyIndex<'_>,
     surface: &str,
     form: &Revolved,
 ) -> Option<Restated> {
-    let geometry = &ir.geometry;
+    let geometry = &index.ir.geometry;
     let faces = geometry
         .faces
         .iter()
@@ -200,104 +647,131 @@ fn restated_support(
     if faces.is_empty() {
         return None;
     }
+    let circular = matches!(form.profile, Profile::Circular { .. });
     let mut curves = Vec::new();
     let mut u_extent = Extent::default();
     let mut v_extent = Extent::default();
+    let mut model_space = Vec::new();
+    let mut heights = Extent::default();
     let mut seen = BTreeSet::new();
+    let mut whole = false;
     for face in faces {
-        let mut loops = face.loops.stated().peekable();
-        loops.peek()?;
-        for loop_id in loops {
-            let loop_ = geometry.loops.iter().find(|loop_| loop_.id == *loop_id)?;
-            for coedge_id in loop_.coedges() {
-                let coedge = geometry
-                    .coedges
-                    .iter()
-                    .find(|coedge| coedge.id == *coedge_id)?;
-                if coedge.pcurves.is_empty() {
-                    return None;
-                }
-                for pcurve_use in &coedge.pcurves {
-                    if !seen.insert(pcurve_use.pcurve.as_str()) {
-                        continue;
-                    }
-                    let pcurve = geometry
-                        .pcurves
-                        .iter()
-                        .find(|pcurve| pcurve.id == pcurve_use.pcurve)?;
-                    let range = pcurve.parameter_range()?.get();
-                    if let Some(used) = pcurve_use.parameter_range {
-                        let used = used.endpoints();
-                        if used != range && used != [range[1], range[0]] {
-                            return None;
+        if face.loops.stated().next().is_none() {
+            if !circular {
+                return None;
+            }
+            whole = true;
+            continue;
+        }
+        match face_images(ends, index, face, circular)? {
+            Ok(loops) => {
+                let spans = loops.iter().map(LoopImages::span).collect::<Vec<_>>();
+                let (shifts, reach) = form.face_sides(face.sense, &spans).unwrap_or_else(|| {
+                    (vec![Point2::new(0.0, 0.0); loops.len()], Default::default())
+                });
+                for (loop_images, shift) in loops.into_iter().zip(shifts) {
+                    for mut image in loop_images.images {
+                        if !seen.insert(image.id.clone()) {
+                            continue;
                         }
+                        for point in [&mut image.start, &mut image.end] {
+                            *point = Point2::new(point.u + shift.u, point.v + shift.v);
+                            u_extent.include(point.u);
+                            v_extent.include(point.v);
+                        }
+                        curves.push(image);
                     }
-                    let [start, end] = *ends.get(pcurve.id.as_str())?;
-                    let points = match &pcurve.geometry {
-                        PcurveGeometry::Line(_) => vec![start, end],
-                        PcurveGeometry::Nurbs { nurbs } => nurbs
-                            .control_points()
-                            .into_iter()
-                            .map(cadmpeg_ir::units::FinitePoint2::get)
-                            .collect(),
-                        _ => return None,
-                    };
-                    let isoparametric = |coordinate: fn(&Point2) -> f64| {
-                        let first = coordinate(&points[0]);
-                        points
-                            .iter()
-                            .all(|point| (coordinate(point) - first).abs() <= ANGULAR_TOLERANCE)
-                    };
-                    let monotone = |coordinate: fn(&Point2) -> f64| {
-                        let steps = points
-                            .windows(2)
-                            .map(|pair| coordinate(&pair[1]) - coordinate(&pair[0]))
-                            .collect::<Vec<_>>();
-                        steps.iter().all(|step| *step >= 0.0)
-                            || steps.iter().all(|step| *step <= 0.0)
-                    };
-                    let constant_u = isoparametric(|point| point.u);
-                    let constant_v = isoparametric(|point| point.v);
-                    if constant_u == constant_v
-                        || (constant_u && !monotone(|point| point.v))
-                        || (constant_v && !monotone(|point| point.u))
-                    {
-                        return None;
-                    }
-                    for point in points.iter().chain([&start, &end]) {
-                        u_extent.include(point.u);
-                        v_extent.include(point.v);
-                    }
-                    curves.push(Isoparametric {
-                        id: pcurve.id.as_str().to_owned(),
-                        range,
-                        start,
-                        end,
-                    });
                 }
+                let [u_reach, v_reach] = reach;
+                for u in u_reach {
+                    u_extent.include(u);
+                }
+                for v in v_reach {
+                    v_extent.include(v);
+                }
+            }
+            Err(reason) => {
+                if !circular {
+                    for height in edge_heights(ctx, index, face, form)? {
+                        heights.include(height);
+                    }
+                }
+                model_space.push(ModelSpaceFace {
+                    face: face.id.as_str().to_owned(),
+                    surface: surface.to_owned(),
+                    loops: face
+                        .loops
+                        .stated()
+                        .map(|loop_| loop_.as_str().to_owned())
+                        .collect(),
+                    reason,
+                });
             }
         }
     }
-    let [u_start, u_end] = u_extent.bounds()?;
-    let [v_start, v_end] = v_extent.bounds()?;
-    if u_end - u_start > TAU + ANGULAR_TOLERANCE {
+    let full = |extent: &Extent| {
+        let low = extent.0.map_or(-PI, |[low, _]| low);
+        if extent
+            .0
+            .is_some_and(|[_, high]| high > low + TAU + ANGULAR_TOLERANCE)
+        {
+            return None;
+        }
+        Some([low, low + TAU])
+    };
+    let whole = whole || !model_space.is_empty();
+    let [u_start, u_end] = if whole {
+        full(&u_extent)?
+    } else {
+        u_extent.bounds()?
+    };
+    let [v_start, v_end] = match form.profile {
+        Profile::Circular { offset, .. } if whole => {
+            if offset == 0.0 {
+                [-FRAC_PI_2, FRAC_PI_2]
+            } else {
+                full(&v_extent)?
+            }
+        }
+        Profile::Circular { .. } => v_extent.bounds()?,
+        Profile::Ruled { .. } => {
+            if let Some([low, high]) = heights.0 {
+                v_extent.include(low);
+                v_extent.include(high);
+                // The face reaches the apex where its edges lie on one side.
+                for apex in form.poles() {
+                    if low >= apex || high <= apex {
+                        v_extent.include(apex);
+                    }
+                }
+            }
+            v_extent.bounds()?
+        }
+    };
+    if u_end - u_start > TAU + ANGULAR_TOLERANCE
+        || (form.v_periodic() && v_end - v_start > TAU + ANGULAR_TOLERANCE)
+    {
         return None;
     }
     let u_arc = UnitArc::new([u_start, u_end])?;
-    let (v_profile, v_map) = match form.profile {
+    let (v_profile, v_arc) = match form.profile {
         Profile::Ruled {
             radius,
             slope,
             ratio,
         } => {
+            let tolerance = ANGULAR_TOLERANCE * radius.max(1.0);
             let at = |v: f64| slope.mul_add(v, radius);
-            if at(v_start) <= 0.0 || at(v_end) <= 0.0 {
+            if at(v_start) < -tolerance
+                || at(v_end) < -tolerance
+                || (at(v_start) <= 0.0 && at(v_end) <= 0.0)
+            {
                 return None;
             }
             (
                 VProfile {
                     knots: vec![v_start, v_start, v_end, v_end],
-                    points: vec![(at(v_start), v_start), (at(v_end), v_end)],
+                    points: vec![(at(v_start).max(0.0), v_start), (at(v_end).max(0.0), v_end)],
                     weights: vec![1.0, 1.0],
                     degree: 1,
                     ratio,
@@ -355,7 +829,7 @@ fn restated_support(
     let map = |point: Point2| {
         Some(Point2::new(
             u_arc.parameter(point.u)?,
-            v_map
+            v_arc
                 .as_ref()
                 .map_or(Some(point.v), |arc| arc.parameter(point.v))?,
         ))
@@ -363,17 +837,306 @@ fn restated_support(
     let mut pcurves = BTreeMap::new();
     for curve in curves {
         let [start, end] = curve.range;
-        let nurbs = PcurveNurbs::from_lanes(
-            1,
-            vec![start, start, end, end],
-            vec![map(curve.start)?, map(curve.end)?],
-            None,
-            false,
-        )
-        .ok()?;
+        let nurbs = match (curve.slope, &v_arc) {
+            (Some(slope), Some(v_arc)) => {
+                rational_line(&u_arc, v_arc, curve.start, curve.end, slope, curve.range)?
+            }
+            _ => PcurveNurbs::from_lanes(
+                1,
+                vec![start, start, end, end],
+                vec![map(curve.start)?, map(curve.end)?],
+                None,
+                false,
+            )
+            .ok()?,
+        };
         pcurves.insert(curve.id, nurbs);
     }
-    Some(Restated { surface, pcurves })
+    Some(Restated {
+        surface,
+        pcurves,
+        model_space,
+    })
+}
+
+/// The heights along the axis of the control points of the exact rational
+/// forms of the edge curves of `face`, which bound the heights of the face.
+fn edge_heights(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
+    face: &Face,
+    form: &Revolved,
+) -> Option<Vec<f64>> {
+    let mut heights = Vec::new();
+    for loop_id in face.loops.stated() {
+        let loop_ = index.loops.get(loop_id.as_str()).copied()?;
+        for coedge_id in loop_.coedges() {
+            let coedge = index.coedges.get(coedge_id.as_str()).copied()?;
+            let edge = index.edges.get(coedge.edge.as_str()).copied()?;
+            let curve = index.curves.get(edge.curve()?.as_str()).copied()?;
+            let geometry = flatten_curve(solved_curve(curve).ok()?).ok()?;
+            let span = edge_span(ctx, index, edge, &geometry).ok()?;
+            let nurbs = nurbs_form(&geometry, span.range)?;
+            heights.extend(nurbs.control_points().into_iter().map(|point| {
+                let point = point.get();
+                Vector3::new(
+                    point.x - form.origin.x,
+                    point.y - form.origin.y,
+                    point.z - form.origin.z,
+                )
+                .dot(form.z_axis)
+            }));
+        }
+    }
+    Some(heights)
+}
+
+/// The exact image on the parameters of the restated sphere or torus of the
+/// parameter line from `start` to `end` of slope `p / q`, over `range`.
+///
+/// On a span of each arc the restated parameter is an affine function of
+/// `tan((θ - c) / 2)` for the span centre `c`. Along the line, `θ_u / 2 =
+/// α_u + p x` and `θ_v / 2 = α_v + q x`, and `tan(α + n x)` is a rational
+/// function of `w = tan x` of degree `|n|`: with `(1 + i w)^n = D + i N`, it is
+/// `(N cos α + D sin α) / (D cos α - N sin α)`. Each piece between span
+/// boundaries is therefore a rational Bézier curve of degree `|p| + q`. Its
+/// knots are the parameters of the line at the piece ends, and its middle is
+/// at the line parameter of the piece middle.
+fn rational_line(
+    u_arc: &UnitArc,
+    v_arc: &UnitArc,
+    start: Point2,
+    end: Point2,
+    slope: Slope,
+    range: [f64; 2],
+) -> Option<PcurveNurbs> {
+    let delta = Point2::new(end.u - start.u, end.v - start.v);
+    let mut breaks = vec![0.0, 1.0];
+    for (boundaries, origin, extent) in [
+        (&u_arc.boundaries, start.u, delta.u),
+        (&v_arc.boundaries, start.v, delta.v),
+    ] {
+        breaks.extend(
+            boundaries
+                .iter()
+                .map(|boundary| (boundary - origin) / extent)
+                .filter(|s| *s > 0.0 && *s < 1.0),
+        );
+    }
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|later, earlier| *later - *earlier <= ANGULAR_TOLERANCE);
+    let line = Line {
+        start,
+        delta,
+        k: delta.v / f64::from(slope.q),
+        slope,
+    };
+    let mut pieces = Vec::new();
+    for pair in breaks.windows(2) {
+        line.pieces(
+            u_arc,
+            v_arc,
+            [pair[0], pair[1]],
+            RATIONAL_PIECE_SPLITS,
+            &mut pieces,
+        )?;
+    }
+    let degree = slope.degree()?;
+    let last = pieces.len().checked_sub(1)?;
+    let knot = |s: f64| (range[1] - range[0]).mul_add(s, range[0]);
+    let mut knots = std::iter::repeat_n(range[0], degree + 1).collect::<Vec<_>>();
+    let mut points = Vec::new();
+    let mut weights = Vec::new();
+    for (position, ([_, s1], piece_points, piece_weights)) in pieces.into_iter().enumerate() {
+        let scale = weights
+            .last()
+            .map_or(1.0, |previous: &f64| previous / piece_weights[0]);
+        let skip = usize::from(position > 0);
+        points.extend(piece_points.into_iter().skip(skip));
+        weights.extend(
+            piece_weights
+                .into_iter()
+                .skip(skip)
+                .map(|weight| weight * scale),
+        );
+        if position == last {
+            knots.extend(std::iter::repeat_n(range[1], degree + 1));
+        } else {
+            knots.extend(std::iter::repeat_n(knot(s1), degree));
+        }
+    }
+    PcurveNurbs::from_lanes(
+        u32::try_from(degree).ok()?,
+        knots,
+        points,
+        Some(weights),
+        false,
+    )
+    .ok()
+}
+
+/// One rational Bézier piece of the image of a line: its interval of the
+/// line parameter, its poles and its weights.
+type Piece = ([f64; 2], Vec<Point2>, Vec<f64>);
+
+/// A parameter line `start + s delta` with `delta = k (p, q)`.
+struct Line {
+    start: Point2,
+    delta: Point2,
+    k: f64,
+    slope: Slope,
+}
+
+impl Line {
+    /// Appends the rational Bézier pieces of the image over `[s0, s1]`,
+    /// halving a piece whose weights are not all positive at most `splits`
+    /// times.
+    fn pieces(
+        &self,
+        u_arc: &UnitArc,
+        v_arc: &UnitArc,
+        [s0, s1]: [f64; 2],
+        splits: u32,
+        pieces: &mut Vec<Piece>,
+    ) -> Option<()> {
+        let middle = 0.5 * (s0 + s1);
+        if let Some((points, weights)) = self.piece(u_arc, v_arc, [s0, s1]) {
+            pieces.push(([s0, s1], points, weights));
+            return Some(());
+        }
+        let splits = splits.checked_sub(1)?;
+        self.pieces(u_arc, v_arc, [s0, middle], splits, pieces)?;
+        self.pieces(u_arc, v_arc, [middle, s1], splits, pieces)
+    }
+
+    /// The rational Bézier form of the image over `[s0, s1]`, absent when a
+    /// weight is not positive.
+    fn piece(
+        &self,
+        u_arc: &UnitArc,
+        v_arc: &UnitArc,
+        [s0, s1]: [f64; 2],
+    ) -> Option<(Vec<Point2>, Vec<f64>)> {
+        let middle = 0.5 * (s0 + s1);
+        // `x = k (s - middle) / 2`, and `w = tan x` runs over `[-t, t]`.
+        let half = (0.25 * self.k * (s1 - s0)).portable_tan();
+        let tangent = [-half, 2.0 * half];
+        let axis = |arc: &UnitArc, origin: f64, extent: f64, power: i32| {
+            let angle = extent.mul_add(middle, origin);
+            let span = arc.span(angle)?;
+            let sweep = span[1] - span[0];
+            let alpha = 0.5 * (angle - 0.5 * (span[0] + span[1]));
+            let (sin, cos) = alpha.sin_cos();
+            let (real, imaginary) = Polynomial::tangent_multiple(tangent, power);
+            let numerator = real.scaled(sin).plus(&imaginary.scaled(cos));
+            let denominator = real.scaled(cos).plus(&imaginary.scaled(-sin));
+            Some((
+                span[0] + 0.5 * sweep,
+                sweep / (2.0 * (0.25 * sweep).portable_tan()),
+                numerator,
+                denominator,
+            ))
+        };
+        let (u_base, u_gain, u_x, u_y) = axis(u_arc, self.start.u, self.delta.u, self.slope.p)?;
+        let (v_base, v_gain, v_x, v_y) = axis(v_arc, self.start.v, self.delta.v, self.slope.q)?;
+        let weight = u_y.times(&v_y);
+        let u = weight.scaled(u_base).plus(&u_x.times(&v_y).scaled(u_gain));
+        let v = weight.scaled(v_base).plus(&v_x.times(&u_y).scaled(v_gain));
+        let degree = self.slope.degree()?;
+        let [weight, u, v] = [weight, u, v].map(|polynomial| polynomial.bernstein(degree));
+        let weight = weight?;
+        if weight.iter().any(|weight| *weight <= 0.0) {
+            return None;
+        }
+        let points = u?
+            .into_iter()
+            .zip(v?)
+            .zip(&weight)
+            .map(|((u, v), weight)| Point2::new(u / weight, v / weight))
+            .collect();
+        Some((points, weight))
+    }
+}
+
+/// A real polynomial in `t` by its coefficients in increasing degree.
+#[derive(Clone)]
+struct Polynomial(Vec<f64>);
+
+impl Polynomial {
+    /// The real and imaginary parts `D`, `N` of `(1 + i w)^n` for `n ≥ 0`, or
+    /// of `(1 - i w)^|n|` for `n < 0`, for the linear `w = w[0] + w[1] t`.
+    fn tangent_multiple(w: [f64; 2], n: i32) -> (Self, Self) {
+        let sign = if n < 0 { -1.0 } else { 1.0 };
+        let step = Self(vec![sign * w[0], sign * w[1]]);
+        let (mut real, mut imaginary) = (Self(vec![1.0]), Self(vec![0.0]));
+        for _ in 0..n.unsigned_abs() {
+            // (a + i b)(1 + i c) = (a - b c) + i (b + a c)
+            let next_real = real.plus(&imaginary.times(&step).scaled(-1.0));
+            imaginary = imaginary.plus(&real.times(&step));
+            real = next_real;
+        }
+        (real, imaginary)
+    }
+
+    fn scaled(&self, factor: f64) -> Self {
+        Self(self.0.iter().map(|value| value * factor).collect())
+    }
+
+    fn plus(&self, other: &Self) -> Self {
+        let length = self.0.len().max(other.0.len());
+        Self(
+            (0..length)
+                .map(|index| {
+                    self.0.get(index).copied().unwrap_or(0.0)
+                        + other.0.get(index).copied().unwrap_or(0.0)
+                })
+                .collect(),
+        )
+    }
+
+    fn times(&self, other: &Self) -> Self {
+        Self(
+            (1..self.0.len() + other.0.len())
+                .map(|terms| {
+                    let power = terms - 1;
+                    self.0
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, left)| Some(left * other.0.get(power.checked_sub(i)?)?))
+                        .sum::<f64>()
+                })
+                .collect(),
+        )
+    }
+
+    /// The Bernstein coefficients on `[0, 1]` of degree `degree`, absent when
+    /// the polynomial has a higher degree.
+    fn bernstein(&self, degree: usize) -> Option<Vec<f64>> {
+        if self.0.len() > degree + 1 {
+            return None;
+        }
+        let binomial = |n: usize, k: usize| {
+            (0..k).fold(1.0, |value, index| {
+                let numerator =
+                    cadmpeg_core::convert::f64_from_index(n - index).unwrap_or(f64::NAN);
+                let denominator =
+                    cadmpeg_core::convert::f64_from_index(index + 1).unwrap_or(f64::NAN);
+                value * numerator / denominator
+            })
+        };
+        Some(
+            (0..=degree)
+                .map(|i| {
+                    (0..=i)
+                        .map(|j| {
+                            self.0.get(j).copied().unwrap_or(0.0) * binomial(i, j)
+                                / binomial(degree, j)
+                        })
+                        .sum::<f64>()
+                })
+                .collect(),
+        )
+    }
 }
 
 struct VProfile {
@@ -447,8 +1210,8 @@ impl UnitArc {
         })
     }
 
-    /// The arc parameter at the point of angle `angle`.
-    fn parameter(&self, angle: f64) -> Option<f64> {
+    /// The span boundaries around angle `angle`.
+    fn span(&self, angle: f64) -> Option<[f64; 2]> {
         let first = *self.boundaries.first()?;
         let last = *self.boundaries.last()?;
         if angle < first - ANGULAR_TOLERANCE || angle > last + ANGULAR_TOLERANCE {
@@ -456,10 +1219,19 @@ impl UnitArc {
         }
         let angle = angle.clamp(first, last);
         let segment = self.boundaries.windows(2).find(|pair| angle <= pair[1])?;
-        let [start, end] = [segment[0], segment[1]];
+        Some([segment[0], segment[1]])
+    }
+
+    /// The arc parameter at the point of angle `angle`.
+    fn parameter(&self, angle: f64) -> Option<f64> {
+        let [start, end] = self.span(angle)?;
+        let angle = angle.clamp(start, end);
         let sweep = end - start;
         let offset = angle - start - sweep * 0.5;
         let fraction = (1.0 + (offset * 0.5).portable_tan() / (sweep * 0.25).portable_tan()) * 0.5;
         Some(fraction.mul_add(sweep, start))
     }
 }
+
+#[cfg(test)]
+mod tests;

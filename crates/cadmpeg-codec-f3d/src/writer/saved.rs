@@ -14,19 +14,25 @@ use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::report::loss::LossNote;
 
+use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
 /// `input`'s document with the arenas the CADIR wire omits restored from
 /// its retained archive, where it was read from CADIR JSON and `target` does
-/// not replay it unedited. A restore that the design edits refuse leaves the
-/// document as read, which the generator writes from its `design` records,
-/// and adds the refusal to `notes`.
+/// not replay it unedited. A restore that the design edits refuse, or that
+/// fails for a reason other than a limit, leaves the document as read, which
+/// the generator writes from its `design` records, and adds the reason to
+/// `notes`. Where `target` does not replay the archive, the restore also
+/// charges the reason as `f3d:writer.history-unrestored` to `losses`; where it
+/// does, the patch of the same archive charges it.
 pub(crate) fn restore(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
     let replays = target.entry().is_none() || target.preserves_source();
     let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
@@ -50,19 +56,32 @@ pub(crate) fn restore(
     match restored {
         Ok(restored) if restored.unwritten.is_empty() => Ok(Some(restored.ir)),
         Ok(restored) => {
-            notes.push(format!(
+            let reason = format!(
                 "the document was read from CADIR, and its history arenas cannot state these \
                  design edits: {}",
                 restored.unwritten.join("; ")
-            ));
+            );
+            unrestored(reason, replays, notes, losses);
             Ok(None)
         }
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
         Err(error) => {
-            notes.push(error.to_string());
+            unrestored(error.to_string(), replays, notes, losses);
             Ok(None)
         }
     }
+}
+
+/// Records why the history arenas were not restored, and charges it where
+/// the target does not replay the retained archive.
+fn unrestored(reason: String, replays: bool, notes: &mut Vec<String>, losses: &mut Vec<LossNote>) {
+    if !replays {
+        losses.push(F3dLossCode::WriterHistoryUnrestored.note(format!(
+            "the history arenas were not restored from the retained F3D archive ({reason}); \
+             the file is written from the design records"
+        )));
+    }
+    notes.push(reason);
 }
 
 /// The text of a Fusion parameter expression.

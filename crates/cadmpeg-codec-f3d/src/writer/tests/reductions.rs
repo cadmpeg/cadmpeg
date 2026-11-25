@@ -742,3 +742,4 @@ fn a_carrier_whose_encoding_fails_still_drops_its_body() {
 }
 
 mod edge_ranges;
+mod per_record;

@@ -243,7 +243,23 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         &rooted,
         None,
         "export/native.records-omitted",
-        "does not write the Design configuration root record",
+        "writes no DesignConfigurationRoot record",
+    );
+    let mut rooted_bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&rooted, None))
+        .and_then(|plan| plan.write_to(&mut rooted_bytes))
+        .expect("an active row is written without its root record");
+    let rooted_round_trip = F3dCodec
+        .decode(&mut Cursor::new(rooted_bytes), &DecodeOptions::default())
+        .expect("the design without its root record decodes");
+    assert_eq!(
+        f3d_native(rooted_round_trip.ir()).design_configurations,
+        native.design_configurations
+    );
+    assert_eq!(
+        rooted_round_trip.ir().model.configurations,
+        expected_projected
     );
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())

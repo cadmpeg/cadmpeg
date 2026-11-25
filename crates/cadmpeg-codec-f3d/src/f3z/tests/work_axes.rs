@@ -171,7 +171,7 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
         .unwrap();
     let local_feature = source.id.as_str();
     let local_native = source.native_ref.as_deref().unwrap();
-    let prefix = |ordinal| format!("f3d:role-{XREF_ROLE}/reference-{ordinal}/occurrence-0@");
+    let prefix = |ordinal: usize| format!("f3d:{}@", ["first.f3d", "second.f3d"][ordinal]);
     let destination = format!(
         "{}{}",
         prefix(0),
