@@ -21,6 +21,7 @@ pub(super) struct Index<'a> {
     pub native_features: BTreeMap<(String, String), &'a Value>,
     external: BTreeMap<StudioKey, Option<&'a str>>,
     pinned: String,
+    document: String,
 }
 
 impl<'a> Index<'a> {
@@ -41,11 +42,19 @@ impl<'a> Index<'a> {
             native_features: BTreeMap::new(),
             external: BTreeMap::new(),
             pinned: pinned.into(),
+            document: manifest
+                .pointer("/document/id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .into(),
         };
         for row in source_rows(manifest, "external", report) {
             ctx.charge_entities(1, "Onshape external reference index")?;
-            let studio = studio_key(row);
-            let microversion = row.get("microversionId").and_then(Value::as_str);
+            let studio = index.studio_key(row);
+            let microversion = row
+                .get("microversionId")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty());
             index
                 .external
                 .entry(studio)
@@ -80,7 +89,7 @@ impl<'a> Index<'a> {
                     Entry::Occupied(entry) => {
                         report.push_coded(
                             &key(entry.key()),
-                            OnshapeLossCode::AssemblyRecordUnsupported,
+                            OnshapeLossCode::AssemblyRecordRepeated,
                             "occurrence path repeats; retained the first placement",
                         );
                     }
@@ -112,20 +121,24 @@ impl<'a> Index<'a> {
             if sub.get("instances").is_none() {
                 report.push_coded(
                     "subassembly",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    OnshapeLossCode::AssemblyInstancesMissing,
                     "subassembly record has no instances field; it decodes as an empty subassembly",
                 );
             }
             let definition_key = index.definition_key(sub);
             match index.subassemblies.entry(definition_key) {
-                Entry::Occupied(entry) => report.push_coded(
-                    "subassembly",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
-                    format!(
-                        "subassembly definition repeats; retained the first record: {:?}",
-                        entry.key()
-                    ),
-                ),
+                Entry::Occupied(entry) => {
+                    if !same_content(entry.get(), sub) {
+                        report.push_coded(
+                            "subassembly",
+                            OnshapeLossCode::AssemblyRecordRepeated,
+                            format!(
+                                "subassembly definition repeats with different content; retained the first record: {:?}",
+                                entry.key()
+                            ),
+                        );
+                    }
+                }
                 Entry::Vacant(entry) => {
                     entry.insert(sub);
                 }
@@ -134,22 +147,28 @@ impl<'a> Index<'a> {
         for part in source_rows(definition, "parts", report) {
             ctx.charge_entities(1, "Onshape part identity index")?;
             let reference = index.reference(part);
+            let studio = index.studio_key(part);
             match index.parts.entry(reference) {
-                Entry::Occupied(entry) => report.push_coded(
-                    "part",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
-                    format!(
-                        "part identity repeats; retained the first record: {:?}",
-                        entry.key()
-                    ),
-                ),
+                Entry::Occupied(entry) => {
+                    if !same_content(entry.get(), part) {
+                        report.push_coded(
+                            "part",
+                            OnshapeLossCode::AssemblyRecordRepeated,
+                            format!(
+                                "part identity repeats with different content; retained the first record: {:?}",
+                                entry.key()
+                            ),
+                        );
+                    }
+                    continue;
+                }
                 Entry::Vacant(entry) => {
                     entry.insert(part);
                 }
             }
-            *index.studios.entry(studio_key(part)).or_default() += 1;
+            *index.studios.entry(studio.clone()).or_default() += 1;
             if let Some(name) = part.get("name").and_then(Value::as_str) {
-                let (document, element) = studio_key(part);
+                let (document, element) = studio;
                 *index
                     .names
                     .entry((document, element, name.into()))
@@ -185,17 +204,33 @@ impl<'a> Index<'a> {
         Ok(index)
     }
 
+    /// The stated document microversion. An empty value is an omitted one;
+    /// an omitted value is the external reference entry's.
     pub(super) fn microversion<'b>(&'b self, row: &'b Value) -> Option<&'b str> {
-        row.get("documentMicroversion")
-            .or_else(|| row.get("microversionId"))
-            .and_then(Value::as_str)
-            .or_else(|| self.external.get(&studio_key(row)).copied().flatten())
+        nonempty(row, "documentMicroversion")
+            .or_else(|| nonempty(row, "microversionId"))
+            .or_else(|| self.external.get(&self.studio_key(row)).copied().flatten())
     }
-    /// The identity key of a source row. The pinned document microversion and
-    /// an omitted microversion share one key component, as do an omitted,
-    /// empty and `default` configuration.
+    /// The Part Studio of a source row. An omitted or empty `documentId`
+    /// names the bundle's own document.
+    pub(super) fn studio_key(&self, row: &Value) -> StudioKey {
+        (
+            nonempty(row, "documentId")
+                .unwrap_or(&self.document)
+                .to_owned(),
+            string(row, "elementId"),
+        )
+    }
+    /// Whether a source row names the bundle's own document.
+    pub(super) fn local_document(&self, row: &Value) -> bool {
+        nonempty(row, "documentId").is_none_or(|document| document == self.document)
+    }
+    /// The identity key of a source row. The pinned document microversion,
+    /// an omitted and an empty one share one key component, as do an
+    /// omitted, empty and `default` configuration and an omitted and the
+    /// bundle's own `documentId`.
     pub(super) fn reference(&self, row: &Value) -> ReferenceKey {
-        let (document, element) = studio_key(row);
+        let (document, element) = self.studio_key(row);
         let configuration = string(row, "configuration");
         [
             document,
@@ -216,15 +251,56 @@ impl<'a> Index<'a> {
         let [document, element, _, microversion, configuration] = self.reference(row);
         [document, element, microversion, configuration]
     }
+    /// The identity fields as the row states them.
     pub(super) fn description(&self, row: &Value) -> String {
-        let [document, element, part, microversion, configuration] = self.reference(row);
-        format!("documentId={document:?}, elementId={element:?}, partId={part:?}, documentMicroversion={microversion:?}, configuration={configuration:?}")
+        let stated = |field: &str| {
+            row.get(field).map_or_else(
+                || "omitted".to_owned(),
+                |value| {
+                    value
+                        .as_str()
+                        .map_or_else(|| value.to_string(), |text| format!("{text:?}"))
+                },
+            )
+        };
+        format!(
+            "documentId={}, elementId={}, partId={}, documentMicroversion={}, configuration={}",
+            stated("documentId"),
+            stated("elementId"),
+            stated("partId"),
+            stated("documentMicroversion"),
+            stated("configuration"),
+        )
     }
 }
 
-pub(super) fn studio_key(row: &Value) -> StudioKey {
-    (string(row, "documentId"), string(row, "elementId"))
+/// Whether two records with one identity key state the same content: every
+/// field but the identity fields, whose spellings the key folds.
+fn same_content(first: &Value, second: &Value) -> bool {
+    const IDENTITY: [&str; 6] = [
+        "documentId",
+        "elementId",
+        "partId",
+        "documentMicroversion",
+        "microversionId",
+        "configuration",
+    ];
+    fn rest(row: &Value) -> Option<BTreeMap<&String, &Value>> {
+        row.as_object().map(|fields| {
+            fields
+                .iter()
+                .filter(|(name, _)| !IDENTITY.contains(&name.as_str()))
+                .collect()
+        })
+    }
+    rest(first) == rest(second)
 }
+fn nonempty<'a>(row: &'a Value, field: &str) -> Option<&'a str> {
+    row.get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+}
+
 fn string(row: &Value, field: &str) -> String {
     row.get(field).and_then(Value::as_str).unwrap_or("").into()
 }

@@ -102,7 +102,7 @@ fn repeated_and_conflicting_element_ids_decode_once_with_a_loss() {
         assert_eq!(
             count(
                 &report,
-                "onshape/assembly.record-unsupported",
+                "onshape/assembly.record-repeated",
                 "element id repeats"
             ),
             1,
@@ -111,26 +111,155 @@ fn repeated_and_conflicting_element_ids_decode_once_with_a_loss() {
     }
 }
 #[test]
-fn repeated_definition_keys_and_missing_instances_charge_losses() {
+fn a_repeated_record_charges_only_when_its_content_differs() {
+    let code = "onshape/assembly.record-repeated";
     let mut definition = nested();
-    let sub = definition["subAssemblies"][0].clone();
+    let mut sub = definition["subAssemblies"][0].clone();
+    let mut row = definition["parts"][0].clone();
+    // The same content spelled with folded identity fields drops nothing.
+    sub["documentMicroversion"] = json!("microversion");
+    sub["configuration"] = json!("");
+    row["documentMicroversion"] = json!("microversion");
+    row["configuration"] = json!("");
+    for record in [sub.clone(), definition["subAssemblies"][0].clone()] {
+        definition["subAssemblies"]
+            .as_array_mut()
+            .unwrap()
+            .push(record);
+    }
+    for record in [row.clone(), definition["parts"][0].clone()] {
+        definition["parts"].as_array_mut().unwrap().push(record);
+    }
+    let (_, report) = read(definition);
+    assert_eq!(count(&report, code, ""), 0);
+    assert_eq!(
+        count(&report, "onshape/assembly.reference-unresolved", ""),
+        0
+    );
+    // A different name or different instances is a real conflict.
+    let mut definition = nested();
+    sub["instances"] = json!([part("first")]);
+    row["name"] = json!("other name");
     definition["subAssemblies"]
         .as_array_mut()
         .unwrap()
         .push(sub);
-    let part = definition["parts"][0].clone();
-    definition["parts"].as_array_mut().unwrap().push(part);
+    definition["parts"].as_array_mut().unwrap().push(row);
     let (_, report) = read(definition);
-    let code = "onshape/assembly.record-unsupported";
     assert_eq!(count(&report, code, "subassembly definition repeats"), 1);
     assert_eq!(count(&report, code, "part identity repeats"), 1);
+}
+#[test]
+fn a_subassembly_without_instances_charges_its_own_code() {
     let mut definition = nested();
     definition["subAssemblies"][0]
         .as_object_mut()
         .unwrap()
         .remove("instances");
     let (_, report) = read(definition);
-    assert_eq!(count(&report, code, "no instances field"), 1);
+    assert_eq!(
+        count(
+            &report,
+            "onshape/assembly.instances-missing",
+            "no instances field"
+        ),
+        1
+    );
+    assert_eq!(
+        count(
+            &report,
+            "onshape/assembly.record-unsupported",
+            "no instances field"
+        ),
+        0
+    );
+}
+#[test]
+fn an_omitted_or_empty_document_and_microversion_bind_like_the_pinned_ones() {
+    for (field, value) in [
+        ("documentId", None),
+        ("documentId", Some("")),
+        ("documentMicroversion", Some("")),
+    ] {
+        let mut definition = definition();
+        let instance = definition["rootAssembly"]["instances"][1]
+            .as_object_mut()
+            .unwrap();
+        match value {
+            Some(value) => instance.insert(field.into(), json!(value)),
+            None => instance.remove(field),
+        };
+        let (model, report) = read(definition);
+        assert_eq!(parts(&model), 1, "{field} {value:?}");
+        assert_eq!(
+            count(&report, "onshape/assembly.reference-unresolved", ""),
+            0,
+            "{field} {value:?}"
+        );
+        let bound = model
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|product| product.id.as_str().contains("part:") && !product.bodies.is_empty())
+            .count();
+        assert_eq!(bound, 1, "{field} {value:?}");
+    }
+}
+#[test]
+fn a_loss_detail_prints_the_stated_reference_fields() {
+    let mut definition = nested();
+    definition["rootAssembly"]["instances"][0]["documentMicroversion"] = json!("microversion");
+    definition["rootAssembly"]["instances"][0]["configuration"] = json!("default");
+    definition["rootAssembly"]["instances"][0]["elementId"] = json!("missing");
+    let (_, report) = read(definition);
+    assert_eq!(
+        count(
+            &report,
+            "onshape/assembly.reference-unresolved",
+            "documentMicroversion=\"microversion\", configuration=\"default\""
+        ),
+        1
+    );
+    let mut definition = nested();
+    definition["rootAssembly"]["instances"][0]["elementId"] = json!("missing");
+    definition["rootAssembly"]["instances"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("configuration");
+    let (_, report) = read(definition);
+    assert_eq!(
+        count(
+            &report,
+            "onshape/assembly.reference-unresolved",
+            "documentMicroversion=omitted, configuration=omitted"
+        ),
+        1
+    );
+}
+#[test]
+fn several_part_studios_keep_each_source_on_its_definition() {
+    let (model, _) = decode(&bundle_with_studios(definition(), true));
+    let sources = model
+        .ir
+        .model
+        .product_definitions
+        .iter()
+        .filter_map(|product| match &product.storage {
+            cadmpeg_ir::products::Storage::File {
+                document,
+                source: Some(_),
+            } => document.path.as_ref().map(|path| path.as_str().to_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(sources.len(), 2, "{sources:?}");
+    assert!(sources
+        .iter()
+        .any(|path| path == "partstudios/studio/export.step"));
+    assert!(sources
+        .iter()
+        .any(|path| path == "partstudios/other/export.step"));
 }
 #[test]
 fn an_off_switch_governs_only_the_limit_it_names() {

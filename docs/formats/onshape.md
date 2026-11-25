@@ -298,14 +298,28 @@ gives aligned or opposed sense. A zero dot product leaves the sense unstated.
 
 A part binds to final Part Studio geometry when its document is local, its
 microversion matches the pinned document microversion or is omitted, and its
-configuration is omitted, empty, or `default`. Part and body names establish
+configuration is omitted, empty, or `default`. A `documentId` that is omitted
+or empty names the bundle's own document, and is local. An empty
+`documentMicroversion` is an omitted one. Part and body names establish
 a binding when the name is unique in both the Part Studio's part list and
 its final bodies. A Part Studio with one part and one final body establishes
 a binding independently of the name. A microversion equal to the pinned
-document microversion names the same reference as an omitted microversion,
-and a `default` configuration names the same reference as an omitted or empty
-configuration. Two instances of the same part place the same product
-definition. An `Assembly` instance resolves against the `subAssemblies`
+document microversion names the same reference as an omitted or empty
+microversion, a `default` configuration names the same reference as an omitted
+or empty configuration, and an omitted `documentId` names the same reference
+as the bundle's own `documentId`. Two instances of the same part place the same
+product definition. An `Assembly` instance resolves against the `subAssemblies`
 record with the same reference. External reference entries supply an omitted
 `documentMicroversion` through their `microversionId` when the document and
 element identify one microversion.
+
+A part definition lists the final bodies its instances bind. The definition of
+the Part Studio lists the bodies that no part instance binds. A body belongs to
+one definition.
+
+A `subAssemblies` or `parts` record whose reference equals an earlier record's
+defines nothing new. The later record is the same definition when its fields
+outside the reference fields equal the earlier record's; otherwise the later
+record is ignored and the earlier record defines the reference. A repeated
+record does not change the count of parts in a Part Studio or the count of
+parts with one name.

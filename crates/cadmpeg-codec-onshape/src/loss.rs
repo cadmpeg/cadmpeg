@@ -25,6 +25,8 @@ pub(super) enum OnshapeLossCode {
     RollbackUnread,
     AssemblyReferenceUnresolved,
     AssemblyRecordUnsupported,
+    AssemblyRecordRepeated,
+    AssemblyInstancesMissing,
     MateUnsupported,
     MateLimitsUnresolved,
     AssemblyFeatureUnsupported,
@@ -57,6 +59,8 @@ impl OnshapeLossCode {
             Self::RollbackUnread => "history.rollback-unread",
             Self::AssemblyReferenceUnresolved => "assembly.reference-unresolved",
             Self::AssemblyRecordUnsupported => "assembly.record-unsupported",
+            Self::AssemblyRecordRepeated => "assembly.record-repeated",
+            Self::AssemblyInstancesMissing => "assembly.instances-missing",
             Self::MateUnsupported => "assembly.mate-unsupported",
             Self::MateLimitsUnresolved => "assembly.mate-limits-unresolved",
             Self::AssemblyFeatureUnsupported => "assembly.feature-unsupported",
@@ -76,7 +80,10 @@ impl OnshapeLossCode {
                 self.code(),
                 match self {
                     Self::StepUnreadable => LossTaxonomy::GeometryNotTransferred,
-                    Self::AssemblyReferenceUnresolved => LossTaxonomy::AssemblyComponentsExternal,
+                    Self::AssemblyReferenceUnresolved | Self::AssemblyInstancesMissing => {
+                        LossTaxonomy::AssemblyComponentsExternal
+                    }
+                    Self::AssemblyRecordRepeated => LossTaxonomy::ObjectRecordsUntransferred,
                     Self::AssemblyRecordUnsupported => {
                         LossTaxonomy::AssemblyPlacementsNotTransferred
                     }

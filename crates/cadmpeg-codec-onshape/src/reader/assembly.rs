@@ -46,7 +46,7 @@ pub(super) fn read(
             if declared.get(eid) != Some(&position) {
                 report.push_coded(
                     eid,
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    OnshapeLossCode::AssemblyRecordRepeated,
                     "element id repeats; retained the first declaration",
                 );
                 continue;
@@ -217,6 +217,7 @@ pub(super) fn read(
             return Ok(model);
         }
     };
+    let studio_definitions = model.ir.model.product_definitions.len();
     let index = index::Index::build(ctx, definition, manifest, bundle, mid, report)?;
     let mut products = BTreeMap::new();
     for (position, product) in model.ir.model.product_definitions.iter().enumerate() {
@@ -233,12 +234,9 @@ pub(super) fn read(
         report,
         model: &mut model,
         index,
+        claimed: BTreeMap::new(),
         bodies: &bodies,
         single_bodies: &single_bodies,
-        document: manifest
-            .pointer("/document/id")
-            .and_then(Value::as_str)
-            .unwrap_or(""),
         microversion: mid,
         root_element: root_id,
         placements: BTreeMap::new(),
@@ -287,7 +285,22 @@ pub(super) fn read(
         );
     }
 
+    release_bound_bodies(&mut model.ir.model.product_definitions, studio_definitions);
     Ok(model)
+}
+
+/// One definition owns each body. A part definition lists the bodies its
+/// instances bind, so the Part Studio definitions in front of `studios` list
+/// only the bodies no part binds.
+fn release_bound_bodies(definitions: &mut [ProductDefinition], studios: usize) {
+    let (studio, structure) = definitions.split_at_mut(studios.min(definitions.len()));
+    let bound: BTreeSet<&BodyId> = structure
+        .iter()
+        .flat_map(|definition| &definition.bodies)
+        .collect();
+    for definition in studio {
+        definition.bodies.retain(|body| !bound.contains(body));
+    }
 }
 
 fn rescope_home<T: serde::Serialize + serde::de::DeserializeOwned>(
@@ -374,9 +387,10 @@ struct Structure<'a, 'ctx> {
     report: &'a mut Report,
     model: &'a mut Model,
     index: index::Index<'a>,
+    /// The part definition that lists each bound body.
+    claimed: BTreeMap<BodyId, ProductDefinitionId>,
     bodies: &'a BTreeMap<(String, String), Option<BodyId>>,
     single_bodies: &'a BTreeMap<String, Option<BodyId>>,
-    document: &'a str,
     microversion: &'a str,
     root_element: &'a str,
     placements: BTreeMap<Vec<String>, Placement>,
@@ -681,7 +695,7 @@ impl Structure<'_, '_> {
         let name = part
             .and_then(|part| part.get("name"))
             .and_then(Value::as_str);
-        let (document, element) = index::studio_key(instance);
+        let (document, element) = self.index.studio_key(instance);
         let unique_name = name.is_some_and(|name| {
             self.index
                 .names
@@ -690,10 +704,7 @@ impl Structure<'_, '_> {
         });
         product.label = name.filter(|s| !s.trim().is_empty()).map(str::to_owned);
         let eid = text(instance, "elementId").map_err(Error::Decode)?;
-        let local_document = instance
-            .get("documentId")
-            .and_then(Value::as_str)
-            .is_none_or(|d| d == self.document);
+        let local_document = self.index.local_document(instance);
         let pinned = self
             .index
             .microversion(instance)
@@ -717,6 +728,12 @@ impl Structure<'_, '_> {
             None
         };
         if let Some(body) = matched {
+            // Spellings of one part reference that bind the same final body
+            // place the definition that lists it first.
+            if let Some(owner) = self.claimed.get(body) {
+                return Ok(owner.clone());
+            }
+            self.claimed.insert(body.clone(), pid.clone());
             product.bodies.push(body.clone());
         } else {
             self.report.push_coded(
