@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    assert_rejected, inspect_view, kernel_loss, kernel_loss_note, nx_13006, registry_rows,
-    report_view, sldprt_13006, source_view, validate, Admission,
+    assert_rejected, inspect_view, kernel_loss, nx_13006, registry_rows, report_view, sldprt_13006,
+    source_view, validate, Admission,
 };
-use cadmpeg_ir::report::loss::LossKind;
-use cadmpeg_ir::report::Severity;
 use serde_json::json;
 use std::path::Path;
 
@@ -38,31 +36,6 @@ fn view_local_kernel_loss_counts_include_zero_for_admitted_layers() {
         &report_view(&nx, &[kernel_loss("sldprt")]),
         &registry,
         "kernel loss must use the nx namespaced source_dialect_unverified code",
-    );
-
-    let mut missing_floor = kernel_loss_note("nx");
-    let code = match &missing_floor.code {
-        LossKind::Namespaced(code) => code.clone().with_strict_floor(None),
-        LossKind::Shared { .. } => panic!("kernel loss uses a namespaced code"),
-    };
-    missing_floor.code = LossKind::Namespaced(code);
-    assert_rejected(
-        &report_view(
-            &nx,
-            &[serde_json::to_value(missing_floor).expect("typed loss serializes")],
-        ),
-        &registry,
-        "kernel loss must reject strict mode",
-    );
-
-    let downgraded = kernel_loss_note("nx").with_severity(Severity::Info);
-    assert_rejected(
-        &report_view(
-            &nx,
-            &[serde_json::to_value(downgraded).expect("typed loss serializes")],
-        ),
-        &registry,
-        "kernel loss must reject strict mode",
     );
 
     let mut flattened = report_view(&nx, &[kernel_loss("nx")]);

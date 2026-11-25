@@ -588,13 +588,13 @@ fn index_places(name: &TopoName) -> BTreeMap<Place, BTreeSet<u32>> {
 }
 
 /// The matchers of the stored states one validation reads, each built once.
-pub(super) struct Matchers<'a> {
+pub(in crate::validate) struct Matchers<'a> {
     states: &'a States<'a>,
     built: std::cell::RefCell<BTreeMap<StateKey<'a>, Option<Rc<Matcher<'a>>>>>,
 }
 
 impl<'a> Matchers<'a> {
-    pub(super) fn new(states: &'a States<'a>) -> Self {
+    pub(in crate::validate) fn new(states: &'a States<'a>) -> Self {
         Self {
             states,
             built: std::cell::RefCell::new(BTreeMap::new()),

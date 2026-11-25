@@ -363,10 +363,11 @@ fn strict_decode_accepts_a_finitely_admitted_pcurve() {
         admissions[0].severity,
         cadmpeg_ir::report::Severity::Warning
     );
-    assert_eq!(
-        admissions[0].strict_consequence(),
-        cadmpeg_ir::report::loss::StrictConsequence::Tolerate
-    );
+    assert!(!cadmpeg_ir::report::strictness::Strictness {
+        pinned: true,
+        ..Default::default()
+    }
+    .refuses(admissions[0], false));
 }
 
 /// The document reports one admission warning for all admitted relations. The

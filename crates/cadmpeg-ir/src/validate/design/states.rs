@@ -49,7 +49,7 @@ pub(super) struct Instance<'a> {
 }
 
 /// The resolved states of a document's evaluations and current states.
-pub(super) struct States<'a> {
+pub(in crate::validate) struct States<'a> {
     ir: &'a CadIr,
     geometry: HashMap<&'a str, Arena>,
     layers: HashMap<&'a str, Layer<'a>>,
@@ -72,7 +72,7 @@ enum Bottom<'s, 'a> {
 }
 
 impl<'a> States<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(in crate::validate) fn new(ir: &'a CadIr) -> Self {
         let mut layers = HashMap::new();
         for evaluation in &ir.design.evaluations {
             let Some(content) = &evaluation.content else {

@@ -34,9 +34,15 @@ fn physically_dependent_point_retains_source_without_becoming_a_free_vertex() {
     );
 }
 
+/// `iges.md` states strict floor Warning for `iges/parameter.literal-unusable`.
 #[test]
-fn unreadable_required_nurbs_pole_has_a_geometry_loss_and_refuses_strict_mode() {
-    for literal in ["3Hbad", "", "1E999", "bad"] {
+fn a_pinned_decode_refuses_an_unreadable_nurbs_pole_only_for_an_unusable_literal() {
+    for (literal, unusable) in [
+        ("3Hbad", false),
+        ("", false),
+        ("1E999", true),
+        ("bad", true),
+    ] {
         let parameters = format!("126,1,1,0,0,1,0,0,0,1,1,1,1,{literal},0,0,2,0,0,0,1,0,0,1;");
         let bytes = polynomial_nurbs_curve_file(parameters.as_bytes());
         let recovered = IgesCodec
@@ -48,15 +54,20 @@ fn unreadable_required_nurbs_pole_has_a_geometry_loss_and_refuses_strict_mode() 
             .losses
             .iter()
             .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
-        let mut strict = DecodeOptions::default();
-        strict.strictness.pinned = true;
-        assert!(
-            matches!(
-                IgesCodec.decode(&mut Cursor::new(bytes), &strict),
-                Err(DecodeFailure::StrictRejected { .. })
-            ),
-            "{literal}"
-        );
+        let mut pinned = DecodeOptions::default();
+        pinned.strictness.pinned = true;
+        match IgesCodec.decode(&mut Cursor::new(bytes), &pinned) {
+            Ok(_) => assert!(!unusable, "{literal}"),
+            Err(DecodeFailure::StrictRejected { rejection }) => {
+                assert!(unusable, "{literal}");
+                assert_eq!(
+                    rejection.loss().code,
+                    IgesLossCode::ParameterLiteralUnusable.kind(),
+                    "{literal}"
+                );
+            }
+            Err(other) => panic!("{literal}: {other:?}"),
+        }
     }
 }
 
@@ -78,7 +89,7 @@ fn optional_nurbs_literals_do_not_hide_readable_poles() {
 }
 
 #[test]
-fn spline_claim_recovery_is_rejected_by_strict_mode() {
+fn a_pinned_decode_admits_a_recovered_spline_claim() {
     let parameters = b"126,1,1,2,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;";
     let input = polynomial_nurbs_curve_file(parameters);
     let recovered = IgesCodec
@@ -90,12 +101,11 @@ fn spline_claim_recovery_is_rejected_by_strict_mode() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::SplineClaimRecovered.kind()));
-    let mut strict = DecodeOptions::default();
-    strict.strictness.pinned = true;
-    assert!(matches!(
-        IgesCodec.decode(&mut Cursor::new(input), &strict),
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
-    ));
+    let mut pinned = DecodeOptions::default();
+    pinned.strictness.pinned = true;
+    IgesCodec
+        .decode(&mut Cursor::new(input), &pinned)
+        .expect("a recovered spline claim pins no strict floor");
 }
 
 #[test]
