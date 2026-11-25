@@ -1839,9 +1839,6 @@ struct BoundarySegment {
     ends: [Point3; 2],
 }
 
-/// The loops of a `CURVE_BOUNDED_SURFACE` face: one ring per boundary
-/// composite curve, one edge per segment. `None` when a boundary is not a
-/// closed chain of bounded segments.
 /// What a geometric-set member states of its face's boundary.
 enum CurveBoundedFace {
     /// A surface with no boundary of its own: its face has no loop.
@@ -1853,6 +1850,9 @@ enum CurveBoundedFace {
     Unresolved { boundary: u64 },
 }
 
+/// The loops of a `CURVE_BOUNDED_SURFACE` face: one ring per boundary
+/// composite curve, one edge per segment. `Unresolved` names the first
+/// boundary that is not a closed chain of bounded segments.
 fn curve_bounded_face_loops(
     face: &FaceId,
     face_tail: &IdentityKeyTail,
