@@ -35,6 +35,10 @@ const DOCUMENT: &str = "document";
 /// the bytes encode are compared instead.
 const DIGEST_SUFFIX: &str = "_sha256";
 
+/// The suffix of a configuration's stale mark (`swConfigurationNeedsUpdate`),
+/// which the writer sets on a state it writes without regenerating it.
+const NEEDS_UPDATE_SUFFIX: &str = "_needs_update";
+
 /// What an unpaired id states in place of each run of digits.
 const UNPAIRED_DIGITS: &str = "<n>";
 
@@ -130,7 +134,9 @@ impl Document {
         {
             let attributes = attributes
                 .into_iter()
-                .filter(|(key, _)| !key.ends_with(DIGEST_SUFFIX))
+                .filter(|(key, _)| {
+                    !key.ends_with(DIGEST_SUFFIX) && !key.ends_with(NEEDS_UPDATE_SUFFIX)
+                })
                 .collect();
             document.push(Record {
                 id: Some("source attributes".to_owned()),

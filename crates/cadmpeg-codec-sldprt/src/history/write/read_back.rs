@@ -37,6 +37,16 @@ pub(crate) struct ReadBackClaims {
     pub(super) affected_parameters: HashSet<ParameterId>,
 }
 
+impl ReadBackClaims {
+    /// The features with a construction edit the write calls written.
+    pub(crate) fn written_features(&self) -> impl Iterator<Item = &FeatureId> {
+        self.features
+            .iter()
+            .filter(|claims| claims.any_written())
+            .map(|claims| &claims.id)
+    }
+}
+
 /// What the full decoder reads back from a written part for the claims of
 /// the write.
 #[derive(Default)]

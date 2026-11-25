@@ -135,10 +135,10 @@ that snapshot which the model does not state gets a
 `writer.configuration-snapshot-edit-unwritten` loss. An edit that the native
 records cannot carry keeps the stored record or value: an edit of a
 display-only relation parameter or a parameter value that the written
-expression does not state gets a `writer.parameter-edit-unwritten` loss, and
+expression does not state gets an `export:edit.dropped` loss of kind parameter, and
 an edited compact selection, a feature definition that the encoder cannot
 restate, or a construction edit that the written part, decoded again, does not
-read back as edited gets a `writer.feature-edit-unwritten` loss, and the
+read back as edited gets an `export:edit.dropped` loss of kind feature, and the
 feature is written with its stored definition record. A feature that keeps its
 stored definition record keeps its stored operands and source properties too,
 and its loss names each edit of its definition, dependencies and source
@@ -178,7 +178,7 @@ native reference (after its `#`) are offsets that a write moves.
 
 Each difference from that document is removed or named. A difference that a
 written edit causes is removed: that feature is written with its stored
-definition record, and its `writer.feature-edit-unwritten` loss names each
+definition record, and its `export:edit.dropped` loss names each
 differing record and the place in it. With several written edits, each one in
 turn is withheld alone, and the one whose withholding removes the difference
 is kept as stored; when no single edit removes it, every written edit is. An
@@ -201,18 +201,35 @@ record that a writer loss names as omitted or as holding its source state
 without the edit (`export:edit.dropped`), and an arena that an `arena.omitted`
 loss names, are named there. A difference that remains with every edit kept
 as stored, or that a parameter, rename or tree-order edit causes, is named in
-a `writer.feature-edit-unwritten` loss, and no stale-solid loss calls a tree
+an `export:edit.dropped` loss, and no stale-solid loss calls a tree
 place or an output body written that reads back otherwise. A written part that
 does not decode again or does not serialize holds every written edit back; with
 none left, a `writer.read-back-unread` loss (severity error) names it.
 
 An edited compound-file part is written into a native envelope, and
 `export:native.records-omitted` names each compound-file stream that the write
-neither generates nor replaces. Where that write refuses, or its envelope lands
-on another dialect than the source's, the output is the stored part, and a `writer.compound-file-edit-unwritten` loss (severity error)
-states that no edit is written. `cadmpeg convert
---reject-lossy=export` refuses such a write; `--reject-errors` does not, because
-it judges the written file's check findings, not export losses.
+neither generates nor replaces. A global parameter has no owner feature whose
+record holds it, and its edit gets an `export:edit.dropped` loss.
+
+An edited part that the patch path cannot write, or that it writes on another
+dialect than the source's, is synthesized without its SolidWorks history:
+`export:native.records-omitted` names each native record that the synthesis
+does not write. Where the synthesis also refuses the part, or lands on another
+dialect than the source's, the output is the stored part, and one
+`export:edit.dropped` loss (severity error) states that no edit is written.
+`cadmpeg convert --reject-lossy=export` refuses such a write;
+`--reject-errors` does not, because it judges the written file's check
+findings, not export losses.
+
+The writer regenerates no state. When it writes an edit over a decoded source,
+it marks the active configuration `swConfigurationNeedsUpdate="YES"` in the
+retained `swSolidWorks` document, and an `export:evaluation.stale` loss names
+the written edits. A configuration whose evaluation the document states
+`Stale` or `Failed` takes the same mark; where no written row takes it, an
+`export:evaluation.stale` loss names the evaluation. The native envelope
+stores at most 65535 members and 32-bit offsets: a section past these limits,
+or with a name the envelope cannot encode, is not written, and an
+`export:value.unwritable` loss names it.
 
 Semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It

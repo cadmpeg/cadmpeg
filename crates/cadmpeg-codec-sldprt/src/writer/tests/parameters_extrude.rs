@@ -74,15 +74,11 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
     );
 
     decoded.ir_mut().model.parameters[3].expression = "6mm".into();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("dependencies are inconsistent with their expressions"));
+    );
+    assert!(error.contains("dependencies are inconsistent with their expressions"));
 }
 
 /// The decoder orders a parameter after the parameters it depends on; the
@@ -710,7 +706,7 @@ fn semantic_writer_applies_neutral_parameter_order() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_parameter_edits() {
+fn semantic_writer_patch_declines_conflicting_parameter_edits() {
     use cadmpeg_ir::features::parameters::ParameterValue;
     use cadmpeg_ir::scalar::Length;
 
@@ -738,19 +734,13 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT parameter edits"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("conflicting neutral and native SLDPRT parameter edits"));
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_dimension_property_edits() {
+fn semantic_writer_patch_declines_conflicting_dimension_property_edits() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -772,15 +762,9 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
             .insert(cadmpeg_core::nonblank_literal!("Driven"), "native".into());
     });
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT parameter edits"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("conflicting neutral and native SLDPRT parameter edits"));
 }
 
 #[test]
@@ -1373,22 +1357,18 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
 
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved fillet radius law"));
+    );
+    assert!(error.contains("unresolved fillet radius law"));
     detached.model.features[0] = decoded.ir().model.features[0].clone();
     detached.model.features[1].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved chamfer dimensions"));
+    );
+    assert!(error.contains("unresolved chamfer dimensions"));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed round".into());
     decoded.ir_mut().model.features[1].name = Some("Renamed bevel".into());
@@ -1866,24 +1846,18 @@ fn semantic_writer_retains_partial_native_wall_operations() {
 
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved shell construction"));
+    );
+    assert!(error.contains("unresolved shell construction"));
     detached.model.features[0] = decoded.ir().model.features[0].clone();
     detached.model.features[1].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("unresolved thicken construction"));
+    );
+    assert!(error.contains("unresolved thicken construction"));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed shell".into());
     decoded.ir_mut().model.features[1].name = Some("Renamed thicken".into());

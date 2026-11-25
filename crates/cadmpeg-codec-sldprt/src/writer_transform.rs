@@ -15,11 +15,16 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 
-pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
-    if !ir.geometry.bodies.iter().any(|body| {
+/// Whether a body of `ir` states a placement other than the identity.
+pub(crate) fn places_bodies(ir: &CadIr) -> bool {
+    ir.geometry.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())
-    }) {
+    })
+}
+
+pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
+    if !places_bodies(ir) {
         return Ok(());
     }
 

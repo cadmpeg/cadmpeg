@@ -306,10 +306,25 @@ fn sync_neutral_parameters(
             continue;
         }
         let Some(owner_id) = parameter.owner.as_ref() else {
-            return Err(CodecError::NotImplemented(format!(
-                "global SLDPRT parameter {} cannot be written to a feature record",
-                parameter.id.as_str()
-            )));
+            if !edits.has_source() {
+                return Err(CodecError::NotImplemented(format!(
+                    "global SLDPRT parameter {} cannot be written to a feature record",
+                    parameter.id.as_str()
+                )));
+            }
+            if edits.parameter_edited(&parameter.id) {
+                edits.parameter_unwritten(
+                    &parameter.id,
+                    UnwrittenPart::Whole,
+                    format!(
+                        "Global SLDPRT parameter {} is not written: each written parameter is an \
+                         entry of its owner feature's record, and the parameter has no owner \
+                         feature.",
+                        parameter.id.as_str()
+                    ),
+                );
+            }
+            continue;
         };
         let Some(owner) = features.get(owner_id) else {
             return Err(CodecError::malformed(format_args!(

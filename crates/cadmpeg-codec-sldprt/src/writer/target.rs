@@ -3,9 +3,10 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses, edit_unverified, target::ResolvedWrite, EncodeInput, ExportBody,
-    WritePath,
+    carried_source_losses, edit_dropped_note, edit_unverified, native_records_omitted,
+    target::ResolvedWrite, EncodeInput, ExportBody, WritePath,
 };
+use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::Annotations;
 
@@ -81,9 +82,119 @@ pub(crate) fn plan(
     Ok(body)
 }
 
+/// Write the file in the first path of §3.4 that writes it: replay, patch,
+/// synthesis, then the source part as stored.
+///
+/// [`write_first`] replays or patches. Where it refuses for any reason but a
+/// resource ceiling or the destination, or where a patch of a preserved
+/// source lands on another dialect than the source's, the document is
+/// synthesized without its `SolidWorks` history ([`synthesize`]). Where that
+/// refuses too, or lands on another dialect, a preserved source is written as
+/// its retained image, without the document's edits, and charges
+/// `export:edit.dropped` naming the file, since the codec digests do not
+/// isolate the edited records. Without a retained image the first write's
+/// result stands.
+fn write(
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+    digests: &CodecDigests,
+) -> Result<(Written, Vec<u8>), CodecError> {
+    let target = resolved.target_id();
+    let preserves = resolved.preserves_source();
+    let first = write_first(input, resolved, digests);
+    let reason = match &first {
+        Ok((Written::Semantic { dialect, .. }, _)) if preserves && dialect != target => Some(
+            format!("lands on dialect {dialect}, not the source's {target}"),
+        ),
+        Ok(_) | Err(CodecError::ResourceLimit(_) | CodecError::Io(_)) => None,
+        Err(error) => Some(format!("refuses it ({error})")),
+    };
+    let Some(reason) = reason else {
+        return first;
+    };
+    let stored = input
+        .fidelity
+        .filter(|_| preserves)
+        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
+        .and_then(|record| record.data());
+    let synthesis = match synthesize(input, preserves, &reason) {
+        Ok((Written::Semantic { dialect, .. }, _)) if stored.is_some() && dialect != *target => {
+            format!("lands on dialect {dialect}")
+        }
+        Ok(written) => return Ok(written),
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+        Err(error) => format!("refuses it ({error})"),
+    };
+    let Some(image) = stored else {
+        return first;
+    };
+    let loss = edit_dropped_note(
+        EntityKind::Feature,
+        format!(
+            "The SLDPRT output is the source part as stored ({}), without the document's \
+             edits: the patch of the edited document {reason}, and its synthesis without the \
+             SolidWorks history {synthesis}; the codec digests do not isolate the edited records.",
+            crate::SOURCE_IMAGE_ID
+        ),
+    );
+    Ok((Written::StoredImage { loss }, image.to_vec()))
+}
+
+/// The document synthesized without its `SolidWorks` history: the write
+/// takes no record of the `sldprt` native namespace and no codec digest, so
+/// the history stage drops what it cannot write (§3.4, Content the target
+/// cannot hold). `export:native.records-omitted` names each native record
+/// left out, and why the patch did not write the file.
+fn synthesize(
+    input: EncodeInput<'_>,
+    preserves: bool,
+    reason: &str,
+) -> Result<(Written, Vec<u8>), CodecError> {
+    let mut ir = input.ir.clone();
+    let omitted = ir
+        .native
+        .0
+        .remove("sldprt")
+        .map(|namespace| {
+            namespace
+                .arenas()
+                .values()
+                .flatten()
+                .map(|record| record.id().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let fidelity = if preserves && input.fidelity.is_some() {
+        SemanticFidelity::ReplaySkipped(ReplaySkipped::PatchDeclined)
+    } else {
+        SemanticFidelity::NotConsumed
+    };
+    let mut bytes = Vec::new();
+    let mut written = SldprtCodec::write_semantic(
+        &ir,
+        &Annotations::default(),
+        &CodecDigests::new(),
+        &[],
+        None,
+        fidelity,
+        &mut bytes,
+    )?;
+    if let Written::Semantic { losses, .. } = &mut written {
+        losses.extend(native_records_omitted(
+            "SLDPRT",
+            &format!(
+                "because the patch of the document {reason}, and its synthesis writes no \
+                 SolidWorks history record"
+            ),
+            omitted,
+        ));
+    }
+    Ok((written, bytes))
+}
+
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
-fn write(
+fn write_first(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
@@ -93,13 +204,7 @@ fn write(
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
-            SldprtCodec::write_preserved_with_annotations(
-                input.ir,
-                value,
-                &records,
-                resolved.target_id(),
-                &mut bytes,
-            )?
+            SldprtCodec::write_preserved_with_annotations(input.ir, value, &records, &mut bytes)?
         }
         Some(value) => SldprtCodec::write_semantic(
             input.ir,
@@ -191,7 +296,7 @@ fn finish(
         ));
         losses.extend(unwritten.notes());
     }
-    if let Written::StoredCompoundFile { loss } = written {
+    if let Written::StoredImage { loss } = written {
         losses.push(loss.clone());
     }
     if let Some(message) = displacement {
@@ -199,8 +304,8 @@ fn finish(
     }
     losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
-        WritePath::VerbatimReplay if matches!(written, Written::StoredCompoundFile { .. }) => {
-            "preserved compound-file source replayed verbatim without the document's edits"
+        WritePath::VerbatimReplay if matches!(written, Written::StoredImage { .. }) => {
+            "preserved source replayed verbatim without the document's edits"
         }
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",

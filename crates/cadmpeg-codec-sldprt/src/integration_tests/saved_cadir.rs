@@ -155,8 +155,10 @@ fn a_saved_part_writes_an_edited_suppression_as_its_decode_does() {
     assert_eq!(written(&read, &decoded), written(&held, &decoded));
 }
 
+/// The history of the part states no comment, so the patch path declines the
+/// edit; the write takes the next path of §3.4 and a loss names the edit.
 #[test]
-fn a_design_edit_the_history_cannot_state_refuses_and_names_it() {
+fn a_design_edit_the_history_cannot_state_is_written_and_named() {
     let decoded = decode(part());
     let id = depth(decoded.ir());
     let mut read = saved(decoded.ir());
@@ -167,9 +169,23 @@ fn a_design_edit_the_history_cannot_state_refuses_and_names_it() {
         .expect("design parameter")
         .comment = Some("edited".into());
 
-    let error = written(&read, &decoded).expect_err("the comment has no history field");
+    let mut bytes = Vec::new();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(&read, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let edit = format!("design.parameters[{id}].comment");
     assert!(
-        error.contains(&format!("design.parameters[{id}].comment")),
-        "{error}"
+        report.losses.iter().any(|loss| matches!(
+            loss.code.local_code(),
+            "native.records-omitted" | "edit.dropped"
+        ) && loss.message.contains(&edit)),
+        "{:#?}",
+        report.losses
     );
+    decode(bytes);
 }
