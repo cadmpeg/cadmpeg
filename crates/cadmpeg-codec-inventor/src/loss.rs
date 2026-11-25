@@ -34,6 +34,9 @@ pub(crate) enum InventorLossCode {
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
     GeometryProceduralSurfaceNotTransferred,
+    /// A face states no loop on a plane, cylinder, or cone; the face is
+    /// stated partial.
+    TopologyFaceBoundaryUnstated,
     /// Structurally paired `RSe` segments have no record semantics.
     RseSegmentPairUntyped,
     /// `RSe` metadata streams are malformed or outside the implemented envelope.
@@ -361,6 +364,7 @@ impl InventorLossCode {
     const ALL: &'static [InventorLossCode] = &[
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
+        Self::TopologyFaceBoundaryUnstated,
         Self::RseSegmentPairUntyped,
         Self::RseMetadataStreamMalformed,
         Self::RseBulkStreamMalformed,
@@ -524,6 +528,7 @@ impl InventorLossCode {
             Self::GeometryProceduralSurfaceNotTransferred => {
                 "geometry.procedural-surface-not-transferred"
             }
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
             Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
             Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
@@ -733,6 +738,7 @@ impl InventorLossCode {
             | Self::PmiDatumSystemUnresolved => LossTaxonomy::PmiOmitted,
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::DrawingNativeOnly | Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -925,6 +931,7 @@ mod tests {
             [
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
+                "topology.face-boundary-unstated",
                 "rse.segment-pair-untyped",
                 "rse.metadata-stream-malformed",
                 "rse.bulk-stream-malformed",

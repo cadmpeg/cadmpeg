@@ -6,7 +6,7 @@ mod references;
 mod token_wire;
 mod validate;
 
-use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
@@ -157,12 +157,11 @@ pub(crate) fn inventory(
     frames: &[crate::native::RseRecordRecord],
 ) -> Result<Inventory, CodecError> {
     let mut inventory = Inventory::default();
-    if ctx.depth() < DecodeDepth::Design
-        || !container
-            .rse
-            .segments
-            .iter()
-            .any(|segment| segment.kind == SegmentKind::Drawing(Family::Document))
+    if !container
+        .rse
+        .segments
+        .iter()
+        .any(|segment| segment.kind == SegmentKind::Drawing(Family::Document))
     {
         return Ok(inventory);
     }
