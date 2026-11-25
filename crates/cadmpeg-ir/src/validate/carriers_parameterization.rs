@@ -40,6 +40,31 @@ fn collect_law_curves<'a, R, V, P>(
     Ok(())
 }
 
+/// The surfaces, curves, pcurves, and points of `ir`'s geometry that no
+/// record reaches, as [`check_carrier_reachability`] reaches them. A
+/// fragment states none, since its carriers may be reached from outside it.
+pub(crate) fn unreached_carriers(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<std::collections::BTreeSet<String>, CodecError> {
+    if ir.fragment {
+        return Ok(std::collections::BTreeSet::new());
+    }
+    let mut findings = Vec::new();
+    check_carrier_reachability(
+        ctx,
+        crate::native::view::NativeView::new(ir, None),
+        &ir.geometry,
+        &mut findings,
+    )?;
+    let orphan = crate::rule_name!("carriers_parameterization.orphan-carrier");
+    Ok(findings
+        .into_iter()
+        .filter(|finding| finding.rule == orphan)
+        .filter_map(|finding| finding.entity)
+        .collect())
+}
+
 /// Every surface, curve, pcurve, and point carrier of `geometry` is reached:
 /// by a record of `geometry`, or by an appearance binding, a presentation
 /// layer item, or a native link of `view`'s document.
