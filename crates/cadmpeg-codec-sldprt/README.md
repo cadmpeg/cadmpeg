@@ -211,8 +211,8 @@ An edited compound-file part is written into a native envelope, and
 neither generates nor replaces. Where that write refuses, or its envelope lands
 on another dialect than the source's, the output is the stored part, and a `writer.compound-file-edit-unwritten` loss (severity error)
 states that no edit is written. `cadmpeg convert
---reject-lossy=export` refuses such a write; `--reject-errors` does not, because
-it judges the written file's check findings, not export losses.
+--reject-lossy=export` refuses such a write; `--reject-errors` refuses
+`export:record.invalid` only.
 
 A part read from CADIR JSON holds none of the feature, sketch, parameter, and
 configuration arenas the writer applies native history edits from. Given its

@@ -18,6 +18,7 @@ use crate::report::{
         SynthesisFidelity, WritePath as ReportWritePath,
     },
     loss::LossNote,
+    strictness::Strictness,
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
@@ -32,10 +33,12 @@ mod coverage;
 pub mod edge_recovery;
 mod loss;
 pub use loss::{
-    carried_source_losses, edit_dropped, edit_unverified, evaluation_missing, evaluation_stale,
-    face_partial, native_records_omitted, output_empty, parameter_flattened, parameter_renamed,
+    carried_source_losses, definition_placed, dependency_cycle_broken, edit_dropped,
+    edit_unverified, evaluation_missing, evaluation_stale, face_partial, feature_lowered,
+    fit_dropped, fit_restated, general_tolerance_dropped, general_tolerance_restated,
+    link_unwritten, native_records_omitted, output_empty, parameter_flattened, parameter_renamed,
     partial_topology_omitted, record_invalid, record_residual_unavailable, rule_invalid,
-    solid_partial, value_unwritable,
+    solid_partial, value_quantized, value_unwritable,
 };
 mod partial;
 pub mod saved;
@@ -173,6 +176,14 @@ impl<E: EncoderBackend> Encoder for E {
         notes.extend(restore_notes);
         losses.extend(restore_losses);
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+        let same_format = input
+            .ir
+            .source
+            .as_ref()
+            .is_some_and(|source| source.format() == E::FORMAT.as_str());
+        if same_format && matches!(write_path, WritePath::Synthesized { .. }) {
+            losses.extend(loss::dropped_source_loss(input.fidelity));
+        }
         if !input.ir.model.omitted_arenas_held() && coverage.reads_wire_omitted() {
             notes.push(format!(
                 "the document was read from CADIR, which does not carry the arenas {}; the {} \
@@ -224,6 +235,23 @@ pub struct EncodeInput<'a> {
     pub assets: Option<&'a dyn Companions>,
     /// Scene settings for an encoder of a scene format.
     pub scene: SceneOptions,
+    /// The form a writer to a target that holds no feature without its state
+    /// gives the features whose states the document lacks (§3.4, Features
+    /// without their state). Every other writer ignores it.
+    pub missing_states: MissingStateForm,
+}
+
+/// The form a writer gives features whose states the target needs and the
+/// document lacks, for a target that holds no feature without its state
+/// (§3.4, Features without their state).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MissingStateForm {
+    /// The current geometry is written exactly.
+    #[default]
+    GeometryTrue,
+    /// The stated run is written with its states, and the later features
+    /// follow the timeline marker rolled back.
+    HistoryTrue,
 }
 
 impl<'a> EncodeInput<'a> {
@@ -235,6 +263,7 @@ impl<'a> EncodeInput<'a> {
             fidelity,
             assets: None,
             scene: SceneOptions::DEFAULT,
+            missing_states: MissingStateForm::GeometryTrue,
         }
     }
 
@@ -249,6 +278,14 @@ impl<'a> EncodeInput<'a> {
     #[must_use]
     pub const fn with_scene(mut self, scene: SceneOptions) -> Self {
         self.scene = scene;
+        self
+    }
+
+    /// Selects the form of features whose states the target needs and the
+    /// document lacks.
+    #[must_use]
+    pub const fn with_missing_states(mut self, form: MissingStateForm) -> Self {
+        self.missing_states = form;
         self
     }
 }
@@ -447,6 +484,49 @@ impl ExportPlan {
             .collect()
     }
 
+    /// Charges `export:record.invalid` for each Error of `report` that this
+    /// payload carries ([`Self::carried_errors`]): with the kind of the
+    /// record's model arena where the finding names one, and naming the rule
+    /// otherwise (§3.4, Refusals). Returns the number of notes charged.
+    pub fn charge_carried_errors(&mut self, ir: &CadIr, report: &ValidationReport) -> usize {
+        let carried = self.carried_errors(ir, report);
+        let locator = FindingLocator::new(ir, carried.iter().copied());
+        let notes: Vec<LossNote> = carried
+            .iter()
+            .map(|finding| {
+                let kind = locator.scope(finding).and_then(|locations| {
+                    locations.into_iter().find_map(|location| match location {
+                        EntityLocation::Model(kind) => Some(kind),
+                        EntityLocation::Native(_) => None,
+                    })
+                });
+                match (kind, finding.entity.as_deref()) {
+                    (Some(kind), Some(entity)) => record_invalid(
+                        kind,
+                        format!("{entity}: {} ({})", finding.message, finding.rule),
+                    ),
+                    _ => rule_invalid(format!("{}: {}", finding.rule, finding.message)),
+                }
+            })
+            .collect();
+        let charged = notes.len();
+        self.report.losses.extend(notes);
+        charged
+    }
+
+    /// The plan, or the refusal of `strictness` naming the first entry of
+    /// the completed report it refuses (§3.4, Refusals). A refused plan
+    /// writes nothing.
+    pub fn refuse(self, strictness: &Strictness) -> Result<Self, StrictWriteRejection> {
+        match strictness.first_refused(&self.report.losses, false) {
+            None => Ok(self),
+            Some(entry) => Err(StrictWriteRejection {
+                report: Box::new(self.report),
+                entry,
+            }),
+        }
+    }
+
     fn carries_location(&self, location: EntityLocation<'_>) -> bool {
         match location {
             EntityLocation::Model(kind) => self.coverage.carries(kind),
@@ -464,6 +544,48 @@ impl ExportPlan {
         Ok(self.report)
     }
 }
+
+/// A write refused by the caller's [`Strictness`]: the completed export
+/// report and the index of the first loss it refuses (§3.4, Refusals).
+#[derive(Debug, Clone, PartialEq)]
+pub struct StrictWriteRejection {
+    report: Box<ExportReport>,
+    entry: usize,
+}
+
+impl StrictWriteRejection {
+    /// The completed export report of the refused write.
+    #[must_use]
+    pub fn report(&self) -> &ExportReport {
+        &self.report
+    }
+
+    /// The loss that refused the write.
+    #[must_use]
+    pub fn loss(&self) -> &LossNote {
+        &self.report.losses[self.entry]
+    }
+
+    /// The index of [`Self::loss`] in the report's losses.
+    #[must_use]
+    pub const fn entry(&self) -> usize {
+        self.entry
+    }
+}
+
+impl std::fmt::Display for StrictWriteRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let loss = self.loss();
+        write!(
+            f,
+            "the caller's strictness refuses the write at {}: {}",
+            crate::report::strictness::code_name(&loss.code),
+            loss.message
+        )
+    }
+}
+
+impl std::error::Error for StrictWriteRejection {}
 
 /// Encoder for canonical versioned CADIR JSON.
 #[derive(Debug, Clone, Copy, Default)]
