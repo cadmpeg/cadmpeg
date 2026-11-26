@@ -2,12 +2,13 @@
 //! The CADIR writer drops and reports what it cannot write (CADIR v11 §3.4).
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 /// Plans a CADIR write of `ir`, which must not refuse, and returns the
 /// messages of its losses of `code` and the document its bytes read back as.
 fn written_with_losses(ir: &CadIr, code: &str) -> (Vec<String>, CadIr) {
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .expect("the CADIR writer drops what it cannot write and does not refuse");
     let messages = plan
         .report()
@@ -61,7 +62,7 @@ fn the_cadir_writer_does_not_check_feature_parent_relations_it_omits() {
         let plan = CadirEncoder
             .plan(
                 EncodeInput::new(ir, None).with_strictness(&reject_errors),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .expect("the writer checks no relation it omits");
         let invalid = plan
@@ -334,12 +335,11 @@ fn the_cadir_writer_copies_the_base_owner_of_a_delta_construction() {
         ProceduralCurveDefinition::Exact { cache: None },
     );
     ir.geometry.procedural_curves.push(base.clone());
-    let replacement: ProceduralCurve =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": REPLACED,
-            "definition": {"kind": "unknown"}
-        }))
-        .unwrap();
+    let replacement: ProceduralCurve = json::from_value(serde_json::json!({
+        "id": REPLACED,
+        "definition": {"kind": "unknown"}
+    }))
+    .unwrap();
     assert_ne!(replacement, base);
     let evaluation = ir.design.evaluations[0].id.clone();
     ir.design.evaluations[0]
@@ -462,7 +462,7 @@ fn the_cadir_writer_drops_a_record_whose_expression_does_not_print() {
 fn state_document_fields(ir: &mut CadIr) {
     ir.fragment = true;
     ir.source = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -545,7 +545,7 @@ fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_rec
     let mut ir = CadIr::empty();
     state_document_fields(&mut ir);
     ir.design.parameters.push(negated_parameter("kept", 1));
-    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    let mut value = json::to_value(&ir).unwrap();
     value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
     let read = CadIr::read(
         value.to_string().as_bytes(),

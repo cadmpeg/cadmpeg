@@ -21,7 +21,7 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut encoded = Vec::new();
     assert!(codec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .is_ok());
     let mut round_trip = Cursor::new(encoded);

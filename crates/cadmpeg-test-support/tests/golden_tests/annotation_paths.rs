@@ -9,9 +9,9 @@
 
 use std::path::Path;
 
+use cadmpeg_core::serde_erase::from_json_value;
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::{Annotations, CadIr};
-use serde::Deserialize;
 use serde_json::Value;
 
 use super::{collect_documents, golden_files, states_native_elision};
@@ -35,7 +35,7 @@ fn every_golden_exactness_field_path_resolves() {
             let Some(annotations) = sibling_annotations(&golden, &pointer, &path) else {
                 continue;
             };
-            let ir = CadIr::deserialize(ir).unwrap_or_else(|error| {
+            let ir = from_json_value::<CadIr>(ir).unwrap_or_else(|error| {
                 panic!(
                     "{} at {pointer} does not read back: {error}",
                     path.display()
@@ -83,7 +83,7 @@ fn sibling_annotations(golden: &Value, pointer: &str, path: &Path) -> Option<Ann
         .pointer(&format!("{parent}/{SOURCE_FIDELITY_KEY}"))?
         .get("annotations")?;
     Some(
-        Annotations::deserialize(annotations).unwrap_or_else(|error| {
+        from_json_value::<Annotations>(annotations).unwrap_or_else(|error| {
             panic!(
                 "{} at {parent}/{SOURCE_FIDELITY_KEY}/annotations does not read back: {error}",
                 path.display()

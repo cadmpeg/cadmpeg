@@ -11,6 +11,7 @@ use crate::{
         topology::face::DesignFaceSourceGroup,
     },
 };
+use cadmpeg_core::serde_erase::json;
 
 fn registration(version: u32) -> SegmentType {
     SegmentType::try_new(
@@ -33,7 +34,7 @@ fn registration(version: u32) -> SegmentType {
 }
 
 fn settings() -> DesignSheetMetalSettings {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": "f3d:test/Design1/BulkStream.dat:design-sheet-metal-settings#300",
         "record_index": 13, "byte_offset": 300, "paired_byte_offset": 400, "mask": 0,
         "inputs": { "version": "v2", "slots": [null, null, null, null, null, null, null] },
@@ -51,25 +52,24 @@ fn base_face_projects_a_registered_source_and_owned_rule() {
         10,
     );
     name_scope_references(&mut scope, [12, 13]);
-    let group: DesignFaceSourceGroup =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": "f3d:test/Design1/BulkStream.dat:design-face-source-group#100",
-            "scope_record_index": 10, "carrier_reference_ordinal": 0,
-            "carrier_record_index": 12, "carrier_byte_offset": 100, "carrier_class_tag": "257",
-            "carrier_frame_length": 200, "paired_record_index": 13,
-            "paired_byte_offset": 300, "paired_class_tag": "258",
-            "source_reference_offsets": [136], "source_members": [{
-                "record_index": 20, "byte_offset": 420, "class_tag": "259",
-                "persistent_identity": {
-                    "local_id": 1, "local_id_offset": 441,
-                    "asset_id": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "asset_id_offset": 453,
-                    "context_id": "11111111-2222-4333-8444-555555555555", "context_id_offset": 529,
-                    "tail_slot_present": false, "tail_slot_offset": 605,
-                    "next_record_index": 21, "next_byte_offset": 610
-                }
-            }]
-        }))
-        .unwrap();
+    let group: DesignFaceSourceGroup = json::from_value(serde_json::json!({
+        "id": "f3d:test/Design1/BulkStream.dat:design-face-source-group#100",
+        "scope_record_index": 10, "carrier_reference_ordinal": 0,
+        "carrier_record_index": 12, "carrier_byte_offset": 100, "carrier_class_tag": "257",
+        "carrier_frame_length": 200, "paired_record_index": 13,
+        "paired_byte_offset": 300, "paired_class_tag": "258",
+        "source_reference_offsets": [136], "source_members": [{
+            "record_index": 20, "byte_offset": 420, "class_tag": "259",
+            "persistent_identity": {
+                "local_id": 1, "local_id_offset": 441,
+                "asset_id": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "asset_id_offset": 453,
+                "context_id": "11111111-2222-4333-8444-555555555555", "context_id_offset": 529,
+                "tail_slot_present": false, "tail_slot_offset": 605,
+                "next_record_index": 21, "next_byte_offset": 610
+            }
+        }]
+    }))
+    .unwrap();
     let settings = settings();
     for version in [3, 4] {
         let inputs = ProjectInputs {

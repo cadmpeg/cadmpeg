@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_test_support::bytes::put_u16;
@@ -472,13 +473,8 @@ fn unselected_deltas_preserve_primary_geometry_and_topology() {
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value((&result.ir().geometry, &result.ir().model))
-                .unwrap(),
-            cadmpeg_core::serde_erase::json::to_value((
-                &baseline.ir().geometry,
-                &baseline.ir().model
-            ))
-            .unwrap()
+            json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+            json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(result.report().geometry_transferred());
         assert_eq!(result.ir().geometry.bodies.len(), 1);

@@ -249,6 +249,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
 #[cfg(test)]
 mod tests {
     use super::FeatureThruCurveConstructionBranchGroup;
+    use cadmpeg_core::serde_erase::json;
 
     fn branch_group_container() -> crate::container::Container<'static> {
         let mut branch = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01".to_vec();
@@ -297,10 +298,7 @@ mod tests {
     #[test]
     fn group_wire_derives_both_lane_forms_and_mixed_token_widths() {
         let group: FeatureThruCurveConstructionBranchGroup = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
-            WIRE
-        );
+        assert_eq!(json::to_string(&group).unwrap(), WIRE);
         assert_eq!(group.frame.branch_offsets().collect::<Vec<_>>(), [101, 125]);
     }
 
@@ -369,10 +367,8 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             *invalid.pointer_mut(path).unwrap() = replacement;
-            let error = cadmpeg_core::serde_erase::json::from_value::<
-                FeatureThruCurveConstructionBranchGroup,
-            >(invalid)
-            .unwrap_err();
+            let error =
+                json::from_value::<FeatureThruCurveConstructionBranchGroup>(invalid).unwrap_err();
             assert!(error.to_string().contains(field), "{path}: {error}");
         }
     }

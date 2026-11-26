@@ -27,6 +27,10 @@ struct Enumeration {
     variants: Vec<Variant>,
 }
 
+/// The bound each type parameter of an enum without `#[serde(bound = "")]`
+/// takes.
+const OWNED: &str = "::serde::de::DeserializeOwned";
+
 struct Param {
     name: String,
     bounds: String,
@@ -109,7 +113,7 @@ fn parse(input: TokenStream) -> Result<Enumeration, String> {
         deserialize_name: None,
         variants: Vec::new(),
     };
-    let mut bound_stated = false;
+    let mut stated_bound = None;
     for item in container.into_iter().flatten() {
         match item.key.as_str() {
             "tag" => enumeration.tag = literal(&item)?,
@@ -118,7 +122,7 @@ fn parse(input: TokenStream) -> Result<Enumeration, String> {
             "deny_unknown_fields" if item.value.is_none() => enumeration.deny_unknown_fields = true,
             "expecting" => enumeration.expecting = Some(literal(&item)?),
             "rename" => enumeration.deserialize_name = Some(literal(&item)?),
-            "bound" if literal(&item).is_ok_and(|bound| bound.is_empty()) => bound_stated = true,
+            "bound" => stated_bound = deserialize_bound(&item)?,
             key => {
                 return Err(format!(
                     "DeserializeTagged reads {}; it does not read serde `{key}` on the enum",
@@ -130,16 +134,95 @@ fn parse(input: TokenStream) -> Result<Enumeration, String> {
     if enumeration.tag.is_empty() {
         return Err("DeserializeTagged reads an enum that states serde `tag`".to_owned());
     }
-    if !enumeration.params.is_empty() && !bound_stated {
-        return Err(format!(
-            "DeserializeTagged reads each payload from owned text; the generic enum {} \
-             states `#[serde(bound = \"\")]` and bounds its parameters by traits that make \
-             each payload readable",
-            enumeration.name
-        ));
-    }
+    bound_params(&mut enumeration, stated_bound.as_deref())?;
     enumeration.variants = variants(&enumeration.name, body)?;
     Ok(enumeration)
+}
+
+/// The deserialize bound that a serde `bound` argument states: the string
+/// of `bound = "..."`, or of `deserialize = "..."` in `bound(...)`.
+fn deserialize_bound(item: &Item) -> Result<Option<String>, String> {
+    if let Ok(text) = literal(item) {
+        return Ok(Some(text));
+    }
+    let Some(TokenTree::Group(group)) = item.value.as_ref().map(unwrapped) else {
+        return Err("DeserializeTagged cannot read serde `bound`".to_owned());
+    };
+    for inner in items(group.stream())? {
+        if inner.key == "deserialize" {
+            return literal(&inner).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+/// Bounds each type parameter of `enumeration` so that every payload reads
+/// from owned text. With no deserialize bound stated, each parameter takes
+/// `DeserializeOwned`, where serde infers `Deserialize<'de>`. A stated bound
+/// takes the place of serde's, each `Deserialize<'de>` in it read as
+/// `DeserializeOwned`; `#[serde(bound = "")]` leaves the parameters' own
+/// bounds alone.
+fn bound_params(enumeration: &mut Enumeration, stated: Option<&str>) -> Result<(), String> {
+    let Some(stated) = stated else {
+        for param in &mut enumeration.params {
+            add_bound(param, OWNED);
+        }
+        return Ok(());
+    };
+    let owned = stated
+        .replace("::serde::Deserialize<'de>", OWNED)
+        .replace("serde::Deserialize<'de>", OWNED)
+        .replace("Deserialize<'de>", OWNED);
+    for predicate in split_predicates(&owned) {
+        let Some((name, bounds)) = predicate.split_once(':') else {
+            return Err(format!(
+                "DeserializeTagged cannot read the bound `{predicate}` of {}",
+                enumeration.name
+            ));
+        };
+        let name = name.trim();
+        let Some(param) = enumeration
+            .params
+            .iter_mut()
+            .find(|param| param.name == name)
+        else {
+            return Err(format!(
+                "DeserializeTagged reads a bound on a type parameter of {}; `{name}` is none",
+                enumeration.name
+            ));
+        };
+        add_bound(param, bounds.trim());
+    }
+    Ok(())
+}
+
+fn add_bound(param: &mut Param, bound: &str) {
+    param.bounds = if param.bounds.is_empty() {
+        bound.to_owned()
+    } else {
+        format!("{} + {bound}", param.bounds)
+    };
+}
+
+/// `text` split at each comma outside angle brackets, without empty parts.
+fn split_predicates(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0_usize;
+    let mut start = 0;
+    for (index, character) in text.char_indices() {
+        match character {
+            '<' => depth += 1,
+            '>' if depth > 0 => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&text[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts.retain(|part| !part.trim().is_empty());
+    parts
 }
 
 /// `token` without the invisible group a `macro_rules!` fragment arrives in.

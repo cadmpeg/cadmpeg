@@ -740,6 +740,7 @@ mod tests {
         DesignCombineOperation, DesignCombineOperationWire, COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT,
         COMBINE_OPERATION_CLONE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[derive(serde::Serialize)]
     struct NestedRecord<'a, T: serde::Serialize> {
@@ -754,7 +755,7 @@ mod tests {
             value.destination = super::DesignCombineDestination::NewComponent {
                 browser_node_record_index,
             };
-            let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+            let wire = json::to_value(&value).unwrap();
             assert_eq!(wire["destination"]["kind"], "new_component");
             if browser_node_record_index.is_some() {
                 assert_eq!(wire["destination"]["browser_node_record_index"], 777);
@@ -764,8 +765,7 @@ mod tests {
                     .is_none());
             }
             assert_eq!(
-                cadmpeg_core::serde_erase::json::from_value::<DesignCombineOperation>(wire)
-                    .unwrap(),
+                json::from_value::<DesignCombineOperation>(wire).unwrap(),
                 value
             );
             assert_eq!(value.clone().destination, value.destination);
@@ -775,16 +775,16 @@ mod tests {
     #[test]
     fn combine_body_node_lists_round_trip_and_omit_empty_lists() {
         let mut value = operation(false);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+        let wire = json::to_value(&value).unwrap();
         assert!(wire.get("created_body_nodes").is_none());
         assert!(wire.get("consumed_body_nodes").is_none());
         value.created_body_nodes = vec![541, 546];
         value.consumed_body_nodes = vec![510];
-        let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+        let wire = json::to_value(&value).unwrap();
         assert_eq!(wire["created_body_nodes"], serde_json::json!([541, 546]));
         assert_eq!(wire["consumed_body_nodes"], serde_json::json!([510]));
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCombineOperation>(wire).unwrap(),
+            json::from_value::<DesignCombineOperation>(wire).unwrap(),
             value
         );
         assert_eq!(value.clone(), value);
@@ -817,11 +817,11 @@ mod tests {
             wire["external_version_urn_offset"] = serde_json::json!(403);
             wire["tail_value_offsets"] = serde_json::json!([415, 427]);
         }
-        cadmpeg_core::serde_erase::json::from_value(wire).unwrap()
+        json::from_value(wire).unwrap()
     }
 
     fn operation(version: bool) -> DesignCombineOperation {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "form": "standard",
             "operation": "join",
             "operation_offset": 20,
@@ -838,8 +838,8 @@ mod tests {
         for identity in [external_identity(false), external_identity(true)] {
             let owned = DesignCombineExternalBodyIdentityWire::from(identity.clone());
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&identity).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+                json::to_vec(&identity).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -872,10 +872,9 @@ mod tests {
             external_identity: None,
             body_node: Some(node),
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(&selection).unwrap();
+        let wire = json::to_value(&selection).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCombineBodySelection>(wire)
-                .unwrap(),
+            json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
             selection
         );
 
@@ -883,20 +882,17 @@ mod tests {
             body_node: None,
             ..selection
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(&without).unwrap();
+        let wire = json::to_value(&without).unwrap();
         assert_eq!(wire, serde_json::json!({ "record_index": 363 }));
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCombineBodySelection>(wire)
-                .unwrap(),
+            json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
             without
         );
 
-        let error = cadmpeg_core::serde_erase::json::from_value::<DesignCombineBodySelection>(
-            serde_json::json!({
-                "record_index": 363,
-                "body_node": null,
-            }),
-        )
+        let error = json::from_value::<DesignCombineBodySelection>(serde_json::json!({
+            "record_index": 363,
+            "body_node": null,
+        }))
         .unwrap_err()
         .to_string();
         assert!(error.contains("body_node"), "{error}");
@@ -913,9 +909,8 @@ mod tests {
         value.form = super::DesignCombineForm::OperandLists;
         value.target_body_node = Some(node(10));
         value.tools.first.body_node = Some(node(20));
-        let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
-        let read: DesignCombineOperation =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        let wire = json::to_value(&value).unwrap();
+        let read: DesignCombineOperation = json::from_value(wire).unwrap();
         assert_eq!(read, value);
     }
 
@@ -924,8 +919,8 @@ mod tests {
         for record in [operation(false), operation(true)] {
             let owned = DesignCombineOperationWire::from(record.clone());
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+                json::to_vec(&record).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }

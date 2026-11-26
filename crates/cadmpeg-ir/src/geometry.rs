@@ -105,7 +105,14 @@ pub enum LegacyExtensionFlags {
 /// Mutually exclusive pre-revision and revision-gated offset layouts.
 // A source states raw scalars; an `OffsetSurfaceConstruction` holds the
 // admitted extension, whose scalars are `FiniteReal` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]

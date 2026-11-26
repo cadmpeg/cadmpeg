@@ -1729,6 +1729,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 mod tests {
     mod user_knots;
 
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::subd;
     use cadmpeg_test_support::wire;
 
@@ -2270,7 +2271,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             pairs: vec![pair],
         })
         .collect();
-        let synthetic = cadmpeg_core::serde_erase::json::to_string(&[RadialFixture {
+        let synthetic = json::to_string(&[RadialFixture {
             source,
             face_pairs: vec![[0, 0]],
             edge_pairs: vec![[0, 1]],

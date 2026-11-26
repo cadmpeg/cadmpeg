@@ -192,7 +192,7 @@ fn annotation_offset(
     section: &str,
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(id.as_str()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
@@ -211,7 +211,7 @@ fn raw_annotation_offset(
     id: impl std::fmt::Display,
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(id.as_str()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))

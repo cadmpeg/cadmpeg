@@ -204,7 +204,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         let plan = codec
             .plan(
                 EncodeInput::new(&edited, Some(result.source_fidelity())),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .expect("edited STEP document plan");
         assert!(matches!(

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-profile operands and profile region members.
 
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 fn sketch_profile_operand() -> super::DesignSketchProfileOperand {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "scope_reference_ordinal": 0, "record_index": 7, "byte_offset": 0,
         "class_tag": "300", "paired_class_tag": "301", "paired_byte_offset": 160,
         "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 32,
@@ -32,8 +33,8 @@ fn sketch_profile_operand_borrowed_wire_matches_owned_wire_bytes() {
         operand.region_selection = selection;
         let owned = super::DesignSketchProfileOperandWire::from(operand.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&operand).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+            json::to_vec(&operand).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -61,7 +62,7 @@ fn sketch_profile_operand_native_retained_limit_refuses_before_clone() {
 #[test]
 fn profile_region_member_preserves_fixed_words_and_nonzero_incidence_values() {
     let wire = |kind: u32, identity: u64, words: [u32; 8]| {
-        format!("{{\"kind\":{kind},\"kind_offset\":40,\"curve_primary_id\":{identity},\"curve_primary_id_offset\":44,\"incidence_words\":{},\"incidence_words_offset\":48}}", cadmpeg_core::serde_erase::json::to_string(&words).expect("incidence words"))
+        format!("{{\"kind\":{kind},\"kind_offset\":40,\"curve_primary_id\":{identity},\"curve_primary_id_offset\":44,\"incidence_words\":{},\"incidence_words_offset\":48}}", json::to_string(&words).expect("incidence words"))
     };
     for identity in [1, u64::from(u32::MAX)] {
         for flag in [0, 1] {
@@ -70,11 +71,7 @@ fn profile_region_member_preserves_fixed_words_and_nonzero_incidence_values() {
                     let json = wire(3, identity, [0, 0, 0, flag, first, second, 0, 0]);
                     let member: super::DesignSketchProfileRegionMember =
                         serde_json::from_str(&json).expect("region member");
-                    assert_eq!(
-                        cadmpeg_core::serde_erase::json::to_string(&member)
-                            .expect("region member wire"),
-                        json
-                    );
+                    assert_eq!(json::to_string(&member).expect("region member wire"), json);
                 }
             }
         }
@@ -105,10 +102,7 @@ fn profile_region_member_preserves_fixed_words_and_nonzero_incidence_values() {
         member.curve_secondary_id.map(std::num::NonZeroU32::get),
         Some(3)
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&member).expect("region member wire"),
-        json
-    );
+    assert_eq!(json::to_string(&member).expect("region member wire"), json);
     for index in [0, 2, 3, 4, 5, 6, 7] {
         let mut words = [0, 0, 0, 0, 1, 1, 0, 0];
         words[index] = if matches!(index, 4 | 5) { 0 } else { 3 };
@@ -128,8 +122,7 @@ fn sketch_profile_offsets_must_follow_their_predecessors() {
         "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 32,
         "entity_id": "Sketch_1", "entity_suffix": 1, "entity_reference_offset": 80
     });
-    let admitted: DesignSketchProfileOperand =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let admitted: DesignSketchProfileOperand = json::from_value(wire.clone()).unwrap();
     let mut draft = admitted.into_draft();
     draft.byte_offset = draft.asset_id_offset;
     assert!(DesignSketchProfileOperand::try_new(draft).is_err());
@@ -140,10 +133,7 @@ fn sketch_profile_offsets_must_follow_their_predecessors() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = preceding.into();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignSketchProfileOperand>(invalid)
-                .is_err()
-        );
+        assert!(json::from_value::<DesignSketchProfileOperand>(invalid).is_err());
     }
 }
 
@@ -158,7 +148,7 @@ fn selection_with_loops(holes: &[bool]) -> super::DesignSketchProfileRegionSelec
             })
         })
         .collect();
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "record_index": 8, "byte_offset": 90, "class_tag": "302",
         "region_count_offset": 100, "regions": loops,
         "companion_class_tag": "303", "companion_byte_offset": 140
