@@ -30,7 +30,7 @@ pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
     /// The record indices of the indexed records the stream holds with no
     /// primary index entry.
-    pub(super) unindexed: BTreeSet<u64>,
+    pub(super) without_primary: BTreeSet<u64>,
 }
 
 impl EncodedDesignBulkStream {
@@ -39,7 +39,7 @@ impl EncodedDesignBulkStream {
         self.primary_records
             .iter()
             .map(|record| record.entity_id)
-            .chain(self.unindexed.iter().copied())
+            .chain(self.without_primary.iter().copied())
             .collect()
     }
 }
@@ -193,7 +193,7 @@ pub(super) fn encode_design_bulkstream(
 
     let mut out = parameters.bytes;
     let mut primary_records = Vec::new();
-    let mut unindexed = parameters
+    let mut without_primary = parameters
         .indices
         .into_iter()
         .map(u64::from)
@@ -222,7 +222,7 @@ pub(super) fn encode_design_bulkstream(
         for &(record_index, offset) in &records.primaries {
             primary_records.push(primary_record(record_index, base + offset)?);
         }
-        unindexed.extend(
+        without_primary.extend(
             records
                 .secondaries
                 .iter()
@@ -251,7 +251,7 @@ pub(super) fn encode_design_bulkstream(
             ));
         };
         prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
-        unindexed.insert(u64::from(record_index.value.cast_unsigned()));
+        without_primary.insert(u64::from(record_index.value.cast_unsigned()));
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| {
@@ -284,7 +284,7 @@ pub(super) fn encode_design_bulkstream(
     for header in &native.design_record_headers {
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
-        unindexed.insert(u64::from(header.record_index));
+        without_primary.insert(u64::from(header.record_index));
     }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
@@ -407,19 +407,19 @@ pub(super) fn encode_design_bulkstream(
         } else {
             native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
-            unindexed.insert(u64::from(reference.record_index));
+            without_primary.insert(u64::from(reference.record_index));
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
-        unindexed.insert(u64::from(reference.next_record_index));
+        without_primary.insert(u64::from(reference.next_record_index));
     }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
-        unindexed,
+        without_primary,
     }))
 }
 

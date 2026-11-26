@@ -183,38 +183,89 @@ fn the_generated_type_is_charged_again_on_a_rewrite() {
 }
 
 #[test]
-fn an_unwritten_root_record_leaves_the_type_table() {
-    let long = "r".repeat(257);
-    let cut = "r".repeat(256);
-    let payload = serde_json::to_vec(&table_document(
-        "1",
-        &[],
-        &[
-            (long.as_str(), "Long", Vec::new()),
-            (cut.as_str(), "Cut", Vec::new()),
-        ],
-        &[long.as_str(), cut.as_str()],
-    ))
-    .unwrap();
-    let mut ir = source_less(with_root_segment(
-        f3d_with_configuration(&synthetic_geometry_smbh(), ENTRY, &payload),
-        root_record(*b"256", ROOT_RECORD, "1", &cut),
-    ));
-    assert!(listed(&ir, ROOT_RECORD));
-    set_active_row(&mut ir, &long);
-    let (report, round_trip) = write_and_decode(&ir);
-    assert!(
-        report
+fn a_source_row_no_table_holds_is_charged_and_leaves_the_type_table() {
+    let payload = serde_json::to_vec(&table_document("1", &[], &[], &[])).unwrap();
+    for table_id in ["1", "9"] {
+        let ir = source_less(with_root_segment(
+            f3d_with_configuration(&synthetic_geometry_smbh(), ENTRY, &payload),
+            root_record(*b"256", ROOT_RECORD, table_id, "2"),
+        ));
+        let document = &f3d_native(&ir).design_configurations[0];
+        assert_eq!(
+            document.active_row().map(|row| row.table_id.as_str()),
+            Some(table_id)
+        );
+        assert!(ir.model.configurations.is_empty());
+        assert!(listed(&ir, ROOT_RECORD));
+        let (report, round_trip) = write_and_decode(&ir);
+        let charged = report
             .losses
             .iter()
-            .any(|loss| loss.message.contains("another table or row")),
+            .filter(|loss| {
+                loss.code.to_string() == "export/value.unwritable"
+                    && loss.message.contains(document.id().as_str())
+                    && loss
+                        .message
+                        .contains(&format!("table id {table_id} row id 2"))
+            })
+            .count();
+        assert_eq!(charged, 1, "{table_id}: {:#?}", report.losses);
+        assert!(f3d_native(round_trip.ir()).design_configurations[0]
+            .active_row()
+            .is_none());
+        assert!(!listed(round_trip.ir(), ROOT_RECORD));
+    }
+}
+
+#[test]
+fn a_table_id_another_document_holds_decodes_renamed() {
+    const OTHER: &str = "FusionAssetName[Active]/DesignConfigurationTable.456.dsgcfg";
+    let mut ir = source_less(rooted());
+    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+        let other = crate::records::configuration::DesignConfiguration::try_new(
+            OTHER.into(),
+            native.design_configurations[0].kind(),
+            table_document("1", &[], &[], &[])
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        native.design_configurations.push(other);
+    });
+    ir.model.configurations = crate::test_support::configuration_table::project(&ir);
+    let (report, round_trip) = write_and_decode(&ir);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.to_string() == "export/value.unwritable"
+                && loss.message.contains("1 written as 1-1")
+        }),
         "{:#?}",
         report.losses
     );
-    assert!(f3d_native(round_trip.ir()).design_configurations[0]
+    let documents = f3d_native(round_trip.ir()).design_configurations;
+    let document = |entry: &str| {
+        documents
+            .iter()
+            .find(|document| document.entry_name().as_str() == entry)
+            .expect("a written configuration table document")
+    };
+    let active = document(ENTRY)
         .active_row()
-        .is_none());
-    assert!(!listed(round_trip.ir(), ROOT_RECORD));
+        .expect("the renamed root record binds to its document");
+    assert_eq!(
+        (active.table_id.as_str(), active.row_id.as_str()),
+        ("1-1", "large")
+    );
+    assert_eq!(document(ENTRY).tables()[0].id, "1-1");
+    assert_eq!(document(OTHER).tables()[0].id, "1");
+    assert!(document(OTHER).active_row().is_none());
+    assert!(round_trip
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .any(|configuration| configuration.active));
 }
 
 #[test]

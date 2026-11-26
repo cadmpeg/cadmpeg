@@ -13,9 +13,8 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use super::presentation::{GeneratedDesignRegistry, TypeRow};
 use super::records::{encode_configuration_root, EncodedDesignBulkStream};
-use crate::design::decode::configuration_root::ID_WIDTH;
-use crate::records::configuration::table::rename_ids;
-use crate::records::configuration::{encode_configuration_payload, DesignConfiguration};
+use crate::records::configuration::table::{rename_ids, ConfigurationTable};
+use crate::records::configuration::{encode_configuration_payload, DesignConfiguration, ID_WIDTH};
 
 /// The type the record is registered under when the source registers none
 /// for it (f3d-open-items.md DR-1063). The writer generates the type GUID,
@@ -59,6 +58,8 @@ struct ConfigurationRoot {
     configuration: String,
     /// The position of the row's table document.
     document: usize,
+    /// The position of the row's table in the document's `tables` array.
+    table: usize,
     table_id: WrittenId,
     row_id: WrittenId,
 }
@@ -86,17 +87,17 @@ impl WrittenId {
 struct Candidate<'a> {
     configuration: String,
     document: usize,
-    table: &'a crate::records::configuration::table::ConfigurationTable,
+    table: &'a ConfigurationTable,
     row: &'a str,
 }
 
 /// Plan the root record of the configuration that `target` states active,
-/// among the rows of the table documents in `documents`.
+/// among the rows of the populated table of `documents`, the one table whose
+/// rows the neutral configurations project.
 ///
-/// A table that a design scope's active configuration names a row of takes
-/// that row; every other table takes the row that the earlier arena states
-/// active. A Design stream holds one root record, so a second active row is
-/// written inactive, a scope's row before an earlier arena's.
+/// A design scope's active configuration takes precedence over the row that
+/// the earlier arena states active. A Design stream holds one root record, so
+/// a second active row is written inactive.
 pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
     let scoped = target
         .design
@@ -112,40 +113,50 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         .filter(|configuration| configuration.active)
         .map(|configuration| configuration.id.to_string())
         .collect::<BTreeSet<_>>();
-    let mut matched = BTreeSet::new();
+    let rows = documents
+        .iter()
+        .enumerate()
+        .flat_map(|(index, document)| {
+            document
+                .tables()
+                .iter()
+                .map(move |table| (index, document, table))
+        })
+        .find(|(_, _, table)| !table.rows.is_empty())
+        .map(|(index, document, table)| {
+            table
+                .rows
+                .iter()
+                .map(|row| Candidate {
+                    configuration: crate::ids::neutral_configuration_id(
+                        document.entry_name(),
+                        &row.id,
+                    )
+                    .to_string(),
+                    document: index,
+                    table,
+                    row: &row.id,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let matched = rows
+        .iter()
+        .map(|row| row.configuration.clone())
+        .collect::<BTreeSet<_>>();
+    let covered = rows.iter().any(|row| scoped.contains(&row.configuration));
     let mut scope_rows = Vec::new();
     let mut flagged_rows = Vec::new();
     let mut overridden = Vec::new();
-    for (document_index, document) in documents.iter().enumerate() {
-        for table in document.tables() {
-            let rows = table
-                .rows
-                .iter()
-                .map(|row| {
-                    let configuration =
-                        crate::ids::neutral_configuration_id(document.entry_name(), &row.id)
-                            .to_string();
-                    matched.insert(configuration.clone());
-                    Candidate {
-                        configuration,
-                        document: document_index,
-                        table,
-                        row: &row.id,
-                    }
-                })
-                .collect::<Vec<_>>();
-            let covered = rows.iter().any(|row| scoped.contains(&row.configuration));
-            for row in rows {
-                match (
-                    scoped.contains(&row.configuration),
-                    flagged.contains(&row.configuration),
-                ) {
-                    (true, _) => scope_rows.push(row),
-                    (false, true) if covered => overridden.push(row.configuration),
-                    (false, true) => flagged_rows.push(row),
-                    (false, false) => {}
-                }
-            }
+    for row in rows {
+        match (
+            scoped.contains(&row.configuration),
+            flagged.contains(&row.configuration),
+        ) {
+            (true, _) => scope_rows.push(row),
+            (false, true) if covered => overridden.push(row.configuration),
+            (false, true) => flagged_rows.push(row),
+            (false, false) => {}
         }
     }
     let mut candidates = scope_rows.into_iter().chain(flagged_rows);
@@ -157,11 +168,30 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         .filter(|id| !matched.contains(*id))
         .cloned()
         .collect::<BTreeSet<_>>();
+    let unheld = documents.iter().filter_map(|document| {
+        let active = document.active_row()?;
+        let held = document.tables().iter().any(|table| {
+            table.id == active.table_id && table.rows.iter().any(|row| row.id == active.row_id)
+        });
+        (!held).then(|| {
+            format!(
+                "{} table id {} row id {}",
+                document.id(),
+                active.table_id,
+                active.row_id
+            )
+        })
+    });
     let mut losses = Vec::new();
     losses.extend(value_unwritable(
         "F3D",
         "writes no active row for these active configurations: no written configuration table holds their row",
         unmatched,
+    ));
+    losses.extend(value_unwritable(
+        "F3D",
+        "writes no active row for these configuration table documents: their DesignConfigurationRoot record names a row that no table of the document holds",
+        unheld,
     ));
     losses.extend(value_unwritable(
         "F3D",
@@ -185,9 +215,12 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
 }
 
 /// The root record that names `row`, with its ids fitted to [`TABLE_ID`]
-/// and [`ROW_ID`], and a table id that another document also holds made
-/// unique; `None` when an id is empty, its cut names another table or row,
-/// or no unique table id fits.
+/// and [`ROW_ID`]; `None` when an id is empty.
+///
+/// The decoder binds the record to the one table document that holds its
+/// table id (f3d.md §1.2), so a table id that another document holds is
+/// written unique. A row id whose cut names another row of the table is
+/// written unique.
 fn root(
     row: Candidate<'_>,
     documents: &[DesignConfiguration],
@@ -195,95 +228,117 @@ fn root(
 ) -> Option<ConfigurationRoot> {
     let table_id = TABLE_ID.fit(&row.table.id);
     let row_id = ROW_ID.fit(row.row);
-    let named = format!(
-        "{} (table id of {} UTF-16 units, row id of {})",
-        row.configuration, table_id.stated_units, row_id.stated_units
-    );
     if table_id.text.is_empty() || row_id.text.is_empty() {
         losses.extend(value_unwritable(
             "F3D",
             &format!("writes no DesignConfigurationRoot record for this active configuration: the record stores its table id and row id as UTF-16 text of 1 to {ID_WIDTH} units, and an id is empty"),
-            [named],
+            [format!(
+                "{} (table id of {} UTF-16 units, row id of {})",
+                row.configuration, table_id.stated_units, row_id.stated_units
+            )],
         ));
         return None;
     }
-    let collides = (table_id.was_cut()
-        && documents
+    let other_tables = || {
+        documents
             .iter()
-            .flat_map(DesignConfiguration::tables)
-            .any(|table| table.id == table_id.text))
-        || (row_id.was_cut() && row.table.rows.iter().any(|other| other.id == row_id.text));
-    if collides {
-        losses.extend(value_unwritable(
-            "F3D",
-            &format!("writes no DesignConfigurationRoot record for this active configuration: an id is wider than the record's {ID_WIDTH} UTF-16 units, and its cut names another table or row"),
-            [named],
-        ));
-        return None;
-    }
-    // The decoder binds the record to the one table document that holds its
-    // table id (f3d.md §1.2): an id another document holds is renamed to one
-    // that no other table holds.
-    let held = |id: &str, elsewhere: bool| {
-        documents.iter().enumerate().any(|(index, document)| {
-            (!elsewhere || index != row.document)
+            .enumerate()
+            .flat_map(|(index, document)| document.tables().iter().map(move |table| (index, table)))
+            .filter(|&(index, table)| (index, table.position) != (row.document, row.table.position))
+    };
+    let holder = documents
+        .iter()
+        .enumerate()
+        .find(|&(index, document)| {
+            index != row.document
                 && document
                     .tables()
                     .iter()
-                    .any(|table| table.id == id && !std::ptr::eq(table, row.table))
+                    .any(|table| table.id == table_id.text)
         })
-    };
-    let mut written_table_id = table_id.text.to_owned();
-    if held(&written_table_id, true) {
-        let tables = documents
-            .iter()
-            .map(|document| document.tables().len())
-            .sum::<usize>();
-        let unique = (1..=tables + 1)
-            .filter_map(|ordinal| {
-                let suffix = format!("-{ordinal}");
-                let base = TextCapacity {
-                    width: ID_WIDTH.checked_sub(suffix.len())?,
-                    ..TABLE_ID
-                }
-                .fit(&row.table.id);
-                Some(format!("{}{suffix}", base.text))
-            })
-            .find(|candidate| !held(candidate, false));
-        let Some(unique) = unique else {
+        .map(|(_, document)| document.id());
+    let written_table_id = match holder {
+        Some(holder) => {
+            let unique = unique(
+                TABLE_ID,
+                &row.table.id,
+                other_tables().count(),
+                |candidate| other_tables().any(|(_, table)| table.id == candidate),
+            );
             losses.extend(value_unwritable(
                 "F3D",
-                "writes no DesignConfigurationRoot record for this active configuration: another configuration table document holds its table id, and no unique table id fits the record",
-                [named],
+                "writes the table id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: another configuration table document holds the id, and the record names its table by id alone",
+                [format!(
+                    "{} table id {} written as {unique}, held by {holder}",
+                    row.configuration, row.table.id
+                )],
             ));
-            return None;
-        };
+            unique
+        }
+        None => table_id.text.to_owned(),
+    };
+    let other_rows = || row.table.rows.iter().filter(|other| other.id != row.row);
+    let written_row_id = if other_rows().any(|other| other.id == row_id.text) {
+        let unique = unique(ROW_ID, row.row, other_rows().count(), |candidate| {
+            other_rows().any(|other| other.id == candidate)
+        });
         losses.extend(value_unwritable(
             "F3D",
-            "writes the table id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: another configuration table document holds the id, and the record names its table by id alone",
+            &format!("writes the row id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: its cut to {ID_WIDTH} UTF-16 units names another row of its table"),
             [format!(
-                "{} table id {} written as {unique}",
-                row.configuration, row.table.id
+                "{} row id written as {unique}",
+                row.configuration
             )],
         ));
-        written_table_id = unique;
-    }
+        unique
+    } else {
+        row_id.text.to_owned()
+    };
     losses.extend(value_unwritable(
         "F3D",
         &format!("writes the ids of this active configuration cut at a character boundary to {ID_WIDTH} UTF-16 units, in the DesignConfigurationRoot record and in its configuration table document"),
         [
-            table_id.unwritable_entry(&row.configuration),
-            row_id.unwritable_entry(&row.configuration),
+            (written_table_id == table_id.text)
+                .then(|| table_id.unwritable_entry(&row.configuration))
+                .flatten(),
+            (written_row_id == row_id.text)
+                .then(|| row_id.unwritable_entry(&row.configuration))
+                .flatten(),
         ]
         .into_iter()
         .flatten(),
     ));
     Some(ConfigurationRoot {
         table_id: WrittenId::new(&row.table.id, &written_table_id),
-        row_id: WrittenId::new(row.row, row_id.text),
+        row_id: WrittenId::new(row.row, &written_row_id),
         configuration: row.configuration,
         document: row.document,
+        table: row.table.position,
     })
+}
+
+/// The first id `stated` fitted to `capacity` with the suffix `-n`, for `n`
+/// from 1, that `taken` does not hold, among `others` taken ids.
+fn unique(
+    capacity: TextCapacity,
+    stated: &str,
+    others: usize,
+    taken: impl Fn(&str) -> bool,
+) -> String {
+    (1..=others + 1)
+        .map(|ordinal| {
+            let suffix = format!("-{ordinal}");
+            let width = capacity
+                .width
+                .checked_sub(suffix.len())
+                .expect("an id capacity is wider than a decimal suffix");
+            format!(
+                "{}{suffix}",
+                TextCapacity { width, ..capacity }.fit(stated).text
+            )
+        })
+        .find(|candidate| !taken(candidate))
+        .expect("one of `others + 1` distinct suffixed ids is free")
 }
 
 impl Plan {
@@ -305,6 +360,7 @@ impl Plan {
         let mut payload = configuration.payload().clone();
         rename_ids(
             &mut payload,
+            root.table,
             (&root.table_id.stated, &root.table_id.written),
             (&root.row_id.stated, &root.row_id.written),
         );

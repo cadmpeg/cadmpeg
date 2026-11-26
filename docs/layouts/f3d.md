@@ -12087,6 +12087,10 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/records/configuration.rs` — The reader admits a table id and a row id of 1 to 256 UTF-16 code units after the prefix; the writer fits both ids to the same width.
+
 ## `snapshot_body_map_plain_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 36 B

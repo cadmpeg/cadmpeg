@@ -41,57 +41,58 @@ fn documents() -> Vec<DesignConfiguration> {
     vec![table(TABLE, "1", &["small", "large"])]
 }
 
-fn two_documents() -> Vec<DesignConfiguration> {
-    vec![
-        table(TABLE, "1", &["small", "large"]),
-        table(SECOND, "2", &["a", "b"]),
-    ]
+/// `document` with a second table of id `table_id` and no rows after its
+/// table.
+fn with_twin(document: &DesignConfiguration, table_id: &str) -> DesignConfiguration {
+    let mut payload = document.payload().clone();
+    let twin = table_document(table_id, &[], &[], &[])["tables"][0].clone();
+    payload["tables"].as_array_mut().unwrap().push(twin);
+    DesignConfiguration::try_new(
+        document.entry_name().clone(),
+        DesignConfigurationKind::Table,
+        payload,
+    )
+    .unwrap()
 }
 
 fn id(row: &str) -> cadmpeg_ir::features::ConfigurationId {
     crate::ids::neutral_configuration_id(TABLE, row)
 }
 
-fn second(row: &str) -> cadmpeg_ir::features::ConfigurationId {
-    crate::ids::neutral_configuration_id(SECOND, row)
-}
-
 /// A document over `documents` whose earlier arena states `flagged` active
-/// and whose design scope states `scope` active.
+/// and whose design scopes state each of `scopes` active.
 fn document(
     documents: &[DesignConfiguration],
     flagged: &[cadmpeg_ir::features::ConfigurationId],
-    scope: Option<cadmpeg_ir::features::ConfigurationId>,
+    scopes: &[cadmpeg_ir::features::ConfigurationId],
 ) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.configurations = documents
-        .chunks(1)
-        .flat_map(|document| {
-            crate::design::configurations::project_configurations(
-                document,
-                &crate::design::configurations::ConfigurationTargets {
-                    parameters: &[],
-                    owners: &[],
-                    scopes: &[],
-                    neutral_parameters: &[],
-                    neutral_features: &[],
-                },
-            )
-            .unwrap()
-        })
-        .collect();
+    ir.model.configurations = crate::design::configurations::project_configurations(
+        documents,
+        &crate::design::configurations::ConfigurationTargets {
+            parameters: &[],
+            owners: &[],
+            scopes: &[],
+            neutral_parameters: &[],
+            neutral_features: &[],
+        },
+    )
+    .unwrap();
     for configuration in &mut ir.model.configurations {
         configuration.active = flagged.contains(&configuration.id);
     }
-    ir.design.scopes.push(DesignScope {
-        definition: ProductDefinitionId::mint("test:design:product#root").unwrap(),
-        roots: Vec::new(),
-        active_configuration: scope,
-        active_arrangements: BTreeSet::new(),
-        occurrences: BTreeMap::new(),
-        current: Vec::new(),
-        unproduced: BTreeSet::new(),
-    });
+    for (ordinal, scope) in scopes.iter().enumerate() {
+        ir.design.scopes.push(DesignScope {
+            definition: ProductDefinitionId::mint(format!("test:design:product#{ordinal}"))
+                .unwrap(),
+            roots: Vec::new(),
+            active_configuration: Some(scope.clone()),
+            active_arrangements: BTreeSet::new(),
+            occurrences: BTreeMap::new(),
+            current: Vec::new(),
+            unproduced: BTreeSet::new(),
+        });
+    }
     ir
 }
 
@@ -120,11 +121,11 @@ fn row(table: &str, row: &str) -> Pair {
 #[test]
 fn a_table_without_an_active_scope_row_takes_its_flagged_row() {
     assert_eq!(
-        planned(&document(&documents(), &[id("large")], None), &documents()),
+        planned(&document(&documents(), &[id("large")], &[]), &documents()),
         (Some(row("1", "large")), Vec::new())
     );
     assert_eq!(
-        planned(&document(&documents(), &[], None), &documents()),
+        planned(&document(&documents(), &[], &[]), &documents()),
         (None, Vec::new())
     );
 }
@@ -132,7 +133,7 @@ fn a_table_without_an_active_scope_row_takes_its_flagged_row() {
 #[test]
 fn a_scope_row_wins_over_the_flagged_row_of_its_table_with_a_charge() {
     let (root, losses) = planned(
-        &document(&documents(), &[id("large")], Some(id("small"))),
+        &document(&documents(), &[id("large")], &[id("small")]),
         &documents(),
     );
     assert_eq!(root, Some(row("1", "small")));
@@ -143,45 +144,32 @@ fn a_scope_row_wins_over_the_flagged_row_of_its_table_with_a_charge() {
 }
 
 #[test]
-fn a_table_no_scope_names_keeps_its_flagged_row() {
-    let documents = two_documents();
+fn a_scope_row_outside_the_table_keeps_its_flagged_row() {
     let (root, losses) = planned(
-        &document(&documents, &[second("a")], Some(id("absent"))),
-        &documents,
+        &document(&documents(), &[id("large")], &[id("absent")]),
+        &documents(),
     );
-    assert_eq!(root, Some(row("2", "a")));
+    assert_eq!(root, Some(row("1", "large")));
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert!(losses[0].1.contains(id("absent").as_str()));
 }
 
 #[test]
-fn a_second_active_configuration_is_written_inactive_with_a_charge() {
-    let documents = two_documents();
+fn a_second_scope_row_is_written_inactive_with_a_charge() {
     let (root, losses) = planned(
-        &document(&documents, &[id("large"), second("a")], None),
-        &documents,
+        &document(&documents(), &[], &[id("large"), id("small")]),
+        &documents(),
     );
-    assert_eq!(root, Some(row("1", "large")));
+    assert_eq!(root, Some(row("1", "small")));
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(losses[0].0, "export/value.unwritable");
     assert!(losses[0].1.contains("one DesignConfigurationRoot record"));
-    assert!(losses[0].1.contains(second("a").as_str()));
-
-    let (root, losses) = planned(
-        &document(&documents, &[id("large")], Some(second("b"))),
-        &documents,
-    );
-    assert_eq!(root, Some(row("2", "b")));
-    assert_eq!(losses.len(), 1, "{losses:#?}");
     assert!(losses[0].1.contains(id("large").as_str()));
 }
 
 #[test]
 fn an_active_configuration_with_no_written_row_is_charged() {
-    let (root, losses) = planned(
-        &document(&documents(), &[], Some(id("absent"))),
-        &documents(),
-    );
+    let (root, losses) = planned(&document(&documents(), &[], &[id("absent")]), &documents());
     assert!(root.is_none());
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].0, "export/value.unwritable");
@@ -191,7 +179,7 @@ fn an_active_configuration_with_no_written_row_is_charged() {
 #[test]
 fn an_empty_row_id_drops_the_root_record_with_a_charge() {
     let documents = vec![table(TABLE, "1", &["", "large"])];
-    let (root, losses) = planned(&document(&documents, &[id("")], None), &documents);
+    let (root, losses) = planned(&document(&documents, &[id("")], &[]), &documents);
     assert!(root.is_none());
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(losses[0].0, "export/value.unwritable");
@@ -199,14 +187,32 @@ fn an_empty_row_id_drops_the_root_record_with_a_charge() {
 }
 
 #[test]
-fn an_id_cut_that_names_another_row_drops_the_root_record_with_a_charge() {
+fn a_row_id_cut_that_names_another_row_is_written_unique_with_a_charge() {
     let long = "r".repeat(ID_WIDTH + 1);
     let cut = "r".repeat(ID_WIDTH);
     let documents = vec![table(TABLE, "1", &[&long, &cut])];
-    let (root, losses) = planned(&document(&documents, &[id(&long)], None), &documents);
-    assert!(root.is_none());
+    let ir = document(&documents, &[id(&long)], &[]);
+    let (root, losses) = planned(&ir, &documents);
+    let unique = format!("{}-1", "r".repeat(ID_WIDTH - 2));
+    assert_eq!(root, Some(row("1", &unique)));
     assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert!(losses[0].1.contains("another table or row"));
+    assert_eq!(losses[0].0, "export/value.unwritable");
+    assert!(losses[0].1.contains("names another row"));
+    assert!(losses[0].1.contains(id(&long).as_str()));
+
+    let written = plan(&ir, &documents).payload(0, &documents[0]).unwrap();
+    let written = DesignConfiguration::try_new(
+        TABLE.into(),
+        DesignConfigurationKind::Table,
+        cadmpeg_core::serde_erase::json::from_slice(&written).unwrap(),
+    )
+    .unwrap();
+    let rows = written.tables()[0]
+        .rows
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(rows, [unique.as_str(), cut.as_str()]);
 }
 
 #[test]
@@ -231,45 +237,93 @@ fn the_generated_type_guid_is_derived_from_the_record_key() {
     ));
 }
 
+/// The document `configuration` at `index` as `plan` writes it.
+fn written(
+    plan: &super::Plan,
+    index: usize,
+    configuration: &DesignConfiguration,
+) -> DesignConfiguration {
+    DesignConfiguration::try_new(
+        configuration.entry_name().clone(),
+        DesignConfigurationKind::Table,
+        cadmpeg_core::serde_erase::json::from_slice(&plan.payload(index, configuration).unwrap())
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+fn table_ids(document: &DesignConfiguration) -> Vec<&str> {
+    document
+        .tables()
+        .iter()
+        .map(|table| table.id.as_str())
+        .collect()
+}
+
 #[test]
 fn a_table_id_another_document_holds_is_written_unique_with_a_charge() {
     let documents = vec![
         table(TABLE, "1", &["small", "large"]),
-        table(SECOND, "1", &["a"]),
+        table(SECOND, "1", &[]),
     ];
-    let ir = document(&documents, &[id("large")], None);
+    let ir = document(&documents, &[id("large")], &[]);
     let (root, losses) = planned(&ir, &documents);
     assert_eq!(root, Some(row("1-1", "large")));
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(losses[0].0, "export/value.unwritable");
     assert!(losses[0].1.contains(id("large").as_str()));
+    assert!(losses[0].1.contains(&documents[1].id()));
 
     let plan = plan(&ir, &documents);
-    let renamed = DesignConfiguration::try_new(
-        TABLE.into(),
-        DesignConfigurationKind::Table,
-        cadmpeg_core::serde_erase::json::from_slice(&plan.payload(0, &documents[0]).unwrap())
-            .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(renamed.tables()[0].id, "1-1");
-    let untouched = DesignConfiguration::try_new(
-        SECOND.into(),
-        DesignConfigurationKind::Table,
-        cadmpeg_core::serde_erase::json::from_slice(&plan.payload(1, &documents[1]).unwrap())
-            .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(untouched.tables()[0].id, "1");
+    assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1"]);
+    assert_eq!(table_ids(&written(&plan, 1, &documents[1])), ["1"]);
+}
+
+#[test]
+fn a_same_document_twin_of_the_table_id_is_not_renamed() {
+    let documents = vec![with_twin(&table(TABLE, "1", &["large"]), "1")];
+    let ir = document(&documents, &[id("large")], &[]);
+    assert_eq!(
+        planned(&ir, &documents),
+        (Some(row("1", "large")), Vec::new())
+    );
+
+    let documents = vec![documents[0].clone(), table(SECOND, "1", &[])];
+    let ir = document(&documents, &[id("large")], &[]);
+    let (root, losses) = planned(&ir, &documents);
+    assert_eq!(root, Some(row("1-1", "large")));
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert!(losses[0].1.contains(&documents[1].id()));
+    assert!(!losses[0].1.contains(&documents[0].id()));
+    let plan = plan(&ir, &documents);
+    assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1", "1"]);
+}
+
+#[test]
+fn a_table_id_cut_that_another_document_holds_is_written_unique() {
+    let long = "t".repeat(ID_WIDTH + 1);
+    let cut = "t".repeat(ID_WIDTH);
+    let documents = vec![table(TABLE, &long, &["large"]), table(SECOND, &cut, &[])];
+    let (root, losses) = planned(&document(&documents, &[id("large")], &[]), &documents);
+    let unique = format!("{}-1", "t".repeat(ID_WIDTH - 2));
+    assert_eq!(root, Some(row(&unique, "large")));
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert!(losses[0].1.contains("renamed"));
+
+    let documents = vec![with_twin(&table(TABLE, &long, &["large"]), &cut)];
+    let (root, losses) = planned(&document(&documents, &[id("large")], &[]), &documents);
+    assert_eq!(root, Some(row(&cut, "large")));
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert!(losses[0].1.contains("cut at a character boundary"));
 }
 
 #[test]
 fn a_unique_table_id_avoids_every_other_table_id() {
     let documents = vec![
         table(TABLE, "1", &["large"]),
-        table(SECOND, "1", &["a"]),
-        table(THIRD, "1-1", &["b"]),
+        table(SECOND, "1", &[]),
+        table(THIRD, "1-1", &[]),
     ];
-    let (root, _) = planned(&document(&documents, &[id("large")], None), &documents);
+    let (root, _) = planned(&document(&documents, &[id("large")], &[]), &documents);
     assert_eq!(root, Some(row("1-2", "large")));
 }

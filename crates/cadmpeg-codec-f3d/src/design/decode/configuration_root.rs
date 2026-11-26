@@ -5,17 +5,13 @@ use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::layout::configuration_root_prefix as root;
 use crate::layout::indexed_design_record_header as header;
-use crate::records::configuration::DesignConfigurationActiveRow;
+use crate::records::configuration::{DesignConfigurationActiveRow, ID_WIDTH};
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 /// The LP-ASCII key of the record.
 pub(crate) const ROOT_KEY: &str = "DesignConfigurationRoot";
-
-/// The most UTF-16 code units the reader takes for the table id or the row
-/// id.
-pub(crate) const ID_WIDTH: usize = 256;
 
 /// Active rows named by root records, and the count of root records outside
 /// the admitted form.
