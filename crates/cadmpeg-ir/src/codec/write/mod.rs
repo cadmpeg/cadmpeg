@@ -1154,7 +1154,7 @@ impl EncoderBackend for CadirEncoder {
         let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
             CodecError::Malformed(error.to_string())
         };
-        let (mut canonical, mut losses) = match canonical::canonical_form(input.ir)? {
+        let (mut canonical, mut losses) = match canonical::canonical_form(ctx, input.ir)? {
             Some((ir, losses)) => (Some(ir), losses),
             None => (None, Vec::new()),
         };
@@ -1163,6 +1163,7 @@ impl EncoderBackend for CadirEncoder {
                 Ok(measured) => measured,
                 Err(refusal) => {
                     let (ir, unwritable) = without_unwritable_records(
+                        ctx,
                         canonical.as_ref().unwrap_or(input.ir),
                         &refusal,
                     )?;
@@ -1231,6 +1232,7 @@ impl EncoderBackend for CadirEncoder {
 ///
 /// A resource refusal for the walk of the carriers.
 fn without_unwritable_records(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     refusal: &crate::hash::finite_json::CanonicalJsonError,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
@@ -1251,9 +1253,7 @@ fn without_unwritable_records(
     );
     let mut ir = ir.clone();
     let seeds = unwritable.keys().cloned().collect();
-    let removed = canonical::give_up_in(&mut ir, |ctx, ir| {
-        crate::give_up::drop_records(ctx, ir, seeds)
-    })?;
+    let removed = crate::give_up::drop_records(ctx, &mut ir, seeds)?;
     let losses = removed
         .into_iter()
         .filter_map(|(seed, released)| {
