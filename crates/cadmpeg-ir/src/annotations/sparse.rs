@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transactions that copy only the identities selected for editing.
 
-use super::{AnnotationBuilder, AnnotationKey, Annotations};
+use super::{AnnotationBuilder, Annotations};
 use crate::provenance::Exactness;
 use std::collections::BTreeSet;
 
@@ -141,15 +141,11 @@ impl PreparedAnnotationDelta {
 }
 
 fn copy_identity(base: &Annotations, changes: &mut Annotations, id: &str) {
-    if let Some(source) = base.provenance.get(id) {
-        changes
-            .provenance
-            .insert(AnnotationKey::from(id), source.clone());
+    if let Some((key, source)) = base.provenance.get_key_value(id) {
+        changes.provenance.insert(key.clone(), source.clone());
     }
-    if let Some(note) = base.exactness.get(id) {
-        changes
-            .exactness
-            .insert(AnnotationKey::from(id), note.clone());
+    if let Some((key, note)) = base.exactness.get_key_value(id) {
+        changes.exactness.insert(key.clone(), note.clone());
     }
 }
 
