@@ -1511,7 +1511,10 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
-    if let Err(error) = crate::native::SldprtNative::load(namespace) {
+    if let Err(error) = crate::native::SldprtNative::load(
+        namespace,
+        cadmpeg_ir::units::Tolerances::default().linear,
+    ) {
         assert!(!matches!(
             cadmpeg_core::CodecError::from(error),
             cadmpeg_core::CodecError::ResourceLimit(_)
@@ -1717,7 +1720,7 @@ fn duplicate_member_identity_replays_and_names_a_semantic_edit_over_the_stored_s
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &SldprtCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())

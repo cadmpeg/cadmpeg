@@ -243,10 +243,8 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
         })
         .collect();
     for body in &mut model.ir.geometry.bodies {
-        if body.name.as_ref().is_none_or(|name| name.trim().is_empty()) {
-            if let Some(name) = names.get(body.id.as_str()) {
-                body.name = Some(name.clone());
-            }
+        if let Some(name) = names.get(body.id.as_str()) {
+            body.name = Some(name.clone());
         }
     }
 }

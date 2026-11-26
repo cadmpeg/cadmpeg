@@ -72,6 +72,7 @@ AREAS = {
     "rhino": "Rhino",
     "catia": "CATIA",
     "solidedge": "Solid Edge",
+    "ironcad": "IronCAD",
     "sat": "ACIS",
     "asm": "Shape Manager",
     "parasolid": "Parasolid",

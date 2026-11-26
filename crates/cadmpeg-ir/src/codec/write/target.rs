@@ -18,14 +18,20 @@ use cadmpeg_core::CodecError;
 /// whole catalog.
 /// Preservation is input-conditioned — replaying a retained baseline
 /// reproduces dialects no encoder could synthesize for arbitrary input — so it
-/// is asked for by [`TargetRequest::Inherit`], never by a catalog entry.
+/// is asked for by [`TargetRequest::Inherit`] or [`TargetRequest::Unnamed`],
+/// never by a catalog entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetRequest<'a> {
-    /// Preserve the source's dialect. The same-format default.
+    /// A request that names no target. Where the document's source is of
+    /// this format it inherits; otherwise it takes the catalog default
+    /// without a loss (§3.4).
+    Unnamed,
+    /// Preserve the source's dialect. A source of another format, or none,
+    /// gives nothing to inherit: the request takes the catalog default and
+    /// charges `target.source-dialect-displaced` (§3.4).
     Inherit,
-    /// A synthesis target from [`crate::codec::write::Encoder::targets`]: an
-    /// explicit target flag, or the catalog default for a cross-format
-    /// conversion.
+    /// A synthesis target from [`crate::codec::write::Encoder::targets`],
+    /// named by the caller.
     Explicit(&'a str),
 }
 
@@ -101,8 +107,8 @@ pub enum ResolvedTarget<'a> {
         /// The document's source relative to this format.
         source: SourceIdentity,
         /// The request named a row the encoder reaches only by replaying a
-        /// source of that dialect, and `entry` is the catalog default written
-        /// in its place.
+        /// source of that dialect, and `entry` is the catalog default, or the
+        /// newest row where the catalog declares none, planned in its place.
         displaced: bool,
     },
     /// Inheritance resolved to a catalog row equal to the recorded source.
@@ -114,9 +120,9 @@ pub enum ResolvedTarget<'a> {
         /// The recorded same-format source dialect this row preserves.
         source: DialectId,
     },
-    /// Inheritance with no recorded same-format dialect took the catalog
-    /// default, or the newest catalog row where the catalog declares no
-    /// default.
+    /// A request with no recorded same-format dialect to inherit took the
+    /// catalog default, or the newest catalog row where the catalog declares
+    /// no default.
     Default {
         /// Position of `entry` in the encoder's declared catalog.
         index: usize,
@@ -124,6 +130,9 @@ pub enum ResolvedTarget<'a> {
         entry: &'static TargetDescriptor,
         /// Why no source dialect could be inherited.
         source: DefaultSource,
+        /// The caller asked to inherit ([`TargetRequest::Inherit`]) rather
+        /// than naming no target.
+        inherit: bool,
     },
     /// Inheritance of a recorded same-format dialect that is not on the
     /// catalog; only verbatim replay can realize it.
@@ -235,9 +244,13 @@ impl<'a> ResolvedWrite<'a> {
     /// off-catalog source was written as [`Self::synthesized_row`]. `row` is the
     /// row the writer states it wrote instead, if any. A named row that the
     /// file is not charges `target.request-displaced`; a recorded same-format
-    /// dialect that the file is not, or a same-format source that records no
-    /// dialect, charges `target.source-dialect-displaced`. An `Inherit` request
-    /// names no row, so it charges only the source code.
+    /// dialect that the file is not, a same-format source that records no
+    /// dialect, and an `Inherit` request from a source of another format or
+    /// from none charge `target.source-dialect-displaced`. A request that
+    /// names no target, on a source of another format or none, has no source
+    /// dialect to lose and charges nothing, whatever row the file is. An
+    /// `Inherit` or unnamed request names no row, so it charges only the
+    /// source code.
     fn written(
         &self,
         format: LossNamespace<'_>,
@@ -254,18 +267,32 @@ impl<'a> ResolvedWrite<'a> {
         };
         let (written, reason) = match row {
             Some(row) if row.target != planned => (row.target, Some(row.reason)),
-            _ => (planned, None),
+            _ => (planned.clone(), None),
         };
         let because = reason.map_or_else(String::new, |reason| format!("; {reason}"));
+        let restated = written != planned;
+        let resolved = || {
+            if restated {
+                format!(
+                    "Inherit resolved to {planned}, and the file is written as \
+                     {written}{because}"
+                )
+            } else {
+                format!("the file is written as {written}")
+            }
+        };
         let requested = match &self.target {
             ResolvedTarget::Explicit {
                 requested,
                 displaced: true,
                 ..
-            } => Some(format!(
-                "requested target {requested} is a row the writer reaches only by replaying a \
-                 source of that dialect; the file is written as {written}{because}"
-            )),
+            } => (!names_row(&written, requested, format.as_str())).then(|| {
+                format!(
+                    "requested target {requested} is a row the writer reaches only by \
+                     replaying a source of that dialect; the file is written as \
+                     {written}{because}"
+                )
+            }),
             ResolvedTarget::Explicit {
                 entry, requested, ..
             } if written != entry.id => Some(format!(
@@ -292,6 +319,20 @@ impl<'a> ResolvedWrite<'a> {
                  {written}{because}",
                 format.as_str()
             )),
+            ResolvedTarget::Default {
+                source: DefaultSource::ForeignFormat(other),
+                inherit: true,
+                ..
+            } => Some(format!(
+                "the document's source is {other}, which records no {} dialect; {}",
+                format.as_str(),
+                resolved()
+            )),
+            ResolvedTarget::Default {
+                source: DefaultSource::NoSource,
+                inherit: true,
+                ..
+            } => Some(format!("the document records no source; {}", resolved())),
             ResolvedTarget::Explicit { .. } | ResolvedTarget::Default { .. } => None,
         };
         let losses = requested
@@ -340,15 +381,27 @@ impl<'a> ResolvedWrite<'a> {
     }
 
     /// Builds a typed refusal when codec-specific delivery cannot realize the
-    /// already-resolved request.
+    /// already-resolved request. An explicit refusal names the row the caller
+    /// requested, the replay row included.
     #[must_use]
     pub fn unavailable(&self, reason: impl Into<String>) -> CodecError {
         let reason = reason.into();
         let kind = match &self.target {
             ResolvedTarget::Explicit {
-                entry, requested, ..
+                entry,
+                requested,
+                displaced,
+                ..
             } => TargetRefusalKind::ExplicitUnavailable {
-                target: entry.id.clone(),
+                target: displaced
+                    .then(|| {
+                        self.replay_rows
+                            .iter()
+                            .find(|row| names_row(row, requested, self.available.namespace()))
+                    })
+                    .flatten()
+                    .unwrap_or(&entry.id)
+                    .clone(),
                 requested: TargetToken::new(*requested),
                 reason,
             },
@@ -368,6 +421,17 @@ impl<'a> ResolvedWrite<'a> {
         };
         CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, self.available)))
     }
+}
+
+/// Whether the caller's token `requested` names `row` of `format`: its id, or
+/// the id without the `format:` prefix.
+fn names_row(row: &DialectId, requested: &str, format: &str) -> bool {
+    row.as_str() == requested
+        || row
+            .as_str()
+            .strip_prefix(format)
+            .and_then(|local| local.strip_prefix(':'))
+            == Some(requested)
 }
 
 fn source_displacement_message(source: &DialectId, written: &DialectId) -> String {
@@ -453,7 +517,8 @@ pub trait TargetDomain: domain_sealed::Sealed {
 
 /// The neutral representation has no dialect catalog or target identity.
 ///
-/// An encoder in this domain takes [`TargetRequest::Inherit`] only and every
+/// An encoder in this domain takes [`TargetRequest::Unnamed`] and
+/// [`TargetRequest::Inherit`] only, and every
 /// export it plans reports no target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DialectFree;
@@ -472,7 +537,7 @@ impl TargetDomain for DialectFree {
         format: FormatId,
     ) -> Result<(), CodecError> {
         match request {
-            TargetRequest::Inherit => Ok(()),
+            TargetRequest::Unnamed | TargetRequest::Inherit => Ok(()),
             TargetRequest::Explicit(id) => Err(TargetRefusal::unknown_explicit(
                 id,
                 TargetCatalog::empty(format.as_str()),
@@ -509,8 +574,10 @@ impl Catalog {
     }
 
     /// Declares dialects the encoder reaches only by replaying a source of
-    /// that dialect. An explicit request for one is written as the catalog
-    /// default and charges `target.request-displaced`.
+    /// that dialect. An explicit request for one resolves to the row an
+    /// `Inherit` request without a source dialect takes. A file the writer
+    /// states as the requested row charges nothing; any other charges
+    /// `target.request-displaced`.
     #[must_use]
     pub const fn with_replay_rows(mut self, rows: &'static [DialectId]) -> Self {
         self.replay_rows = rows;
@@ -566,33 +633,27 @@ fn resolve_write_request<'a>(
     let format = catalog.namespace();
     let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
     let source = source_identity(ir, format);
-    let default = |source: DefaultSource| ResolvedTarget::Default {
+    let default = |source: DefaultSource, inherit: bool| ResolvedTarget::Default {
         index,
         entry,
         source,
+        inherit,
     };
     let target = match request {
         TargetRequest::Explicit(requested) => {
-            let replay_row = || {
-                replay_rows.iter().any(|row| {
-                    row.as_str() == requested
-                        || row
-                            .as_str()
-                            .strip_prefix(format)
-                            .and_then(|local| local.strip_prefix(':'))
-                            == Some(requested)
-                })
-            };
             let (index, entry, displaced) = match catalog.find(requested) {
                 Some((index, entry)) => (index, entry, false),
-                None => match catalog.default().filter(|_| replay_row()) {
-                    Some((index, entry)) => (index, entry, true),
-                    None => {
-                        return Err(refuse(TargetRefusalKind::UnknownExplicit {
-                            requested: TargetToken::new(requested),
-                        }))
-                    }
-                },
+                None if replay_rows
+                    .iter()
+                    .any(|row| names_row(row, requested, format)) =>
+                {
+                    (index, entry, true)
+                }
+                None => {
+                    return Err(refuse(TargetRefusalKind::UnknownExplicit {
+                        requested: TargetToken::new(requested),
+                    }))
+                }
             };
             ResolvedTarget::Explicit {
                 index,
@@ -602,9 +663,14 @@ fn resolve_write_request<'a>(
                 displaced,
             }
         }
-        TargetRequest::Inherit => match source {
-            SourceIdentity::Other(source) => default(source),
-            SourceIdentity::Unrecorded => default(DefaultSource::UnrecordedDialect),
+        TargetRequest::Unnamed | TargetRequest::Inherit => match source {
+            SourceIdentity::Other(source) => {
+                default(source, matches!(request, TargetRequest::Inherit))
+            }
+            SourceIdentity::Unrecorded => default(
+                DefaultSource::UnrecordedDialect,
+                matches!(request, TargetRequest::Inherit),
+            ),
             SourceIdentity::Recorded(source) => match catalog.find(source.as_str()) {
                 Some((index, entry)) => ResolvedTarget::Inherited {
                     index,

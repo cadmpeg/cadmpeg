@@ -53,7 +53,7 @@
 //! F3dCodec
 //!     .plan(
 //!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Inherit,
+//!         TargetRequest::Unnamed,
 //!     )?
 //!     .write_to(&mut output)?;
 //! # Ok(())

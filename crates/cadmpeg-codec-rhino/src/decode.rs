@@ -5344,18 +5344,10 @@ pub(crate) fn embedded_brep_json(
     if staged.kind != BrepTransferKind::FullTopology {
         return None;
     }
-    let snapshot = match staged
+    let snapshot = staged
         .draft
         .geometry()
-        .geometry_snapshot(staged.draft.model(), "brep")
-    {
-        Ok(snapshot) => snapshot,
-        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
-            *refusal = Some(error);
-            return None;
-        }
-        Err(_) => return None,
-    };
+        .geometry_snapshot(staged.draft.model(), "brep");
     match crate::wire::canonical_json(&snapshot) {
         Ok(text) => Some(text),
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
