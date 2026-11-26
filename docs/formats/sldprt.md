@@ -2733,7 +2733,9 @@ The BODY of the tag is the reading whose `resolution_linear` magnitude is in
 `[1e-15, 1e-2]` m; where both or neither are in that range, it is the reading
 after `ff`. A tagged BODY with a `resolution_linear` magnitude outside
 `[1e-15, 1e-2]` m is valid only when a SHELL or REGION names its index in the
-`body` field and no BODY with a magnitude in that range holds the same index.
+`body` field and no other BODY holds the same index: neither a BODY that an
+edited schema header frames, whatever its magnitude, nor a tagged BODY with a
+magnitude in that range.
 
 `resolution_size` and `resolution_linear` are the BODY fields `res_size` and
 `res_linear` in metres. `resolution_linear` takes every finite nonzero value.

@@ -1264,17 +1264,18 @@ fn attach_initial_segment_bodies(
     Ok(Some(id))
 }
 
-/// The loss of a decode whose hole or block recognisers compare evaluated
-/// geometry at a recognition floor coarser than the `document` tolerances.
+/// The loss of a decode whose hole or block recognisers run, and so compare
+/// the evaluated geometry they reach at a floor coarser than the `document`
+/// tolerances.
 fn recognition_floor_loss(document: &Tolerances, recognisers_run: bool) -> Option<LossNote> {
     let recognition = recognition_tolerances(document);
     (recognisers_run && recognition != *document).then(|| {
         NxLossCode::FeatureRecognitionToleranceFloor.note(format!(
-            "feature recognition compares evaluated geometry at {} mm and {} rad, coarser than the document tolerances {} mm and {} rad",
-            recognition.linear.get(),
-            recognition.angular.get(),
+            "feature recognition raises the document tolerances {} mm and {} rad to {} mm and {} rad for the evaluated geometry it compares",
             document.linear.get(),
             document.angular.get(),
+            recognition.linear.get(),
+            recognition.angular.get(),
         ))
     })
 }
