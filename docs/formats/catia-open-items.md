@@ -555,3 +555,20 @@ different, independently constrained orientation route.
 **Conflict.** The extended controls previously failed the row-prefix gate. No decoded rational NURBS surface validates these extended readings.
 
 **Note.** The legacy symmetric and flat-grid forms retain their established readings.
+
+### CT-01. Operand-only cylinder trim bounds
+
+**Question.** Which record supplies the V endpoints of a cylinder-side
+class-`18` line with operand-only control `1d`, and which relation assigns
+the lower transverse trim's V coordinate?
+
+**Known.** A class-`18` control below `20` omits fields through bits
+`04`, `08`, and `10`. Control `1d` omits all three scalar fields and carries
+an empty scalar lane. Control `12` stores two U endpoints with V equal to
+zero. A cylinder support separately stores ordered V limits. These support
+limits do not establish the endpoint parameters of an operand-only side.
+
+**Need.** Save a trimmed cylinder with a nonzero lower V limit and axial
+sides. Change the lower trim, save again, and compare the side operands,
+endpoint selectors, support limits and ring records to identify the
+stored endpoint relation.
