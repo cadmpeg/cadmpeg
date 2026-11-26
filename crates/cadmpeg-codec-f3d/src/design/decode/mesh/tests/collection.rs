@@ -486,7 +486,8 @@ fn a_body_removed_from_its_collection_stays_in_its_scope() {
         wire["removed_bodies"][0]["body_record"]["record_index"],
         104
     );
-    let decoded: crate::records::mesh::DesignMeshFeature = serde_json::from_value(wire).unwrap();
+    let decoded: crate::records::mesh::DesignMeshFeature =
+        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     assert_eq!(decoded, *feature);
 }
 

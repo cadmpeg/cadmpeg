@@ -2616,7 +2616,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
 
-### DR-1063. Import placement of a moved mesh body
+### DR-1070. Import placement of a moved mesh body
 
 **Question.** Does a `Base Mesh Feature` store the placement of its mesh at insert apart from the mesh-body matrices?
 
