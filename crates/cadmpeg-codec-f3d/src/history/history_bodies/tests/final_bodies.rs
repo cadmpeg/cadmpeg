@@ -78,7 +78,9 @@ fn final_body_of(history: &AsmHistory) -> Option<cadmpeg_ir::ids::BodyId> {
 #[test]
 fn a_nest_is_an_earlier_state_of_the_model_body_its_slot_keeps() {
     assert_eq!(
-        final_body_of(&history(vec![1])).as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        final_body_of(&history(vec![1]))
+            .as_ref()
+            .map(cadmpeg_ir::ids::BodyId::as_str),
         Some(MODEL_BODY)
     );
 }

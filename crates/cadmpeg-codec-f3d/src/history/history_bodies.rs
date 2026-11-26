@@ -560,7 +560,10 @@ fn contain_consumed_failure(
 fn fill_requests(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-    (histories, finals): (&[AsmHistory], Option<&super::stored_bodies::ActiveBodies<'_>>),
+    (histories, finals): (
+        &[AsmHistory],
+        Option<&super::stored_bodies::ActiveBodies<'_>>,
+    ),
     requests: &BTreeMap<usize, Vec<Want<'_>>>,
     bodies_out: &mut Vec<HistoryBody>,
     work: &WorkBudget,
@@ -578,7 +581,15 @@ fn fill_requests(
             continue;
         };
         let bytes = scan.entry_bytes(&facts.name)?;
-        fill_history(ctx, bytes, (history, finals), wants, bodies_out, work, losses)?;
+        fill_history(
+            ctx,
+            bytes,
+            (history, finals),
+            wants,
+            bodies_out,
+            work,
+            losses,
+        )?;
     }
     bodies_out.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(())

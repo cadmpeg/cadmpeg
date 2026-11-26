@@ -301,7 +301,7 @@ fn run_roles(
     fill_history(
         &ctx,
         bytes,
-        &history,
+        (&history, None),
         &wants,
         &mut bodies,
         &WorkBudget::new(work),
@@ -631,7 +631,7 @@ fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
             fill_history(
                 &ctx,
                 &bytes,
-                &history,
+                (&history, None),
                 &[Want {
                     origin: &cut,
                     producer: None,
@@ -998,7 +998,7 @@ fn a_captured_derived_result_preserves_the_current_body() {
     fill_history(
         &ctx,
         &bytes,
-        &history,
+        (&history, None),
         &[Want {
             origin: &feature,
             producer: Some(&feature),
@@ -1626,7 +1626,7 @@ fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
     fill_history(
         &ctx,
         &bytes,
-        &history,
+        (&history, None),
         &[Want {
             origin: &feature,
             producer: None,
