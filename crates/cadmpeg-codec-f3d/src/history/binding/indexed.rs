@@ -4,10 +4,9 @@ use crate::history_records::{
     AsmHistoricalBodyDesignLink, AsmHistoricalCarrierBinding, AsmHistoricalCoedge,
     AsmHistoricalCurveAxis, AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
     AsmHistoricalEnvelope, AsmHistoricalFaceSample, AsmHistoricalFaceSense,
-    AsmHistoricalOptionalCarrierBinding,
-    AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane, AsmHistoricalPoint,
-    AsmHistoricalRelation, AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius,
-    AsmHistoricalTopology,
+    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane,
+    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalSurfaceAxis,
+    AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
 };
 use std::collections::hash_map::Entry;
 
