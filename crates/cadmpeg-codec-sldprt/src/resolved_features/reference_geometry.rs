@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
+use crate::layout::constructed_reference_plane_translation_frame as translation_plane;
 use crate::layout::coordinate_system_component_path_prefix as cs_path_pre;
 use crate::layout::coordinate_system_component_path_suffix as cs_path_suf;
 use crate::layout::coordinate_system_component_point as cs_pt;
@@ -2700,9 +2701,16 @@ fn constraint_reference_plane_frame(
 ) -> Option<(Point3, Vector3, Vector3)> {
     let body = class_offset.checked_add(6 + class_name.len())?;
     match class_name {
-        "moConstraintCoincLineAtAnglePlaneRefplaneData_c" => {
+        "moConstraintCoincLineAtAnglePlaneRefplaneData_c"
+        | "moConstraintCoincLinePerpPlaneRefplaneData_c" => {
             matrix_reference_plane_frame(payload.get(body..body + matrix_plane::LEN)?)
         }
+        "moPerLinePtRefPlnData_c" => payload
+            .get(body..body + matrix_plane::LEN)
+            .and_then(matrix_reference_plane_frame)
+            .or_else(|| {
+                translation_reference_plane_frame(payload.get(body..body + translation_plane::LEN)?)
+            }),
         "moConstraintCoincLineParallelPlaneRefplaneData_c"
         | "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
         | "moFacePtRefPlnData_c"
@@ -3150,6 +3158,51 @@ fn matrix_reference_plane_frame_candidates(
             }
             Some((offset, (origin, normal, u_axis)))
         })
+}
+
+/// The 81-byte translation frame of a reference plane (`sldprt.md` §2).
+fn translation_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    let scalar = |relative| {
+        let value = View::f64_le_at(bytes, relative)?;
+        value.is_finite().then_some(value)
+    };
+    if *bytes.get(translation_plane::FRAME_MARKER)? != 0 {
+        return None;
+    }
+    let origin = [
+        scalar(translation_plane::ORIGIN)?,
+        scalar(translation_plane::ORIGIN + 8)?,
+        scalar(translation_plane::ORIGIN + 16)?,
+    ];
+    let normal = Vector3::new(
+        scalar(translation_plane::NORMAL)?,
+        scalar(translation_plane::NORMAL + 8)?,
+        scalar(translation_plane::NORMAL + 16)?,
+    );
+    let translation = [
+        scalar(translation_plane::TRANSLATION)?,
+        scalar(translation_plane::TRANSLATION + 8)?,
+        scalar(translation_plane::TRANSLATION + 16)?,
+    ];
+    if normal != Vector3::new(0.0, 0.0, 1.0)
+        || origin
+            .iter()
+            .zip(translation)
+            .any(|(origin, translation)| translation.to_bits() != (-origin).to_bits())
+        || scalar(translation_plane::SCALE)? != 1.0
+    {
+        return None;
+    }
+    Some((
+        Point3::new(
+            origin[0] * NATIVE_TO_IR,
+            origin[1] * NATIVE_TO_IR,
+            origin[2] * NATIVE_TO_IR,
+        ),
+        normal,
+        Vector3::new(1.0, 0.0, 0.0),
+    ))
 }
 
 fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
