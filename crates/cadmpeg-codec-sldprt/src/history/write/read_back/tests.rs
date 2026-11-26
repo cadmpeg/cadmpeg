@@ -49,7 +49,9 @@ fn first_real(value: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
 /// or not.
 fn claims(source: &CadIr, input: &CadIr, id: &FeatureId, written: bool) -> ReadBackClaims {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let mut edits = SourceEdits::new(input, None, Some(source), &[], &ctx).unwrap();
+    let source_native = crate::test_support::native::sldprt_native(source);
+    let mut edits =
+        SourceEdits::new(input, None, Some((source, Some(&source_native))), &[], &ctx).unwrap();
     let find = |ir: &CadIr| {
         ir.model
             .features
@@ -83,16 +85,10 @@ fn judge_settled(
     written: &CadIr,
     settled: &HashSet<FeatureId>,
 ) -> ReadBack {
-    Judge::new(
-        input,
-        &CodecDigests::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-        &|_| None,
-    )
-    .judge(
+    Judge::new(input, &CodecDigests::new(), &|_| None).judge(
         claims,
         &UnwrittenEdits::default(),
-        (source, &[], &[]),
+        ((source, &Document::of(source).unwrap()), &[], &[]),
         written,
         Some(settled),
         &mut |_| Vec::new(),
@@ -546,16 +542,10 @@ fn a_difference_the_unedited_write_has_is_named_by_arena() {
         .unwrap();
     twin.suppressed = Some(!twin.suppressed.unwrap_or(false));
 
-    let read_back = Judge::new(
-        &input,
-        &CodecDigests::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-        &|_| None,
-    )
-    .judge(
+    let read_back = Judge::new(&input, &CodecDigests::new(), &|_| None).judge(
         &claims,
         &UnwrittenEdits::default(),
-        (&source, &[], &[]),
+        ((&source, &Document::of(&source).unwrap()), &[], &[]),
         &written,
         Some(&HashSet::new()),
         &mut |stated| {
@@ -675,11 +665,18 @@ fn a_writer_difference_and_an_unread_part_are_named_by_their_losses() {
     };
 
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let notes = SourceEdits::new(&input, None, Some(&source), &[], &ctx)
-        .unwrap()
-        .into_parts()
-        .unwritten
-        .render(&read_back);
+    let source_native = crate::test_support::native::sldprt_native(&source);
+    let notes = SourceEdits::new(
+        &input,
+        None,
+        Some((&source, Some(&source_native))),
+        &[],
+        &ctx,
+    )
+    .unwrap()
+    .into_parts()
+    .unwritten
+    .render(&read_back);
 
     for code in [
         SldprtLossCode::WriterReadBackDiffers,

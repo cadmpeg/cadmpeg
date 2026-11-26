@@ -17,7 +17,7 @@ use crate::records::{
 
 /// A history as the source document held it: the record, its member name and
 /// the member payload.
-pub(crate) type RetainedHistory = (FeatureHistory, String, Vec<u8>);
+pub(crate) type RetainedHistory<'a> = (&'a FeatureHistory, String, Vec<u8>);
 
 /// What precedes the root element of a generated Keywords member with no
 /// source member: lead byte `86`, the XML declaration and CRLF, a form of a
@@ -42,7 +42,7 @@ const DEFAULT_PREFIX: &[u8] = b"\x86<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r
 pub(crate) fn history_member(
     history: &FeatureHistory,
     section: &str,
-    retained: &[RetainedHistory],
+    retained: &[RetainedHistory<'_>],
     source_blocks: &[Option<&[u8]>],
     losses: &mut Vec<LossNote>,
     limits: ResourceLimits,
@@ -57,7 +57,7 @@ pub(crate) fn history_member(
         ));
     }
     if let Some((original, _, payload)) = original {
-        if original == history {
+        if *original == history {
             return Ok(Some(payload.clone()));
         }
     }

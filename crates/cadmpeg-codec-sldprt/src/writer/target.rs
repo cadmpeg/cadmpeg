@@ -24,7 +24,10 @@ use cadmpeg_ir::Annotations;
 use crate::history::write::brep_agreement::{agreement, ShapingEdit, Source};
 use crate::history::write::edits::UnwrittenEdits;
 use crate::loss::SldprtLossCode;
-use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
+use crate::{
+    source_records, ReplaySkipped, RetainedRecords, SemanticFidelity, SemanticPath, SldprtCodec,
+    SldprtWriteSession, Written,
+};
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -51,7 +54,14 @@ pub(crate) fn plan(
     ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+    session: &SldprtWriteSession<'_>,
+) -> Result<
+    (
+        ExportBody,
+        Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
+    ),
+    CodecError,
+> {
     let of_document;
     let (digests, unverified) = match input.fidelity {
         Some(fidelity) => (&fidelity.codec_digests, false),
@@ -64,7 +74,11 @@ pub(crate) fn plan(
             (&of_document, false)
         }
     };
-    let (written, bytes, declined) = write(ctx, input, resolved, digests)?;
+    let (mut written, bytes, declined) = write(ctx, input, resolved, digests, session)?;
+    let read_back = match &mut written {
+        Written::Semantic { read_back, .. } => read_back.take(),
+        Written::Replayed | Written::Stored { .. } => None,
+    };
     let mut body = finish(input, declined, &written, bytes, digests);
     if unverified {
         body.losses.push(edit_unverified(
@@ -73,7 +87,7 @@ pub(crate) fn plan(
              hold, so an edit of a neutral record those lanes state is not written",
         ));
     }
-    Ok(body)
+    Ok((body, read_back))
 }
 
 /// Write the file in the first path of §3.4 that writes it: replay, patch,
@@ -93,11 +107,12 @@ fn write(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>, Option<String>), CodecError> {
     let target = resolved.target_id();
     let preserves = resolved.preserves_source();
-    let first =
-        write_first(ctx, input, resolved, digests).map(|(written, bytes)| (written, bytes, None));
+    let first = write_first(ctx, input, resolved, digests, session)
+        .map(|(written, bytes)| (written, bytes, None));
     let reason = match &first {
         Ok((Written::Semantic { dialect, .. }, _, _)) if preserves && dialect != target => Some(
             format!("lands on dialect {dialect}, not the source's {target}"),
@@ -226,7 +241,7 @@ fn synthesize(
         &ir,
         &Annotations::default(),
         &CodecDigests::new(),
-        &[],
+        RetainedRecords::default(),
         &shaped,
         fidelity,
         ctx,
@@ -297,6 +312,7 @@ fn write_first(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let replay_eligible = resolved.preserves_source();
     match input.fidelity {
@@ -304,7 +320,7 @@ fn write_first(
             let records = source_records(input.ir, value)?;
             let mut bytes = Vec::new();
             let written = SldprtCodec::write_preserved_with_annotations(
-                input.ir, value, &records, ctx, &mut bytes,
+                input.ir, value, &records, ctx, session, &mut bytes,
             )?;
             Ok((written, bytes))
         }
@@ -312,7 +328,7 @@ fn write_first(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             SemanticFidelity::NotConsumed,
             ctx,
@@ -321,7 +337,7 @@ fn write_first(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)

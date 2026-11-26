@@ -76,6 +76,9 @@ pub(crate) struct ReadBack {
     /// The definition each claimed feature must read back with, in wire
     /// form: its source definition with each edit as the claims judge it.
     definitions: HashMap<FeatureId, Value>,
+    /// The written part as the full decoder read it back; `None` when the
+    /// pass was judged without decoding it.
+    pub(crate) decoded: Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
 }
 
 /// The relative difference up to which two real numbers read back the same:
@@ -180,13 +183,10 @@ pub(crate) type Writer<'a> =
 pub(crate) fn write_until_read_back(
     input: &CadIr,
     digests: &CodecDigests,
-    baseline_key: Option<cadmpeg_ir::hash::digest::Sha256Digest>,
-    limits: ResourceLimits,
     write: &mut Writer<'_>,
     round_trip: &RoundTrip<'_>,
 ) -> Result<(WrittenPass, ReadBack), CodecError> {
-    let mut judge = Judge::new(input, digests, limits, round_trip);
-    judge.baseline_key = baseline_key;
+    let mut judge = Judge::new(input, digests, round_trip);
     let mut withheld = Vec::<(FeatureId, String)>::new();
     let mut pass = write(&withheld)?;
     let mut read_back = judge.read(&pass);
@@ -333,36 +333,17 @@ struct Judge<'a> {
     input: &'a CadIr,
     /// The codec digests the decode of `input` recorded.
     digests: &'a CodecDigests,
-    /// Content digest of the retained source records and digests, used to
-    /// memoize the unmodified source round-trip baseline across writes.
-    baseline_key: Option<cadmpeg_ir::hash::digest::Sha256Digest>,
-    /// The caller's limits, under which each written pass decodes again.
-    limits: ResourceLimits,
     round_trip: &'a RoundTrip<'a>,
     stated: Option<Document>,
-    /// The decoded source document, from the first pass that states one.
-    source: Option<std::sync::Arc<Document>>,
-    /// The differences of the source document written with no edit; `None`
-    /// until a pass needs them.
-    baseline: Option<Vec<Difference>>,
 }
 
 impl<'a> Judge<'a> {
-    fn new(
-        input: &'a CadIr,
-        digests: &'a CodecDigests,
-        limits: ResourceLimits,
-        round_trip: &'a RoundTrip<'a>,
-    ) -> Self {
+    fn new(input: &'a CadIr, digests: &'a CodecDigests, round_trip: &'a RoundTrip<'a>) -> Self {
         Self {
             input,
             digests,
-            baseline_key: None,
-            limits,
             round_trip,
             stated: None,
-            source: None,
-            baseline: None,
         }
     }
 
@@ -371,7 +352,7 @@ impl<'a> Judge<'a> {
     /// out of a ceiling of the caller's limits makes the pass unreadable.
     fn read(&mut self, (bytes, output): &WrittenPass) -> ReadBack {
         let claims = &output.claims;
-        let Some(source) = output.source.as_ref() else {
+        let Some(source) = output.source.as_deref() else {
             return ReadBack::default();
         };
         let withhold = claims
@@ -386,16 +367,20 @@ impl<'a> Judge<'a> {
                 ..ReadBack::default()
             };
         }
-        let (decoded, written_key) =
-            match crate::decode::decode_for_read_back_cached_with_key(bytes, self.limits) {
-                Ok(decoded) => decoded,
-                Err(error) => {
-                    return ReadBack::unreadable(
-                        claims,
-                        format!("does not decode again ({error})"),
-                    );
-                }
-            };
+        let edit_free = !claims.features.iter().any(FeatureClaims::any_written);
+        let decoded = match source.read_back(bytes, edit_free) {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                return ReadBack::unreadable(claims, format!("does not decode again ({error})"));
+            }
+        };
+        let Some(source_records) = source
+            .records
+            .get_or_init(|| Document::of(&source.decoded.ir))
+            .as_ref()
+        else {
+            return ReadBack::unreadable(claims, "does not serialize".to_owned());
+        };
         let round_trip = self.round_trip;
         // The writer's own losses that name a record as omitted or as
         // holding the source state without the edit, and the parameters
@@ -418,79 +403,54 @@ impl<'a> Judge<'a> {
                 .map(|id| id.as_str().to_owned()),
             )
             .collect::<Vec<_>>();
-        let baseline_key = self.baseline_key.clone();
-        let limits = self.limits;
-        self.judge_with_key(
+        let mut read_back = self.judge(
             claims,
             &output.written,
-            (&source.ir, &output.coverage.omitted(self.input), &naming),
-            (decoded.ir(), Some(&written_key)),
+            (
+                (&source.decoded.ir, source_records),
+                &output.coverage.omitted(self.input),
+                &naming,
+            ),
+            decoded.ir(),
             None,
             &mut |stated| {
-                baseline_of_cached(baseline_key.as_ref(), limits, round_trip, source, stated)
+                source
+                    .unedited
+                    .get_or_init(|| baseline_of(source.limits, round_trip, &source.decoded, stated))
+                    .clone()
             },
-        )
+        );
+        read_back.decoded = Some(decoded);
+        read_back
     }
 
     /// Judges `written`, the written part decoded, against the document the
     /// write must read back as. `unwritten` holds the edits the write states
-    /// it does not carry; `source` is the decoded source document, the
-    /// labels of the arenas the write omits, whose `arena.omitted` losses
-    /// name their records, and the messages of the writer's losses that
-    /// name a record as omitted or as dropping its edit. `settled` holds the
-    /// claimed features whose travel reads back as the stored solid settles
-    /// it; `None` finds them ([`settled_by_solid`]).
-    #[cfg(test)]
+    /// it does not carry; `source` is the decoded source document and its
+    /// records, the labels of the arenas the write omits, whose
+    /// `arena.omitted` losses name their records, and the messages of the
+    /// writer's losses that name a record as omitted or as dropping its edit.
+    /// `settled` holds the claimed features whose travel reads back as the
+    /// stored solid settles it; `None` finds them ([`settled_by_solid`]).
+    /// `baseline` gives the differences of the source written with no edit,
+    /// from the source records.
     fn judge(
         &mut self,
         claims: &ReadBackClaims,
         unwritten: &UnwrittenEdits,
-        source_info: (&CadIr, &[&str], &[String]),
+        ((source, source_records), omitted, naming): ((&CadIr, &Document), &[&str], &[String]),
         written: &CadIr,
-        settled: Option<&HashSet<FeatureId>>,
-        baseline: &mut dyn FnMut(&Document) -> Vec<Difference>,
-    ) -> ReadBack {
-        self.judge_with_key(
-            claims,
-            unwritten,
-            source_info,
-            (written, None),
-            settled,
-            baseline,
-        )
-    }
-
-    fn judge_with_key(
-        &mut self,
-        claims: &ReadBackClaims,
-        unwritten: &UnwrittenEdits,
-        (source, omitted, naming): (&CadIr, &[&str], &[String]),
-        (written, written_key): (&CadIr, Option<&crate::decode::ReadBackKey>),
         settled: Option<&HashSet<FeatureId>>,
         baseline: &mut dyn FnMut(&Document) -> Vec<Difference>,
     ) -> ReadBack {
         if self.stated.is_none() {
             self.stated = Document::of(self.input);
         }
-        if self.source.is_none() {
-            self.source = match &self.baseline_key {
-                Some(key) => cached_document(&DocumentKey::Source(key.clone()), source),
-                None => Document::of(source).map(std::sync::Arc::new),
-            };
-        }
-        let read = match written_key {
-            Some(key) => cached_document(&DocumentKey::ReadBack(key.clone()), written),
-            None => Document::of(written).map(std::sync::Arc::new),
-        };
-        let (Some(stated), Some(source_records), Some(read)) = (
-            self.stated.as_ref(),
-            self.source.as_deref(),
-            read.as_deref(),
-        ) else {
+        let (Some(stated), Some(read)) = (self.stated.as_ref(), Document::of(written)) else {
             return ReadBack::unreadable(claims, "does not serialize".to_owned());
         };
         let expected = expected(self.input, stated, source_records, claims, unwritten);
-        let pairing = document::pair(&expected, read);
+        let pairing = document::pair(&expected, &read);
         let settled = settled.cloned().unwrap_or_else(|| {
             settled_by_solid(
                 self.input,
@@ -508,7 +468,7 @@ impl<'a> Judge<'a> {
             (omitted, naming),
             (&settled, &read_back.definitions, &pairing),
         );
-        let differences = document::differences(&expected, read, &pairing);
+        let differences = document::differences(&expected, &read, &pairing);
         // The parameters a variant edit adds or drops, by id and by the form
         // a key of an unpaired record reports, and the claimed feature of
         // each.
@@ -579,10 +539,7 @@ impl<'a> Judge<'a> {
         if general.is_empty() {
             return read_back;
         }
-        if self.baseline.is_none() {
-            self.baseline = Some(baseline(source_records));
-        }
-        let base = self.baseline.as_deref().unwrap_or_default();
+        let base = baseline(source_records);
         let (defects, unexplained): (Vec<_>, Vec<_>) = general
             .into_iter()
             .partition(|difference| base.iter().any(|base| same_difference(base, difference)));
@@ -758,85 +715,9 @@ fn settled_by_solid(
         .collect()
 }
 
-/// What a cached [`Document`] was built from: the decoded source, by its
-/// content digest, or a written part decoded again, by its read-back key.
-#[derive(Clone, PartialEq)]
-enum DocumentKey {
-    Source(cadmpeg_ir::hash::digest::Sha256Digest),
-    ReadBack(crate::decode::ReadBackKey),
-}
-
-fn cached_document(key: &DocumentKey, ir: &CadIr) -> Option<std::sync::Arc<Document>> {
-    type CachedDoc = (DocumentKey, std::sync::Arc<Document>);
-    static DOCUMENT_CACHE: std::sync::Mutex<Vec<CachedDoc>> = std::sync::Mutex::new(Vec::new());
-
-    if let Ok(mut guard) = DOCUMENT_CACHE.lock() {
-        if let Some(index) = guard.iter().position(|(cached_key, _)| cached_key == key) {
-            let entry = guard.remove(index);
-            let cached = std::sync::Arc::clone(&entry.1);
-            guard.push(entry);
-            return Some(cached);
-        }
-    }
-    let built = std::sync::Arc::new(Document::of(ir)?);
-    if let Ok(mut guard) = DOCUMENT_CACHE.lock() {
-        if !guard.iter().any(|(cached_key, _)| cached_key == key) {
-            if guard.len() >= 12 {
-                guard.remove(0);
-            }
-            guard.push((key.clone(), std::sync::Arc::clone(&built)));
-        }
-    }
-    Some(built)
-}
-
-/// [`baseline_of`], memoized by the source's content digest and the limits
-/// it decodes under.
-fn baseline_of_cached(
-    key: Option<&cadmpeg_ir::hash::digest::Sha256Digest>,
-    limits: ResourceLimits,
-    round_trip: &RoundTrip<'_>,
-    source: &Decoded,
-    stated: &Document,
-) -> Vec<Difference> {
-    type CachedDifferences = (
-        cadmpeg_ir::hash::digest::Sha256Digest,
-        ResourceLimits,
-        Vec<Difference>,
-    );
-    static BASELINE_CACHE: std::sync::Mutex<Vec<CachedDifferences>> =
-        std::sync::Mutex::new(Vec::new());
-
-    if let Some(key) = key {
-        if let Ok(mut guard) = BASELINE_CACHE.lock() {
-            if let Some(index) = guard.iter().position(|(cached_key, cached_limits, _)| {
-                cached_key == key && *cached_limits == limits
-            }) {
-                let entry = guard.remove(index);
-                let cached = entry.2.clone();
-                guard.push(entry);
-                return cached;
-            }
-        }
-        let computed = baseline_of(limits, round_trip, source, stated);
-        if let Ok(mut guard) = BASELINE_CACHE.lock() {
-            if !guard
-                .iter()
-                .any(|(cached_key, cached_limits, _)| cached_key == key && *cached_limits == limits)
-            {
-                if guard.len() >= 8 {
-                    guard.remove(0);
-                }
-                guard.push((key.clone(), limits, computed.clone()));
-            }
-        }
-        return computed;
-    }
-    baseline_of(limits, round_trip, source, stated)
-}
-
 /// The differences between `source`, the decoded source document whose
-/// records are `stated`, and its write with no edit, decoded again.
+/// records are `stated`, and its write with no edit, decoded again under
+/// `limits`.
 fn baseline_of(
     limits: ResourceLimits,
     round_trip: &RoundTrip<'_>,
@@ -846,11 +727,10 @@ fn baseline_of(
     let Some(bytes) = round_trip(source) else {
         return Vec::new();
     };
-    let Ok((decoded, key)) = crate::decode::decode_for_read_back_cached_with_key(&bytes, limits)
-    else {
+    let Ok(decoded) = crate::decode::decode_for_read_back(&bytes, limits) else {
         return Vec::new();
     };
-    let Some(read) = cached_document(&DocumentKey::ReadBack(key), decoded.ir()) else {
+    let Some(read) = Document::of(decoded.ir()) else {
         return Vec::new();
     };
     let pairing = document::pair(stated, &read);

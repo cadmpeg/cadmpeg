@@ -220,63 +220,6 @@ pub(crate) fn decode_for_read_back(
     result
 }
 
-/// Content key `(sha256, byte_len, limits)` for caching pure read-back
-/// decodes. A decode under other limits can read other content.
-pub(crate) type ReadBackKey = (
-    cadmpeg_ir::hash::digest::Sha256Digest,
-    usize,
-    cadmpeg_core::decode::ResourceLimits,
-);
-
-/// Decodes a written SLDPRT byte slice for read-back comparison, memoizing
-/// recent outputs by content digest and length so repeated read-backs of the
-/// same written bytes under the same limits avoid redundant decodes.
-pub(crate) fn decode_for_read_back_cached_with_key(
-    bytes: &[u8],
-    limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<
-    (std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, ReadBackKey),
-    cadmpeg_ir::codec::DecodeFailure,
-> {
-    type CachedReadBack = (ReadBackKey, std::sync::Arc<cadmpeg_ir::codec::DecodeResult>);
-    static READ_BACK_CACHE: std::sync::Mutex<Vec<CachedReadBack>> =
-        std::sync::Mutex::new(Vec::new());
-
-    let key = (
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-        bytes.len(),
-        limits,
-    );
-    if let Ok(mut guard) = READ_BACK_CACHE.lock() {
-        if let Some(index) = guard.iter().position(|(cached_key, _)| *cached_key == key) {
-            let entry = guard.remove(index);
-            let cached = std::sync::Arc::clone(&entry.1);
-            guard.push(entry);
-            return Ok((cached, key));
-        }
-    }
-    let decoded = std::sync::Arc::new(decode_for_read_back(bytes, limits)?);
-    if let Ok(mut guard) = READ_BACK_CACHE.lock() {
-        if !guard.iter().any(|(cached_key, _)| *cached_key == key) {
-            if guard.len() >= 12 {
-                guard.remove(0);
-            }
-            guard.push((key.clone(), std::sync::Arc::clone(&decoded)));
-        }
-    }
-    Ok((decoded, key))
-}
-
-/// Decodes a written SLDPRT byte slice for read-back comparison, reusing a
-/// cached [`cadmpeg_ir::codec::DecodeResult`] when identical bytes were decoded
-/// recently under the same limits.
-pub(crate) fn decode_for_read_back_cached(
-    bytes: &[u8],
-    limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, cadmpeg_ir::codec::DecodeFailure> {
-    decode_for_read_back_cached_with_key(bytes, limits).map(|(decoded, _)| decoded)
-}
-
 fn decode_inner(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
