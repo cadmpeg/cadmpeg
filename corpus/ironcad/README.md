@@ -40,6 +40,14 @@ Mixed scene:
   sized by their handles. `Assembly` holds `Part4` and `Part6`; the other parts
   are parts of the scene.
 
+STEP exports:
+
+- `Ironcad_2025_simple_test_parts.stp` and `Assembly_moved.stp`: AP214 exports
+  of the scenes of the same name, written by IronCAD. They state the product
+  tree, the part placements, and the body geometry of each scene. In
+  `Assembly_moved.stp` the assembly is the root product, and its offset is part
+  of each part placement.
+
 ## Requested files
 
 Assembly structure:
@@ -47,6 +55,8 @@ Assembly structure:
 - `assembly_between_parts.ics`: one part, then an assembly of two parts, then a
   second part added after the assembly.
 - `assembly_nested.ics`: that assembly placed inside a second assembly.
+
+Export each requested scene to STEP as well.
 
 History:
 
