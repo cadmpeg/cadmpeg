@@ -158,7 +158,13 @@ pub(crate) fn bind_generated_body_selections(
             })
             else {
                 if let Some(scope) = scope {
-                    bind_by_writer(&reverse_context, feature, scope, (&slots, &native), (&mut results, losses));
+                    bind_by_writer(
+                        &reverse_context,
+                        feature,
+                        scope,
+                        (&slots, &native),
+                        (&mut results, losses),
+                    );
                 }
                 continue;
             };
@@ -212,7 +218,13 @@ pub(crate) fn bind_generated_body_selections(
                 continue;
             };
             if slots.iter().any(|slot| live.contains(slot)) {
-                bind_by_writer(&reverse_context, feature, scope, (&slots, &native), (&mut results, losses));
+                bind_by_writer(
+                    &reverse_context,
+                    feature,
+                    scope,
+                    (&slots, &native),
+                    (&mut results, losses),
+                );
                 continue;
             }
             let history = scope_history(scope, scope_histories, inputs.histories);
