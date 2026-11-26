@@ -52,6 +52,10 @@ enum ConfigurationContent {
     Rule,
 }
 
+/// The most UTF-16 code units the reader admits for the table id or the row
+/// id of a `DesignConfigurationRoot` record (f3d.md §1.2).
+pub(crate) const ID_WIDTH: usize = 256;
+
 /// Active row that the Design `DesignConfigurationRoot` record names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

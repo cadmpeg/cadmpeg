@@ -43,7 +43,7 @@ use crate::records::parameters::{
     DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
 };
 use crate::writer::generate::presentation::GeneratedDesignRegistry;
-use crate::writer::generate::records::encode_document_parameters;
+use crate::writer::generate::records::{encode_document_parameters, ParameterRecords};
 use crate::writer::generate::reduce::named_loss;
 
 /// The parameter collection the native path's parameter tails name.
@@ -605,7 +605,7 @@ pub(in crate::writer::generate) fn encode(
     source: &ParameterSource,
     native: &F3dNative,
     registry: &mut GeneratedDesignRegistry,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<ParameterRecords, CodecError> {
     match source {
         ParameterSource::Native => {
             encode_document_parameters(&native.design_parameters, NATIVE_PARAMETER_COLLECTION)
@@ -635,9 +635,9 @@ impl ParameterPlan {
         registry: &mut GeneratedDesignRegistry,
         indices: &[u32],
         collection: Option<u32>,
-    ) -> Result<Vec<u8>, CodecError> {
+    ) -> Result<ParameterRecords, CodecError> {
         if self.written.is_empty() {
-            return Ok(Vec::new());
+            return Ok(ParameterRecords::default());
         }
         let class_tag = registry.register(super::types::PARAMETER, indices)?;
         let collection = match collection {
@@ -679,7 +679,7 @@ impl ParameterPlan {
                 parameter.record(class_tag.clone(), record_index, ordinal, discriminator)?;
             out.primaries.push((record_index, out.bytes.len()));
             out.bytes
-                .extend(encode_document_parameters(&[record], collection)?);
+                .extend(encode_document_parameters(&[record], collection)?.bytes);
         }
         Ok(())
     }

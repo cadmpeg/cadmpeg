@@ -616,6 +616,49 @@ fn edited_design_parameters_replace_the_native_records() {
     );
 }
 
+#[test]
+fn planned_parameters_with_no_native_design_record_are_written_and_listed() {
+    let mut ir = scoped_cube();
+    drop(f3d_native_mut(&mut ir));
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
+            product_definition: None,
+            id: parameter_id("legacy"),
+            owner: None,
+            ordinal: 0,
+            name: "Legacy".into(),
+            expression: "1 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    let (report, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "Width", "60 mm", 60.0);
+    let native = f3d_native(&decoded_ir);
+    let listed = native
+        .design_types
+        .iter()
+        .find(|row| row.type_guid.as_str() == super::types::PARAMETER.guid)
+        .expect("parameter type row")
+        .entities
+        .values()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    assert!(!native.design_parameters.is_empty());
+    for parameter in &native.design_parameters {
+        assert!(
+            listed.contains(&u64::from(parameter.record_index)),
+            "{}: {:#?}",
+            parameter.name(),
+            report.losses
+        );
+    }
+}
+
 /// The Design stream of a written archive, and the frame of the one record
 /// of each type as its primary index bounds it.
 struct DesignStream {
