@@ -714,6 +714,7 @@
       "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_linear_tolerance_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_native_configuration_sha256": "9bb36afa9da442742240d37b14a980031f21f7cace629a9a496d68f5cc32b36c",
       "sldprt_native_history_sha256": "35dc6bbd9eaa0ea769faf4742efea2067cf1da7c544a43759e7c0be40971aebb",
       "sldprt_native_parameter_sha256": "3663e2d5d0f83942dff0fff51d2042e85d3377689d01e7307c536b1b2573f6f4",
