@@ -2714,9 +2714,37 @@ from the embedded schema. The ownership field sequence contains the shell,
 boundary-surface, boundary-curve, boundary-point, region, edge, and vertex
 references plus the index-map fields. The region head is selected by a unique
 FACE → SHELL → REGION → BODY closure; a fixed ordinal or numeric chain is not
-an ownership selector. A BODY is valid only when exactly one schema field
-interpretation satisfies the complete field grammar, the resolution values
-are finite, and `body_type` is one of the four defined values.
+an ownership selector. A header reference count reads a BODY when the
+complete field grammar holds at that count: `resolution_size` is in
+`[1, 1e6]`, `resolution_linear` is finite and nonzero, `state` is `1`, and
+`body_type` is one of the four defined values. A count that is too high reads
+reference bytes as `resolution_size`, which gives a value near `1e-302`
+outside its range. A count one reference too low can also read a BODY: where
+the last header reference has the bytes of the high word of an f64 in
+`[1, 1e6]`, `resolution_size` reads in range and `resolution_linear` reads a
+subnormal value. When one count reads a BODY, that count is the layout. When
+more than one count reads a BODY, the layout is the one count whose
+`resolution_linear` magnitude is in `[1e-15, 1e-2]` m. A BODY with no count,
+or with several counts and no such single count, is not valid. A `00 0c` tag
+offset that no edited schema header frames has two readings: the node after
+an `ff` byte that follows the tag, and the node directly after the tag. A
+two-word index pointer starts with `ff`, so both readings can hold a BODY.
+The BODY of the tag is the reading whose `resolution_linear` magnitude is in
+`[1e-15, 1e-2]` m; where both or neither are in that range, it is the reading
+after `ff`. A tagged BODY with a `resolution_linear` magnitude outside
+`[1e-15, 1e-2]` m is valid only when a SHELL or REGION names its index in the
+`body` field and no other BODY holds the same index: neither a BODY that an
+edited schema header frames, whatever its magnitude, nor a tagged BODY with a
+magnitude in that range.
+
+`resolution_size` and `resolution_linear` are the BODY fields `res_size` and
+`res_linear` in metres. `resolution_linear` takes every finite nonzero value.
+The part's linear tolerance comes from `resolution_linear` of its bodies, and
+its angular tolerance is the Parasolid angular precision
+([`parasolid.md`](parasolid.md) §4). A `resolution_linear` that states no
+linear precision leaves its body valid and is charged
+`body.resolution-invalid`. A body that the decode derives without a BODY
+node that reads is charged `body.resolution-unread`.
 
 A SHELL has eight references:
 
@@ -3615,6 +3643,7 @@ The `SourceFidelity.codec_digests` of a SLDPRT decode (CADIR §3.1, Rule B) hold
 | `brep_local_sha256` | The B-rep: geometry, topology, and face appearances, without names, colors, tessellations, history, and native records. |
 | `sldprt_configuration_feature_states_local_sha256` | The feature states of each configuration. |
 | `sldprt_configuration_parameter_values_local_sha256` | The parameter values of each configuration. |
+| `sldprt_linear_tolerance_local_sha256` | The linear tolerance. |
 | `sldprt_native_configuration_sha256` | The configurations of the native feature histories. |
 | `sldprt_native_history_sha256` | The native feature histories. |
 | `sldprt_native_parameter_sha256` | The parameters of the native feature histories. |
