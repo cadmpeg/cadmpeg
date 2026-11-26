@@ -15,16 +15,17 @@ pub(crate) mod write;
 
 use self::classify::classless_builtin_node;
 
-use crate::container::ContainerScan;
+use crate::container::{ContainerScan, Section};
 use crate::records::FeatureSource;
 use crate::records::{
     Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent, HistoryElement,
     HistoryElementContent,
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
 
@@ -106,20 +107,38 @@ fn names_history(name: Option<&str>) -> bool {
         })
 }
 
+/// The part a Keywords history member is when no record is read from it.
+const HISTORY_MEMBER_PART: &str = "history-member";
+
 /// Charges a Keywords history member that no record is read from, and gives
-/// up its section `record`.
+/// up its section as a part. The source record holds the section's bytes, so
+/// the part keeps only their digest.
 fn report_unread(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
     losses: &mut Vec<LossNote>,
-    record: &cadmpeg_ir::ids::UnknownId,
-    member: &str,
+    given_up: &mut Vec<GivenUpPart>,
     cause: &str,
-) {
-    losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-        record,
-        crate::loss::SldprtLossCode::HistoryUnread.note(format!(
-            "Keywords member {member}: {cause}; no configuration or feature of the history is read"
-        )),
+) -> Result<(), CodecError> {
+    let stream = section.source_stream();
+    let note = crate::loss::SldprtLossCode::HistoryUnread.note(format!(
+        "Keywords member {}: {cause}; no configuration or feature of the history is read",
+        stream.as_str()
     ));
+    let part = Part::at(
+        "sldprt",
+        HISTORY_MEMBER_PART,
+        0,
+        section.stored_payload(),
+        [ArenaClass::Design],
+    )
+    .named(stream.as_str())
+    .in_stream(stream.clone())
+    .digest_only();
+    let error = CodecError::malformed(format_args!("{}: {}", note.code, note.message));
+    given_up.push(ctx.give_up_part(part, error)?);
+    losses.push(note);
+    Ok(())
 }
 
 /// Element levels of one `Application` element the native history keeps, the
@@ -344,6 +363,7 @@ pub(crate) fn histories(
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Vec<FeatureHistory>, CodecError> {
     // A generated part holds its history in the writer's summary; its native
     // Keywords index lists the skeleton tree the summary already accounts for.
@@ -357,33 +377,33 @@ pub(crate) fn histories(
                 return Ok(histories);
             }
             let stream = section.source_stream();
-            let record = section.native_id();
             let named = names_history(section.name());
             let Some(payload) = section.xml_payload() else {
                 if named {
                     report_unread(
+                        ctx,
+                        section,
                         losses,
-                        &record,
-                        stream.as_str(),
+                        given_up,
                         "no XML payload is decoded from it",
-                    );
+                    )?;
                 }
                 return Ok(histories);
             };
             let Some(text) = crate::container::xml_text(payload) else {
                 if named {
                     report_unread(
+                        ctx,
+                        section,
                         losses,
-                        &record,
-                        stream.as_str(),
+                        given_up,
                         "its bytes are not UTF-8 or UTF-16LE text",
-                    );
+                    )?;
                 }
                 return Ok(histories);
             };
-            let doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+            let doc = match ctx.run_part(|| ctx.parse_xml(text.as_str(), "decode XML tree"))? {
                 Ok(tree) => tree,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     if named {
                         let cause = match error {
@@ -392,7 +412,7 @@ pub(crate) fn histories(
                             }
                             refused => format!("its XML is refused: {refused}"),
                         };
-                        report_unread(losses, &record, stream.as_str(), &cause);
+                        report_unread(ctx, section, losses, given_up, &cause)?;
                     }
                     return Ok(histories);
                 }
@@ -400,15 +420,11 @@ pub(crate) fn histories(
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
                 if named {
-                    report_unread(
-                        losses,
-                        &record,
-                        stream.as_str(),
-                        &format!(
-                            "its root element {:?} is not a Keywords root",
-                            root.tag_name().name()
-                        ),
+                    let cause = format!(
+                        "its root element {:?} is not a Keywords root",
+                        root.tag_name().name()
                     );
+                    report_unread(ctx, section, losses, given_up, &cause)?;
                 }
                 return Ok(histories);
             }

@@ -16,41 +16,51 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use crate::dialect::Grammar;
 use crate::loss::EdrawingsLossCode;
 
 /// Decodes the inflated model stream `body` into `ir`. Returns whether any
-/// geometry was transferred. Entities are charged through `ctx`.
+/// geometry was transferred, or the record rule that failed, for the caller
+/// to give the model member up. Entities are charged through `ctx`.
 pub(crate) fn decode_body(
     ctx: &DecodeContext<'_>,
     body: View<'_>,
     grammar: Grammar,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<bool, CodecError> {
+) -> Result<Result<bool, CodecError>, CodecError> {
     let scene = match scene::Scene::collect(body, grammar) {
         Ok(scene) => scene,
         Err(error) => {
-            losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-                crate::package::MODEL_MEMBER,
-                EdrawingsLossCode::ModelMalformed.note(format!(
-                    "the model stream broke a record rule ({error}); the package carries no model data"
-                )),
-            ));
-            return Ok(false);
+            losses.push(EdrawingsLossCode::ModelMalformed.note(format!(
+                "the model stream broke a record rule ({error}); the package carries no model data"
+            )));
+            return Ok(Err(CodecError::malformed(error)));
         }
     };
-    if !scene.orphan_slots.is_empty() || scene.duplicate_objects > 0 {
+    if !scene.orphan_slots.is_empty() || !scene.duplicate_objects.is_empty() {
         losses.push(EdrawingsLossCode::ModelObjectInvalid.note(format!(
             "{} shell slots lie outside every library body and {} objects repeat an earlier id; \
              they were not transferred",
             scene.orphan_slots.len(),
-            scene.duplicate_objects
+            scene.duplicate_objects.len()
         )));
         let code = EdrawingsLossCode::ModelObjectInvalid.kind();
         losses.extend(scene.orphan_slots.iter().map(|slot| {
-            cadmpeg_ir::unknown::part::record_unreadable(format!("object#{slot}"), &code)
+            GivenUpRecord::new(
+                format_args!("object#{slot}"),
+                format_args!("{code}: the shell slot lies outside every library body"),
+            )
+            .loss()
+        }));
+        losses.extend(scene.duplicate_objects.iter().map(|id| {
+            GivenUpRecord::new(
+                format_args!("object#{id}"),
+                format_args!("{code}: a later object repeats the id; the first object is kept"),
+            )
+            .loss()
         }));
     }
     if scene.annotation_objects > 0 {
@@ -62,5 +72,5 @@ pub(crate) fn decode_body(
     }
     let transferred = emit::emit(ctx, &scene, ir, losses)?;
     ir.finalize();
-    Ok(transferred)
+    Ok(Ok(transferred))
 }

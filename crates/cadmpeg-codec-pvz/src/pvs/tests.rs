@@ -18,7 +18,7 @@ use crate::test_support::{assembly_structure, SCALED_TURN};
 
 fn decode(bytes: &[u8]) -> Result<Structure, CodecError> {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    read(&ctx, View::over_retained(bytes))
+    read(&ctx, "structure.pvs", View::over_retained(bytes))
 }
 
 fn loss_codes(structure: &Structure) -> Vec<cadmpeg_ir::report::loss::LossKind> {
@@ -374,10 +374,20 @@ fn a_failed_property_stream_leaves_the_structure_and_is_reported() {
         loss_codes(&structure),
         [
             PvzLossCode::StructurePropertyStreamMalformed.kind(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind(),
             PvzLossCode::StructureStreamUndecoded.kind(),
         ]
     );
+    let [given_up] = structure.given_up.as_slice() else {
+        panic!("one property stream is given up");
+    };
+    let loss = given_up.loss();
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(loss
+        .message
+        .starts_with("part pvs-stream stream=\"pvz:structure.pvs\" offset="));
 }
 
 #[test]

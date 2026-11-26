@@ -184,6 +184,14 @@ fn a_face_with_a_valid_ring_and_an_ambiguous_vertex_loop_fin_is_withheld() {
     assert!(brep.faces.is_empty());
     assert_eq!(brep.stats.unresolved_topology_fins, 1);
     assert_eq!(brep.stats.withheld_ambiguous_fin_faces, 1);
+    assert!(brep.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with("record sldprt:brep:face#")
+            && loss
+                .message
+                .contains("given up: sldprt/topology.ambiguous-fin-face-withheld: ")
+            && loss.message.contains("; dropped=[sldprt:brep:surf#")
+    }));
 }
 
 #[test]

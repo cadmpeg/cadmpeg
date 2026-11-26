@@ -90,11 +90,19 @@ impl<'a> Index<'a> {
             });
             match path {
                 Ok(path) => match index.occurrences.entry(path) {
-                    Entry::Occupied(entry) => {
+                    Entry::Occupied(entry) if *entry.get() == row => {
                         report.push_coded(
                             &key(entry.key()),
                             OnshapeLossCode::AssemblyRecordRepeated,
-                            "occurrence path repeats; retained the first placement",
+                            "occurrence path repeats with the same placement; retained the first placement",
+                        );
+                    }
+                    Entry::Occupied(entry) => {
+                        report.give_up_as(
+                            &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
+                            &key(entry.key()),
+                            OnshapeLossCode::AssemblyRecordRepeated,
+                            "occurrence path repeats with a different placement; retained the first placement",
                         );
                     }
                     Entry::Vacant(entry) => {
@@ -150,7 +158,8 @@ impl<'a> Index<'a> {
             match index.subassemblies.entry(definition_key) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get(), sub) {
-                        report.push_coded(
+                        report.give_up_as(
+                            &format!("{definition_path}#/subAssemblies/{position}"),
                             "subassembly",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
@@ -165,14 +174,15 @@ impl<'a> Index<'a> {
                 }
             }
         }
-        for part in source_rows(definition, "parts", report) {
+        for (position, part) in source_rows(definition, "parts", report).iter().enumerate() {
             ctx.charge_entities(1, "Onshape part identity index")?;
             let reference = index.reference(part);
             let studio = index.studio_key(part);
             match index.parts.entry(reference) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get(), part) {
-                        report.push_coded(
+                        report.give_up_as(
+                            &format!("{definition_path}#/parts/{position}"),
                             "part",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(

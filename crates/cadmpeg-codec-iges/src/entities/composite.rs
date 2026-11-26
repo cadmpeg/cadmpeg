@@ -1921,14 +1921,7 @@ fn project_with_type_130_policy(
             .ok()
             .filter(|count| (minimum_child_count..=MAX_COMPOSITE_CHILDREN).contains(count))
         else {
-            let push_loss = if usize::try_from(raw_child_count)
-                .is_ok_and(|count| count > MAX_COMPOSITE_CHILDREN)
-            {
-                super::push_retained_geometry_loss
-            } else {
-                super::push_geometry_loss
-            };
-            push_loss(
+            super::push_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!(
@@ -1979,7 +1972,7 @@ fn project_with_type_130_policy(
             continue;
         }
         if entry.transform != 0 {
-            super::push_retained_geometry_loss(
+            super::push_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!(

@@ -627,8 +627,9 @@ pub(crate) struct ParseDiagnostic {
     pub(crate) kind: ParseDiagnosticKind,
     /// Human-readable explanation, including the observed and canonical order.
     pub(crate) message: String,
-    /// The instance name of the record the diagnostic gives up whole.
-    pub(crate) given_up: Option<u64>,
+    /// The id (`#12`, `<name>`) and statement length in bytes of the record
+    /// the diagnostic gives up whole, whose statement starts at `offset`.
+    pub(crate) given_up: Option<(String, usize)>,
 }
 
 /// A HEADER or DATA statement the parser could not read, given up as one

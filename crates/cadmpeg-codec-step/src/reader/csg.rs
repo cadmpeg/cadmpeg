@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -15,7 +16,7 @@ use cadmpeg_ir::draft::CommitSession;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use self::angles::AngleUnits;
 use self::brep::{Axis, SolidBuilder};
@@ -288,8 +289,9 @@ pub(super) fn decode(
                     },
                 );
             }
-            Err(message) => losses.extend(record_given_up(
-                format!("#{id}"),
+            Err(message) => losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::CsgItemUnresolved.note(format!("{entity} #{id}: {message}")),
             )),
         }
@@ -309,8 +311,9 @@ pub(super) fn decode(
                     },
                 );
             }
-            None => losses.extend(record_given_up(
-                format!("#{id}"),
+            None => losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::CsgItemUnresolved.note(format!(
                     "BOOLEAN_RESULT #{id} has no operator or no operands"
                 )),
@@ -324,7 +327,7 @@ pub(super) fn decode(
             *operands = operands.map(resolve);
         }
     }
-    let refused = refuse_cycles(&items, &mut losses);
+    let refused = refuse_cycles(exchange, &items, &mut losses);
     for (item, frame) in plant_orientations(exchange, geometry, &items, &solids, &mut losses) {
         if let Some(item) = items.get_mut(&item) {
             item.orientation = Some(frame);
@@ -607,7 +610,11 @@ fn collect_tree(
 /// operand graph. A Boolean tree is acyclic (ISO 10303-42 §6.4.6); each
 /// cycle found and each Boolean that uses one has a `csg.item-unresolved`
 /// loss.
-fn refuse_cycles(items: &BTreeMap<u64, Item>, losses: &mut Vec<LossNote>) -> BTreeSet<u64> {
+fn refuse_cycles(
+    exchange: &Exchange,
+    items: &BTreeMap<u64, Item>,
+    losses: &mut Vec<LossNote>,
+) -> BTreeSet<u64> {
     let operands_of = |id: u64| match items.get(&id).map(|item| &item.shape) {
         Some(Shape::Boolean { operands, .. }) => Some(*operands),
         _ => None,
@@ -674,7 +681,14 @@ fn refuse_cycles(items: &BTreeMap<u64, Item>, losses: &mut Vec<LossNote>) -> BTr
         )));
     }
     for &id in &refused {
-        losses.push(record_unreadable(format!("#{id}"), "Boolean operand cycle"));
+        losses.push(
+            super::at_instance(
+                exchange,
+                id,
+                GivenUpRecord::new(format_args!("#{id}"), "Boolean operand cycle"),
+            )
+            .loss(),
+        );
     }
     refused
 }

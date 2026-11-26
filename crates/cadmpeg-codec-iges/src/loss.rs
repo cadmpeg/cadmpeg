@@ -332,9 +332,6 @@ impl IgesLossCode {
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalLengthUnitUnresolved
             | Self::GlobalNoncanonicalFraming
-            | Self::DirectoryRecordQuarantined
-            | Self::DirectoryRecordRepeated
-            | Self::ParameterDataQuarantined
             | Self::ParameterLiteralUnusable
             | Self::ParameterCountOverdeclared
             | Self::CardFramingRecovered => Some(Severity::Warning),
@@ -469,6 +466,19 @@ mod tests {
         for code in [
             IgesLossCode::WriterSolidUnjoined,
             IgesLossCode::WriterPcurveOmitted,
+        ] {
+            assert_eq!(code.note("").code.strict_floor(), None, "{}", code.code());
+        }
+    }
+
+    /// A code that charges only beside a give-up leaves the refusal to
+    /// `record.unreadable`.
+    #[test]
+    fn the_give_up_codes_pin_no_strict_floor() {
+        for code in [
+            IgesLossCode::DirectoryRecordQuarantined,
+            IgesLossCode::DirectoryRecordRepeated,
+            IgesLossCode::ParameterDataQuarantined,
         ] {
             assert_eq!(code.note("").code.strict_floor(), None, "{}", code.code());
         }

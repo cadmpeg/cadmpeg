@@ -123,7 +123,7 @@ fn a_rejected_mesh_is_given_up_and_refuses_a_pinned_decode() {
     let text = mesh("int[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]");
     let given_up = |loss: &LossNote| {
         loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-            && loss.message.split_whitespace().any(|token| token == "/M")
+            && loss.message == "record /M given up: usd/mesh.rejected; dropped=[]"
     };
 
     let result = decode(&text);
@@ -138,6 +138,35 @@ fn a_rejected_mesh_is_given_up_and_refuses_a_pinned_decode() {
         1,
         "{losses:#?}"
     );
+    assert!(losses.iter().any(given_up), "{losses:#?}");
+
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    match crate::UsdCodec.decode(&mut std::io::Cursor::new(text.as_bytes()), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            assert!(given_up(rejection.loss()), "{:#?}", rejection.loss());
+        }
+        Ok(_) => panic!("expected a strict refusal"),
+        Err(other) => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+/// A `BasisCurves` prim whose cubic basis the reader does not implement
+/// states no curve: the prim is given up, and a pinned decode refuses it on
+/// its `record.unreadable`.
+#[test]
+fn a_curve_batch_with_an_unsupported_basis_is_given_up() {
+    use cadmpeg_ir::codec::Codec as _;
+
+    let text = "#usda 1.0\ndef BasisCurves \"C\"\n{\n    uniform token basis = \"hermite\"\n    int[] curveVertexCounts = [4]\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)]\n}\n";
+    let given_up = |loss: &LossNote| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message == "record /C given up: usd/curves.rejected; dropped=[]"
+    };
+
+    let result = decode(text);
+    assert!(result.ir().geometry.edges.is_empty());
+    let losses = &result.report().losses;
     assert!(losses.iter().any(given_up), "{losses:#?}");
 
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();

@@ -213,6 +213,8 @@ pub(crate) fn decode_body_bounds(
             ),
             losses,
             crate::loss::F3dLossCode::DesignBodyBoundsUndecoded,
+            super::record::DesignRecord::entity(&entry.name, record_indices[0])
+                .spanning(first, third_end),
             format_args!(
                 "Body bounds for Design entity {}",
                 entity.entity_id.suffix()

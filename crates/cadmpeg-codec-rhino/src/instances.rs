@@ -314,6 +314,11 @@ pub(crate) struct DefinitionDiagnostic {
 }
 
 impl DefinitionDiagnostic {
+    /// The length in bytes of the complete table record.
+    pub(crate) fn source_len(&self) -> usize {
+        self.source_range.len()
+    }
+
     pub(crate) fn to_loss(&self) -> cadmpeg_ir::report::loss::LossNote {
         let message = format!(
             "instance-definition record at offset {}: {}",

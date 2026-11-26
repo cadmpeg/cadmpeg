@@ -4408,4 +4408,14 @@ A preset reference is library-qualified: a library identifier paired with the na
 
 ## 4. Strict floors
 
-Each of these codes records a Design record, or the state that depends on it, that the decoder gave up (CADIR §3.3), and carries strict floor Warning (CADIR §3.2): `f3d/design.intent-undecoded`, `f3d/sketch.curve-undecoded`, `f3d/sketch.surface-undecoded`, `f3d/sketch.text-undecoded`, `f3d/sketch.relation-undecoded`, `f3d/sketch.folder-undecoded`, `f3d/sketch.ordinal-collection-undecoded`, `f3d/sketch.container-undecoded`, `f3d/sketch.geometry-group-undecoded`, `f3d/feature.timeline-undecoded`, `f3d/design.primary-record-undecoded`, `f3d/configuration.projection-native`, `f3d/sketch.owner-conflict`, `f3d/sketch.relation-owner-unresolved`, `f3d/configuration.document-undecoded`, `f3d/feature.bend-settings-undecoded`, and `f3d/design.body-bounds-undecoded`.
+Each of these codes records a Design record that the decoder keeps with less content, and carries strict floor Warning (CADIR §3.2):
+
+| Code | Kept record |
+|---|---|
+| `f3d/sketch.curve-undecoded` | The sketch curve keeps its identity without its geometry. |
+| `f3d/sketch.container-undecoded` | The sketch keeps its records without its container row. |
+| `f3d/configuration.projection-native` | The configurations stay as native records with no neutral projection. |
+| `f3d/sketch.owner-conflict` | The sketch record stays with no resolved owner. |
+| `f3d/sketch.relation-owner-unresolved` | The sketch relation stays with no owner entity. |
+
+A code that records only a record that the decoder gives up has no strict floor. The `record.unreadable` loss of that give-up (CADIR §3.3) refuses a pinned decode. A given-up Design record has the id `f3d:<stream>:design-entity#<record index>`. A given-up archive entry is an `archive-entry` part. A given-up parameter frame is a `parameter-frame` part.

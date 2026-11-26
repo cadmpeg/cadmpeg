@@ -192,13 +192,16 @@ pub(crate) fn opaque_record_id(table_typecode: u32, record: &Record) -> UnknownI
     )
 }
 
-/// Losses and opaque records from one native-arena install pass.
-#[derive(Debug, Clone, PartialEq)]
+/// Losses, opaque records and given-up parts from one native-arena install
+/// pass.
+#[derive(Debug, Clone)]
 pub(crate) struct NativeInstall {
     /// Losses from records that could not be transferred.
     pub(crate) losses: Vec<LossNote>,
     /// Complete records whose registered class payload was not admitted.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
+    /// Framed records given up as parts (CADIR §3.3).
+    pub(crate) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
 }
 
 /// A table descriptor whose body is a strict sub-range of its chunk range.

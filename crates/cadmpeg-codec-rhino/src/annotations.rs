@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -613,18 +613,28 @@ fn record_identity(
     (links, key, format!("{}", identity.object_id))
 }
 
+/// The losses of the annotation object at `source_order`, spanning `range`,
+/// that the decoder drops for `error`: its codec loss and its
+/// `record.unreadable`.
 fn annotation_record_dropped(
+    source_order: usize,
     source_id: &str,
-    source_offset: usize,
+    range: &std::ops::Range<usize>,
     class_uuid: Uuid,
     error: impl std::fmt::Display,
-) -> LossNote {
+) -> [LossNote; 2] {
+    let source_offset = range.start;
     let loss = RhinoLossCode::AnnotationRecordDropped.note(format_args!("annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"));
     let tag = format!("ANNOTATION/source={source_id}/class={class_uuid}");
-    loss.with_provenance(
+    let loss = loss.with_provenance(
         SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(source_offset))
             .with_tag(tag),
-    )
+    );
+    let unreadable =
+        GivenUpRecord::caused_by(format_args!("rhino:object:record#{source_order:06}"), &loss)
+            .spanning(cadmpeg_core::decode::u64_from_index(range.len()))
+            .loss();
+    [loss, unreadable]
 }
 
 /// Projects every supported general annotation into stable native records.
@@ -647,9 +657,10 @@ pub(crate) fn install(
         };
         let identity = &object.identity;
         let Some(scale) = binding.neutral_scale() else {
-            losses.push(annotation_record_dropped(
+            losses.extend(annotation_record_dropped(
+                source_order,
                 &identity.source_id,
-                object.range.start,
+                &object.range,
                 object.class_uuid,
                 format_args!("no physical millimetre binding ({})", binding.label()),
             ));
@@ -702,14 +713,12 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        losses.extend(record_given_up(
-                            format!("rhino:object:record#{source_order:06}"),
-                            annotation_record_dropped(
-                                &identity.source_id,
-                                object.range.start,
-                                object.class_uuid,
-                                error,
-                            ),
+                        losses.extend(annotation_record_dropped(
+                            source_order,
+                            &identity.source_id,
+                            &object.range,
+                            object.class_uuid,
+                            error,
                         ));
                         continue;
                     }
@@ -768,14 +777,12 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        losses.extend(record_given_up(
-                            format!("rhino:object:record#{source_order:06}"),
-                            annotation_record_dropped(
-                                &identity.source_id,
-                                object.range.start,
-                                object.class_uuid,
-                                error,
-                            ),
+                        losses.extend(annotation_record_dropped(
+                            source_order,
+                            &identity.source_id,
+                            &object.range,
+                            object.class_uuid,
+                            error,
                         ));
                         continue;
                     }
@@ -840,14 +847,12 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        losses.extend(record_given_up(
-                            format!("rhino:object:record#{source_order:06}"),
-                            annotation_record_dropped(
-                                &identity.source_id,
-                                object.range.start,
-                                object.class_uuid,
-                                error,
-                            ),
+                        losses.extend(annotation_record_dropped(
+                            source_order,
+                            &identity.source_id,
+                            &object.range,
+                            object.class_uuid,
+                            error,
                         ));
                         continue;
                     }
@@ -927,14 +932,12 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        losses.extend(record_given_up(
-                            format!("rhino:object:record#{source_order:06}"),
-                            annotation_record_dropped(
-                                &identity.source_id,
-                                object.range.start,
-                                object.class_uuid,
-                                error,
-                            ),
+                        losses.extend(annotation_record_dropped(
+                            source_order,
+                            &identity.source_id,
+                            &object.range,
+                            object.class_uuid,
+                            error,
                         ));
                         continue;
                     }
@@ -958,14 +961,12 @@ pub(crate) fn install(
                 ) {
                     Ok(value) => value,
                     Err(error) => {
-                        losses.extend(record_given_up(
-                            format!("rhino:object:record#{source_order:06}"),
-                            annotation_record_dropped(
-                                &identity.source_id,
-                                object.range.start,
-                                object.class_uuid,
-                                error,
-                            ),
+                        losses.extend(annotation_record_dropped(
+                            source_order,
+                            &identity.source_id,
+                            &object.range,
+                            object.class_uuid,
+                            error,
                         ));
                         continue;
                     }
@@ -1281,6 +1282,16 @@ mod tests {
                     assert!(record.get("data").is_none());
                     assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
                 } else {
+                    assert!(
+                        decoded.report().losses.iter().any(|loss| {
+                            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                                && loss
+                                    .message
+                                    .split_whitespace()
+                                    .any(|token| token == "rhino:object:record#000000")
+                        }),
+                        "an annotation with no unit binding is given up: class={class} unit={unit:?}"
+                    );
                     let loss = losses[0];
                     assert!(loss.message.contains(&source.identity.source_id));
                     assert!(loss

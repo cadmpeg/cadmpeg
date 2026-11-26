@@ -93,6 +93,43 @@ fn bounded_plane_requires_a_closed_boundary_curve() {
 }
 
 #[test]
+fn a_rejected_bounded_plane_face_gives_up_no_decoded_plane() {
+    // The surface pass decodes the plane carrier; the structure pass rejects
+    // its face.
+    let result = decode(bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        110,
+        "110,0,0,0,1,0,0;",
+    ));
+
+    assert!(result
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                == Some("directory_entry:D1")
+    }));
+    assert!(
+        !result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|token| token == "iges:entity:directory#1")
+        }),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn bounded_plane_requires_the_boundary_curve_to_lie_in_the_plane() {
     let result = decode(bounded_plane_entity_file(
         GLOBAL_V5_0,

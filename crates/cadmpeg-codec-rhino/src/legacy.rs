@@ -20,13 +20,14 @@ use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::decode::TransferLedger;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
     Shell, Vertex,
 };
-use cadmpeg_ir::unknown::part::record_unreadable;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::Serialize;
 
@@ -590,6 +591,23 @@ fn push_v1_record(
 ) -> Result<(), CodecError> {
     records.push(retain_v1_record(ctx, data, chunk, retained_bytes)?);
     Ok(())
+}
+
+/// The `record.unreadable` of the V1 record `record`, framed by `chunk`,
+/// that the decoder keeps only as retained source, for `error`.
+fn v1_record_given_up(
+    record: &UnknownRecord,
+    chunk: &crate::chunks::Chunk,
+    error: std::fmt::Arguments<'_>,
+) -> LossNote {
+    let range = chunk.range();
+    GivenUpRecord::new(record.id(), error)
+        .at(cadmpeg_ir::SourceProvenance::root(
+            "rhino",
+            cadmpeg_core::decode::u64_from_index(range.start),
+        ))
+        .spanning(cadmpeg_core::decode::u64_from_index(range.len()))
+        .loss()
 }
 
 fn count_v1_omission(omitted: &mut BTreeMap<u32, usize>, typecode: u32) {
@@ -2593,7 +2611,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut decoded_nurbs_surfaces = 0_usize;
     let mut decoded_nurbs_breps = 0_usize;
     let mut omitted = BTreeMap::<u32, usize>::new();
-    let mut given_up = Vec::<UnknownId>::new();
+    let mut given_up = Vec::<LossNote>::new();
     let mut opaque_records = Vec::new();
     let mut direct_records = Vec::new();
     let mut typed_source_records = Vec::new();
@@ -2649,7 +2667,17 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             );
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
             count_v1_omission(&mut omitted, chunk.typecode);
-            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+            let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
+            given_up.push(v1_record_given_up(
+                &record,
+                &chunk,
+                format_args!(
+                    "{}: V1 presentation typecode {:#010x} has no typed reading",
+                    RhinoLossCode::PresentationRecordDropped.kind(),
+                    chunk.typecode
+                ),
+            ));
+            opaque_records.push(record);
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(|error| malformed(&error))?;
@@ -2780,7 +2808,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
-                    given_up.push(record.id().clone());
+                    given_up.push(v1_record_given_up(
+                        &record,
+                        &chunk,
+                        format_args!(
+                            "{}: V1 direct record does not decode: {error}",
+                            RhinoLossCode::ObjectFamilyNotTransferred.kind()
+                        ),
+                    ));
                     opaque_records.push(record);
                 }
             }
@@ -2924,7 +2959,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
-                    given_up.push(record.id().clone());
+                    given_up.push(v1_record_given_up(
+                        &record,
+                        &chunk,
+                        format_args!(
+                            "{}: V1 curve does not decode: {error}",
+                            RhinoLossCode::ObjectFamilyNotTransferred.kind()
+                        ),
+                    ));
                     opaque_records.push(record);
                 }
             }
@@ -2955,7 +2997,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
-                    given_up.push(record.id().clone());
+                    given_up.push(v1_record_given_up(
+                        &record,
+                        &chunk,
+                        format_args!(
+                            "{}: V1 Brep does not decode: {error}",
+                            RhinoLossCode::ObjectFamilyNotTransferred.kind()
+                        ),
+                    ));
                     opaque_records.push(record);
                 }
             }
@@ -2991,7 +3040,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
-                    given_up.push(record.id().clone());
+                    given_up.push(v1_record_given_up(
+                        &record,
+                        &chunk,
+                        format_args!(
+                            "{}: V1 mesh does not decode: {error}",
+                            RhinoLossCode::ObjectFamilyNotTransferred.kind()
+                        ),
+                    ));
                     opaque_records.push(record);
                 }
             }
@@ -3041,12 +3097,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             ))
         });
     }
-    for record in &given_up {
-        losses.push(record_unreadable(
-            record,
-            RhinoLossCode::ObjectFamilyNotTransferred.kind(),
-        ));
-    }
+    losses.append(&mut given_up);
 
     losses.append(&mut tolerance_losses);
     let mut notes = Vec::new();
@@ -4052,6 +4103,17 @@ mod tests {
                 .count(),
             3
         );
+        let given_up = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .collect::<Vec<_>>();
+        assert_eq!(given_up.len(), 3, "{:?}", result.report().losses);
+        assert!(given_up.iter().all(|loss| loss
+            .message
+            .split_whitespace()
+            .any(|token| token.starts_with("rhino:legacy:record#"))));
         assert!(!result
             .report()
             .losses

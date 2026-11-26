@@ -407,10 +407,10 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
         .iter()
         .filter(|loss| {
             loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss
-                    .message
-                    .split_whitespace()
-                    .any(|token| token == "component.f3d")
+                && loss.message.starts_with(&format!(
+                    "part {} \"component.f3d\" ",
+                    crate::container::ENTRY_PART
+                ))
         })
         .count();
     assert_eq!(unreadable, 1);

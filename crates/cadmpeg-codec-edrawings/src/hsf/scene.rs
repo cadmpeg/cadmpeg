@@ -172,8 +172,8 @@ pub(super) struct Scene<'a> {
     default_state: Option<String>,
     /// Slots of shell placeholders that lie outside every library body.
     pub(super) orphan_slots: Vec<u32>,
-    /// Objects whose id was already taken.
-    pub(super) duplicate_objects: usize,
+    /// Ids of later objects whose id was already taken.
+    pub(super) duplicate_objects: Vec<u32>,
     /// Number of records walked.
     pub(super) records: usize,
     /// Geometry and image side objects: 2D annotation content.
@@ -516,7 +516,7 @@ impl<'a> Builder<'a> {
             return Err("object count exceeds the cap");
         }
         if self.scene.objects.contains_key(&id) || self.scene.texts.contains_key(&id) {
-            self.scene.duplicate_objects += 1;
+            self.scene.duplicate_objects.push(id);
         } else {
             self.scene.objects.insert(id, object);
         }
@@ -575,7 +575,7 @@ impl<'a> Builder<'a> {
             Record::SideText(id, text) => {
                 self.stack.push(Frame::Side);
                 if self.scene.objects.contains_key(&id) || self.scene.texts.contains_key(&id) {
-                    self.scene.duplicate_objects += 1;
+                    self.scene.duplicate_objects.push(id);
                 } else if self.scene.texts.len() < MAX_OBJECTS {
                     self.scene.texts.insert(id, utf16(text));
                 } else {

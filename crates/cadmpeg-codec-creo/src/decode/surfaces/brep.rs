@@ -266,13 +266,18 @@ impl BrepTransferDiagnostics {
     }
 
     /// The native rejection record of each rejected face, once per face.
-    pub(in super::super) fn rejected_face_record_ids(&self) -> impl Iterator<Item = String> {
-        self.face_rejection_diagnostics
-            .iter()
-            .map(|diagnostic| diagnostic.detail.face_id)
-            .collect::<BTreeSet<_>>()
+    pub(in super::super) fn rejected_face_records(
+        &self,
+    ) -> impl Iterator<Item = (String, &'static str)> {
+        let mut faces = BTreeMap::new();
+        for diagnostic in &self.face_rejection_diagnostics {
+            faces
+                .entry(diagnostic.detail.face_id)
+                .or_insert(diagnostic.reason.key());
+        }
+        faces
             .into_iter()
-            .map(face_admission_rejection_id)
+            .map(|(face, reason)| (face_admission_rejection_id(face), reason))
     }
 
     pub(in super::super) fn face_admission_rejection_records(

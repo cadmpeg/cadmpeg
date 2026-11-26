@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable_kind};
+use cadmpeg_ir::unknown::part::{record_unreadable_kind, GivenUpRecord};
 
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
@@ -22,8 +22,8 @@ fn attributed_note(
 }
 
 /// Pushes a loss on `entry` that gives up no record of it: the projection
-/// keeps the entity, or does not read it because it has no mapping for its
-/// type, form or placement or because a limit it imposes stops the read.
+/// keeps the entity with less content, or the entity's type or form has no
+/// neutral record.
 fn push_attributed_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
@@ -33,8 +33,8 @@ fn push_attributed_loss(
     losses.push(attributed_note(entry, code, message));
 }
 
-/// Pushes a loss on `entry` whose record the projection cannot read, with
-/// the entity's `record.unreadable`.
+/// Pushes a loss on `entry` whose entity the projection gives up, with the
+/// entity's `record.unreadable`.
 fn push_given_up_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
@@ -44,11 +44,17 @@ fn push_given_up_loss(
     give_up(losses, entry, attributed_note(entry, code, message));
 }
 
+/// Pushes `why` and the `record.unreadable` that gives up `entry`'s entity,
+/// spanning its Directory Entry.
 fn give_up(losses: &mut Vec<LossNote>, entry: &DirectoryEntry, why: LossNote) {
-    losses.extend(record_given_up(
+    let unreadable = GivenUpRecord::caused_by(
         format_args!("iges:entity:directory#{}", entry.sequence),
-        why,
-    ));
+        &why,
+    )
+    .spanning(entry.source_length)
+    .loss();
+    losses.push(why);
+    losses.push(unreadable);
 }
 
 /// Keeps the first `record.unreadable` of each entity for which the
@@ -96,8 +102,8 @@ fn geometry_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote
     )
 }
 
-/// Pushes the loss of an entity whose record the projection cannot read,
-/// with its `record.unreadable`.
+/// Pushes the loss of an entity that the projection gives up, with its
+/// `record.unreadable`.
 fn push_entity_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
@@ -106,18 +112,8 @@ fn push_entity_loss(
     give_up(losses, entry, entity_note(entry, reason));
 }
 
-/// Pushes the loss of an entity whose record the projection does not read,
-/// as [`push_attributed_loss`] states.
-fn push_retained_entity_loss(
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    reason: fmt::Arguments<'_>,
-) {
-    losses.push(entity_note(entry, reason));
-}
-
-/// Pushes the loss of geometry whose record the projection cannot read,
-/// with its `record.unreadable`.
+/// Pushes the loss of geometry that the projection gives up, with its
+/// `record.unreadable`.
 fn push_geometry_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
@@ -126,8 +122,7 @@ fn push_geometry_loss(
     give_up(losses, entry, geometry_note(entry, reason));
 }
 
-/// Pushes the loss of geometry whose record the projection does not read,
-/// or keeps, as [`push_attributed_loss`] states.
+/// Pushes the loss of geometry that the projection keeps with less content.
 fn push_retained_geometry_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,

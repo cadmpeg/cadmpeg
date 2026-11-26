@@ -1013,7 +1013,9 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")
-            .len(),
+            .iter()
+            .filter(|record| record.id.as_str().starts_with("rhino:object:record#"))
+            .count(),
         2
     );
     assert!(result

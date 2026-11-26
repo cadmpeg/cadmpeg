@@ -390,10 +390,9 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         .decode(&mut Cursor::new(bytes), &strict_options())
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.to_string(),
-            IgesLossCode::ParameterDataQuarantined.kind().to_string()
-        ),
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            crate::test_support::assert_given_up(rejection.loss(), "iges:quarantine:parameter#1");
+        }
         other => panic!("expected a strict refusal, got {other:?}"),
     }
 }
@@ -406,6 +405,7 @@ fn parameter_quarantine_record_names_its_identity_and_owned_range() {
             range: 2..3,
             bytes: Vec::new(),
             first_offset: 160,
+            length: 80,
         },
         failing_offset: None,
         defect: super::ParameterDefect::NoOwnedCards,

@@ -37,19 +37,31 @@ fn a_feature_without_an_id_is_omitted_with_one_named_loss() {
 }
 
 #[test]
-fn a_repeated_feature_id_omits_the_repeat_and_keeps_the_rest() {
+fn a_repeated_feature_id_with_other_content_gives_up_the_repeat_and_keeps_the_rest() {
     let whole = wire(&decode(&fixture("plate-fillet")));
     let total = feature_count(&whole);
+    let mut repeat = String::new();
     let bytes = edit(&fixture("plate-fillet"), |path, response| {
         if path.ends_with("features.json") {
             let first = response["features"][0]["featureId"].clone();
             let last = response["features"].as_array().unwrap().len() - 1;
             response["features"][last]["featureId"] = first;
+            repeat = format!("{path}#/features/{last}");
         }
     });
     let result = decode(&bytes);
     assert_eq!(malformed_losses(&result), 1, "{:?}", result.report().losses);
     assert_eq!(feature_count(&wire(&result)), total - 1);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.split_whitespace().any(|word| word == repeat)
+        })
+        .count();
+    assert_eq!(given_up, 1, "{:?}", result.report().losses);
 }
 
 #[test]

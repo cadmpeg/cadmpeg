@@ -20,7 +20,7 @@ use cadmpeg_ir::pmi::{
     PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpRecord};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
@@ -193,6 +193,7 @@ pub(super) fn transfer(
             // More than one annotation element claims the owner.
             Some(None) => {
                 unresolved += 1;
+                given_up.push(pmi_record(&first_key));
                 continue;
             }
             None => {
@@ -343,12 +344,14 @@ pub(super) fn transfer(
     if unresolved != 0 {
         losses.push(CreoLossCode::PmiRecordUnresolved.note(format!("{unresolved} geometric-tolerance attribute owner(s) have an unresolved or ambiguous type, value, or annotation-element join.")));
     }
-    let reason = CreoLossCode::PmiRecordUnresolved.kind();
-    losses.extend(
-        given_up
-            .iter()
-            .map(|record| record_unreadable(record, &reason)),
-    );
+    let code = CreoLossCode::PmiRecordUnresolved.kind();
+    losses.extend(given_up.iter().map(|record| {
+        GivenUpRecord::new(
+            record,
+            format_args!("{code}: the geometric-tolerance attributes form no PMI record"),
+        )
+        .loss()
+    }));
     if conflicting != 0 {
         losses.push(CreoLossCode::PmiFirstAttributeAssumed.note(format!(
             "{conflicting} geometric tolerance(s) use the first value of conflicting attributes."

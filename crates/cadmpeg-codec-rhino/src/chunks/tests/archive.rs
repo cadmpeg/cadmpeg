@@ -684,11 +684,10 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .any(|loss| loss.severity == Severity::Error && loss.message.contains("normals")));
 }
 
-/// `ObjectFramingUndecodable` carries severity `Error` and pins its strict
-/// floor at `Warning`, above the tolerable floor of its `DecodeDiagnostic`
-/// taxonomy, so the loss rejects. Strict decode therefore refuses the archive,
-/// and it refuses with the policy class that names the loss: the container
-/// parses, one record payload does not, and salvage mode keeps the result.
+/// A framed object record that does not decode is a given-up part. Its
+/// `record.unreadable` charge refuses a pinned decode, and the refusal names
+/// the retained object record: the container parses, one record payload does
+/// not, and salvage mode keeps the result.
 #[test]
 fn strict_decode_refuses_an_undecodable_framed_object_record() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
@@ -705,16 +704,16 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
     };
     assert_eq!(
         rejection.loss().code,
-        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
+    let message = &rejection.loss().message;
     assert!(
-        rejection
-            .loss()
-            .message
-            .starts_with("1 framed object record(s)"),
-        "the refusal carries the loss message alone: {}",
-        rejection.loss().message
+        message.starts_with("part object-record stream=\"\" offset="),
+        "the refusal names the given-up part: {message}"
     );
+    assert!(message
+        .split_whitespace()
+        .any(|token| token == "rhino:object:record#000000"));
 }
 
 /// A framed object record the decoder gives up also charges
@@ -1061,7 +1060,9 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
                 .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
-                .len(),
+                .iter()
+                .filter(|record| record.id.as_str().starts_with("rhino:object:record#"))
+                .count(),
             2
         );
         let unknown = &result

@@ -15,6 +15,7 @@ use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpRecord, Part};
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -22,8 +23,9 @@ use crate::dialect::{dialect_loss, layers, terminator_line, Family, StreamEviden
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
-/// The retained source of a text stream's bytes past its last read record.
-const UNREAD_RECORD: &str = "sat:source:unread#0";
+/// The part kind of a text stream's bytes from the point where reading
+/// stops to the end of the source.
+pub(crate) const UNREAD_PART: &str = "stream-remainder";
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(bytes) {
@@ -312,7 +314,6 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             .as_ref()
             .filter(|_| unread_stream_layout)
             .map(|span| span.start),
-        unread.as_ref().map(|_| UNREAD_RECORD),
         &mut result.body.losses,
     );
     let extensions =
@@ -349,20 +350,37 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         .then_some(("sat:source:standalone-faces#0", 0..bytes.len()));
     let header_span = (!text_header.diagnostics.is_empty())
         .then_some(("sat:source:header#0", text_header.source_span));
-    let unread_span = unread.map(|span| (UNREAD_RECORD, span));
     retain_source(
         ctx,
         &mut result,
         bytes,
         header_span
             .into_iter()
-            .chain(unread_span)
             .chain(extension_span)
             .chain(legacy_span)
             .chain(wire_span)
             .chain(standalone_span)
             .chain(concatenated_span),
     )?;
+    if let Some(span) = unread {
+        let reason = framing
+            .iter()
+            .find(|diagnostic| diagnostic.kind == sat::StreamDiagnosticKind::Unread)
+            .map_or("the bytes are not read as records", |diagnostic| {
+                diagnostic.error.reason.as_str()
+            });
+        let part = Part::at(
+            FORMAT,
+            UNREAD_PART,
+            cadmpeg_core::decode::u64_from_index(span.start),
+            &bytes[span],
+            [ArenaClass::Model],
+        );
+        let loss = ctx
+            .give_up_part(part, CodecError::malformed(reason))?
+            .commit(ctx, &mut result.ir, &mut result.source_fidelity)?;
+        result.body.losses.push(loss);
+    }
     Ok(result)
 }
 
@@ -479,24 +497,35 @@ fn build_result(
     for record in &brep.unknowns {
         let code = if record.id().as_str().contains(":brep:tvertex#") {
             Some((SatLossCode::VertexToleranceUnresolved,
-                "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained"))
+                "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained", false))
         } else if record.id().as_str().contains(":brep:tedge#") {
             Some((SatLossCode::EdgeToleranceUnresolved,
-                "edge tolerance is not positive and finite; tolerance left unset; source record retained"))
+                "edge tolerance is not positive and finite; tolerance left unset; source record retained", false))
         } else if record.id().as_str().contains(":brep:shell#") {
             Some((SatLossCode::TopologyShellUnprojected,
-                "shell has no admissible members or owner; shell omitted from region references; source record retained"))
+                "shell has no admissible members or owner; shell omitted from region references; source record retained", true))
         } else if record.id().as_str().contains(":brep:face#") {
             Some((SatLossCode::TopologyFaceOwnerUnprojected,
-                "standalone source face has no shell owner required by the IR; face omitted; source record retained"))
+                "standalone source face has no shell owner required by the IR; face omitted; source record retained", true))
         } else if record.id().as_str().contains(":brep:untyped-record#") {
             Some((SatLossCode::SourceRecordNameUnresolved,
-                "record name has no leading component; identity uses its record-table index; source record retained"))
+                "record name has no leading component; identity uses its record-table index; source record retained", false))
         } else {
             None
         };
-        if let Some((code, message)) = code {
-            losses.push(code.note(message));
+        match code {
+            Some((code, message, true)) => {
+                let why = code.note(message);
+                let mut unreadable = GivenUpRecord::caused_by(record.id().as_str(), &why)
+                    .at(cadmpeg_ir::SourceProvenance::root(FORMAT, record.offset()));
+                if let Some(data) = record.data() {
+                    unreadable =
+                        unreadable.spanning(cadmpeg_core::decode::u64_from_index(data.len()));
+                }
+                losses.extend([why, unreadable.loss()]);
+            }
+            Some((code, message, false)) => losses.push(code.note(message)),
+            None => {}
         }
     }
 

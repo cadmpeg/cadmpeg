@@ -226,7 +226,17 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
     assert_eq!(ir.model.occurrences.len(), LIMIT);
     assert_eq!(
         codes(&losses),
-        [PvzLossCode::StructureOccurrenceTruncated.kind()]
+        [
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
+    );
+    assert!(
+        losses[1]
+            .message
+            .starts_with("record pvz:model:definition#1/occurrence#"),
+        "{}",
+        losses[1].message
     );
 }
 
@@ -407,6 +417,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         ],
         has_exact: false,
         residue: crate::ol::MemberResidue::default(),
+        given_up: Vec::new(),
     };
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
@@ -500,7 +511,13 @@ fn placement_defects_and_deep_chains_are_reported() {
     // Each definition above the depth limit places the next; the root
     // definition, at the top, is placed by no occurrence (§8.1).
     assert_eq!(ir.model.occurrences.len(), depth - 1);
-    assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
+    assert_eq!(
+        losses,
+        [
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
+    );
 }
 
 #[test]
@@ -531,8 +548,12 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
         ],
     );
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let geometry =
-        crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+    let geometry = crate::ol::decode(
+        &ctx,
+        "hot.ol",
+        cadmpeg_core::decode::View::over_retained(&bytes),
+    )
+    .unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     display_geometry(&ctx, "hot.ol", &geometry, None, None, &mut ir, &mut losses).unwrap();

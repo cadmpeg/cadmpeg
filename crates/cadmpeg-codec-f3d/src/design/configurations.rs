@@ -9,6 +9,7 @@ use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
 use std::collections::{BTreeMap, HashSet};
 
 mod json;
@@ -30,11 +31,13 @@ pub(crate) struct DecodedConfigurations {
 }
 
 /// Decode every JSON design-configuration table and rule entry, and attach the
-/// active row of the Design root record to its table document.
+/// active row of the Design root record to its table document. An entry that
+/// does not decode is given up as an archive-entry part into `given_up`.
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<DecodedConfigurations, CodecError> {
     let mut documents = Vec::new();
     for entry in scan
@@ -43,13 +46,18 @@ pub(crate) fn decode_configurations(
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        if let Some(document) = super::decode::record::recover(
-            decode_configuration_document(ctx, &entry.name, bytes),
-            losses,
-            crate::loss::F3dLossCode::ConfigurationDocumentUndecoded,
-            format_args!("Configuration document {}", entry.name),
-        )? {
-            documents.push(document);
+        match decode_configuration_document(ctx, &entry.name, bytes) {
+            Ok(document) => documents.push(document),
+            Err(error) if super::decode::record::is_fatal(&error) => return Err(error),
+            Err(error) => {
+                losses.push(
+                    crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
+                        "Configuration document {} remains in the source archive because its decoding failed: {error}",
+                        entry.name
+                    )),
+                );
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+            }
         }
     }
     let mut names = HashSet::new();
@@ -57,8 +65,12 @@ pub(crate) fn decode_configurations(
         if names.insert(document.entry_name().as_str().to_owned()) {
             true
         } else {
-            losses.push(crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(
-                format!("Configuration document {} repeats its identity and remains in the source archive", document.entry_name()),
+            losses.extend(record_given_up(
+                document.id(),
+                crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
+                    "Configuration document {} repeats its identity and remains in the source archive",
+                    document.entry_name()
+                )),
             ));
             false
         }

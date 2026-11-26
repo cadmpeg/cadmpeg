@@ -125,6 +125,7 @@ pub(crate) fn directory_target(
 ) -> crate::directory::DirectoryEntry {
     crate::directory::DirectoryEntry {
         source_offset: 0,
+        source_length: 160,
         sequence,
         entity_type,
         parameter_start: 1,

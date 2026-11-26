@@ -7,12 +7,13 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::decode::DecodeTransfer;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceFidelity;
 
 use crate::loss::EdrawingsLossCode;
@@ -48,6 +49,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         ),
     ]);
     let mut model_body = None;
+    let mut given_up = Vec::new();
     if !ctx.container_only() {
         match stream::parse(ctx, member) {
             Ok(model) => {
@@ -65,13 +67,13 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 model_body = Some(model.body);
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-                crate::package::MODEL_MEMBER,
-                EdrawingsLossCode::StreamMalformed.note(format!(
+            Err(error) => {
+                losses.push(EdrawingsLossCode::StreamMalformed.note(format!(
                     "the eModel model stream did not open ({error}); the package carries no \
                      model data"
-                )),
-            )),
+                )));
+                given_up.push(give_up_model(ctx, &package, error)?);
+            }
         }
     }
     let mut ir = CadIr::decoded(SourceMeta::classified(
@@ -80,7 +82,14 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     ));
     let mut geometry_transferred = false;
     if let Some(body) = model_body {
-        geometry_transferred = crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses)?;
+        match crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses)? {
+            Ok(transferred) => geometry_transferred = transferred,
+            Err(error) => given_up.push(give_up_model(ctx, &package, error)?),
+        }
+    }
+    let mut source_fidelity = SourceFidelity::for_root(root);
+    for part in given_up {
+        losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
     Ok(Decoded {
         ir,
@@ -88,6 +97,22 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             losses,
             ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), geometry_transferred))
         },
-        source_fidelity: SourceFidelity::for_root(root),
+        source_fidelity,
     })
+}
+
+/// Gives up the `eModel` archive entry, keeping its stored bytes.
+fn give_up_model(
+    ctx: &DecodeContext<'_>,
+    package: &Package<'_>,
+    error: CodecError,
+) -> Result<GivenUpPart, CodecError> {
+    let part = Part::new(
+        "edrawings",
+        "archive-entry",
+        package.stored_model()?,
+        [ArenaClass::Model],
+    )
+    .named(crate::package::MODEL_MEMBER);
+    ctx.give_up_part(part, error)
 }

@@ -39,24 +39,14 @@ fn copious_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote 
     )
 }
 
-/// Pushes the loss of a copious entity whose record the projection cannot
-/// read, with its `record.unreadable`.
+/// Pushes the loss of a copious entity that the projection gives up, with
+/// its `record.unreadable`.
 fn push_copious_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
     reason: fmt::Arguments<'_>,
 ) {
     super::give_up(losses, entry, copious_note(entry, reason));
-}
-
-/// Pushes the loss of a copious entity that a limit of the projection stops
-/// it from reading.
-fn push_retained_copious_loss(
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    reason: fmt::Arguments<'_>,
-) {
-    losses.push(copious_note(entry, reason));
 }
 
 pub(super) struct CopiousProjectionOutcome {
@@ -251,7 +241,7 @@ pub(super) fn project(
             continue;
         };
         if tuple_count > MAX_COPIOUS_TUPLES {
-            push_retained_copious_loss(
+            push_copious_loss(
                 &mut losses,
                 entry,
                 format_args!("tuple count exceeds {MAX_COPIOUS_TUPLES}"),
@@ -468,7 +458,7 @@ pub(super) fn project(
             continue;
         }
         if entry.form == 63 && !planar_pairs.admit(definition_points.len()) {
-            push_retained_copious_loss(
+            push_copious_loss(
                 &mut losses,
                 entry,
                 format_args!(

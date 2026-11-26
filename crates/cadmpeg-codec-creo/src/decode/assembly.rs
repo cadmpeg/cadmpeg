@@ -11,7 +11,7 @@ use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpRecord};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::assembly::{Member, MemberTable};
@@ -149,12 +149,14 @@ pub(super) fn transfer_assembly_members(
              placement; those occurrences did not transfer",
             unresolved_placements.len()
         )));
-        let reason = CreoLossCode::AssemblyPlacementUnresolved.kind();
-        transfer_losses.extend(
-            unresolved_placements
-                .iter()
-                .map(|member| record_unreadable(member, &reason)),
-        );
+        let code = CreoLossCode::AssemblyPlacementUnresolved.kind();
+        transfer_losses.extend(unresolved_placements.iter().map(|member| {
+            GivenUpRecord::new(
+                member,
+                format_args!("{code}: the row stores a frame that is not a proper rigid placement"),
+            )
+            .loss()
+        }));
     }
     if unresolved_references > 0 {
         transfer_losses.push(

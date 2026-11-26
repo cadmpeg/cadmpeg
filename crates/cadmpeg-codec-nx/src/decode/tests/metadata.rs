@@ -63,7 +63,7 @@ fn decoded_route_refuses_nesting_limit() {
 }
 
 #[test]
-fn bounded_indexed_section_search_reports_a_scan_loss() {
+fn bounded_indexed_section_search_gives_up_the_skipped_sections() {
     let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
         "/Root/UG_PART/UG_PART",
         crate::test_support::test_om::indexed_om_section(),
@@ -106,4 +106,18 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
     assert!(bounded[0]
         .message
         .contains(&crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK.to_string()));
+    let (offset, _) = scan.container.entries[0]
+        .file_span()
+        .expect("the bounded entry is a file");
+    let record = format!("nx:container@{offset}");
+    let given_up = body
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1);
+    assert!(given_up[0]
+        .message
+        .split_whitespace()
+        .any(|token| token == record));
 }

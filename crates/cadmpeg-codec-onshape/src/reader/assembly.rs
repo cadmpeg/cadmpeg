@@ -43,12 +43,21 @@ pub(super) fn read(
     }
     for (position, element) in elements.iter().enumerate() {
         if let Some(eid) = element.get("id").and_then(Value::as_str) {
-            if declared.get(eid) != Some(&position) {
-                report.push_coded(
-                    eid,
-                    OnshapeLossCode::AssemblyRecordRepeated,
-                    "element id repeats; retained the first declaration",
-                );
+            if let Some(&first) = declared.get(eid).filter(|&&first| first != position) {
+                if elements.get(first) == Some(element) {
+                    report.push_coded(
+                        eid,
+                        OnshapeLossCode::AssemblyRecordRepeated,
+                        "element id repeats with the same content; retained the first declaration",
+                    );
+                } else {
+                    report.give_up_as(
+                        &format!("manifest.json#/elements/{position}"),
+                        eid,
+                        OnshapeLossCode::AssemblyRecordRepeated,
+                        "element id repeats with different content; retained the first declaration",
+                    );
+                }
                 continue;
             }
         }

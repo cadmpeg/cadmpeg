@@ -13,6 +13,23 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
         )
         .unwrap()
 }
+
+/// The stub id of the unread remainder of a text stream that starts at
+/// `offset`.
+fn unread_part(offset: usize) -> String {
+    cadmpeg_ir::unknown::part::Part::at(
+        crate::FORMAT,
+        crate::decode::UNREAD_PART,
+        cadmpeg_core::decode::u64_from_index(offset),
+        &[],
+        [cadmpeg_core::decode::ArenaClass::Model],
+    )
+    .id()
+    .unwrap()
+    .as_str()
+    .to_owned()
+}
+
 #[test]
 fn concatenated_sat_tables_preserve_each_independent_sphere() {
     let sphere = |x, radius, terminator: &str| {
@@ -110,7 +127,7 @@ fn concatenated_sat_different_save_format_retains_the_later_stream_unread() {
         assert_eq!(
             result
                 .source_fidelity()
-                .retained_record("sat:source:unread#0")
+                .retained_record(&unread_part(first.len()))
                 .unwrap()
                 .data(),
             Some(second.as_slice())
@@ -145,7 +162,7 @@ fn rejected_later_stream_retains_intervening_descriptive_lines() {
             assert_eq!(
                 result
                     .source_fidelity()
-                    .retained_record("sat:source:unread#0")
+                    .retained_record(&unread_part(first.len()))
                     .unwrap()
                     .data(),
                 Some(unread.as_slice())
@@ -157,19 +174,27 @@ fn rejected_later_stream_retains_intervening_descriptive_lines() {
 #[test]
 fn a_pinned_decode_refuses_an_unreadable_later_stream() {
     let mut source = crate::test_support::test_streams::text_sphere_stream(1.0);
-    source.extend(b"9999999999 5 0 0\n");
+    let offset = source.len();
+    let unread = b"9999999999 5 0 0\n";
+    source.extend(unread);
+    let part = unread_part(offset);
     let admitted = decode_bytes(&source);
     let losses = &admitted.report().losses;
     assert!(losses
         .iter()
         .any(|loss| loss.code == SatLossCode::SourceStreamLayoutUnprojected.kind()));
-    assert!(losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-            && loss
-                .message
-                .split_whitespace()
-                .any(|token| token == "sat:source:unread#0")
-    }));
+    let head = format!(
+        "part {} stream=\"\" offset={offset} length={} record={part}: ",
+        crate::decode::UNREAD_PART,
+        unread.len()
+    );
+    assert!(
+        losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&head)
+        }),
+        "{losses:?}"
+    );
 
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
     options.strictness.pinned = true;
@@ -183,11 +208,7 @@ fn a_pinned_decode_refuses_an_unreadable_later_stream() {
         rejection.loss().code,
         cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
-    assert!(rejection
-        .loss()
-        .message
-        .split_whitespace()
-        .any(|token| token == "sat:source:unread#0"));
+    assert!(rejection.loss().message.starts_with(&head));
 }
 
 #[test]
@@ -207,7 +228,7 @@ fn concatenated_sat_unreadable_later_header_keeps_the_first_model() {
         assert_eq!(
             result
                 .source_fidelity()
-                .retained_record("sat:source:unread#0")
+                .retained_record(&unread_part(first.len()))
                 .unwrap()
                 .data(),
             Some(second)

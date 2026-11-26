@@ -42,7 +42,7 @@ pub fn model<'a>(ctx: &DecodeContext<'a>, body: View<'a>) -> Result<(), CodecErr
     ] {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         let mut losses = Vec::new();
-        crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses)?;
+        crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses).map(|_| ())?;
     }
     Ok(())
 }

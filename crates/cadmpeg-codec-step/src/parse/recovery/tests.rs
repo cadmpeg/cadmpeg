@@ -124,7 +124,14 @@ fn a_given_up_statement_names_the_records_that_need_it() {
     let [record] = records.as_slice() else {
         panic!("one record.unreadable loss for the record with a missing reference");
     };
-    assert!(record.message.split_whitespace().any(|word| word == "#5"));
+    let unresolved = source.find("#5=").expect("record with a missing reference");
+    assert_eq!(
+        record.message,
+        format!(
+            "record #5 stream=\"\" offset={unresolved} length={} given up: step/parse.record-omitted: instance #5 omitted: unresolved instance reference #9; exact source retained; dropped=[]",
+            "#5=ITEM(#9);".len()
+        )
+    );
     assert!(loss.message.ends_with(&format!(
         "; dropped=[step:file:omitted#{dependent}, step:file:omitted#{transitive}]; lost=[#6 entry #3]"
     )));
@@ -395,6 +402,35 @@ fn a_repeated_instance_name_keeps_its_first_statement() {
         let span = format!("bytes {start}..{}", start + copy.len());
         assert!(message.contains(&span), "{message} names {span}");
     }
+    // Each copy that differs from the first statement is a dropped record.
+    let given_up = diagnostics
+        .iter()
+        .filter_map(|item| item.given_up.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        given_up,
+        [
+            (String::from("#1"), "#1=OTHER();".len()),
+            (String::from("#1"), "#1=THIRD();".len())
+        ]
+    );
+}
+
+#[test]
+fn a_repeated_statement_equal_to_the_first_drops_nothing() {
+    let source = exchange("#1=ITEM(2);#1=ITEM(2);#2=ITEM(#1);");
+    let (parsed, diagnostics) =
+        with_service_context(source.as_bytes(), parse_inner).expect("bounded duplicates");
+    assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [1, 2]);
+    let omitted = diagnostics
+        .iter()
+        .filter(|item| item.kind == ParseDiagnosticKind::RecordOmitted)
+        .collect::<Vec<_>>();
+    let [repeated] = omitted.as_slice() else {
+        panic!("one omitted copy");
+    };
+    assert!(repeated.message.contains("repeated instance name #1"));
+    assert_eq!(repeated.given_up, None);
 }
 
 #[test]

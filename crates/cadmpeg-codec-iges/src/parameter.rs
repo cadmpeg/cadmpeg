@@ -2659,6 +2659,7 @@ enum QuarantinedCards {
         range: Range<u32>,
         bytes: Vec<u8>,
         first_offset: u64,
+        length: u64,
     },
     None {
         directory_offset: u64,
@@ -2670,6 +2671,15 @@ impl QuarantinedParameterRecord {
         match &self.ownership {
             QuarantinedCards::Owned { first_offset, .. } => *first_offset,
             QuarantinedCards::None { directory_offset } => *directory_offset,
+        }
+    }
+
+    /// The byte length of the owned cards from [`Self::source_offset`], where
+    /// the record owns a card.
+    pub(crate) fn source_length(&self) -> Option<u64> {
+        match &self.ownership {
+            QuarantinedCards::Owned { length, .. } => Some(*length),
+            QuarantinedCards::None { .. } => None,
         }
     }
 
@@ -2703,17 +2713,21 @@ impl QuarantinedParameterRecord {
         self.sequence,
         self.defect.describe(),
         self.cards());
-        let tag = format!("D{}:parameter", self.sequence);
         let code = IgesLossCode::ParameterDataQuarantined;
 
         Ok(code.note(message).with_provenance(
-            SourceProvenance::in_stream(
-                "iges",
-                cadmpeg_ir::stream_name!("iges"),
-                self.failing_offset.unwrap_or_else(|| self.source_offset()),
-            )
-            .with_tag(tag),
+            self.provenance_at(self.failing_offset.unwrap_or_else(|| self.source_offset())),
         ))
+    }
+
+    /// The record's position at [`Self::source_offset`].
+    pub(crate) fn provenance(&self) -> SourceProvenance {
+        self.provenance_at(self.source_offset())
+    }
+
+    fn provenance_at(&self, offset: u64) -> SourceProvenance {
+        SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), offset)
+            .with_tag(format!("D{}:parameter", self.sequence))
     }
 }
 
@@ -3595,16 +3609,19 @@ fn quarantine(
                 .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
             let mut range = first..range_end;
             let mut bytes = line.payload.clone();
+            let mut last = line;
             for (sequence, line) in retained {
                 range.end = sequence.checked_add(1).ok_or_else(|| {
                     CodecError::malformed("IGES parameter card sequence overflow")
                 })?;
                 bytes.extend_from_slice(&line.payload);
+                last = line;
             }
             QuarantinedCards::Owned {
                 range,
                 bytes,
                 first_offset,
+                length: crate::directory::card_span(line, last),
             }
         }
         None => QuarantinedCards::None {

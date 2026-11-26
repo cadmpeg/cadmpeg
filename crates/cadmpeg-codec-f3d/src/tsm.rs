@@ -14,6 +14,7 @@ use cadmpeg_ir::subd::{
     SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
     SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::container::ContainerScan;
@@ -144,6 +145,7 @@ enum GripVertexMarker {
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let Some(folder) = scan.design_asset_folder() else {
         return Ok((Vec::new(), Vec::new()));
@@ -175,11 +177,15 @@ pub(crate) fn decode(
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let message = format!("T-spline control cage not decoded: {error}");
-                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-                    &entry.name,
-                    F3dLossCode::TsplineCageUndecoded.note(message),
-                ));
+                let note = F3dLossCode::TsplineCageUndecoded
+                    .note(format!("T-spline control cage not decoded: {error}"));
+                match scan.give_up_entry(ctx, &entry.name, error)? {
+                    Some(part) => {
+                        losses.push(note);
+                        given_up.push(part);
+                    }
+                    None => losses.extend(record_given_up(&entry.name, note)),
+                }
             }
         }
     }

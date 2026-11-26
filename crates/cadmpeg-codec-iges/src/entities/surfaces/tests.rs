@@ -109,15 +109,17 @@ fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {
 
 #[test]
 fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
-    // The midpoint normal admits the first indicator and reaches the NURBS
-    // offset the decoder does not project; it rejects the second, so the
-    // offset entity is given up.
-    for (indicator, given_up) in [
+    // The midpoint normal admits the first indicator, which reaches the NURBS
+    // support that has no exact offset carrier; it rejects the second.
+    for (indicator, reason) in [
         (
             "-0.4082482904638631D0,-0.4082482904638631D0,0.8164965809277261D0",
-            &[][..],
+            "support surface has no exact analytic offset carrier",
         ),
-        ("0,0,1", &["iges:entity:directory#3"][..]),
+        (
+            "0,0,1",
+            "offset indicator is not the support normal at the designated parameters",
+        ),
     ] {
         let result = IgesCodec
             .decode(
@@ -135,7 +137,7 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
         assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
         assert_eq!(
             result.report().losses.len(),
-            1 + given_up.len(),
+            2,
             "{:#?}",
             result.report().losses
         );
@@ -143,7 +145,12 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
             result.report().losses[0].code,
             IgesLossCode::GeometryNotProjected.kind()
         );
-        crate::test_support::assert_gives_up(result.report(), given_up);
+        assert!(
+            result.report().losses[0].message.contains(reason),
+            "{}",
+            result.report().losses[0].message
+        );
+        crate::test_support::assert_gives_up(result.report(), &["iges:entity:directory#3"]);
     }
 }
 
@@ -167,6 +174,7 @@ fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("surface pole count exceeds 1000000")
     }));
+    crate::test_support::assert_gives_up(decoded.report(), &["iges:entity:directory#1"]);
 }
 
 #[test]

@@ -458,6 +458,37 @@ fn a_pinned_decode_refuses_a_shell_that_does_not_decode() {
 }
 
 #[test]
+fn a_pinned_decode_refuses_a_body_past_the_coordinate_bound() {
+    let far = 1.0e9_f32;
+    let items = vec![Item::Shell {
+        points: vec![[far, 0.0, 0.0], [0.0; 3], [0.0, far, 0.0]],
+        strips: vec![vec![0, 1, 2]],
+    }];
+    let package = part_package(&model_of(items, None).stream());
+    let admitted = decode(&package);
+    assert!(codes(&admitted).contains(&EdrawingsLossCode::GeometryBodyFailed.kind()));
+    assert!(admitted.ir().geometry.bodies.is_empty());
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = EdrawingsCodec
+        .decode(&mut Cursor::new(package), &options)
+        .expect_err("a pinned decode refuses a body dropped at the coordinate bound");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token.starts_with("edrawings:model:body#")));
+}
+
+#[test]
 fn an_instance_without_a_library_body_is_charged() {
     let mut s = Stream::new();
     s.open("includes")

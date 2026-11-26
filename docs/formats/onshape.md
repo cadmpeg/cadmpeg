@@ -263,6 +263,16 @@ those of the input body, and the removed face leaves an opening.
 Each bound applies before the corresponding unbounded operation. A compact
 reference also charges its expanded value size and depth.
 
+A decoder gives up each member that it rejects as an `archive-entry` part. A
+rejected member has an invalid name, encryption, an unsupported method, a
+failed open, unreadable JSON, or a microversion that differs from the document
+microversion. The part
+keeps the stored bytes of the member. When the member is over a bound, the part
+keeps only the digest of the stored bytes. A later member with the name of an
+earlier member adds no record when its method and stored bytes are equal to
+those of the earlier member. The decoder gives up each other later member with
+a repeated name.
+
 ## Assembly definitions
 
 An assembly definition stores `rootAssembly`, `subAssemblies`, and `parts`.

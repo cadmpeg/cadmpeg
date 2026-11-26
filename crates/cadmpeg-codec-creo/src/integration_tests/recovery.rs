@@ -69,6 +69,13 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
             [Some(section.as_str())]
         );
         assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.starts_with(&format!(
+                "record {section} stream=\"\" offset={section_offset} length="
+            ))));
+        assert!(decoded
             .source_fidelity()
             .retained_records()
             .values()

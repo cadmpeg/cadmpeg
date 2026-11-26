@@ -46,6 +46,7 @@ fn vector_distance(left: Vector3, right: Vector3) -> f64 {
 fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
         source_offset: 0,
+        source_length: 160,
         sequence: 1,
         entity_type,
         parameter_start: 1,

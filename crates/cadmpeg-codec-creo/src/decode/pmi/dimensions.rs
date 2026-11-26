@@ -16,7 +16,7 @@ use cadmpeg_ir::pmi::{
     PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::record_unreadable;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::loss::CreoLossCode;
@@ -252,6 +252,7 @@ pub(super) fn transfer(
         // More than one annotation element claims the owner.
         if candidates.len() != 1 {
             unresolved += 1;
+            given_up.push(record);
             continue;
         }
         if fields.duplicate {
@@ -397,12 +398,14 @@ pub(super) fn transfer(
             "{unresolved} dimensional attribute owner(s) have an ambiguous join, invalid value, or unresolved tolerance mode."
         )));
     }
-    let reason = CreoLossCode::PmiRecordUnresolved.kind();
-    losses.extend(
-        given_up
-            .iter()
-            .map(|record| record_unreadable(record, &reason)),
-    );
+    let code = CreoLossCode::PmiRecordUnresolved.kind();
+    losses.extend(given_up.iter().map(|record| {
+        GivenUpRecord::new(
+            record,
+            format_args!("{code}: the dimensional attributes form no PMI record"),
+        )
+        .loss()
+    }));
     if conflicting != 0 {
         losses.push(CreoLossCode::PmiFirstAttributeAssumed.note(format!(
             "{conflicting} dimension(s) use the first value of conflicting attributes."

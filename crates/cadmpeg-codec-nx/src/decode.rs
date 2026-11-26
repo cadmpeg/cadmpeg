@@ -261,12 +261,24 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
         }
     }
     for entry in scan.container.bounded_indexed_om_entries() {
-        body.losses.push(NxLossCode::SourceScanBounded.note(format!(
+        let why = NxLossCode::SourceScanBounded.note(format!(
             "The indexed object-model section search in {} reached its work bound of {}; \
              its remaining sections were skipped.",
             entry.name,
             crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
-        )));
+        ));
+        match entry.file_span() {
+            Some((offset, _)) => {
+                let unreadable = cadmpeg_ir::unknown::part::GivenUpRecord::caused_by(
+                    format_args!("nx:container@{offset}"),
+                    &why,
+                )
+                .at(cadmpeg_ir::SourceProvenance::root("nx", offset))
+                .loss();
+                body.losses.extend([why, unreadable]);
+            }
+            None => body.losses.push(why),
+        }
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {

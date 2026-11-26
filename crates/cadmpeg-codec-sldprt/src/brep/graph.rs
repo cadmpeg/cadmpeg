@@ -647,6 +647,29 @@ fn qualified_reference(value: &str, site: &str) -> String {
     }
 }
 
+/// The `record.unreadable` of the topology record `record` that the decode
+/// drops for `code`, at `offset` in `stream` where the record has one.
+/// `dropped` names the records the decode drops with it.
+fn topology_given_up<const N: usize>(
+    record: impl std::fmt::Display,
+    stream: &cadmpeg_ir::StreamName,
+    offset: Option<usize>,
+    code: crate::loss::SldprtLossCode,
+    why: &str,
+    dropped: [SurfaceId; N],
+) -> cadmpeg_ir::report::loss::LossNote {
+    cadmpeg_ir::unknown::part::GivenUpRecord::new(record, format_args!("{}: {why}", code.kind()))
+        .at(offset.map(|offset| {
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "sldprt",
+                stream.clone(),
+                u64_from_index(offset),
+            )
+        }))
+        .dropping(dropped)
+        .loss()
+}
+
 fn id_face(a: u32) -> FaceId {
     FaceId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "brep", "face"),
@@ -3900,11 +3923,14 @@ fn decode_graph_inner(
             )
         {
             out.stats.withheld_ring_edges += 1;
-            out.losses
-                .push(cadmpeg_ir::unknown::part::record_unreadable(
-                    id_edge(e),
-                    crate::loss::SldprtLossCode::TopologyRingEdgeWithheld.kind(),
-                ));
+            out.losses.push(topology_given_up(
+                id_edge(e),
+                stream,
+                t.edge_uses().get(&e).map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyRingEdgeWithheld,
+                "the vertexless ring edge fails reciprocal closed-carrier single-loop admission",
+                [],
+            ));
             continue;
         }
         if !resolved_endpoints && closed_point.is_none() {
@@ -4453,11 +4479,16 @@ fn decode_graph_inner(
             .filter(|face| !bridge_group.contains_key(&face.bridge_attr))
         {
             out.stats.unclaimed_faces += 1;
-            out.losses
-                .push(cadmpeg_ir::unknown::part::record_unreadable(
-                    id_face(face.bridge_attr),
-                    crate::loss::SldprtLossCode::TopologyFaceUnclaimed.kind(),
-                ));
+            out.losses.push(topology_given_up(
+                id_face(face.bridge_attr),
+                stream,
+                t.bridges()
+                    .get(&face.bridge_attr)
+                    .map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyFaceUnclaimed,
+                "no body record claims the face",
+                [id_surf(face.bridge_attr)],
+            ));
         }
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
@@ -4522,24 +4553,38 @@ fn decode_graph_inner(
             FaceAdmission::Admitted => {}
             FaceAdmission::VertexLoopUnresolved => {
                 out.stats.withheld_vertex_loop_faces += 1;
-                out.losses
-                    .push(cadmpeg_ir::unknown::part::record_unreadable(
-                        id_face(f.bridge_attr),
-                        crate::loss::SldprtLossCode::TopologyVertexLoopWithheld.kind(),
-                    ));
+                out.losses.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyVertexLoopWithheld,
+                    "a vertex loop of the face names no resolved vertex",
+                    [id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::FinAmbiguous => {
                 out.stats.withheld_ambiguous_fin_faces += 1;
+                out.losses.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
+                    "a loop of the face holds an ambiguous FIN",
+                    [id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::NoLoop => {
                 out.stats.withheld_faces += 1;
-                out.losses
-                    .push(cadmpeg_ir::unknown::part::record_unreadable(
-                        id_face(f.bridge_attr),
-                        crate::loss::SldprtLossCode::TopologyFaceWithheld.kind(),
-                    ));
+                out.losses.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyFaceWithheld,
+                    "no loop of the face decodes",
+                    [id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
         }

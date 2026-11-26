@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
@@ -18,6 +19,14 @@ use crate::loss::SldprtLossCode;
 
 use super::AssemblyProjection;
 
+/// The component tree section an assembly reads: its record id, and its
+/// stream and length where the decode holds the section.
+#[derive(Debug, Clone)]
+pub(crate) struct TreeRecord {
+    pub(crate) id: cadmpeg_ir::ids::UnknownId,
+    pub(crate) span: Option<(cadmpeg_ir::StreamName, usize)>,
+}
+
 /// Definitions and placements in native order, before neutral product
 /// structure is projected.
 #[derive(Debug, Default)]
@@ -28,7 +37,8 @@ pub(super) struct NativeAssembly {
 }
 
 impl NativeAssembly {
-    /// An assembly that transferred no structure, with its blocking loss.
+    /// An assembly that transferred no structure because the document holds
+    /// no component tree section, with its blocking loss.
     pub(super) fn structure_lost(message: String) -> Self {
         let mut assembly = Self::default();
         assembly
@@ -37,17 +47,22 @@ impl NativeAssembly {
         assembly
     }
 
-    /// An assembly that transferred no structure because its component tree
-    /// section `tree` does not read, with its blocking loss; the section is
-    /// given up.
-    pub(super) fn structure_given_up(tree: &cadmpeg_ir::ids::UnknownId, message: String) -> Self {
+    /// An assembly that transferred no structure from its component tree
+    /// section `tree`, with its blocking loss; the section is given up.
+    pub(super) fn structure_given_up(tree: &TreeRecord, message: String) -> Self {
+        let why = SldprtLossCode::AssemblyStructureNotTransferred.note(message);
+        let mut unreadable = cadmpeg_ir::unknown::part::GivenUpRecord::caused_by(&tree.id, &why);
+        if let Some((stream, length)) = &tree.span {
+            unreadable = unreadable
+                .at(cadmpeg_ir::SourceProvenance::in_stream(
+                    "sldprt",
+                    stream.clone(),
+                    0,
+                ))
+                .spanning(u64_from_index(*length));
+        }
         let mut assembly = Self::default();
-        assembly
-            .losses
-            .extend(cadmpeg_ir::unknown::part::record_given_up(
-                tree,
-                SldprtLossCode::AssemblyStructureNotTransferred.note(message),
-            ));
+        assembly.losses.extend([why, unreadable.loss()]);
         assembly
     }
 

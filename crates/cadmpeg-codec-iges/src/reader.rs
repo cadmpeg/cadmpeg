@@ -15,7 +15,7 @@ use cadmpeg_ir::report::{
     loss::LossNote,
     Severity,
 };
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -419,10 +419,20 @@ impl<'a> PhysicalParse<'a> {
     fn record_losses(&self) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.framing_recoveries.notes();
         for record in &self.quarantined_directory {
-            losses.extend(record_given_up(record.identity(), record.loss_note()));
+            let why = record.loss_note();
+            let unreadable = GivenUpRecord::caused_by(record.identity(), &why)
+                .spanning(record.source_length)
+                .loss();
+            losses.extend([why, unreadable]);
         }
         for record in &self.quarantined_parameters {
-            losses.extend(record_given_up(record.identity(), record.loss_note()?));
+            let why = record.loss_note()?;
+            let mut unreadable =
+                GivenUpRecord::caused_by(record.identity(), &why).at(record.provenance());
+            if let Some(length) = record.source_length() {
+                unreadable = unreadable.spanning(length);
+            }
+            losses.extend([why, unreadable.loss()]);
         }
         let mut entries = BTreeMap::new();
         for record in &self.parameters {

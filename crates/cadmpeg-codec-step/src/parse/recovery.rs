@@ -73,25 +73,21 @@ impl Parser<'_, '_, '_> {
         });
     }
 
-    /// Records the omission of instance `id`, which the parser gives up
-    /// whole.
-    fn give_up_record(&mut self, id: u64, offset: usize, message: std::fmt::Arguments<'_>) {
-        self.diagnostics.push(ParseDiagnostic {
-            offset,
-            kind: ParseDiagnosticKind::RecordOmitted,
-            message: message.to_string(),
-            given_up: Some(id),
-        });
-    }
-
-    fn omit_record(
+    /// Records the omission of the record `id` whose statement is `span`,
+    /// which the parser gives up whole.
+    fn give_up_record(
         &mut self,
-        span: Range<usize>,
-        omitted: &mut Vec<Range<usize>>,
-        reason: std::fmt::Arguments<'_>,
+        id: String,
+        span: &Range<usize>,
+        kind: ParseDiagnosticKind,
+        message: std::fmt::Arguments<'_>,
     ) {
-        self.diagnostic(span.start, ParseDiagnosticKind::RecordOmitted, reason);
-        omitted.push(span);
+        self.diagnostics.push(ParseDiagnostic {
+            offset: span.start,
+            kind,
+            message: message.to_string(),
+            given_up: Some((id, span.len())),
+        });
     }
 
     pub(super) fn recover_header_record(
@@ -162,15 +158,30 @@ impl Parser<'_, '_, '_> {
             }
         };
         if !stated.insert(id) {
-            let span = record.span.clone();
-            self.omit_record(
-                record.span,
-                omitted,
-                format_args!(
-                    "repeated instance name #{id}: the first statement stands; the copy at bytes {}..{} is not stated; exact source retained",
-                    span.start, span.end
-                ),
+            let span = record.span;
+            let message = format!(
+                "repeated instance name #{id}: the first statement stands; the copy at bytes {}..{} is not stated; exact source retained",
+                span.start, span.end
             );
+            // A copy equal to the statement that stands drops nothing.
+            if records
+                .get(&id)
+                .is_some_and(|first| first.partials == record.partials)
+            {
+                self.diagnostic(
+                    span.start,
+                    ParseDiagnosticKind::RecordOmitted,
+                    format_args!("{message}"),
+                );
+            } else {
+                self.give_up_record(
+                    format!("#{id}"),
+                    &span,
+                    ParseDiagnosticKind::RecordOmitted,
+                    format_args!("{message}"),
+                );
+            }
+            omitted.push(span);
             return Ok(());
         }
         records.insert(id, record);
@@ -192,8 +203,9 @@ impl Parser<'_, '_, '_> {
             let entries = std::mem::take(anchors).into_iter();
             for (anchor, span) in entries.zip(std::mem::take(anchor_spans)) {
                 if let Some(bound) = bounded.anchors.remove(&anchor.name) {
-                    self.diagnostic(
-                        span.start,
+                    self.give_up_record(
+                        format!("<{}>", anchor.name),
+                        &span,
                         ParseDiagnosticKind::ExpansionBounded,
                         format_args!(
                             "anchor <{}> omitted: {bound}; exact source retained",
@@ -210,8 +222,9 @@ impl Parser<'_, '_, '_> {
         }
         for (id, bound) in bounded.records {
             if let Some(record) = records.remove(&id) {
-                self.diagnostic(
-                    record.span.start,
+                self.give_up_record(
+                    format!("#{id}"),
+                    &record.span,
                     ParseDiagnosticKind::ExpansionBounded,
                     format_args!("instance #{id} omitted: {bound}; exact source retained"),
                 );
@@ -260,7 +273,7 @@ impl Parser<'_, '_, '_> {
             )?;
             if let Some((target, value_instance)) = missing {
                 let prefix = if value_instance { '@' } else { '#' };
-                self.give_up_record(id, record.span.start, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
+                self.give_up_record(format!("#{id}"), &record.span, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
                 pending.push((id, None));
             } else if given_up.is_some() {
                 pending.push((id, given_up));
@@ -349,7 +362,7 @@ impl Parser<'_, '_, '_> {
                     if queued.insert(user) {
                         if let Some(record) = records.get(&user) {
                             if part.is_none() {
-                                self.give_up_record(user, record.span.start, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
+                                self.give_up_record(format!("#{user}"), &record.span, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
                             }
                             pending.push((user, part));
                         }

@@ -308,6 +308,12 @@ impl Provenance<SourceLocation> {
         self.tag = tag;
         self
     }
+
+    /// The named container stream, or `None` for the root stream.
+    #[must_use]
+    pub const fn source_stream(&self) -> Option<&StreamName> {
+        self.location.stream.as_ref()
+    }
 }
 
 #[derive(Serialize, Deserialize)]

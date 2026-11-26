@@ -2683,13 +2683,13 @@ fn try_decode_standard_population(
     };
     let topology_attached = topology_failure.is_none();
     let given_up_faces: Vec<String> = match topology_failure {
-        Some(failure) if failure.gives_up_faces() => topology_ir
+        Some(_) => topology_ir
             .geometry
             .faces
             .iter()
             .map(|face| face.id.as_str().to_owned())
             .collect(),
-        _ => Vec::new(),
+        None => Vec::new(),
     };
     if topology_attached {
         ir = topology_ir;
@@ -2857,12 +2857,16 @@ scan,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message));
-    report.losses.extend(given_up_faces.iter().map(|face| {
-        cadmpeg_ir::unknown::part::record_unreadable(
-            face,
-            CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind(),
-        )
-    }));
+    if let Some(failure) = topology_failure {
+        let code = CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind();
+        report.losses.extend(given_up_faces.iter().map(|face| {
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                face,
+                format_args!("{code}: {}", failure.message()),
+            )
+            .loss()
+        }));
+    }
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
@@ -3164,19 +3168,6 @@ impl StandardTopologyFailure {
                 coverage::STANDARD_TOPOLOGY_FAILURE_INADMISSIBLE_MODEL_COUNT
             }
         }
-    }
-
-    /// Whether the failure gives up the population's face rows. A search
-    /// that ran out of its work slice is a bound, and a set of constraints
-    /// that admits distinct solutions or conflicting native endpoints is an
-    /// ambiguous reading, not an unreadable record.
-    const fn gives_up_faces(self) -> bool {
-        !matches!(
-            self,
-            Self::TopologySearchExhausted
-                | Self::AmbiguousTopologySolution
-                | Self::ConflictingNativeEndpoints
-        )
     }
 
     const fn message(self) -> &'static str {

@@ -767,9 +767,15 @@ fn collect_dimensions(
             Err(PmiParseError::Malformed(message)) => {
                 losses.extend(cadmpeg_ir::unknown::part::record_given_up(
                     format!("sldprt:pmi:dimension#{normalized}"),
-                    SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                        "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                    )),
+                    SldprtLossCode::PmiSemanticRecordMalformed
+                        .note(format!(
+                            "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                        ))
+                        .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                            "sldprt",
+                            stream.clone(),
+                            u64_from_index(offset),
+                        )),
                 ));
             }
             Err(PmiParseError::Capped) => {

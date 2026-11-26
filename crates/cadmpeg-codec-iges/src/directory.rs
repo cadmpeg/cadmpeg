@@ -216,6 +216,8 @@ impl SourceStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DirectoryEntry {
     pub(crate) source_offset: u64,
+    /// The byte length of the two-card pair from `source_offset`.
+    pub(crate) source_length: u64,
     pub(crate) sequence: u32,
     pub(crate) entity_type: i64,
     pub(crate) parameter_start: i64,
@@ -341,6 +343,8 @@ impl fmt::Display for DirectoryDefect {
 pub(crate) struct QuarantinedDirectoryRecord {
     pub(crate) sequence: u32,
     pub(crate) source_offset: u64,
+    /// The byte length of the record's cards from `source_offset`.
+    pub(crate) source_length: u64,
     pub(crate) bytes: Vec<u8>,
     pub(crate) defect: DirectoryDefect,
 }
@@ -459,6 +463,7 @@ fn parse_pair(
     }
     Ok(DirectoryEntry {
         source_offset: first.offset,
+        source_length: card_span(first, second),
         sequence,
         entity_type,
         parameter_start: directory_integer(
@@ -494,18 +499,29 @@ fn parse_pair(
     })
 }
 
+/// The byte length from the start of `first` to the end of the card
+/// payload of `last`.
+pub(crate) fn card_span(first: &PhysicalLine, last: &PhysicalLine) -> u64 {
+    last.offset
+        .saturating_add(cadmpeg_core::decode::u64_from_index(last.payload.len()))
+        .saturating_sub(first.offset)
+}
+
 fn quarantine(
     first: (u32, &PhysicalLine),
     rest: &[(u32, &PhysicalLine)],
     defect: DirectoryDefect,
 ) -> QuarantinedDirectoryRecord {
     let mut bytes = Vec::new();
+    let mut last = first.1;
     for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
         bytes.extend_from_slice(&line.payload);
+        last = line;
     }
     QuarantinedDirectoryRecord {
         sequence: first.0,
         source_offset: first.1.offset,
+        source_length: card_span(first.1, last),
         bytes,
         defect,
     }

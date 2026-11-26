@@ -42,6 +42,7 @@ use crate::brep::{
 };
 use crate::ids::brep as id;
 use crate::loss::UsdLossCode;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 /// The entities of one B-rep, in arena order.
 #[derive(Debug, Default)]
@@ -982,9 +983,10 @@ impl super::Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_breps
                     .push(format!("{}: {reason}", prim.path));
-                self.tallies
-                    .given_up
-                    .push((prim.path.clone(), UsdLossCode::BrepRejected));
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    &prim.path,
+                    format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                ));
                 return Ok(Vec::new());
             }
         };
@@ -1013,9 +1015,9 @@ impl super::Builder<'_, '_, '_, '_> {
                     self.tallies
                         .rejected_breps
                         .push(format!("{}: {reason}", prim.path));
-                    self.tallies.given_up.push((
-                        format!("{}#brep{ordinal}", prim.path),
-                        UsdLossCode::BrepRejected,
+                    self.tallies.given_up.push(GivenUpRecord::new(
+                        format_args!("{}#brep{ordinal}", prim.path),
+                        format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
                     ));
                 }
             }
@@ -1162,9 +1164,10 @@ impl super::Builder<'_, '_, '_, '_> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             self.tallies.rejected_meshes.push(prim.path.clone());
-            self.tallies
-                .given_up
-                .push((prim.path.clone(), UsdLossCode::MeshRejected));
+            self.tallies.given_up.push(GivenUpRecord::new(
+                &prim.path,
+                UsdLossCode::MeshRejected.kind(),
+            ));
             return Ok(());
         };
         self.ctx.retain_bytes(
@@ -1185,9 +1188,10 @@ impl super::Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
-                self.tallies
-                    .given_up
-                    .push((prim.path.clone(), UsdLossCode::MeshRejected));
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    &prim.path,
+                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                ));
                 return Ok(());
             }
         };

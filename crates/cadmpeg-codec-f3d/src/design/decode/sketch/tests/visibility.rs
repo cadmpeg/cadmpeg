@@ -10,6 +10,7 @@ use crate::design::decode::sketch::{
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 pub(super) const ENTITY_SUFFIX: u64 = 201;
+const STREAM: &str = "Design/BulkStream.dat";
 
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
@@ -21,7 +22,7 @@ fn decode_sketch_visibilities_in_stream(
     )>,
     cadmpeg_core::CodecError,
 > {
-    super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut Vec::new())
+    super::super::decode_sketch_visibilities_in_stream(bytes, metadata, STREAM, &mut Vec::new())
         .map(|v| v.into_iter().map(|(id, vis, _)| (id, vis)).collect())
 }
 
@@ -37,7 +38,7 @@ fn decode_with_losses(
 ) {
     let mut losses = Vec::new();
     let visibilities =
-        super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut losses)
+        super::super::decode_sketch_visibilities_in_stream(bytes, metadata, STREAM, &mut losses)
             .unwrap()
             .into_iter()
             .map(|(id, vis, _)| (id, vis))

@@ -174,11 +174,17 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
         .expect_err("strict decode refuses the attachment failure");
     match error {
         DecodeFailure::StrictRejected { rejection } => {
-            assert_eq!(
-                rejection.loss().code.local_code(),
-                "native.attachment-failed"
+            assert!(
+                charges_the_container(rejection.loss()),
+                "{:#?}",
+                rejection.loss()
             );
-            assert!(rejection.report().losses.iter().any(charges_the_container));
+            assert!(rejection
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "native.attachment-failed"
+                    && loss.code.strict_floor().is_none()));
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

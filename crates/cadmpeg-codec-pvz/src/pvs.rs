@@ -11,9 +11,10 @@ mod xml;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::layout::{pvs_header, pvs_stream_entry_head as stream_entry};
 use crate::loss::PvzLossCode;
@@ -217,6 +218,8 @@ pub(crate) struct Structure {
     pub(crate) definitions: Vec<Definition>,
     /// Content the decoder read but did not transfer.
     pub(crate) residue: Residue,
+    /// The property streams that did not decode.
+    pub(crate) given_up: Vec<GivenUpPart>,
 }
 
 /// Structure content that the model does not carry, counted for loss notes.
@@ -236,9 +239,8 @@ pub(crate) struct Residue {
     typed_properties: usize,
     /// XML elements outside the mapped subset (§3.14), by name.
     xml_elements: BTreeMap<String, usize>,
-    /// Property streams whose grammar failed: the stream's directory address
-    /// in loss messages, and the reason.
-    failed_property_streams: Vec<(String, String)>,
+    /// Why each property stream whose grammar failed was not transferred.
+    failed_property_streams: Vec<String>,
     /// Directory streams the decoder does not read, with the reason.
     skipped_streams: Vec<String>,
 }
@@ -324,11 +326,8 @@ impl Residue {
                 self.typed_properties
             )));
         }
-        for (stream, reason) in &self.failed_property_streams {
-            losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-                stream,
-                PvzLossCode::StructurePropertyStreamMalformed.note(reason.clone()),
-            ));
+        for reason in &self.failed_property_streams {
+            losses.push(PvzLossCode::StructurePropertyStreamMalformed.note(reason.clone()));
         }
         for reason in &self.skipped_streams {
             losses.push(PvzLossCode::StructureStreamUndecoded.note(reason.clone()));
@@ -345,11 +344,15 @@ struct Stream<'a> {
     payload: View<'a>,
 }
 
-/// Decodes a structure member in its binary (§3.1) or XML (§3.14) form.
-pub(crate) fn read(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, CodecError> {
+/// Decodes structure member `name` in its binary (§3.1) or XML (§3.14) form.
+pub(crate) fn read(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    member: View<'_>,
+) -> Result<Structure, CodecError> {
     let window = member.window();
     if window.starts_with(BINARY_PREFIX) {
-        read_binary(ctx, member)
+        read_binary(ctx, name, member)
     } else if window.starts_with(XML_PREFIX) {
         xml::read(ctx, window)
     } else {
@@ -359,9 +362,14 @@ pub(crate) fn read(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structur
     }
 }
 
-fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, CodecError> {
+fn read_binary(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    member: View<'_>,
+) -> Result<Structure, CodecError> {
     let streams = directory(ctx, member)?;
     let mut residue = Residue::default();
+    let mut given_up = Vec::new();
     let mut pool = None;
     for stream in streams
         .iter()
@@ -401,7 +409,7 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
     }
     let mut definitions = definitions
         .ok_or_else(|| CodecError::malformed("structure member has no structure stream"))?;
-    for (index, stream) in streams.iter().enumerate() {
+    for stream in &streams {
         match stream.kind {
             stream_type::STRING_POOL | stream_type::STRUCTURE => {}
             stream_type::PROPERTIES => {
@@ -419,13 +427,24 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
                 match applied {
                     Ok(()) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => residue.failed_property_streams.push((
-                        format!("pvz:structure-stream#{index}"),
-                        format!(
+                    Err(error) => {
+                        residue.failed_property_streams.push(format!(
                             "property stream {:?} was not transferred: {error}",
                             stream.name
-                        ),
-                    )),
+                        ));
+                        let mut part = Part::at(
+                            "pvz",
+                            "pvs-stream",
+                            u64_from_index(stream.payload.start().saturating_sub(member.start())),
+                            stream.payload.window(),
+                            [ArenaClass::Model],
+                        )
+                        .in_stream(crate::ids::member_stream_name(name));
+                        if !stream.name.is_empty() {
+                            part = part.named(stream.name.as_str());
+                        }
+                        given_up.push(ctx.give_up_part(part, error)?);
+                    }
                 }
             }
             other => residue.skipped_streams.push(format!(
@@ -438,6 +457,7 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
     Ok(Structure {
         definitions,
         residue,
+        given_up,
     })
 }
 

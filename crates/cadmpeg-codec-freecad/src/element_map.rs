@@ -361,9 +361,16 @@ pub(crate) fn parse(
         match parsed {
             Ok(map) => maps.extend(map),
             Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+                let why = metadata_unresolved(&property.id, &error).with_provenance(
+                    cadmpeg_ir::SourceProvenance::in_stream(
+                        "fcstd",
+                        cadmpeg_ir::stream_name!("Document.xml"),
+                        property.xml.start(),
+                    ),
+                );
                 losses.extend(record_given_up(
-                    &property.id,
-                    metadata_unresolved(&property.id, &error),
+                    crate::native::native_child_id("element-map", &property.id, "map"),
+                    why,
                 ));
             }
             Err(error) => return Err(error),

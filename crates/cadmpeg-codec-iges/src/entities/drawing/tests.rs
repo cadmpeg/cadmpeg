@@ -36,6 +36,7 @@ use crate::parameter::{ParameterRecord, Token, TokenValue};
 fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
         source_offset: 0,
+        source_length: 160,
         sequence: 1,
         entity_type,
         parameter_start: 0,
@@ -510,6 +511,7 @@ fn drawing_enumerations_match_the_iges_tables() {
 fn clipping_plane_use_flag_follows_the_declared_dialect() {
     let mut target = DirectoryEntry {
         source_offset: 0,
+        source_length: 160,
         sequence: 1,
         entity_type: 108,
         parameter_start: 0,

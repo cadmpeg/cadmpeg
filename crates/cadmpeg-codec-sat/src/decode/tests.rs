@@ -904,6 +904,30 @@ End-of-ACIS-data\n";
     );
 }
 
+/// Whether `losses` give up the source record `id`, whose bytes `record`
+/// stand once in `source`, for the codec loss `code`.
+fn gives_up(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    source: &[u8],
+    id: &str,
+    record: &[u8],
+    code: SatLossCode,
+) -> bool {
+    let offset = source
+        .windows(record.len())
+        .position(|window| window == record)
+        .unwrap();
+    let head = format!(
+        "record {id} stream=\"\" offset={offset} length={} given up: {}: ",
+        record.len(),
+        code.kind()
+    );
+    losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with(&head)
+    })
+}
+
 #[test]
 fn standalone_face_is_retained_when_the_ir_requires_a_shell_owner() {
     let source = b"201 0 1 0\n1 T 4 ACIS 1 D\n1 0.01 0.001\n\
@@ -917,6 +941,13 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
         .losses
         .iter()
         .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
+    assert!(gives_up(
+        &result.report().losses,
+        source,
+        "sat:brep:face#0",
+        b"face $-1 $-1 $-1 $-1 $-1 $1 forward single #",
+        SatLossCode::TopologyFaceOwnerUnprojected,
+    ));
     assert_eq!(
         result
             .source_fidelity()
@@ -996,6 +1027,13 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
         .losses
         .iter()
         .any(|loss| loss.code == SatLossCode::TopologyShellUnprojected.kind()));
+    assert!(gives_up(
+        &result.report().losses,
+        source,
+        "sat:brep:shell#2",
+        b"shell $-1 $3 $-1 $-1 $1 #",
+        SatLossCode::TopologyShellUnprojected,
+    ));
     assert_eq!(
         result
             .source_fidelity()

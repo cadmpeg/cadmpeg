@@ -92,6 +92,15 @@ fn strict_decode_refuses_a_given_up_kernel_carrier() {
             "{}",
             unreadable[0].message
         );
+        if record.starts_with("inventor:kernel:carrier#") {
+            assert!(
+                unreadable[0]
+                    .message
+                    .contains(" stream=\"RSeStorage/Bseg:expanded\" offset="),
+                "{}",
+                unreadable[0].message
+            );
+        }
 
         let mut pinned = DecodeOptions::default();
         pinned.strictness.pinned = true;

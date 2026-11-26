@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -129,6 +129,53 @@ fn push_opaque_record(
         record: record.clone(),
     });
 }
+
+/// The `record.unreadable` of the table record `record` of the table
+/// `table_typecode`, which the decoder keeps only as a retained opaque
+/// record, for the codec loss `why`.
+fn table_record_given_up(table_typecode: u32, record: &Record, why: &LossNote) -> LossNote {
+    GivenUpRecord::caused_by(opaque_record_id(table_typecode, record), why)
+        .at(SourceProvenance::root(
+            "rhino",
+            cadmpeg_core::decode::u64_from_index(record.range.start),
+        ))
+        .spanning(cadmpeg_core::decode::u64_from_index(record.range.len()))
+        .loss()
+}
+
+/// Gives up the framed table record `record` of the table `table_typecode`,
+/// whose class payload does not frame. Its retained opaque record keeps its
+/// bytes, so the part keeps only their digest and links to that record.
+fn give_up_table_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    table_typecode: u32,
+    record: &Record,
+    error: impl std::fmt::Display,
+) -> Result<GivenUpPart, CodecError> {
+    let part = Part::at(
+        "rhino",
+        TABLE_RECORD_PART,
+        cadmpeg_core::decode::u64_from_index(record.range.start),
+        &data[record.range.clone()],
+        [cadmpeg_core::decode::ArenaClass::Model],
+    )
+    .contained_in(cadmpeg_ir::ids::Identity::from(opaque_record_id(
+        table_typecode,
+        record,
+    )))
+    .digest_only();
+    ctx.give_up_part(
+        part,
+        CodecError::malformed(format_args!(
+            "{}: {error}",
+            RhinoLossCode::PresentationRecordDropped.kind()
+        )),
+    )
+}
+
+/// The part a framed table record is (`rhino_3dm.md` §21).
+const TABLE_RECORD_PART: &str = "table-record";
 
 #[derive(Debug)]
 struct Component {
@@ -4514,11 +4561,13 @@ fn retain_unbound_presentation_record(
     binding: UnitBinding,
     kind: &str,
 ) {
-    push_presentation_loss( losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+    let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
         "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
         record.range.start,
         binding.label()
     ));
+    let unreadable = table_record_given_up(table_typecode, record, &loss);
+    losses.extend([loss, unreadable]);
     push_opaque_record(opaque_records, table_typecode, record);
 }
 
@@ -4556,6 +4605,7 @@ pub(crate) fn install(
 
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
+    let mut given_up = Vec::new();
     for object in &scan.objects {
         if let Some(identity) = object.identity() {
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
@@ -4752,12 +4802,18 @@ pub(crate) fn install(
                                 record.range.start,
                             ));
                             if matches!(error, PatternTransferError::Framing(_)) {
-                                losses.extend(record_given_up(
-                                    opaque_record_id(table.typecode, record),
-                                    loss,
-                                ));
-                            } else {
+                                given_up.push(give_up_table_record(
+                                    ctx,
+                                    scan.data,
+                                    table.typecode,
+                                    record,
+                                    &error,
+                                )?);
                                 losses.push(loss);
+                            } else {
+                                let unreadable =
+                                    table_record_given_up(table.typecode, record, &loss);
+                                losses.extend([loss, unreadable]);
                             }
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
@@ -4788,12 +4844,18 @@ pub(crate) fn install(
                                 record.range.start,
                             ));
                             if matches!(error, PatternTransferError::Framing(_)) {
-                                losses.extend(record_given_up(
-                                    opaque_record_id(table.typecode, record),
-                                    loss,
-                                ));
-                            } else {
+                                given_up.push(give_up_table_record(
+                                    ctx,
+                                    scan.data,
+                                    table.typecode,
+                                    record,
+                                    &error,
+                                )?);
                                 losses.push(loss);
+                            } else {
+                                let unreadable =
+                                    table_record_given_up(table.typecode, record, &loss);
+                                losses.extend([loss, unreadable]);
                             }
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
@@ -4991,13 +5053,12 @@ pub(crate) fn install(
                 }
             }
             if recognized && !parsed {
-                losses.extend(record_given_up(
-                    opaque_record_id(table.typecode, record),
-                    RhinoLossCode::PresentationRecordDropped.note(format_args!(
-                        "record at offset {} in table {table_type:#x} could not be transferred",
-                        record.range.start
-                    )),
+                let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
+                    "record at offset {} in table {table_type:#x} could not be transferred",
+                    record.range.start
                 ));
+                let unreadable = table_record_given_up(table.typecode, record, &loss);
+                losses.extend([loss, unreadable]);
                 push_opaque_record(&mut opaque_records, table.typecode, record);
             }
         }
@@ -5030,20 +5091,25 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        losses.extend(record_given_up(
-                            format!("rhino:object:record#{source_order:06}"),
-                            RhinoLossCode::PresentationRecordDropped.note(format_args!(
+                        losses.extend(light_object_given_up(
+                            source_order,
+                            &object.range,
+                            format_args!(
                                 "light object at offset {} could not be transferred: {error}",
                                 object.range.start
-                            )),
+                            ),
                         ));
                     }
                 }
             } else {
-                push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                    "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-                    object.range.start,
-                    binding.label()
+                losses.extend(light_object_given_up(
+                    source_order,
+                    &object.range,
+                    format_args!(
+                        "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+                        object.range.start,
+                        binding.label()
+                    ),
                 ));
             }
         }
@@ -5208,7 +5274,29 @@ pub(crate) fn install(
     Ok(NativeInstall {
         losses,
         opaque_records,
+        given_up,
     })
+}
+
+/// The losses of the light object at `source_order`, spanning `range`, that
+/// the decoder drops: its codec loss, with `message`, and its
+/// `record.unreadable`.
+fn light_object_given_up(
+    source_order: usize,
+    range: &std::ops::Range<usize>,
+    message: std::fmt::Arguments<'_>,
+) -> [LossNote; 2] {
+    let loss = RhinoLossCode::PresentationRecordDropped
+        .note(message)
+        .with_provenance(SourceProvenance::root(
+            "rhino",
+            cadmpeg_core::decode::u64_from_index(range.start),
+        ));
+    let unreadable =
+        GivenUpRecord::caused_by(format_args!("rhino:object:record#{source_order:06}"), &loss)
+            .spanning(cadmpeg_core::decode::u64_from_index(range.len()))
+            .loss();
+    [loss, unreadable]
 }
 
 #[cfg(test)]

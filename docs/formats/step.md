@@ -1135,7 +1135,12 @@ order across all DATA sections, is the instance, and every reference by the
 name resolves to it (CADIR §2.2). Each later statement of the name is read
 and not stated: its exact source is retained, and it is charged one
 `step/parse.record-omitted` loss that names the instance name and gives the
-copy's byte span. Where the first statement is unreadable, it is given up as
+copy's byte span. A later statement is a dropped record and also charges one
+`record.unreadable` that names the instance name and the copy's offset and
+length (CADIR §3.3). The exception is a copy that states the same entity
+names and parameters as a first statement that stands: that copy drops
+nothing.
+Where the first statement is unreadable, it is given up as
 its own part with the records that need it (CADIR §3.3), and no later
 statement of the name stands in its place: each later readable statement is
 charged as above. A later unreadable statement is given up as its own part,

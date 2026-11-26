@@ -307,10 +307,9 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         .decode(&mut Cursor::new(bytes), &strict_options())
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.to_string(),
-            IgesLossCode::DirectoryRecordQuarantined.kind().to_string()
-        ),
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            crate::test_support::assert_given_up(rejection.loss(), "iges:quarantine:directory#3");
+        }
         other => panic!("expected a strict refusal, got {other:?}"),
     }
 }
@@ -320,6 +319,7 @@ fn directory_quarantine_record_names_its_identity_and_defect() {
     let record = super::QuarantinedDirectoryRecord {
         sequence: 3,
         source_offset: 160,
+        source_length: 160,
         bytes: Vec::new(),
         defect: super::DirectoryDefect::FieldNotAnInteger("level"),
     };

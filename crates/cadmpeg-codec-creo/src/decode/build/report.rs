@@ -20,7 +20,8 @@ use super::report_losses::{
     push_report_loss, push_structural_layer_notes, push_unread_legacy_rows,
 };
 use cadmpeg_ir::codec::DecodeBody;
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::SourceProvenance;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;
@@ -97,15 +98,21 @@ pub(in super::super) fn build_report(
     let mut losses = Vec::new();
     for expansion in &scan.framing.expansion_losses {
         let note = CreoLossCode::CompressedSectionUnexpanded.note(expansion.message.clone());
-        if expansion.over_limit {
-            losses.push(note);
-        } else {
-            let section = crate::identity::compose_checked::<cadmpeg_ir::ids::UnknownId>(
-                &cadmpeg_ir::identity_namespace!("creo", "compressed", "section"),
-                expansion.section_offset,
-            )?;
-            losses.extend(record_given_up(section.as_str(), note));
-        }
+        let section = crate::identity::compose_checked::<cadmpeg_ir::ids::UnknownId>(
+            &cadmpeg_ir::identity_namespace!("creo", "compressed", "section"),
+            expansion.section_offset,
+        )?;
+        let given_up = GivenUpRecord::caused_by(section.as_str(), &note)
+            .at(SourceProvenance::root(
+                "creo",
+                cadmpeg_core::decode::u64_from_index(expansion.section_offset),
+            ))
+            .spanning(cadmpeg_core::decode::u64_from_index(
+                expansion.section_length,
+            ))
+            .loss();
+        losses.push(note);
+        losses.push(given_up);
     }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
     for offset in &scan.framing.unowned_physical_geometry {

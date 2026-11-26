@@ -1425,14 +1425,14 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
         .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
         .collect::<Vec<_>>();
     let [unreadable] = unreadable.as_slice() else {
-        panic!("one record.unreadable for the container: {unreadable:?}");
+        panic!("one given-up archive entry for the container: {unreadable:?}");
     };
     assert_eq!(unreadable.severity, Severity::Error);
     assert!(
-        unreadable
-            .message
-            .split_whitespace()
-            .any(|token| token == entry),
+        unreadable.message.starts_with(&format!(
+            "part {} {entry:?} stream=\"\" offset=",
+            crate::container::ENTRY_PART
+        )),
         "{}",
         unreadable.message
     );
@@ -1453,11 +1453,10 @@ fn strict_decode_refuses_a_malformed_paramesh_through_record_unreadable() {
         cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
     assert!(
-        rejection
-            .loss()
-            .message
-            .split_whitespace()
-            .any(|token| token == MALFORMED_PARAMESH),
+        rejection.loss().message.starts_with(&format!(
+            "part {} {MALFORMED_PARAMESH:?} ",
+            crate::container::ENTRY_PART
+        )),
         "{}",
         rejection.loss().message
     );

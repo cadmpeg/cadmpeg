@@ -21,7 +21,8 @@ use crate::loss::OnshapeLossCode;
 use archive::{Bundle, SCHEMA};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::codec::Decoded;
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpRecord};
+use cadmpeg_ir::SourceProvenance;
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
@@ -418,7 +419,10 @@ pub(super) fn read(
         }
     }
     if ctx.container_only() {
-        return Ok(Model::from_decoded(empty(ctx, root), None));
+        let mut model = Model::from_decoded(empty(ctx, root), None);
+        let given_up = bundle.commit_given_up(ctx, &mut model.ir, &mut model.source_fidelity)?;
+        report.notes.extend(given_up);
+        return Ok(model);
     }
     let document = manifest.get("document").unwrap_or(&Value::Null);
     let mid = text(document, "microversion").map_err(Error::Decode)?;
@@ -426,7 +430,7 @@ pub(super) fn read(
     for key in ["sourceMicroversion", "microversionId"] {
         microversion(manifest, key, &mid).map_err(Error::Decode)?;
     }
-    bundle.admit_microversions(&mid);
+    bundle.admit_microversions(ctx, &mid)?;
     bundle.admit_topology(ctx)?;
     report.notes.append(&mut bundle.losses);
     let manifest = bundle.json("manifest.json")?;
@@ -459,6 +463,8 @@ pub(super) fn read(
     report
         .notes
         .extend(bundle.retain_assets(ctx, &mut model.ir)?);
+    let given_up = bundle.commit_given_up(ctx, &mut model.ir, &mut model.source_fidelity)?;
+    report.notes.extend(given_up);
     Ok(model)
 }
 
@@ -496,7 +502,12 @@ fn studio(
                 {
                     report.push_coded(&history_path, OnshapeLossCode::HistoryNotSupported, detail);
                 } else {
-                    report.give_up(&history_path, OnshapeLossCode::HistoryNotSupported, detail);
+                    report.give_up(
+                        bundle,
+                        &history_path,
+                        OnshapeLossCode::HistoryNotSupported,
+                        detail,
+                    );
                 }
                 (&[][..], RollbackBar::default())
             }
@@ -532,7 +543,7 @@ fn studio(
                 if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) {
                     report.push_coded(&step_path, OnshapeLossCode::StepUnreadable, detail);
                 } else {
-                    report.give_up(&step_path, OnshapeLossCode::StepUnreadable, detail);
+                    report.give_up(bundle, &step_path, OnshapeLossCode::StepUnreadable, detail);
                 }
                 None
             }
@@ -619,21 +630,35 @@ fn studio(
         reserve_history(&mut model.ir.design.containers, 1)?;
         reserve_history(&mut model.ir.design.scopes, 1)?;
     }
-    let mut seen = std::collections::BTreeSet::new();
+    let mut seen = std::collections::BTreeMap::<&str, &Value>::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
         let design_length = model.ir.design.features.len();
         let note_start = report.notes.len();
         let native = match text(feature, "featureId") {
-            Ok(native) if seen.insert(native) => native,
-            Ok(native) => {
-                report.push_coded(
-                    native,
-                    OnshapeLossCode::RecordMalformed,
-                    "a feature repeats an earlier feature id; omitted the feature",
-                );
-                continue;
-            }
+            Ok(native) => match seen.entry(native) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(feature);
+                    native
+                }
+                std::collections::btree_map::Entry::Occupied(first) if *first.get() == feature => {
+                    report.push_coded(
+                        native,
+                        OnshapeLossCode::RecordMalformed,
+                        "a feature repeats an earlier feature with the same id and content; kept the earlier feature",
+                    );
+                    continue;
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    report.give_up_as(
+                        &format!("{history_path}#/features/{ordinal}"),
+                        native,
+                        OnshapeLossCode::RecordMalformed,
+                        "a feature repeats an earlier feature id with different content; omitted the feature",
+                    );
+                    continue;
+                }
+            },
             Err(reason) => {
                 report.give_up_as(
                     &format!("{history_path}#/features/{ordinal}"),
@@ -938,9 +963,26 @@ impl Report {
         self.notes
             .push(code.note(format!("{}; subject: {subject}", detail.into())));
     }
-    /// Pushes the coded note for `record`, a member path, and its `record.unreadable`.
-    fn give_up(&mut self, record: &str, code: OnshapeLossCode, detail: impl Into<String>) {
-        self.give_up_as(record, record, code, detail);
+    /// Pushes the coded note for `record`, a member path of `bundle`, and
+    /// its `record.unreadable` at the member's stored bytes. The member
+    /// stays an asset; the give-up is its typed content.
+    fn give_up(
+        &mut self,
+        bundle: &Bundle<'_>,
+        record: &str,
+        code: OnshapeLossCode,
+        detail: impl Into<String>,
+    ) {
+        let note = code.note(format!("{}; subject: {record}", detail.into()));
+        let Some((offset, length)) = bundle.stored_span(record) else {
+            self.notes.extend(record_given_up(record, note));
+            return;
+        };
+        let note = note.with_provenance(SourceProvenance::root("onshape", offset));
+        let unreadable = GivenUpRecord::caused_by(record, &note)
+            .spanning(length)
+            .loss();
+        self.notes.extend([note, unreadable]);
     }
     /// Pushes the coded note for `subject` and the `record.unreadable` of
     /// `record`, its source address.

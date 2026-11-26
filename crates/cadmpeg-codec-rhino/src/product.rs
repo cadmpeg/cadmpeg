@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -274,16 +274,20 @@ pub(crate) fn install(
                     "PRODUCT_OCCURRENCE/source={}/class={}",
                     identity.source_id, object.class_uuid
                 );
-                losses.extend(record_given_up(
-                    format!("rhino:object:record#{source_order:06}"),
-                    loss.with_provenance(
-                        SourceProvenance::root(
-                            "rhino",
-                            cadmpeg_core::decode::u64_from_index(object.range.start),
-                        )
-                        .with_tag(tag),
-                    ),
-                ));
+                let loss = loss.with_provenance(
+                    SourceProvenance::root(
+                        "rhino",
+                        cadmpeg_core::decode::u64_from_index(object.range.start),
+                    )
+                    .with_tag(tag),
+                );
+                let unreadable = GivenUpRecord::caused_by(
+                    format_args!("rhino:object:record#{source_order:06}"),
+                    &loss,
+                )
+                .spanning(cadmpeg_core::decode::u64_from_index(object.range.len()))
+                .loss();
+                losses.extend([loss, unreadable]);
                 continue;
             }
         };
@@ -367,9 +371,9 @@ mod tests {
             losses[1].code,
             cadmpeg_ir::unknown::part::record_unreadable_kind()
         );
-        assert!(losses[1]
-            .message
-            .starts_with("record rhino:object:record#000000 given up: "));
+        assert!(losses[1].message.starts_with(&format!(
+            "record rhino:object:record#000000 stream=\"\" offset={source_offset} length="
+        )));
         let message = &losses[0].message;
         assert!(message.contains(&source_id));
         assert!(message.contains(&format!("at offset {source_offset}")));

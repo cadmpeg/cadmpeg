@@ -332,11 +332,13 @@ refusal,
                 .iter()
                 .flat_map(|topology| topology.faces.iter().map(|face| face.record_id))
                 .collect::<std::collections::BTreeSet<_>>();
+            let code = CatiaLossCode::TopologyE5GraphUnclosed.kind();
             losses.extend(face_records.into_iter().map(|record_id| {
-                cadmpeg_ir::unknown::part::record_unreadable(
+                cadmpeg_ir::unknown::part::GivenUpRecord::new(
                     format_args!("catia:e5:face#{record_id}"),
-                    CatiaLossCode::TopologyE5GraphUnclosed.kind(),
+                    format_args!("{code}: the reference graph of the face did not close"),
                 )
+                .loss()
             }));
         }
         insert_unresolved_carrier_loss(&ir, &mut losses);

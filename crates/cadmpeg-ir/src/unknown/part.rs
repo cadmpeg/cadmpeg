@@ -34,29 +34,100 @@ pub fn record_unreadable_kind() -> LossKind {
     .into()
 }
 
-/// The losses of a record a decoder gives up whole, so that the document
-/// holds no record for it: `why`, the codec's own loss that says why, and
-/// one `record.unreadable` (Error) that names `record` and `why`'s code,
-/// with `why`'s provenance.
+/// A record a decoder drops after reading it, for a reason of its content,
+/// with no framed bytes of it in hand (CADIR §3.3). Its give-up has no
+/// `unknowns` stub: its `record.unreadable` (Error) names the record's id,
+/// its span where the decoder holds one, the error text, and the sorted ids
+/// of the records dropped with it.
+#[derive(Debug, Clone)]
 #[must_use]
-pub fn record_given_up(record: impl std::fmt::Display, why: LossNote) -> [LossNote; 2] {
-    let mut unreadable = record_unreadable(record, &why.code);
-    unreadable.provenance.clone_from(&why.provenance);
-    [why, unreadable]
+pub struct GivenUpRecord {
+    record: String,
+    error: String,
+    provenance: Option<SourceProvenance>,
+    length: Option<u64>,
+    dropped: Vec<String>,
 }
 
-/// The `record.unreadable` (Error) of a record a decoder gives up whole,
-/// naming `record` and `reason`.
+impl GivenUpRecord {
+    /// The record whose id is `record`, dropped for `error`.
+    pub fn new(record: impl std::fmt::Display, error: impl std::fmt::Display) -> Self {
+        Self {
+            record: record.to_string(),
+            error: error.to_string(),
+            provenance: None,
+            length: None,
+            dropped: Vec::new(),
+        }
+    }
+
+    /// The record whose id is `record`, dropped for the codec loss `why`:
+    /// the error text is `why`'s code and message, at `why`'s provenance.
+    pub fn caused_by(record: impl std::fmt::Display, why: &LossNote) -> Self {
+        Self::new(record, format_args!("{}: {}", why.code, why.message)).at(why.provenance.clone())
+    }
+
+    /// The record's position in its source.
+    pub fn at(mut self, provenance: impl Into<Option<SourceProvenance>>) -> Self {
+        self.provenance = provenance.into();
+        self
+    }
+
+    /// The record's length in bytes from its position.
+    pub const fn spanning(mut self, length: u64) -> Self {
+        self.length = Some(length);
+        self
+    }
+
+    /// The records dropped because they need this record.
+    pub fn dropping<I>(mut self, records: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: std::fmt::Display,
+    {
+        join_sorted(
+            &mut self.dropped,
+            records.into_iter().map(|record| record.to_string()),
+        );
+        self
+    }
+
+    /// The `record.unreadable` (Error) of the give-up.
+    #[must_use]
+    pub fn loss(self) -> LossNote {
+        let span = self
+            .provenance
+            .as_ref()
+            .map(|provenance| {
+                let stream = provenance.source_stream().map_or("", StreamName::as_str);
+                let length = self
+                    .length
+                    .map(|length| format!(" length={length}"))
+                    .unwrap_or_default();
+                format!(" stream={stream:?} offset={}{length}", provenance.offset)
+            })
+            .unwrap_or_default();
+        let head = format!("record {}{span} given up: {}", self.record, self.error);
+        let tail = Tail {
+            dropped: self.dropped,
+            ..Tail::default()
+        };
+        let loss = LossNote::new(record_unreadable_kind(), message(&head, Some(&tail)))
+            .with_severity(Severity::Error);
+        match self.provenance {
+            Some(provenance) => loss.with_provenance(provenance),
+            None => loss,
+        }
+    }
+}
+
+/// The losses of a record a decoder drops whole for the codec loss `why`:
+/// `why`, then the `record.unreadable` of [`GivenUpRecord::caused_by`],
+/// which names the record by its id `record`.
 #[must_use]
-pub fn record_unreadable(
-    record: impl std::fmt::Display,
-    reason: impl std::fmt::Display,
-) -> LossNote {
-    LossNote::new(
-        record_unreadable_kind(),
-        format!("record {record} given up: {reason}"),
-    )
-    .with_severity(Severity::Error)
+pub fn record_given_up(record: impl std::fmt::Display, why: LossNote) -> [LossNote; 2] {
+    let unreadable = GivenUpRecord::caused_by(record, &why).loss();
+    [why, unreadable]
 }
 
 /// One part as its decoder names it before reading it.

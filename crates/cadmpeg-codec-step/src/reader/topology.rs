@@ -32,7 +32,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3, COINCIDENCE_TOLERANCE};
-use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -405,7 +405,7 @@ pub(super) fn decode(
         notes: Vec::new(),
     };
     let mut losses: Vec<LossNote> = Vec::new();
-    let mut given_up = GivenUp::default();
+    let mut given_up = GivenUp::new(exchange);
     for (&id, record) in exchange.records() {
         let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
         else {
@@ -952,15 +952,24 @@ fn geometric_set_omission_message(
 }
 
 /// The source records the topology pass gave up, each charged once.
-#[derive(Default)]
-struct GivenUp(BTreeSet<u64>);
+struct GivenUp<'a> {
+    exchange: &'a Exchange,
+    records: BTreeSet<u64>,
+}
 
-impl GivenUp {
+impl<'a> GivenUp<'a> {
+    const fn new(exchange: &'a Exchange) -> Self {
+        Self {
+            exchange,
+            records: BTreeSet::new(),
+        }
+    }
+
     /// Pushes `why`, and the first time `record` is given up, its
     /// `record.unreadable`.
     fn give_up(&mut self, losses: &mut Vec<LossNote>, record: u64, why: LossNote) {
-        if self.0.insert(record) {
-            losses.extend(record_given_up(format!("#{record}"), why));
+        if self.records.insert(record) {
+            losses.extend(super::give_up_instance(self.exchange, record, why));
         } else {
             losses.push(why);
         }
@@ -968,8 +977,15 @@ impl GivenUp {
 
     /// Charges `record.unreadable` the first time `record` is given up.
     fn charge(&mut self, losses: &mut Vec<LossNote>, record: u64, reason: &str) {
-        if self.0.insert(record) {
-            losses.push(record_unreadable(format!("#{record}"), reason));
+        if self.records.insert(record) {
+            losses.push(
+                super::at_instance(
+                    self.exchange,
+                    record,
+                    GivenUpRecord::new(format_args!("#{record}"), reason),
+                )
+                .loss(),
+            );
         }
     }
 }
@@ -1683,7 +1699,7 @@ fn build_geometric_set(
     id: u64,
     representation: &RawRecord,
     sources: GeometricSetSources<'_, '_>,
-    given_up: &mut GivenUp,
+    given_up: &mut GivenUp<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Built>, CodecError> {
     let GeometricSetSources {

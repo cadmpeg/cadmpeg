@@ -264,7 +264,7 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                super::push_retained_geometry_loss(
+                super::push_geometry_loss(
                     &mut losses,
                     entry,
                     format_args!("primitive solid type is unsupported"),

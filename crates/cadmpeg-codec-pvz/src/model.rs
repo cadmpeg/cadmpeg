@@ -23,7 +23,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::tessellation::{Meshed, Tessellation, TessellationMesh, TessellationTriangleGroup};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::record_unreadable;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::CadIr;
 
 use crate::brep::frames::MILLIMETRES_PER_METRE;
@@ -165,7 +165,8 @@ pub(crate) fn occurrences(
     let mut emitted = 0_usize;
     let mut cycles = Vec::new();
     let mut stopped = false;
-    let mut past_depth = 0_usize;
+    let mut stopped_at = None;
+    let mut past_depth = Vec::new();
     let mut not_similar = 0_usize;
     let mut invalid = 0_usize;
     let mut owned: Vec<Vec<cadmpeg_ir::ids::OccurrenceId>> = vec![Vec::new(); definitions.len()];
@@ -224,7 +225,8 @@ pub(crate) fn occurrences(
                 continue;
             };
             if next == 0 && depth_limit.is_some_and(|limit| depth >= limit) {
-                past_depth += definition.occurrences.len();
+                past_depth
+                    .extend((0..definition.occurrences.len()).map(|n| (parent_definition, n)));
                 reached[parent_definition] = Reached::Done;
                 stack.pop();
                 continue;
@@ -237,6 +239,7 @@ pub(crate) fn occurrences(
             frame.2 += 1;
             if emitted >= max_occurrences {
                 stopped = true;
+                stopped_at = Some((parent_definition, next));
                 break 'roots;
             }
             if reached.get(child.definition) == Some(&Reached::OnPath) {
@@ -299,14 +302,12 @@ pub(crate) fn occurrences(
             cycles.len()
         )));
         let code = PvzLossCode::StructureOccurrenceCycle.kind();
-        losses.extend(cycles.iter().map(|(definition, occurrence)| {
-            record_unreadable(
-                format!(
-                    "{}/occurrence#{occurrence}",
-                    crate::ids::definition(*definition)
-                ),
-                &code,
+        losses.extend(cycles.iter().map(|&(definition, occurrence)| {
+            GivenUpRecord::new(
+                child_occurrence(definition, occurrence),
+                format_args!("{code}: the child occurrence closes a definition cycle"),
             )
+            .loss()
         }));
     }
     let mut truncation = Vec::new();
@@ -315,15 +316,37 @@ pub(crate) fn occurrences(
             "decoding stopped at the limit of {max_occurrences} occurrences"
         ));
     }
-    if past_depth > 0 {
+    if !past_depth.is_empty() {
         truncation.push(format!(
-            "{past_depth} child occurrences lie past the recursion depth limit of \
-             {max_depth} definitions and were left out"
+            "{} child occurrences lie past the recursion depth limit of \
+             {max_depth} definitions and were left out",
+            past_depth.len()
         ));
     }
     if !truncation.is_empty() {
         losses.push(PvzLossCode::StructureOccurrenceTruncated.note(truncation.join("; ")));
     }
+    let code = PvzLossCode::StructureOccurrenceTruncated.kind();
+    losses.extend(stopped_at.map(|(definition, occurrence)| {
+        GivenUpRecord::new(
+            child_occurrence(definition, occurrence),
+            format_args!(
+                "{code}: decoding stopped at this child occurrence, at the limit of \
+                 {max_occurrences} occurrences"
+            ),
+        )
+        .loss()
+    }));
+    losses.extend(past_depth.iter().map(|&(definition, occurrence)| {
+        GivenUpRecord::new(
+            child_occurrence(definition, occurrence),
+            format_args!(
+                "{code}: the child occurrence lies past the recursion depth limit of \
+                 {max_depth} definitions"
+            ),
+        )
+        .loss()
+    }));
     if not_similar > 0 {
         losses.push(PvzLossCode::StructurePlacementNotSimilarity.note(format!(
             "{not_similar} placements have a basis that is not a uniformly scaled right-handed \
@@ -337,6 +360,15 @@ pub(crate) fn occurrences(
         )));
     }
     Ok(())
+}
+
+/// The id of child occurrence `occurrence` of definition `definition` in
+/// loss messages.
+fn child_occurrence(definition: usize, occurrence: usize) -> String {
+    format!(
+        "{}/occurrence#{occurrence}",
+        crate::ids::definition(definition)
+    )
 }
 
 /// Marks the definition the file holds at its top as the root definition.
@@ -464,7 +496,6 @@ pub(crate) fn display_geometry(
     let mut admitted = u64_from_index(ir.entity_count());
     let mut used = BTreeSet::new();
     let mut rejected = Vec::new();
-    let mut rejected_ids = Vec::new();
     let mut untriangulated = 0_usize;
     for (index, mesh) in geometry.meshes.iter().enumerate() {
         if mesh.triangles.is_empty() {
@@ -494,10 +525,7 @@ pub(crate) fn display_geometry(
                     });
                 }
             }
-            Err(reason) => {
-                rejected.push(format!("mesh {index}: {reason}"));
-                rejected_ids.push(id);
-            }
+            Err(reason) => rejected.push((id, format!("mesh {index}: {reason}"))),
         }
         ctx.admit_entities(
             u64_from_index(ir.entity_count()),
@@ -524,10 +552,18 @@ pub(crate) fn display_geometry(
     if !rejected.is_empty() {
         losses.push(PvzLossCode::TessellationMeshRejected.note(format!(
             "geometry member {member:?}: {}",
-            rejected.join("; ")
+            rejected
+                .iter()
+                .map(|(_, reason)| reason.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
         )));
         let code = PvzLossCode::TessellationMeshRejected.kind();
-        losses.extend(rejected_ids.iter().map(|id| record_unreadable(id, &code)));
+        losses.extend(
+            rejected.iter().map(|(id, reason)| {
+                GivenUpRecord::new(id, format_args!("{code}: {reason}")).loss()
+            }),
+        );
     }
     if colors_rejected > 0 {
         losses.push(PvzLossCode::AttributeAppearanceColorRejected.note(format!(

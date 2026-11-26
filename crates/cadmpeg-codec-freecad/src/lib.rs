@@ -1198,6 +1198,11 @@ impl CodecBackend for FcstdCodec {
                     .iter()
                     .filter(|occurrence| stated.contains(&occurrence.topology_id)),
             );
+            if let Some(part) = gui_graph.given_up.take() {
+                gui_graph
+                    .losses
+                    .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+            }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count()),

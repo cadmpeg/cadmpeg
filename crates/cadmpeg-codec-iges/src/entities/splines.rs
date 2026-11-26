@@ -297,12 +297,7 @@ pub(super) fn project(
             .ok()
             .filter(|count| (1..=MAX_SPLINE_SEGMENTS).contains(count))
         else {
-            let push_loss = if raw_segment_count > 0 {
-                super::push_retained_geometry_loss
-            } else {
-                super::push_geometry_loss
-            };
-            push_loss(
+            super::push_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("segment count is outside 1..={MAX_SPLINE_SEGMENTS}"),
@@ -719,7 +714,7 @@ pub(super) fn project(
             .checked_mul(v_count)
             .filter(|count| *count <= MAX_SPLINE_SURFACE_POLES)
         else {
-            super::push_retained_geometry_loss(
+            super::push_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("spline-surface pole count exceeds {MAX_SPLINE_SURFACE_POLES}"),

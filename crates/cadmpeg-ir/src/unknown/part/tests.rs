@@ -509,7 +509,11 @@ fn a_record_given_up_whole_is_refused_by_a_pinned_decode_through_record_unreadab
         .message
         .split_whitespace()
         .any(|token| token == "#12"));
-    assert!(unreadable.message.contains("step/topology.root-rejected"));
+    assert_eq!(
+        unreadable.message,
+        "record #12 stream=\"\" offset=40 given up: step/topology.root-rejected: \
+         STEP topology root #12 rejected; dropped=[]"
+    );
     let pinned = Strictness {
         pinned: true,
         ..Strictness::default()
@@ -517,4 +521,29 @@ fn a_record_given_up_whole_is_refused_by_a_pinned_decode_through_record_unreadab
     assert!(!pinned.refuses(&codec, false));
     assert!(pinned.refuses(&unreadable, false));
     assert!(!Strictness::default().refuses(&unreadable, false));
+}
+
+#[test]
+fn a_record_given_up_names_its_span_and_the_sorted_records_dropped_with_it() {
+    use crate::provenance::{SourceProvenance, StreamName};
+
+    let stream = StreamName::try_from("Body".to_owned()).expect("stream");
+    let loss = super::GivenUpRecord::new("rec:7", "carrier unsupported")
+        .at(SourceProvenance::in_stream("nx", stream, 96))
+        .spanning(24)
+        .dropping(["rec:9", "rec:8", "rec:9"])
+        .loss();
+    assert_eq!(loss.code, super::record_unreadable_kind());
+    assert_eq!(loss.severity, Severity::Error);
+    assert_eq!(
+        loss.message,
+        "record rec:7 stream=\"Body\" offset=96 length=24 given up: carrier unsupported; \
+         dropped=[rec:8, rec:9]"
+    );
+    assert_eq!(
+        super::GivenUpRecord::new("rec:7", "carrier unsupported")
+            .loss()
+            .message,
+        "record rec:7 given up: carrier unsupported; dropped=[]"
+    );
 }

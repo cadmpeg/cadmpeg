@@ -186,10 +186,10 @@ impl CodecBackend for IgesCodec {
             representation::Representation::CompressedAscii => {
                 let (normalized, repeated) = compressed::expand(root.window())?;
                 let mut decoded = reader::decode(&normalized, root.window(), representation, ctx)?;
-                decoded
-                    .body
-                    .losses
-                    .extend(repeated.iter().map(compressed::RepeatedDataRecord::loss));
+                for record in &repeated {
+                    let losses = record.give_up(ctx, root, &mut decoded)?;
+                    decoded.body.losses.extend(losses);
+                }
                 Ok(decoded)
             }
             representation::Representation::Binary => {

@@ -737,7 +737,12 @@ fn strict_decode_refuses_a_destroyed_solid() {
     )
     .expect("fixture is UTF-8")
     .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
-    let names_root = |message: &str| message.split_whitespace().any(|word| word == "#18");
+    let root = source.find("#18=").expect("the solid root");
+    let head = format!(
+        "record #18 stream=\"\" offset={root} length={} given up: ",
+        "#18=MANIFOLD_SOLID_BREP('',#17);".len()
+    );
+    let names_root = |message: &str| message.starts_with(&head);
 
     let admitted = StepCodec::default()
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())

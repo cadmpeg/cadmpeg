@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeCheckpoint, Decode
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use serde::Deserialize;
 
 use crate::container::ContainerScan;
@@ -142,6 +142,9 @@ pub(super) struct ArchiveSession {
     pub(super) members: BTreeMap<String, ClassifiedMember>,
     pub(super) layers: DialectLayers,
     pub(super) losses: Vec<LossNote>,
+    /// Members that opened and then failed to scan, given up as archive
+    /// entries. `losses` already holds each part's loss.
+    pub(super) given_up: Vec<GivenUpPart>,
 }
 
 /// Facts read from a member's container scan during classification.
@@ -259,6 +262,7 @@ pub(super) fn classify_members<'a>(
     let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     for member_path in scan
         .entries
         .iter()
@@ -312,10 +316,12 @@ pub(super) fn classify_members<'a>(
                     let note = F3dLossCode::XrefMemberUndecoded.note(format!(
                         "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
                     ));
+                    losses.push(note);
                     if opened {
-                        losses.extend(record_given_up(member_path, note));
-                    } else {
-                        losses.push(note);
+                        if let Some(part) = scan.give_up_entry(ctx, member_path, error)? {
+                            losses.push(part.loss());
+                            given_up.push(part);
+                        }
                     }
                     members.insert(
                         member_path.to_owned(),
@@ -358,6 +364,7 @@ pub(super) fn classify_members<'a>(
         members,
         layers,
         losses,
+        given_up,
     })
 }
 

@@ -7,7 +7,8 @@ use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::record_unreadable;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::SourceProvenance;
 
 pub(super) fn push_report_loss(
     losses: &mut Vec<LossNote>,
@@ -473,8 +474,15 @@ pub(super) fn push_unread_legacy_rows(losses: &mut Vec<LossNote>, scan: &Contain
         code: CreoLossCode,
         rows: impl Iterator<Item = crate::legacy::SerializedOffsetId>,
     ) {
-        let reason = code.kind();
-        losses.extend(rows.map(|row| record_unreadable(row, &reason)));
+        let code = code.kind();
+        losses.extend(rows.map(|row| {
+            GivenUpRecord::new(&row, format_args!("{code}: the value row forms no record"))
+                .at(SourceProvenance::root(
+                    "creo",
+                    cadmpeg_core::decode::u64_from_index(row.offset),
+                ))
+                .loss()
+        }));
     }
     let Some(legacy) = scan.framing.layout.legacy_ascii() else {
         return;
@@ -611,12 +619,14 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.emitted_face_count,
         rejected_face_count,
     ));
-    let reason = CreoLossCode::BrepTransferIncomplete.kind();
-    losses.extend(
-        diagnostics
-            .rejected_face_record_ids()
-            .map(|face| record_unreadable(face, &reason)),
-    );
+    let code = CreoLossCode::BrepTransferIncomplete.kind();
+    losses.extend(diagnostics.rejected_face_records().map(|(face, reason)| {
+        GivenUpRecord::new(
+            face,
+            format_args!("{code}: face admission rejected the face for {reason}"),
+        )
+        .loss()
+    }));
 }
 
 pub(super) fn push_carrier_transfer_notes(

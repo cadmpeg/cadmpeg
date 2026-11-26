@@ -2,11 +2,11 @@
 //! Bounded ZIP admission and member views.
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
-use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_container::{ArchiveSnapshot, EntryRecord, ZipCompression};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -16,11 +16,17 @@ const JSON_BYTES: u64 = 32 << 20;
 const EXPANDED_BYTES: u64 = 256 << 20;
 const DIRECTORY_BYTES: u64 = 16 << 20;
 
+/// The part an archive entry is when the bundle omits it.
+const ARCHIVE_ENTRY_PART: &str = "archive-entry";
+
 pub(super) struct Bundle<'a> {
     pub(super) snapshot: ArchiveSnapshot<'a>,
+    root: View<'a>,
     members: BTreeMap<String, View<'a>>,
     json: BTreeMap<String, Value>,
     pub(super) losses: Vec<LossNote>,
+    /// The entries the bundle omits, in the order it omits them.
+    pub(super) given_up: Vec<GivenUpPart>,
 }
 fn failure(detail: impl std::fmt::Display) -> Error {
     Error::Decode(format!("Onshape bundle: {detail}"))
@@ -63,15 +69,24 @@ impl<'a> Bundle<'a> {
         let mut json = BTreeMap::from([("manifest.json".to_owned(), manifest)]);
         let mut remaining = EXPANDED_BYTES;
         let mut losses = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
+        let mut given_up = Vec::new();
+        let mut first_stored = BTreeMap::<&str, Option<(ZipCompression, &[u8])>>::new();
         for entry in snapshot.entries() {
             let name = &entry.name;
-            let repeated = !seen.insert(name);
+            let stored = entry_view(root, entry).map(|view| (entry.compression, view.window()));
+            // `Some(true)` marks a later copy whose stored bytes agree with the first copy.
+            let repeated = match first_stored.get(name.as_str()) {
+                Some(first) => Some(first.is_some() && *first == stored),
+                None => {
+                    first_stored.insert(name.as_str(), stored);
+                    None
+                }
+            };
             let invalid_name = name.contains('\\')
                 || name
                     .split('/')
                     .any(|p| p.is_empty() || p == "." || p == ".." || p.contains(':'));
-            if repeated
+            if repeated.is_some()
                 || invalid_name
                 || entry.encrypted
                 || !matches!(
@@ -85,10 +100,10 @@ impl<'a> Bundle<'a> {
                     ));
                 }
                 let note = OnshapeLossCode::MemberUnreadable.note(format!("{name}: invalid name, repeated name, encryption or unsupported method; omitted the member"));
-                if invalid_name && !repeated {
-                    losses.extend(record_given_up(name, note));
-                } else {
+                if repeated == Some(true) {
                     losses.push(note);
+                } else {
+                    give_up_entry(ctx, root, entry, note, false, &mut losses, &mut given_up)?;
                 }
                 continue;
             }
@@ -104,9 +119,10 @@ impl<'a> Bundle<'a> {
             };
             let member_limit = member_limit.min(remaining);
             if entry.uncompressed_size > member_limit {
-                losses.push(OnshapeLossCode::MemberTooLarge.note(format!(
+                let note = OnshapeLossCode::MemberTooLarge.note(format!(
                     "{name}: expanded member exceeds {member_limit} bytes; omitted the member"
-                )));
+                ));
+                give_up_entry(ctx, root, entry, note, true, &mut losses, &mut given_up)?;
                 continue;
             }
             remaining -= entry.uncompressed_size;
@@ -118,10 +134,9 @@ impl<'a> Bundle<'a> {
                     Err(CodecError::ResourceLimit(limit))
                         if limit.scope == cadmpeg_core::decode::LimitScope::Part =>
                     {
-                        losses.push(
-                            OnshapeLossCode::MemberTooLarge
-                                .note(format!("{name}: {limit:?}; omitted the member")),
-                        );
+                        let note = OnshapeLossCode::MemberTooLarge
+                            .note(format!("{name}: {limit:?}; omitted the member"));
+                        give_up_entry(ctx, root, entry, note, true, &mut losses, &mut given_up)?;
                         continue;
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
@@ -130,34 +145,32 @@ impl<'a> Bundle<'a> {
                             .iter()
                             .any(|prefix| name.strip_prefix(prefix) == Some("export.step")) =>
                     {
-                        losses.extend(record_given_up(
-                            name,
-                            OnshapeLossCode::StepUnreadable
-                                .note(format!("{name}: {error}; final geometry is missing")),
-                        ));
+                        let note = OnshapeLossCode::StepUnreadable
+                            .note(format!("{name}: {error}; final geometry is missing"));
+                        give_up_entry(ctx, root, entry, note, false, &mut losses, &mut given_up)?;
                         continue;
                     }
                     Err(error) => {
-                        losses.extend(record_given_up(
-                            name,
-                            OnshapeLossCode::MemberUnreadable
-                                .note(format!("{name}: {error}; omitted the member")),
-                        ));
+                        let note = OnshapeLossCode::MemberUnreadable
+                            .note(format!("{name}: {error}; omitted the member"));
+                        give_up_entry(ctx, root, entry, note, false, &mut losses, &mut given_up)?;
                         continue;
                     }
                 }
             };
             let length = cadmpeg_core::decode::u64_from_index(data.window().len());
             if has_extension(name, "json") && length > JSON_BYTES {
-                losses.push(OnshapeLossCode::MemberTooLarge.note(format!(
+                let note = OnshapeLossCode::MemberTooLarge.note(format!(
                     "{name}: expanded member exceeds {JSON_BYTES} bytes; omitted the member"
-                )));
+                ));
+                give_up_entry(ctx, root, entry, note, true, &mut losses, &mut given_up)?;
                 continue;
             }
             if prefixes.iter().any(|prefix| schema_response(name, prefix))
                 || (name.starts_with("assemblies/")
                     && (name.ends_with("/definition.json") || name.ends_with("/features.json")))
             {
+                // An error carries whether a part resource limit stopped the parse.
                 let parsed = match std::str::from_utf8(data.window()) {
                     Ok(text) => {
                         match ctx.run_part(|| ctx.parse_json_value(text, "Onshape JSON member"))? {
@@ -167,16 +180,19 @@ impl<'a> Bundle<'a> {
                             {
                                 return Err(CodecError::ResourceLimit(limit).into())
                             }
-                            Err(error) => Err(error.to_string()),
+                            Err(error @ CodecError::ResourceLimit(_)) => {
+                                Err((error.to_string(), true))
+                            }
+                            Err(error) => Err((error.to_string(), false)),
                         }
                     }
-                    Err(error) => Err(error.to_string()),
+                    Err(error) => Err((error.to_string(), false)),
                 };
                 match parsed {
                     Ok(value) => {
                         json.insert(name.clone(), value);
                     }
-                    Err(error) => {
+                    Err((error, bound)) => {
                         let retained = name.ends_with("/sketches.json");
                         let action = if retained {
                             "retained the member bytes"
@@ -188,7 +204,15 @@ impl<'a> Bundle<'a> {
                         if retained {
                             losses.push(note);
                         } else {
-                            losses.extend(record_given_up(name, note));
+                            give_up_entry(
+                                ctx,
+                                root,
+                                entry,
+                                note,
+                                bound,
+                                &mut losses,
+                                &mut given_up,
+                            )?;
                             continue;
                         }
                     }
@@ -198,9 +222,11 @@ impl<'a> Bundle<'a> {
         }
         Ok(Self {
             snapshot,
+            root,
             members,
             json,
             losses,
+            given_up,
         })
     }
     pub(super) fn view(&self, path: &str) -> Result<View<'a>, Error> {
@@ -217,7 +243,11 @@ impl<'a> Bundle<'a> {
             .get(path)
             .ok_or_else(|| failure(format!("{path} is missing")))
     }
-    pub(super) fn admit_microversions(&mut self, expected: &str) {
+    pub(super) fn admit_microversions(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        expected: &str,
+    ) -> Result<(), Error> {
         let mut omitted = Vec::new();
         for (path, value) in &self.json {
             if path == "manifest.json" {
@@ -235,6 +265,16 @@ impl<'a> Bundle<'a> {
                         .note(format!("{path}: {reason}; {action}"));
                     if retained {
                         self.losses.push(note);
+                    } else if let Some(entry) = self.snapshot.entry(path) {
+                        give_up_entry(
+                            ctx,
+                            self.root,
+                            entry,
+                            note,
+                            false,
+                            &mut self.losses,
+                            &mut self.given_up,
+                        )?;
                     } else {
                         self.losses.extend(record_given_up(path, note));
                     }
@@ -249,6 +289,25 @@ impl<'a> Bundle<'a> {
                 self.members.remove(&path);
             }
         }
+        Ok(())
+    }
+    /// The root offset and the length of the stored bytes of member `path`.
+    pub(super) fn stored_span(&self, path: &str) -> Option<(u64, u64)> {
+        let range = self.snapshot.entry(path)?.stored_range().ok()?;
+        Some((range.start, range.end.checked_sub(range.start)?))
+    }
+    /// Commits the omitted entries to `ir` and `fidelity`, and returns
+    /// their `record.unreadable` losses.
+    pub(super) fn commit_given_up(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut cadmpeg_ir::CadIr,
+        fidelity: &mut cadmpeg_ir::SourceFidelity,
+    ) -> Result<Vec<LossNote>, CodecError> {
+        std::mem::take(&mut self.given_up)
+            .into_iter()
+            .map(|part| part.commit(ctx, ir, fidelity))
+            .collect()
     }
     pub(super) fn admit_topology(&mut self, ctx: &DecodeContext<'_>) -> Result<(), Error> {
         let mut count = 0usize;
@@ -357,6 +416,52 @@ impl<'a> Bundle<'a> {
         Ok(losses)
     }
 }
+/// Gives up `entry`, which the bundle omits for the codec loss `note`, as a
+/// part over its stored bytes, or over its directory record where its stored
+/// bytes have no bounded span. `digest_only` keeps only the digest of the
+/// bytes, for an entry omitted because it exceeds a bound. The codec loss
+/// goes to `losses` and the part to `given_up`.
+fn give_up_entry(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    entry: &EntryRecord,
+    note: LossNote,
+    digest_only: bool,
+    losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
+) -> Result<(), CodecError> {
+    let Some(view) = entry_view(root, entry) else {
+        losses.extend(record_given_up(&entry.name, note));
+        return Ok(());
+    };
+    let mut part = Part::new(
+        "onshape",
+        ARCHIVE_ENTRY_PART,
+        view,
+        [ArenaClass::Model, ArenaClass::Design],
+    )
+    .named(entry.name.as_str());
+    if digest_only {
+        part = part.digest_only();
+    }
+    let error = CodecError::malformed(format_args!("{}: {}", note.code, note.message));
+    given_up.push(ctx.give_up_part(part, error)?);
+    losses.push(note);
+    Ok(())
+}
+
+/// The stored bytes of `entry` in `root`, or its directory record where the
+/// stored bytes have no bounded span.
+fn entry_view<'a>(root: View<'a>, entry: &EntryRecord) -> Option<View<'a>> {
+    let range = entry
+        .stored_range()
+        .unwrap_or_else(|_| entry.declaration_range());
+    root.child(
+        usize::try_from(range.start).ok()?,
+        usize::try_from(range.end).ok()?,
+    )
+}
+
 pub(super) fn directory(root: View<'_>) -> Option<()> {
     ArchiveSnapshot::admit_directory(
         root,

@@ -245,11 +245,14 @@ pub(crate) fn decode_parameter_scopes(
                     header.record_index,
                     header.byte_offset,
                 ) {
-                    losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-                        format_args!(
-                            "rigid-group frame {} in {} at {}",
-                            header.record_index, entry.name, header.byte_offset
-                        ),
+                    let mut record = crate::design::decode::record::DesignRecord::entity(
+                        &entry.name,
+                        header.record_index,
+                    );
+                    if let Ok(offset) = usize::try_from(header.byte_offset) {
+                        record = record.at(offset);
+                    }
+                    losses.extend(record.given_up(
                         crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
                             format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
                         ),

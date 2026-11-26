@@ -27,7 +27,7 @@ use cadmpeg_parasolid::records::{node_type as kind, PrimaryRecords};
 use crate::geometry::{self, Nodes};
 use crate::loss::SolidEdgeLossCode;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpRecord};
 
 const MM_PER_METRE: f64 = Magnification::MILLIMETERS_PER_METER.get();
 
@@ -859,10 +859,10 @@ pub(crate) fn project(
         };
         if ends.is_none() && carrier.curve().is_none() {
             // A vertexless edge bounds no extent without a carrier.
-            losses.push(record_unreadable(
-                edge_id(stream, edge),
-                "a vertexless edge has no carrier",
-            ));
+            losses.push(
+                GivenUpRecord::new(edge_id(stream, edge), "a vertexless edge has no carrier")
+                    .loss(),
+            );
             dropped_edges.insert(edge);
             continue;
         }

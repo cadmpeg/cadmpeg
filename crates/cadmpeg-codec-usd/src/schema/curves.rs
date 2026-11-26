@@ -27,8 +27,6 @@ pub(crate) struct CurveData {
 pub(crate) struct CurveBatch {
     pub(crate) curves: Vec<CurveData>,
     pub(crate) rejected: usize,
-    /// The batch names a cubic basis the reader does not implement.
-    pub(crate) unsupported_basis: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,7 +212,6 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
                 return Some(CurveBatch {
                     curves: Vec::new(),
                     rejected: 1,
-                    unsupported_basis: true,
                 })
             }
         }),
@@ -222,7 +219,6 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
             return Some(CurveBatch {
                 curves: Vec::new(),
                 rejected: 1,
-                unsupported_basis: false,
             })
         }
     };
@@ -234,7 +230,6 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
             return Some(CurveBatch {
                 curves: Vec::new(),
                 rejected: 1,
-                unsupported_basis: false,
             })
         }
     };

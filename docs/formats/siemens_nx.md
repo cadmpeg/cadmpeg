@@ -3345,6 +3345,6 @@ handle:u8  04  length:u8  "(Number [units]) name: expression; "  00
 
 `length - 2` is the ASCII text length. `units` is `mm` or `degrees`; `name` contains ASCII alphanumerics and underscores. `expression` is a finite decimal scalar or formula. Context-free arithmetic uses parentheses, unary signs, `^`, `*`, `/`, `+`, and `-`. Formula parameter references use `p<decimal-index>` tokens. The nearest preceding `hostglobalvariables` marker supplies table identity. The record framing is independent of the OM entity-index and object-ID arrays. An enclosing indexed entity supplies persistent object identity when present; otherwise the record's entry-relative byte offset supplies identity.
 
-## 10. Strict floors
+## 10. Given-up records
 
-`nx/native.attachment-failed` records a native object model whose records the decoder gave up (CADIR §3.3), and carries strict floor Error (CADIR §3.2).
+A loss names a Parasolid record that the decoder drops as `nx:parasolid#<index>:<kind>@<byte>`: `<index>` is the stream index, `<kind>` is the stream kind, and `<byte>` is the offset of the record in the inflated stream. It names an indexed object-model entry whose section search stops at its work bound as `nx:container@<byte>`, where `<byte>` is the file offset of the entry; the sections after that point are given up. When the native object model does not attach, the decoder gives up every record of the attachment and keeps the decoded geometry and topology. It charges `nx/native.attachment-failed` and one `record.unreadable` that names `nx:container` (CADIR §3.3).

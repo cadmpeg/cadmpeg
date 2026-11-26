@@ -15,7 +15,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -226,10 +226,13 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 )
                 .with_tag(tag),
             );
-            match diagnostic.given_up {
-                Some(record) => body
-                    .losses
-                    .extend(record_given_up(format!("#{record}"), loss)),
+            match &diagnostic.given_up {
+                Some((record, length)) => {
+                    let unreadable = GivenUpRecord::caused_by(record, &loss)
+                        .spanning(u64_from_index(*length))
+                        .loss();
+                    body.losses.extend([loss, unreadable]);
+                }
                 None => body.losses.push(loss),
             }
         }
@@ -829,6 +832,32 @@ fn give_up_statements(
         parts.push(ctx.give_up_part(part, statement.cause.clone().into_error())?);
     }
     Ok(parts)
+}
+
+/// `record` placed at the statement of DATA instance `id`, where the
+/// exchange still holds the instance.
+fn at_instance(exchange: &Exchange, id: u64, record: GivenUpRecord) -> GivenUpRecord {
+    match exchange.records().get(&id) {
+        Some(instance) => record
+            .at(cadmpeg_ir::SourceProvenance::root(
+                crate::dialect::FORMAT,
+                u64_from_index(instance.span.start),
+            ))
+            .spanning(u64_from_index(instance.span.len())),
+        None => record,
+    }
+}
+
+/// The losses of DATA instance `id`, which the reader drops for the codec
+/// loss `why`: `why`, then the instance's `record.unreadable`.
+fn give_up_instance(exchange: &Exchange, id: u64, why: LossNote) -> [LossNote; 2] {
+    let unreadable = at_instance(
+        exchange,
+        id,
+        GivenUpRecord::caused_by(format_args!("#{id}"), &why),
+    )
+    .loss();
+    [why, unreadable]
 }
 
 /// Copy source bytes that the decoded document keeps as an opaque record.

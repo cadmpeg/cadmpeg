@@ -454,6 +454,29 @@ fn unreadable_partition_preserves_another_partition() {
         == crate::loss::SolidEdgeLossCode::PartitionUnreadable
             .note("")
             .code));
+    let given_up: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect();
+    let [given_up] = given_up.as_slice() else {
+        panic!("one given-up partition: {given_up:?}");
+    };
+    assert!(
+        given_up
+            .message
+            .starts_with("part partition stream=\"solidedge:"),
+        "{given_up:?}"
+    );
+    let stubs = result.ir().native_unknowns("solidedge").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(given_up.message.contains(&format!("record={}", stub.id)));
+    let (_, _, fidelity) = result.into_parts();
+    let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(b"broken".as_slice()));
 }
 
 #[test]

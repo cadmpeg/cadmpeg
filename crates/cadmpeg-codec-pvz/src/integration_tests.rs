@@ -256,12 +256,12 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
         [
             PvzLossCode::StructureBoundsNotTransferred.kind(),
             PvzLossCode::GeometryExactUndecoded.kind(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind(),
             PvzLossCode::AttributeRecordsUndecoded.kind(),
             PvzLossCode::AttributeAppearanceTail.kind(),
             PvzLossCode::TessellationPatchFields.kind(),
             PvzLossCode::TessellationEdgesNotTransferred.kind(),
             PvzLossCode::GeometryPreambleUndecoded.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
@@ -272,18 +272,23 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
 fn a_pinned_decode_refuses_an_exact_stream_that_does_not_decode() {
     let bytes = assembly("PV-PVS0304");
     let admitted = decode(&bytes);
-    let losses = &admitted.report().losses;
-    let exact = losses
+    let given_up = admitted
+        .report()
+        .losses
         .iter()
-        .position(|loss| loss.code == PvzLossCode::GeometryExactUndecoded.kind())
-        .expect("the exact stream is charged");
-    let given_up = &losses[exact + 1];
-    assert_eq!(given_up.code, record_unreadable_kind());
-    let stream = given_up
-        .message
-        .split_whitespace()
-        .find(|token| token.starts_with("pvz:") && token.contains("#0x"))
-        .expect("record.unreadable names the exact stream");
+        .find(|loss| loss.code == record_unreadable_kind())
+        .expect("the exact stream is given up");
+    assert!(
+        given_up
+            .message
+            .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset="),
+        "{given_up:?}"
+    );
+    let stubs = admitted.ir().native_unknowns("pvz").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(given_up.message.contains(&format!("record={}", stub.id)));
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
@@ -293,12 +298,7 @@ fn a_pinned_decode_refuses_an_exact_stream_that_does_not_decode() {
     let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
         panic!("expected a strict rejection, got {failure:?}");
     };
-    assert_eq!(rejection.loss().code, record_unreadable_kind());
-    assert!(rejection
-        .loss()
-        .message
-        .split_whitespace()
-        .any(|token| token == stream));
+    assert_eq!(rejection.loss().message, given_up.message);
 }
 
 #[test]
@@ -346,12 +346,12 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .losses
         .iter()
         .filter(|loss| loss.code == record_unreadable_kind())
-        .partition(|loss| loss.message.starts_with("part "));
+        .partition(|loss| loss.message.starts_with("part archive-entry "));
     assert_eq!(malformed.len(), 1);
     assert!(
-        exact
-            .iter()
-            .all(|loss| loss.message.starts_with("record pvz:plate.ol#")),
+        exact.iter().all(|loss| loss
+            .message
+            .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset=")),
         "{exact:?}"
     );
     assert!(malformed[0]
@@ -362,9 +362,14 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
     // §8.1: the root definition owns the three placements.
     assert_eq!(result.ir().model.occurrences.len(), 3);
     let stubs = result.ir().native_unknowns("pvz").unwrap();
-    let [stub] = stubs.as_slice() else {
-        panic!("one stub: {stubs:?}");
-    };
+    let stub = stubs
+        .iter()
+        .find(|stub| {
+            malformed[0]
+                .message
+                .contains(&format!("record={}", stub.id))
+        })
+        .expect("the stub of the member");
     let [link] = stub.links.as_slice() else {
         panic!("the stub links the definition that names the member");
     };
@@ -374,9 +379,6 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .product_definitions
         .iter()
         .any(|definition| cadmpeg_ir::ids::Identity::from(definition.id.clone()) == *link));
-    assert!(malformed[0]
-        .message
-        .contains(&format!("record={}", stub.id)));
     let (_, _, fidelity) = result.into_parts();
     let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
     assert_eq!(retained.data(), Some(b"not a bzip2 stream".as_slice()));

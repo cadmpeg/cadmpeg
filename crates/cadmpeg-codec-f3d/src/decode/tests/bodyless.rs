@@ -530,6 +530,7 @@ fn bodyless_finalization_retains_the_body_history_tails() {
                 admitted_entities: 0,
                 report_scope: crate::report::ReportScope::Standalone,
                 model_selection_losses: Vec::new(),
+                given_up: Vec::new(),
             },
             &ModelBrepOutcome::NoPhysicalModel,
         )

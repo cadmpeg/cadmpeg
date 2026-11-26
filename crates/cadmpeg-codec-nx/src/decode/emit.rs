@@ -41,7 +41,6 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
-use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -268,8 +267,9 @@ pub(super) fn emit_topology(
         if admitted_shell_faces.contains_key(&shell.xmt()) {
             admitted_shells.push(shell);
         } else {
-            topology_losses.extend(record_given_up(
-                format!("{}@{}", source_stream.as_str(), shell.pos()),
+            topology_losses.extend(super::build::record_given_up_at(
+                source_stream.as_str(),
+                cadmpeg_core::decode::u64_from_index(shell.pos()),
                 crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
                     "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is \
                      admitted",
@@ -413,8 +413,9 @@ pub(super) fn emit_topology(
                 "parasolid#{stream_index} BODY {body_xmt} is withheld: no SHELL of the body is emitted"
             ));
             match graph.get(NodeKind::Body, body_xmt) {
-                Some(node) => topology_losses.extend(record_given_up(
-                    format!("{}@{}", source_stream.as_str(), node.pos()),
+                Some(node) => topology_losses.extend(super::build::record_given_up_at(
+                    source_stream.as_str(),
+                    cadmpeg_core::decode::u64_from_index(node.pos()),
                     withheld,
                 )),
                 None => topology_losses.push(withheld),

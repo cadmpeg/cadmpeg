@@ -98,6 +98,16 @@ fn exponential_anchor_expansion_omits_the_bounded_items() {
 
     assert!(bounded("instance #1"));
     assert!(retains_source("#1=ITEM(<#a23>);"));
+    // Each bounded anchor and instance is a dropped record.
+    for (record, statement) in [
+        ("<a17>", "<a17>=(<#a16>,<#a16>);"),
+        ("#1", "#1=ITEM(<#a23>);"),
+    ] {
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind == ParseDiagnosticKind::ExpansionBounded
+                && diagnostic.given_up == Some((record.to_owned(), statement.len()))
+        }));
+    }
     assert!(!exchange.records().contains_key(&2));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.kind == ParseDiagnosticKind::RecordOmitted && diagnostic.message.contains("#2")

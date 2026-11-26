@@ -142,6 +142,7 @@ fn plane_normal_match_uses_direction_on_both_sides() {
 fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
     crate::directory::DirectoryEntry {
         source_offset: 0,
+        source_length: 160,
         sequence,
         entity_type: 124,
         parameter_start: 0,

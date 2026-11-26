@@ -116,6 +116,8 @@ pub(crate) fn decode_settings(
                 stream.record(frame, *version, &mut thickness_by_rule),
                 losses,
                 crate::loss::F3dLossCode::BendSettingsUndecoded,
+                super::record::DesignRecord::entity(&entry.name, frame.entity_id)
+                    .spanning(frame.start, frame.end),
                 format_args!("Sheet-metal settings record {}", frame.entity_id),
             )?
             else {

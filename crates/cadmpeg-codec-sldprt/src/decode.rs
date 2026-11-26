@@ -2765,6 +2765,7 @@ fn merge_local_bodies(
     scan: &ContainerScan<'_>,
     configuration: Option<usize>,
     decoded: &mut Brep,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
     let Some(configuration) = configuration else {
         return Ok(());
@@ -2777,33 +2778,49 @@ fn merge_local_bodies(
         u64_from_index(streams.len()),
         "admit SLDPRT imported body streams",
     )?;
-    let mut unreadable = Vec::new();
+    let mut unreadable = 0;
     for (site, stream) in &streams {
-        match decode_bodies(
-            ctx,
-            &[(stream.payload, stream.header)],
-            stream.source_stream(),
-        ) {
+        match ctx.run_part(|| {
+            decode_bodies(
+                ctx,
+                &[(stream.payload, stream.header)],
+                stream.source_stream(),
+            )
+        })? {
             Ok(mut bodies) => {
                 bodies.qualify_ids(site)?;
                 bind_opaque_geometry(&mut bodies, &stream.section.native_id());
                 merge_brep(decoded, bodies)?;
             }
-            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
-            Err(_) => unreadable.push(stream.section.native_id()),
+            Err(error) => {
+                unreadable += 1;
+                let part = Part::at(
+                    "sldprt",
+                    IMPORTED_BODY_PART,
+                    u64_from_index(stream.offset),
+                    stream.payload,
+                    [ArenaClass::Model],
+                )
+                .named(stream.header.description.as_str())
+                .in_stream(stream.source_stream().clone())
+                .digest_only();
+                let error = CodecError::malformed(format_args!(
+                    "{}: {error}",
+                    SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
+                ));
+                given_up.push(ctx.give_up_part(part, error)?);
+            }
         }
     }
     decoded
         .losses
-        .extend(imported_bodies_loss(unreadable.len(), streams.len()));
-    decoded.losses.extend(unreadable.into_iter().map(|record| {
-        cadmpeg_ir::unknown::part::record_unreadable(
-            record,
-            SldprtLossCode::GeometryImportedBodiesNotTransferred.kind(),
-        )
-    }));
+        .extend(imported_bodies_loss(unreadable, streams.len()));
     Ok(())
 }
+
+/// The part an imported-feature body stream is: one stream of a
+/// `Config-N-FeatureBodies` section, decoded alone.
+const IMPORTED_BODY_PART: &str = "imported-body-stream";
 
 /// One loss for each configuration whose partition holds no body, or that
 /// has no partition, and whose `Config-N-FeatureBodies` streams the decode
@@ -2860,15 +2877,27 @@ fn untaken_local_bodies_losses(
 
 /// The `record.unreadable` of a Parasolid site whose entity records frame and
 /// build no geometry; a site that holds no entity record gives up nothing.
+/// The record is the site's section, at the start of its stream.
 fn site_not_transferred(
     site: &ActiveParasolidSite<'_>,
     decoded: &Brep,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    (decoded.stats.source_entity_records > 0).then(|| {
-        cadmpeg_ir::unknown::part::record_unreadable(
+    let records = decoded.stats.source_entity_records;
+    (records > 0).then(|| {
+        cadmpeg_ir::unknown::part::GivenUpRecord::new(
             site.section.native_id(),
-            SldprtLossCode::GeometryParasolidNotTransferred.kind(),
+            format_args!(
+                "{}: {records} Parasolid entity record(s) frame and build no geometry",
+                SldprtLossCode::GeometryParasolidNotTransferred.kind()
+            ),
         )
+        .at(cadmpeg_ir::SourceProvenance::in_stream(
+            "sldprt",
+            site.source_stream().clone(),
+            0,
+        ))
+        .spanning(u64_from_index(site.section.payload().len()))
+        .loss()
     })
 }
 
@@ -3033,7 +3062,7 @@ fn try_decode_brep(
         })
         .flatten();
     if takes_local_bodies {
-        merge_local_bodies(ctx, scan, taken, &mut decoded)?;
+        merge_local_bodies(ctx, scan, taken, &mut decoded, given_up)?;
     }
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
@@ -3820,7 +3849,15 @@ fn build_geometry_ir(
     )?);
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut history_given_up = Vec::new();
+    let mut histories = crate::history::histories(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut history_given_up,
+    )?;
+    retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
@@ -5363,7 +5400,15 @@ fn build_metadata_ir(
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut history_given_up = Vec::new();
+    let mut histories = crate::history::histories(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut history_given_up,
+    )?;
+    retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part

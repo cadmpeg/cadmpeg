@@ -157,8 +157,8 @@ struct MergeSession<'r, 'a> {
     decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
     members: std::collections::BTreeMap<String, MemberDefinition>,
-    /// Members whose decode failed, by path, with the failure text. A failed
-    /// member is decoded once; every later reference reports the same loss.
+    /// Members given up, by path, with the failure text. A member is given up
+    /// once; every later reference reports the same loss.
     failed: std::collections::BTreeMap<String, String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     scene_sources: &'r mut crate::scene::Sources,
@@ -354,11 +354,27 @@ impl MergeSession<'_, '_> {
             } else {
                 let Some(member) = self.archive.members.get(reference.relative_path.as_str())
                 else {
-                    if self.scan.has_entry(&reference.relative_path) {
+                    if let Some(part) = self.scan.give_up_entry(
+                        self.ctx,
+                        &reference.relative_path,
+                        CodecError::malformed("F3Z member is not an F3D document"),
+                    )? {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
                         ));
+                        parent_report
+                            .losses
+                            .extend(crate::decode::commit_entry_parts(
+                                self.ctx,
+                                [part],
+                                parent_ir,
+                                parent_fidelity,
+                            )?);
+                        self.failed.insert(
+                            reference.relative_path.as_str().to_owned(),
+                            "it is not an F3D document member".to_owned(),
+                        );
                     } else {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberMissing, format_args!(
                             "xref {label}: member {} is not present in the archive; the occurrence was not resolved",
@@ -393,17 +409,33 @@ impl MergeSession<'_, '_> {
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        parent_report.losses.extend(record_given_up(
-                            reference.relative_path.as_str(),
-                            F3dLossCode::XrefMemberUndecoded.note(format!(
-                                "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
-                                reference.relative_path
-                            )),
+                        let text = error.to_string();
+                        let note = F3dLossCode::XrefMemberUndecoded.note(format!(
+                            "xref {label}: member {} failed to decode ({text}); the occurrence was not resolved",
+                            reference.relative_path
                         ));
-                        self.failed.insert(
-                            reference.relative_path.as_str().to_owned(),
-                            error.to_string(),
-                        );
+                        match self.scan.give_up_entry(
+                            self.ctx,
+                            reference.relative_path.as_str(),
+                            error,
+                        )? {
+                            Some(part) => {
+                                parent_report.losses.push(note);
+                                parent_report
+                                    .losses
+                                    .extend(crate::decode::commit_entry_parts(
+                                        self.ctx,
+                                        [part],
+                                        parent_ir,
+                                        parent_fidelity,
+                                    )?);
+                            }
+                            None => parent_report
+                                .losses
+                                .extend(record_given_up(reference.relative_path.as_str(), note)),
+                        }
+                        self.failed
+                            .insert(reference.relative_path.as_str().to_owned(), text);
                         continue;
                     }
                 };

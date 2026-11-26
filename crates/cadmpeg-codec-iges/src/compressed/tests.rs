@@ -537,4 +537,18 @@ fn a_repeated_directory_sequence_keeps_its_first_record() {
         "{}",
         loss.message
     );
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [given_up] = given_up.as_slice() else {
+        panic!("one give-up for the one copy: {given_up:?}");
+    };
+    let part = format!(
+        "part compressed-data-record stream=\"\" offset={second_end} length={} ",
+        copy.len() - 2
+    );
+    assert!(given_up.message.starts_with(&part), "{}", given_up.message);
 }

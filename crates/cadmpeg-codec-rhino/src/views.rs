@@ -9,7 +9,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Fraction, PositiveReal};
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -501,15 +501,21 @@ fn list_loss(offset: usize, tag: &'static str, message: std::fmt::Arguments<'_>)
 
 /// Pushes the loss of a view list, or of a view in it, that the list gives
 /// up, charged to `record`: the retained list, or `<list>@<offset>` for a
-/// view in it.
+/// view in it, `length` bytes long where its framing states that.
 fn push_list_give_up(
     losses: &mut Vec<LossNote>,
     record: impl std::fmt::Display,
     offset: usize,
+    length: Option<usize>,
     tag: &'static str,
     message: std::fmt::Arguments<'_>,
 ) {
-    losses.extend(record_given_up(record, list_loss(offset, tag, message)));
+    let loss = list_loss(offset, tag, message);
+    let mut unreadable = GivenUpRecord::caused_by(record, &loss);
+    if let Some(length) = length {
+        unreadable = unreadable.spanning(cadmpeg_core::decode::u64_from_index(length));
+    }
+    losses.extend([loss, unreadable.loss()]);
 }
 
 fn push_view_loss(
@@ -1419,6 +1425,7 @@ fn parse_list(
                 &mut losses,
                 list,
                 record.range.start,
+                Some(record.range.len()),
                 list_tag,
                 format_args!(
                     "{kind} view list at offset {} could not be framed: {error}",
@@ -1435,6 +1442,7 @@ fn parse_list(
                 &mut losses,
                 list,
                 record.range.start,
+                Some(record.range.len()),
                 list_tag,
                 format_args!(
                     "{kind} view list at offset {} has no readable count: {error}",
@@ -1449,6 +1457,7 @@ fn parse_list(
             &mut losses,
             list,
             record.range.start,
+            Some(record.range.len()),
             list_tag,
             format_args!(
                 "{kind} view list at offset {} has a negative count {signed_count}",
@@ -1458,14 +1467,17 @@ fn parse_list(
         return Ok((Vec::new(), losses));
     };
     if count > 1 << 16 {
-        losses.push(list_loss(
+        push_list_give_up(
+            &mut losses,
+            list,
             record.range.start,
+            Some(record.range.len()),
             list_tag,
             format_args!(
                 "{kind} view list at offset {} exceeds the 65536-entry bound",
                 record.body().start
             ),
-        ));
+        );
         return Ok((Vec::new(), losses));
     }
     let mut views = Vec::new();
@@ -1478,6 +1490,7 @@ fn parse_list(
                     &mut losses,
                     format_args!("{list}@{}", reader.position()),
                     reader.position(),
+                    None,
                     "VIEW/RECORD",
                     format_args!(
                         "{kind} view record at offset {} could not be framed: {error}",
@@ -1492,6 +1505,7 @@ fn parse_list(
                 &mut losses,
                 format_args!("{list}@{child_offset}"),
                 child_offset,
+                Some(view.range().len()),
                 "VIEW/RECORD",
                 format_args!(
                     "{kind} view list child at offset {child_offset} has unexpected typecode {:#010x}",
@@ -1522,6 +1536,7 @@ fn parse_list(
                 &mut losses,
                 format_args!("{list}@{}", view.header_start),
                 view.header_start,
+                Some(view.range().len()),
                 "VIEW/RECORD",
                 format_args!(
                     "{kind} view record at offset {} was omitted after child parsing failed: {error}",
@@ -1534,6 +1549,7 @@ fn parse_list(
                 &mut losses,
                 format_args!("{list}@{}", view.header_start),
                 view.header_start,
+                Some(view.range().len()),
                 "VIEW/RECORD",
                 format_args!(
                     "{kind} view record at offset {} could not advance to its bounded end: {error}",
@@ -1596,7 +1612,11 @@ fn retain_unbound_view_record(
     record.range.start,
     binding.label());
 
-    losses.push(located_presentation_loss(record.range.start, tag, message));
+    let loss = located_presentation_loss(record.range.start, tag, message);
+    let unreadable = GivenUpRecord::caused_by(opaque_record_id(table_typecode, record), &loss)
+        .spanning(cadmpeg_core::decode::u64_from_index(record.range.len()))
+        .loss();
+    losses.extend([loss, unreadable]);
 
     opaque_records.push(OpaqueRecord {
         table_typecode,
@@ -1643,16 +1663,20 @@ pub(crate) fn install(
                     Err(error) => {
                         let loss = crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("named construction-plane list at offset {} was omitted after parsing failed: {error}", record.range.start));
 
-                        losses.extend(record_given_up(
+                        let loss = loss.with_provenance(
+                            SourceProvenance::root(
+                                "rhino",
+                                cadmpeg_core::decode::u64_from_index(record.range.start),
+                            )
+                            .with_tag("VIEW/NAMED_CPLANES"),
+                        );
+                        let unreadable = GivenUpRecord::caused_by(
                             opaque_record_id(table.typecode, record),
-                            loss.with_provenance(
-                                SourceProvenance::root(
-                                    "rhino",
-                                    cadmpeg_core::decode::u64_from_index(record.range.start),
-                                )
-                                .with_tag("VIEW/NAMED_CPLANES"),
-                            ),
-                        ));
+                            &loss,
+                        )
+                        .spanning(cadmpeg_core::decode::u64_from_index(record.range.len()))
+                        .loss();
+                        losses.extend([loss, unreadable]);
 
                         opaque_records.push(OpaqueRecord {
                             table_typecode: table.typecode,
@@ -1735,6 +1759,7 @@ pub(crate) fn install(
     Ok(NativeInstall {
         losses,
         opaque_records,
+        given_up: Vec::new(),
     })
 }
 
@@ -1812,7 +1837,7 @@ mod tests {
     }
 
     #[test]
-    fn unbound_view_record_reports_a_loss_and_retains_the_record() {
+    fn an_unbound_view_record_is_given_up_and_retained() {
         let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
         let binding = crate::settings::UnitBinding::from_units(None);
         let mut losses = Vec::new();
@@ -1825,8 +1850,8 @@ mod tests {
             binding,
             "named-view list",
         );
-        assert_eq!(losses.len(), 1);
         assert_eq!(opaque.len(), 1);
+        assert_given_up(&losses, opaque[0].id().as_str());
     }
 
     fn malformed_view_scan(typecode: u32) -> crate::container::Scan<'static> {

@@ -183,7 +183,6 @@ pub(crate) fn inspect(
                             .as_ref()
                             .filter(|_| stream.unread_stream_layout)
                             .map(|span| span.start),
-                        None,
                         &mut losses,
                     );
                     header_attributes(kernel, stream.terminator.into(), &mut attributes);

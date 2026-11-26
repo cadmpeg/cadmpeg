@@ -7142,4 +7142,17 @@ object record remains opaque and no partial typed topology is committed.
 
 ## 21. Strict floors
 
-`rhino/object.framing-undecodable` records a framed object record that the decoder gave up (CADIR §3.3), and carries strict floor Warning (CADIR §3.2).
+No Rhino loss code carries a strict floor. A framed object record that does
+not decode is a given-up part of kind `object-record`, and a table record whose
+framing does not decode is a given-up part of kind `table-record` (CADIR §3.3).
+Each part keeps the digest of its bytes and names the retained record that holds
+those bytes. Its `record.unreadable` charge sets the floor that refuses a pinned
+decode (CADIR §3.2). `rhino/object.framing-undecodable` counts the given-up
+object records of each class.
+
+A record that frames but that the decoder drops from the typed model, and keeps
+only as a retained or opaque record, is a semantic give-up. Such a record has a
+payload that does not parse, a unit system that does not bind, a variant that
+has no typed reading, or a list count above its bound. The codec loss for the
+record comes first, and a `record.unreadable` charge that names the retained
+record follows it.

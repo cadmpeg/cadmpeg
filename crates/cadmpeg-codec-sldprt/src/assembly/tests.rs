@@ -108,15 +108,6 @@ fn assert_structure_given_up(projection: &super::AssemblyProjection, message: &s
         .any(|token| token == tree));
 }
 
-fn assert_structure_loss(projection: &super::AssemblyProjection, message: &str) {
-    assert_eq!(projection.losses().len(), 1);
-    assert_eq!(
-        projection.losses()[0].code,
-        SldprtLossCode::AssemblyStructureNotTransferred.kind()
-    );
-    assert_eq!(projection.losses()[0].message, message);
-}
-
 fn occurrence<'p>(
     projection: &'p super::AssemblyProjection,
     id: &str,
@@ -291,10 +282,15 @@ fn a_tree_without_one_active_configuration_transfers_nothing() {
     assert!(projection.occurrences().is_empty());
     assert_eq!(
         codes(&projection),
-        [SldprtLossCode::AssemblyStructureNotTransferred
-            .kind()
-            .local_code()
-            .to_string()]
+        [
+            SldprtLossCode::AssemblyStructureNotTransferred
+                .kind()
+                .local_code()
+                .to_string(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+                .local_code()
+                .to_string(),
+        ]
     );
 }
 
@@ -868,7 +864,7 @@ fn the_component_tree_records_native_structure_and_projects_it() {
 
 #[test]
 fn the_component_tree_structure_losses_state_the_exact_message() {
-    let tree_record = super::test_tree_record();
+    let tree_record = super::test_tree_record().id;
     let projection = project(&ctx(), "<notSolidWorks/>").expect("project");
     assert_structure_given_up(
         &projection,
@@ -882,9 +878,10 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         r#"swMostRecentConfiguration="NO""#,
     );
     let projection = project(&ctx(), &text).expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The component tree names 0 active configurations. No occurrence is transferred.",
+        tree_record.as_str(),
     );
 
     let text = tree().replace(
@@ -1068,7 +1065,7 @@ fn a_tree_that_is_not_xml_states_the_exact_structure_loss() {
         &projection,
         "The `swXmlContents/COMPINSTANCETREE` section is not well-formed XML. No occurrence is \
          transferred.",
-        super::test_tree_record().as_str(),
+        super::test_tree_record().id.as_str(),
     );
 }
 
@@ -1145,13 +1142,19 @@ fn a_document_with_different_trees_states_the_exact_structure_loss() {
         ],
         Vec::new(),
     );
+    let tree_record = scan
+        .sections()
+        .next()
+        .expect("the first tree section")
+        .native_id();
     let projection = super::read(&ctx(), &scan)
         .expect("read")
         .expect("an assembly document");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The document holds different `swXmlContents/COMPINSTANCETREE` sections. No occurrence \
          is transferred.",
+        tree_record.as_str(),
     );
 }
 
@@ -1160,9 +1163,10 @@ fn a_repeated_model_identity_states_the_exact_structure_loss() {
     let models = r#"<swModel id="8" swFileRef="9"/>"#;
     let projection =
         project(&ctx(), &tree_with(&reference("4", "8", IDENTITY), models)).expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The component tree repeats the `swModel` id `8`. No occurrence is transferred.",
+        super::test_tree_record().id.as_str(),
     );
 }
 

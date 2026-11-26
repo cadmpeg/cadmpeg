@@ -60,7 +60,7 @@ fn parameter_registered_tail_resolves_full_record_identity_and_refuses_wrong_typ
                 decoded
                     .unparsed
                     .iter()
-                    .map(|row| row.offsets.len())
+                    .map(|row| row.frames.len())
                     .sum::<usize>(),
                 unparsed
             );
@@ -151,7 +151,7 @@ fn parameter_tail_names_a_registered_collection() {
         decoded
             .unparsed
             .iter()
-            .map(|row| row.offsets.len())
+            .map(|row| row.frames.len())
             .sum::<usize>(),
         1
     );

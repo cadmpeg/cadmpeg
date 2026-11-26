@@ -1105,11 +1105,13 @@ pub(in crate::families) fn try_decode_zero_entity(
             .iter()
             .filter_map(|run| run.face.as_ref().map(|face| face.record_ordinal))
             .collect::<std::collections::BTreeSet<_>>();
+        let code = topology_loss.kind();
         losses.extend(face_records.into_iter().map(|ordinal| {
-            cadmpeg_ir::unknown::part::record_unreadable(
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
                 format_args!("catia:zero-entity:topology-face#{ordinal}"),
-                topology_loss.kind(),
+                format_args!("{code}: the face has no complete allocation graph or face geometry"),
             )
+            .loss()
         }));
     }
     Some(Ok(FamilyOutput {

@@ -436,10 +436,14 @@ fn project_brep(
             );
         }
         losses.extend(refused_edges.into_iter().map(|edge| {
-            cadmpeg_ir::unknown::part::record_unreadable(
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
                 edge,
-                crate::loss::SldprtLossCode::SketchProfileRejected.kind(),
+                format_args!(
+                    "{}: the edge projects to no sketch entity",
+                    crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+                ),
             )
+            .loss()
         }));
         let Some(profiles) = profiles else {
             continue;

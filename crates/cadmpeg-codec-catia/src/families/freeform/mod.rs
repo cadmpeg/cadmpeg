@@ -884,13 +884,20 @@ pub(super) fn try_decode_freeform_surfaces(
                 identity_statement(&b5_face_object_ids)
             )));
             } else if object_stream_selection_exhausted {
-                losses.push(
-                    (CatiaLossCode::TopologyObjectStreamWorkSliceExhausted).note(format!(
-            "The object-stream graph exceeds the bounded frame-index and record-materialization \
-             work slice; its topology remains native. The {object_stream_run_count} object runs \
-             stay inside retained record {payload_id}."
-        )),
-                );
+                let why = CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
+                    "The object-stream graph exceeds the bounded frame-index and \
+                     record-materialization work slice; its topology remains native. The \
+                     {object_stream_run_count} object runs stay inside retained record \
+                     {payload_id}."
+                ));
+                if ir.geometry.faces.is_empty() {
+                    losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                        "catia:b5:object-stream",
+                        why,
+                    ));
+                } else {
+                    losses.push(why);
+                }
             } else {
                 losses.push((CatiaLossCode::TopologyB5GraphUnclosed).note(format!(
                     "Object-stream and consolidated NURBS carriers were decoded, but the \
@@ -906,11 +913,13 @@ pub(super) fn try_decode_freeform_surfaces(
                     let face_records = census_face_object_ids
                         .iter()
                         .collect::<std::collections::BTreeSet<_>>();
+                    let code = CatiaLossCode::TopologyB5GraphUnclosed.kind();
                     losses.extend(face_records.into_iter().map(|object_id| {
-                        cadmpeg_ir::unknown::part::record_unreadable(
+                        cadmpeg_ir::unknown::part::GivenUpRecord::new(
                             format_args!("catia:b5:face#{object_id}"),
-                            CatiaLossCode::TopologyB5GraphUnclosed.kind(),
+                            format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
                         )
+                        .loss()
                     }));
                 }
             }

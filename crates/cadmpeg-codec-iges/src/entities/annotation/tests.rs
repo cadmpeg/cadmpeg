@@ -759,6 +759,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
 
         let entry = |sequence, entity_type| DirectoryEntry {
             source_offset: 0,
+            source_length: 160,
             sequence,
             entity_type,
             parameter_start: 0,
@@ -896,6 +897,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         }
         let entry = |sequence, entity_type| DirectoryEntry {
             source_offset: 0,
+            source_length: 160,
             sequence,
             entity_type,
             parameter_start: 0,
@@ -1028,6 +1030,7 @@ fn leader_record(arrowhead_height: f64, arrowhead_width: f64) -> ParameterRecord
 fn leader_entry(form: i64) -> DirectoryEntry {
     DirectoryEntry {
         source_offset: 0,
+        source_length: 160,
         sequence: 1,
         entity_type: 214,
         parameter_start: 0,

@@ -749,6 +749,8 @@ fn collect_design_primary_frames_with_cache<'a>(
             design_primary_frame(bytes, meta, &registered_entities, &frame),
             losses,
             crate::loss::F3dLossCode::PrimaryRecordUndecoded,
+            super::record::DesignRecord::entity(stream, frame.entity_id)
+                .spanning(frame.start, frame.end),
             format_args!(
                 "Design primary record {} at byte {} in {stream}",
                 frame.entity_id, frame.start
@@ -1486,6 +1488,7 @@ pub(crate) fn decode_feature_timelines(
                     stream.timeline(type_ordinal, design_type, *entity_id, entity_source_ordinal),
                     &mut pending_losses,
                     crate::loss::F3dLossCode::FeatureTimelineUndecoded,
+                    super::record::DesignRecord::entity(bulk_name, *entity_id),
                     format_args!("Feature timeline record {entity_id} in {bulk_name}"),
                 )?
                 else {

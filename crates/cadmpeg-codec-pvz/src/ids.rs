@@ -23,9 +23,16 @@ pub(crate) fn member_scope(member: &str) -> IdentityKey {
     member_key(member)
 }
 
-/// The name of stream `stream` of geometry member `member` in loss messages.
-pub(crate) fn member_stream(member: &str, stream: u32) -> String {
-    format!("pvz:{}#{stream:#010x}", member_key(member))
+/// The source stream of package member `member`, whose offsets are offsets
+/// in the member's expanded bytes.
+pub(crate) fn member_stream_name(member: &str) -> cadmpeg_ir::StreamName {
+    cadmpeg_ir::stream_name!("pvz:").with_suffix(member)
+}
+
+/// The id of the exact-geometry stream of geometry member `member` in loss
+/// messages.
+pub(crate) fn member_exact_stream(member: &str) -> String {
+    format!("pvz:{}#exact", member_key(member))
 }
 
 /// The document definition that places each of several root definitions.

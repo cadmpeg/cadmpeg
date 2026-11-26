@@ -26,7 +26,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::record_unreadable;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use super::scene::{Component, Scene};
 use super::shape::{append_shell, MeshData, ShellError, MILLIMETRES_PER_METRE};
@@ -376,9 +376,9 @@ pub(super) fn emit(
     let mut totals = Totals::default();
     let mut shell_failures: Vec<String> = Vec::new();
     let mut shell_failure_count = 0_usize;
-    let mut given_up_shells: BTreeSet<u32> = BTreeSet::new();
+    let mut given_up_shells: BTreeMap<u32, ShellError> = BTreeMap::new();
     let mut failed_bodies: Vec<String> = Vec::new();
-    let mut given_up_bodies: Vec<BodyId> = Vec::new();
+    let mut given_up_bodies: Vec<(BodyId, MeshBrepError)> = Vec::new();
     let mut admitted = u64_from_index(ir.entity_count());
     let options = MeshBrepOptions::default();
     let lone_set = matches!(sets.sets.as_slice(), [set] if set.len() == 1);
@@ -404,9 +404,7 @@ pub(super) fn emit(
                 &mut mesh,
             ) {
                 shell_failure_count += 1;
-                if error != ShellError::TooLarge {
-                    given_up_shells.insert(slot);
-                }
+                given_up_shells.entry(slot).or_insert(error);
                 if shell_failures.len() < MAX_LISTED {
                     shell_failures.push(format!("object {slot} of {name}: {}", error.text()));
                 }
@@ -453,16 +451,14 @@ pub(super) fn emit(
                 built.push(Some(Built { id: summary.body }));
             }
             Err(error) => {
-                if !matches!(
-                    error,
-                    MeshBrepError::TooLarge | MeshBrepError::CoordinateTooLarge
-                ) {
-                    given_up_bodies.push(BodyId::compose(
+                failed_bodies.push(format!("{name} ({error})"));
+                given_up_bodies.push((
+                    BodyId::compose(
                         &cadmpeg_ir::identity_namespace!("edrawings", "model", "body"),
                         IdentityKey::encode_segment(scope),
-                    ));
-                }
-                failed_bodies.push(format!("{name} ({error})"));
+                    ),
+                    error,
+                ));
                 built.push(None);
             }
         }
@@ -479,11 +475,13 @@ pub(super) fn emit(
             lead(&shell_failures)
         )));
         let code = EdrawingsLossCode::ModelShellInvalid.kind();
-        losses.extend(
-            given_up_shells
-                .iter()
-                .map(|slot| record_unreadable(format!("object#{slot}"), &code)),
-        );
+        losses.extend(given_up_shells.iter().map(|(slot, error)| {
+            GivenUpRecord::new(
+                format_args!("object#{slot}"),
+                format_args!("{code}: {}", error.text()),
+            )
+            .loss()
+        }));
     }
     if !failed_bodies.is_empty() {
         losses.push(EdrawingsLossCode::GeometryBodyFailed.note(format!(
@@ -493,9 +491,9 @@ pub(super) fn emit(
         )));
         let code = EdrawingsLossCode::GeometryBodyFailed.kind();
         losses.extend(
-            given_up_bodies
-                .iter()
-                .map(|body| record_unreadable(body, &code)),
+            given_up_bodies.iter().map(|(body, error)| {
+                GivenUpRecord::new(body, format_args!("{code}: {error}")).loss()
+            }),
         );
     }
     if !sets.unresolved.is_empty() {
@@ -510,11 +508,13 @@ pub(super) fn emit(
             lead(&names)
         )));
         let code = EdrawingsLossCode::ModelObjectInvalid.kind();
-        losses.extend(
-            sets.unresolved
-                .iter()
-                .map(|index| record_unreadable(format!("node#{index}"), &code)),
-        );
+        losses.extend(sets.unresolved.iter().map(|index| {
+            GivenUpRecord::new(
+                format_args!("node#{index}"),
+                format_args!("{code}: the instance names no library body"),
+            )
+            .loss()
+        }));
     }
     if sets.dangling > 0 {
         losses.push(EdrawingsLossCode::ModelObjectInvalid.note(format!(
@@ -721,11 +721,13 @@ pub(super) fn emit(
             lead(&names)
         )));
         let code = EdrawingsLossCode::StructureOccurrenceDropped.kind();
-        losses.extend(
-            dropped_occurrences
-                .iter()
-                .map(|index| record_unreadable(format!("node#{index}"), &code)),
-        );
+        losses.extend(dropped_occurrences.iter().map(|index| {
+            GivenUpRecord::new(
+                format_args!("node#{index}"),
+                format_args!("{code}: none of the instance's bodies was built"),
+            )
+            .loss()
+        }));
     }
     // EDR-09: a matrix on a sub-assembly has no observed case.
     let matrixed: Vec<String> = scene

@@ -344,6 +344,8 @@ pub(super) struct DesignOutputs {
     pub(super) model: DesignModel,
     /// Losses in decode order. They follow the geometry losses.
     pub(super) losses: Vec<LossNote>,
+    /// Parts the design decode gave up.
+    pub(super) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
 }
 
 /// Add design assets that neither the geometry nor earlier design assets hold.
@@ -703,8 +705,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     design.design_body_bounds = pre_body_bounds;
     losses.extend(body_bounds_losses);
-    let configurations =
-        crate::design::configurations::decode_configurations(ctx, scan, &mut losses)?;
+    let mut given_up = Vec::new();
+    let configurations = crate::design::configurations::decode_configurations(
+        ctx,
+        scan,
+        &mut losses,
+        &mut given_up,
+    )?;
     design.design_configurations = configurations.documents;
     design.configuration_roots_unbound = configurations.unbound_roots;
     design
@@ -1660,6 +1667,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         native: design,
         model,
         losses,
+        given_up,
     })
 }
 

@@ -176,9 +176,10 @@ pub(crate) struct AssemblyProjection {
     /// Hidden occurrences below a root occurrence; they stay in native records.
     pub(crate) nested_hidden: usize,
     pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
-    /// The native occurrence records whose placement transform does not
-    /// build, so that their occurrences are dropped.
-    pub(crate) unbuilt_placements: Vec<String>,
+    /// The native occurrence records whose occurrences are dropped, each
+    /// with the cause that drops it. A repeated occurrence id drops no
+    /// record of its own.
+    pub(crate) unbuilt_placements: Vec<(String, UnresolvedCause)>,
 }
 
 /// Projects the current document's occurrence table without loading prototypes.
@@ -243,6 +244,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
             )?;
+            unbuilt_placements.push((source.id.clone(), UnresolvedCause::ExternalReference));
             continue;
         };
         let Some(occurrence_record) = occurrence_records
@@ -253,6 +255,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
             )?;
+            unbuilt_placements.push((source.id.clone(), UnresolvedCause::OccurrenceRecord));
             continue;
         };
         if emitted_ids.contains(&source.occurrence_id) {
@@ -290,7 +293,7 @@ pub(crate) fn project_occurrences(
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
                     )?;
-                    unbuilt_placements.push(native_id.clone());
+                    unbuilt_placements.push((native_id.clone(), UnresolvedCause::InvalidTransform));
                     continue;
                 };
                 (transform, invisible.then_some(false))
@@ -298,6 +301,7 @@ pub(crate) fn project_occurrences(
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
                 count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement)?;
+                unbuilt_placements.push((native_id.clone(), UnresolvedCause::Placement));
                 continue;
             }
         };

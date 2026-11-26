@@ -862,8 +862,9 @@ fn unreadable_child_map_archive() -> Vec<u8> {
     archive_entries(&references)
 }
 
-/// Whether `losses` hold a `record.unreadable` that names the property whose
-/// element map the decode gave up, as the codec's own loss names it.
+/// Whether `losses` hold a `record.unreadable` that names the element map the
+/// decode gave up, by the id of the map of the property the codec's own loss
+/// names, at the property's position in `Document.xml`.
 fn element_map_given_up(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
     let Some(property) = losses
         .iter()
@@ -875,13 +876,13 @@ fn element_map_given_up(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
     else {
         return false;
     };
+    let map = crate::native::native_child_id("element-map", property, "map");
     losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss
                 .message
-                .split_whitespace()
-                .any(|token| token == property)
+                .starts_with(&format!("record {map} stream=\"Document.xml\" offset="))
     })
 }
 
@@ -897,8 +898,8 @@ fn unreadable_child_map_reference_keeps_independent_geometry() {
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
 
-/// An element map the decoder gives up charges `record.unreadable` naming its
-/// property, so a pinned decode refuses.
+/// An element map the decoder gives up charges `record.unreadable` naming the
+/// map, so a pinned decode refuses.
 #[test]
 fn strict_decode_refuses_an_unreadable_element_map() {
     let mut options = DecodeOptions::default();

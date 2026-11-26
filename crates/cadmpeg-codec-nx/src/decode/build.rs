@@ -36,7 +36,7 @@ use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
 use crate::topology::{Graph, Node};
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, WorkBudget};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -58,7 +58,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use cadmpeg_parasolid::geometry::Refusal;
@@ -90,9 +90,21 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
     )
 }
 
+/// The losses of the record at byte `pos` of `stream`, dropped for `why`:
+/// `why`, then its `record.unreadable`, which names the record
+/// `<stream>@<pos>`.
+pub(super) fn record_given_up_at(stream: &str, pos: u64, why: LossNote) -> [LossNote; 2] {
+    let at = cadmpeg_ir::StreamName::try_from(stream.to_owned())
+        .ok()
+        .map(|name| cadmpeg_ir::SourceProvenance::in_stream("nx", name, pos));
+    let unreadable = GivenUpRecord::caused_by(format_args!("{stream}@{pos}"), &why)
+        .at(at)
+        .loss();
+    [why, unreadable]
+}
+
 /// The given-up losses of each graph-owned CONE or TORUS record whose
-/// otherwise valid fields state a form that has no surface, each record named
-/// `<stream>@<byte>`.
+/// otherwise valid fields state a form that has no surface.
 fn surface_refusals(stream: &str, si: usize, graph: &Graph) -> Vec<LossNote> {
     [(NodeKind::Cone, "CONE"), (NodeKind::Torus, "TORUS")]
         .into_iter()
@@ -114,8 +126,9 @@ fn surface_refusals(stream: &str, si: usize, graph: &Graph) -> Vec<LossNote> {
                 ),
                 SurfaceRefusal::Analytic(Refusal::Fields) => return None,
             };
-            Some(record_given_up(
-                format!("{stream}@{}", node.pos()),
+            Some(record_given_up_at(
+                stream,
+                u64_from_index(node.pos()),
                 code.note(format!(
                     "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
                     node.pos()
@@ -327,14 +340,16 @@ pub(super) fn try_decode_geometry(
         } = parsed.parse_nurbs(si);
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
         for refusal in &nurbs_refusals {
-            carrier_refusals.extend(record_given_up(
-                format!("{stream_name}@{}", refusal.pos),
+            carrier_refusals.extend(record_given_up_at(
+                &stream_name,
+                u64_from_index(refusal.pos),
                 refusal.loss(si),
             ));
         }
         for carrier in unresolved_controls {
-            carrier_refusals.extend(record_given_up(
-                format!("{stream_name}@{}", carrier.pos),
+            carrier_refusals.extend(record_given_up_at(
+                &stream_name,
+                u64_from_index(carrier.pos),
                 NxLossCode::CarrierControlsUnresolved.note(format!(
                     "parasolid#{si} {} at byte {} names no control values that resolve to it",
                     carrier.family, carrier.pos

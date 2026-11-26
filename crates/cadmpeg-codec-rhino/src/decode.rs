@@ -28,7 +28,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
-use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
@@ -228,6 +228,9 @@ impl ReportBuckets {
 }
 
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
+
+/// The part a framed object record is (`rhino_3dm.md` §21).
+pub(crate) const OBJECT_RECORD_PART: &str = "object-record";
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
 /// Member visits, copied entities, and the points, control points, mesh
@@ -2689,6 +2692,35 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
+    /// Gives up the framed object record at `source_order`, of class
+    /// `class`, that no decoder transferred. Its object record already
+    /// retains its bytes, so the part keeps only their digest and links to
+    /// that record.
+    fn give_up_object(
+        &self,
+        source_order: usize,
+        class: &str,
+    ) -> Result<GivenUpPart, cadmpeg_core::CodecError> {
+        let range = self.scan.objects[source_order].range();
+        let record = Self::mint_unknown_id(source_order);
+        let part = Part::at(
+            "rhino",
+            OBJECT_RECORD_PART,
+            u64_from_index(range.start),
+            &self.scan.data[range],
+            [cadmpeg_core::decode::ArenaClass::Model],
+        )
+        .contained_in(cadmpeg_ir::ids::Identity::from(record.clone()))
+        .digest_only();
+        self.expand.ctx().give_up_part(
+            part,
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "{}: framed object record {record} of class {class} could not be decoded",
+                RhinoLossCode::ObjectFramingUndecodable.kind()
+            )),
+        )
+    }
+
     /// Mints the stable unknown-record ID for source order.
     fn mint_unknown_id(source_order: usize) -> UnknownId {
         UnknownId::compose(
@@ -2720,6 +2752,7 @@ impl<'a> DecodeContext<'a> {
         let presentation =
             crate::presentation::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(presentation.losses);
+        let mut given_up = presentation.given_up;
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
         }
@@ -2811,19 +2844,22 @@ impl<'a> DecodeContext<'a> {
                         .with_provenance(loss_provenance(class, outcome)),
                 );
                 for source_order in &outcome.failed_framed {
-                    losses.push(record_unreadable(
-                        Self::mint_unknown_id(*source_order),
-                        RhinoLossCode::ObjectFramingUndecodable.kind(),
-                    ));
+                    given_up.push(self.give_up_object(*source_order, class)?);
                 }
             }
         }
 
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
+            let loss = diagnostic.to_loss();
             match &diagnostic.given_up {
-                Some(record) => losses.extend(record_given_up(record, diagnostic.to_loss())),
-                None => losses.push(diagnostic.to_loss()),
+                Some(record) => {
+                    let unreadable = GivenUpRecord::caused_by(record, &loss)
+                        .spanning(u64_from_index(diagnostic.source_len()))
+                        .loss();
+                    losses.extend([loss, unreadable]);
+                }
+                None => losses.push(loss),
             }
         }
 
@@ -2905,6 +2941,9 @@ impl<'a> DecodeContext<'a> {
         );
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
+        for part in given_up {
+            losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+        }
         let untyped = self
             .opaque_records
             .iter()

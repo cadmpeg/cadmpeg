@@ -5,7 +5,7 @@ use super::geometry::{
     resolve_transform, source_object, ProjectionOutcome, TransformResolutionError,
 };
 use super::pointer;
-use super::{push_entity_loss, push_retained_entity_loss};
+use super::push_entity_loss;
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -653,7 +653,7 @@ pub(super) fn project(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(payload))
             }
             _ => {
-                push_retained_entity_loss(
+                push_entity_loss(
                     &mut losses,
                     entry,
                     format_args!("analytic surface type is unsupported"),
