@@ -251,17 +251,33 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
-      - name: Format check
-        run: cargo fmt --all --check
-
-      - name: Clippy
+      - name: Format check and clippy
+        # rustfmt takes one core for most of a minute; it runs beside clippy
+        # instead of before it.
         # Lint levels come from `[workspace.lints]` in Cargo.toml, so no
         # trailing flags here. Trailing flags are part of the compilation
         # fingerprint, and a flagged run and a bare run evict each other's
         # cached artifacts.
         # `--all-targets` covers lib, bins, tests, and benches so test-only
         # style debt cannot hide behind crate-root cfg(test) mute lists.
-        run: python3 scripts/ci_cargo.py clippy --all-targets
+        run: |
+          set +e
+          format_check() {
+            cargo fmt --all --check
+          }
+          format_check > "$RUNNER_TEMP/format.log" 2>&1 &
+          formatter=$!
+          python3 scripts/ci_cargo.py clippy --all-targets
+          lint=$?
+          wait "$formatter"
+          format=$?
+          echo "::group::cargo fmt --all --check"
+          cat "$RUNNER_TEMP/format.log"
+          echo "::endgroup::"
+          if [ "$format" != 0 ]; then
+            echo "::error::cargo fmt --all --check failed"
+          fi
+          [ "$lint" = 0 ] && [ "$format" = 0 ]
 
   test:
     needs: changes
