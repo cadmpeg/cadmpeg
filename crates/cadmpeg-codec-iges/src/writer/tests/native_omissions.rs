@@ -103,41 +103,52 @@ fn of_arena<'a>(messages: &'a [String], arena: &str) -> Vec<&'a str> {
         .collect()
 }
 
+/// Each analytic surface on no face, with its location at D1, its axis at D3
+/// and its reference direction at D5, as its Form 1 Parameter Data names them.
 #[test]
-fn a_cylinder_on_no_face_is_listed_with_its_axis_and_location() {
-    let messages = omitted(&owned_test_file(&[
-        entity(116, "LOCATION", "00010000", "116,1,2,3,0;"),
-        entity(123, "AXIS", "00010000", "123,0,0,1;"),
-        entity(123, "REFDIR", "00010000", "123,1,0,0;"),
-        OwnedTestEntity {
-            form: 1,
-            ..entity(192, "CYLINDER", "00000000", "192,1,3,2,5;")
-        },
-    ]));
-    // The writer withholds a Type 192 on no face, so its location and both
-    // directions leave the file with it.
-    let directions = "that are directions no written analytic surface references, which the \
-                      semantic writer does not regenerate";
-    let location = "that are points that locate only analytic surfaces the semantic writer \
-                    withholds";
-    let surface = "whose neutral surface the semantic writer withholds";
-    assert_eq!(
-        of_arena(&messages, "directions"),
-        [format!(
-            "the IGES write omits 2 native record(s) of `iges` arena `directions` {directions}: \
-             iges:native:direction#D3, iges:native:direction#D5"
-        )]
-    );
-    assert_eq!(
-        of_arena(&messages, "entities"),
-        [format!(
-            "the IGES write omits 4 native record(s) of `iges` arena `entities`: \
-             iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5, \
-             iges:entity:directory#7; {directions}: iges:entity:directory#3, \
-             iges:entity:directory#5; {location}: iges:entity:directory#1; {surface}: \
-             iges:entity:directory#7"
-        )]
-    );
+fn an_analytic_surface_on_no_face_is_listed_with_its_axis_and_location() {
+    for (entity_type, parameters) in [
+        (192, "192,1,3,2,5;"),
+        (194, "194,1,3,2,30,5;"),
+        (196, "196,1,2,3,5;"),
+        (198, "198,1,3,4,1,5;"),
+    ] {
+        let messages = omitted(&owned_test_file(&[
+            entity(116, "LOCATION", "00010000", "116,1,2,3,0;"),
+            entity(123, "AXIS", "00010000", "123,0,0,1;"),
+            entity(123, "REFDIR", "00010000", "123,1,0,0;"),
+            OwnedTestEntity {
+                form: 1,
+                ..entity(entity_type, "SURFACE", "00000000", parameters)
+            },
+        ]));
+        // The writer withholds Types 192 to 198 on no face, so the location
+        // and both directions leave the file with the surface.
+        let directions = "that are directions no written analytic surface references, which \
+                          the semantic writer does not regenerate";
+        let location = "that are points that locate only analytic surfaces the semantic \
+                        writer withholds";
+        let surface = "whose neutral surface the semantic writer withholds";
+        assert_eq!(
+            of_arena(&messages, "directions"),
+            [format!(
+                "the IGES write omits 2 native record(s) of `iges` arena `directions` \
+                 {directions}: iges:native:direction#D3, iges:native:direction#D5"
+            )],
+            "Type {entity_type}"
+        );
+        assert_eq!(
+            of_arena(&messages, "entities"),
+            [format!(
+                "the IGES write omits 4 native record(s) of `iges` arena `entities`: \
+                 iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5, \
+                 iges:entity:directory#7; {directions}: iges:entity:directory#3, \
+                 iges:entity:directory#5; {location}: iges:entity:directory#1; {surface}: \
+                 iges:entity:directory#7"
+            )],
+            "Type {entity_type}"
+        );
+    }
 }
 
 #[test]

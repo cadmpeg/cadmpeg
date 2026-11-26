@@ -124,7 +124,9 @@ impl NativeDispositions {
     }
 
     /// Drops the records `ids` of `namespace`; the loss gives `reason` after
-    /// the name of the arena that holds them.
+    /// the name of the arena that holds them. A record override is always a
+    /// drop: a writer that keeps some records of an arena declares the arena
+    /// `Written` or `Regenerated` and drops the complement.
     pub fn drop_records<I, S>(&mut self, namespace: &str, reason: &str, ids: I) -> &mut Self
     where
         I: IntoIterator<Item = S>,
