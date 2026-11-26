@@ -161,6 +161,45 @@ fn a_linear_tolerance_with_no_positive_value_in_metres_writes_the_modeller_defau
     );
 }
 
+/// A tolerance of 100 mm writes `res_linear` 0.1 m in every BODY. The part
+/// reads back with its body at that tolerance, and neither the write nor the
+/// read charges a loss for it.
+#[test]
+fn a_cube_written_at_a_100_mm_tolerance_reads_back_with_its_body() {
+    const LINEAR_MM: f64 = 100.0;
+    let mut ir = crate::test_support::ir::source_less_cube();
+    ir.tolerances.linear = PositiveLength::new(LINEAR_MM).expect("positive length");
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("part plans");
+    assert!(
+        !charges_linear_tolerance(&plan.report().losses),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("part writes");
+    let read_back = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written part decodes");
+    assert_eq!(
+        read_back.ir().geometry.bodies.len(),
+        ir.geometry.bodies.len()
+    );
+    assert_eq!(read_back.ir().geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(read_back.ir().tolerances.linear.get(), LINEAR_MM);
+    let invalid = SldprtLossCode::BodyResolutionInvalid.kind();
+    assert!(
+        read_back
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != invalid),
+        "{:?}",
+        read_back.report().losses
+    );
+}
+
 /// A linear tolerance that no `res_linear` value states reads back at the
 /// tolerance its nearest value states, with a charge.
 #[test]

@@ -25,8 +25,6 @@ const REGION_TAG: [u8; 2] = [0x00, 0x13];
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const RESOLUTION_SIZE_MIN: f64 = 1.0;
 const RESOLUTION_SIZE_MAX: f64 = 1.0e6;
-const RESOLUTION_LINEAR_MIN: f64 = 1.0e-15;
-const RESOLUTION_LINEAR_MAX: f64 = 1.0e-2;
 const BODY_HEADER_REF_MAX: usize = 32;
 const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
@@ -788,7 +786,7 @@ fn valid_resolution(size: f64, linear: f64) -> bool {
     size.is_finite()
         && linear.is_finite()
         && (RESOLUTION_SIZE_MIN..=RESOLUTION_SIZE_MAX).contains(&size)
-        && (RESOLUTION_LINEAR_MIN..=RESOLUTION_LINEAR_MAX).contains(&linear.abs())
+        && linear != 0.0
 }
 
 fn parse_body_fields(

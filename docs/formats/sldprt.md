@@ -2688,13 +2688,19 @@ boundary-surface, boundary-curve, boundary-point, region, edge, and vertex
 references plus the index-map fields. The region head is selected by a unique
 FACE → SHELL → REGION → BODY closure; a fixed ordinal or numeric chain is not
 an ownership selector. A BODY is valid only when exactly one schema field
-interpretation satisfies the complete field grammar, the resolution values
-are finite, and `body_type` is one of the four defined values.
+interpretation satisfies the complete field grammar: `resolution_size` is in
+`[1, 1e6]`, `resolution_linear` is finite and nonzero, `state` is `1`, and
+`body_type` is one of the four defined values. These guards select the header
+reference count. Reference bytes read as an f64 at a wrong count give a value
+near `1e-302`, which the `resolution_size` range rejects.
 
 `resolution_size` and `resolution_linear` are the BODY fields `res_size` and
-`res_linear` in metres. The part's linear tolerance comes from
-`resolution_linear` of its bodies, and its angular tolerance is the Parasolid
-angular precision ([`parasolid.md`](parasolid.md) §4).
+`res_linear` in metres. `resolution_linear` takes every finite nonzero value.
+The part's linear tolerance comes from `resolution_linear` of its bodies, and
+its angular tolerance is the Parasolid angular precision
+([`parasolid.md`](parasolid.md) §4). A `resolution_linear` that states no
+linear precision leaves its body valid and is charged
+`body.resolution-invalid`.
 
 A SHELL has eight references:
 
