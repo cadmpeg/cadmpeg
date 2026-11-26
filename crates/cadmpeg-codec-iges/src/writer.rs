@@ -94,6 +94,22 @@ const DROPPED_NATIVE_ARENAS: &[(&str, &str)] = &[
 const UNREFERENCED_DIRECTION: &str =
     "that are directions no written analytic surface references, which the semantic writer \
      does not regenerate";
+/// The reason a surface whose neutral record the writer withholds is dropped.
+const WITHHELD_SURFACE: &str = "whose neutral surface the semantic writer withholds";
+/// The reason the location of withheld analytic surfaces is dropped.
+const WITHHELD_LOCATION: &str =
+    "that are points that locate only analytic surfaces the semantic writer withholds";
+/// The reason a transformation no written record uses is dropped.
+const UNUSED_TRANSFORMATION: &str =
+    "that are transformations no written record uses, which the semantic writer does not \
+     regenerate";
+const UNENCODED_ENTITY: &str = "whose entity the semantic writer does not encode";
+const DEGENERATE_LINE: &str =
+    "that are lines with coincident endpoints, which the semantic writer omits";
+const WITHOUT_GEOMETRY: &str =
+    "whose entity has no neutral geometry for the semantic writer to encode";
+const WITHOUT_SEQUENCE: &str =
+    "whose record states no Directory sequence that ties it to a neutral geometry record";
 /// The reason native topology is dropped from a model with no neutral faces.
 const NATIVE_TOPOLOGY: &str = "that are native topology, which has no neutral projection, so \
                                the semantic writer omits it";
@@ -537,7 +553,6 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     losses.extend(placement_losses);
     losses.extend(unbounded_analytic);
     losses.extend(procedural_reduction_losses(ir)?);
-    let native = native_dispositions(ir);
     for body in ir
         .geometry
         .bodies
@@ -595,12 +610,14 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         }
     }
     let mut body_presentations = BTreeMap::new();
+    let mut written_surfaces = BTreeSet::new();
 
     let mut entities = if has_brep_topology(ir) {
         brep_entities(
             ctx,
             validate_brep_topology(ctx, &index, version)?,
             &mut body_presentations,
+            &mut written_surfaces,
             &mut losses,
         )?
     } else if has_trimmed_sheet_topology(ir) {
@@ -608,6 +625,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
             ctx,
             validate_trimmed_sheet_topology(ctx, &index, version)?,
             &mut body_presentations,
+            &mut written_surfaces,
             &mut losses,
         )?
     } else {
@@ -646,8 +664,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
                 "surface",
                 surface.id.as_str(),
                 |entities, losses| {
-                    append_surface_entities(ctx, entities, ir, surface, version, &ownership, losses)
-                        .map(|_| ())
+                    let written = append_surface_entities(
+                        ctx, entities, ir, surface, version, &ownership, losses,
+                    )?;
+                    if written.is_some() {
+                        written_surfaces.insert(surface.id.as_str().to_owned());
+                    }
+                    Ok(())
                 },
             )?;
         }
@@ -707,6 +730,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         }
         entities
     };
+    let native = native_dispositions(ir, &written_surfaces);
     append_color_definitions(&mut entities, &mut body_presentations)?;
     ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
@@ -2068,6 +2092,7 @@ fn brep_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
     body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    written_surfaces: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, Unwritten> {
     let index = topology.index;
@@ -2114,6 +2139,7 @@ fn brep_entities(
             append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)
                 .map_err(naming(surface.id.as_str()))?
         {
+            written_surfaces.insert(surface.id.as_str().to_owned());
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -3049,6 +3075,7 @@ fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
     body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    written_surfaces: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, Unwritten> {
     let index = topology.index;
@@ -3077,6 +3104,7 @@ fn topology_entities(
             append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)
                 .map_err(naming(surface.id.as_str()))?
         {
+            written_surfaces.insert(surface.id.as_str().to_owned());
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -5540,35 +5568,96 @@ fn represented_name_properties(
     Some(product_sources)
 }
 
-/// The entities an analytic pointer surface (Types 190 to 198) names as its
-/// axis and reference direction, read from its Parameter Data: the decoder
-/// records no reference edge for these pointers.
-fn analytic_surface_directions(record: &cadmpeg_ir::native::NativeRecord) -> Vec<String> {
+/// The entities an analytic pointer surface (Types 190 to 198) names, read
+/// from its Parameter Data: the decoder records no reference edge for these
+/// pointers. Each is an entity id, `None` where the pointer is not a positive
+/// integer.
+struct AnalyticPointers {
+    location: Option<String>,
+    directions: Vec<String>,
+}
+
+fn analytic_surface_pointers(
+    record: &cadmpeg_ir::native::NativeRecord,
+) -> Option<AnalyticPointers> {
     // The parameter index of each Type 123 pointer, after the entity type.
-    let pointers: &[usize] = match record.field("entity_type").and_then(|value| value.as_i64()) {
+    let directions: &[usize] = match record.field("entity_type").and_then(|value| value.as_i64()) {
         Some(190) => &[2, 3],
         Some(192) => &[2, 4],
         Some(194 | 198) => &[2, 5],
         Some(196) => &[3, 4],
-        _ => return Vec::new(),
+        _ => return None,
     };
-    let Some(parameters) = record
+    let parameters = record
         .field("parameters")
         .and_then(|value| value.as_array().cloned())
-    else {
-        return Vec::new();
+        .unwrap_or_default();
+    let pointer = |index: usize| {
+        let value = parameters.get(index)?.get("value")?;
+        (value.get("kind")?.as_str()? == "integer")
+            .then(|| value.get("value")?.as_u64())
+            .flatten()
+            .filter(|sequence| *sequence > 0)
+            .map(directory_entity_id)
     };
-    pointers
-        .iter()
-        .filter_map(|index| {
-            let value = parameters.get(*index)?.get("value")?;
-            (value.get("kind")?.as_str()? == "integer")
-                .then(|| value.get("value")?.as_u64())
-                .flatten()
-                .filter(|sequence| *sequence > 0)
-                .map(|sequence| format!("iges:entity:directory#{sequence}"))
-        })
+    Some(AnalyticPointers {
+        location: pointer(1),
+        directions: directions
+            .iter()
+            .filter_map(|index| pointer(*index))
+            .collect(),
+    })
+}
+
+fn directory_entity_id(sequence: u64) -> String {
+    format!("iges:entity:directory#{sequence}")
+}
+
+/// The Type 124 entities `record` names: its Directory transformation
+/// pointer and each resolved reference.
+fn transformations_named(
+    record: &cadmpeg_ir::native::NativeRecord,
+    transformations: &BTreeMap<String, &cadmpeg_ir::native::NativeRecord>,
+) -> Vec<String> {
+    let pointer = record
+        .field("transform")
+        .and_then(|value| value.as_u64())
+        .filter(|sequence| *sequence > 0)
+        .map(directory_entity_id);
+    let references = record
+        .field("references")
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|reference| reference.get("target")?.as_str().map(str::to_owned));
+    pointer
+        .into_iter()
+        .chain(references)
+        .filter(|id| transformations.contains_key(id))
         .collect()
+}
+
+/// Records `id` as dropped for `reason`, unless an earlier reason holds it.
+fn drop_entity(drops: &mut BTreeMap<String, &'static str>, id: &str, reason: &'static str) {
+    drops.entry(id.to_owned()).or_insert(reason);
+}
+
+/// Whether an entity's Directory subordinate switch is 01, physically
+/// dependent.
+fn physically_dependent(record: &cadmpeg_ir::native::NativeRecord) -> bool {
+    record
+        .field("subordinate_status")
+        .and_then(|value| value.as_i64())
+        == Some(1)
+}
+
+/// Whether a Type 106 record is a point form (Forms 1 to 3), whose tuples
+/// project to neutral points.
+fn is_point_copious_data(record: &cadmpeg_ir::native::NativeRecord) -> bool {
+    matches!(
+        record.field("form").and_then(|value| value.as_i64()),
+        Some(1..=3)
+    )
 }
 
 fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
@@ -5598,7 +5687,7 @@ fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
 /// What the semantic writer does with each native arena and record (§3.4,
 /// Rule W3). An arena this declares nothing for is dropped, and the export
 /// wrapper charges every dropped record.
-fn native_dispositions(ir: &CadIr) -> NativeDispositions {
+fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> NativeDispositions {
     let mut native = NativeDispositions::dropped("which the semantic writer does not encode");
     let Some(namespace) = ir.native.namespace("iges") else {
         return native;
@@ -5631,204 +5720,237 @@ fn native_dispositions(ir: &CadIr) -> NativeDispositions {
             }
         }
     }
-    let unencoded_entities = namespace
+    let native_entities = namespace
         .arenas()
         .get("entities")
-        .into_iter()
-        .flatten()
-        .filter(|record| {
-            let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
-            let name_property_represented = represented_name_properties
-                .as_ref()
-                .is_some_and(|properties| properties.contains(record.id()));
-            (entity_type == Some(406)
-                && !name_property_represented
-                && !omitted_property_sources.contains(record.id()))
-                || !matches!(
-                    entity_type,
-                    Some(
-                        100 | 102
-                            | 104
-                            | 106
-                            | 108
-                            | 110
-                            | 112
-                            | 114
-                            | 116
-                            | 118
-                            | 120
-                            | 122
-                            | 123
-                            | 124
-                            | 126
-                            | 128
-                            | 130
-                            | 141
-                            | 142
-                            | 143
-                            | 144
-                            | 140
-                            | 190
-                            | 192
-                            | 194
-                            | 196
-                            | 198
-                            | 186
-                            | 406
-                            | 502
-                            | 504
-                            | 508
-                            | 510
-                            | 514,
-                    )
-                )
-        })
-        .map(|record| record.id().to_owned());
-    native.drop_records(
-        "iges",
-        "whose entity the semantic writer does not encode",
-        unencoded_entities,
-    );
-    let native_entities = namespace.arenas().get("entities").into_iter().flatten();
-    let mut without_geometry = Vec::new();
-    let mut without_sequence = Vec::new();
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let entity_type = |record: &cadmpeg_ir::native::NativeRecord| {
+        record.field("entity_type").and_then(|value| value.as_i64())
+    };
     let directory_sequence = |record: &cadmpeg_ir::native::NativeRecord| {
         record
             .field("directory_sequence")
             .and_then(|value| value.as_i64())
             .and_then(|value| u32::try_from(value).ok())
     };
-    for record in native_entities.clone().filter(|record| {
-        let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
-        let form = record.field("form").and_then(|value| value.as_i64());
-        matches!(entity_type, Some(100 | 102 | 104 | 110 | 112 | 126 | 130))
-            || (entity_type == Some(106) && matches!(form, Some(1..=3 | 11..=13 | 63)))
-    }) {
+    let iges_object = |source: &Option<cadmpeg_ir::SourceObjectAssociation>| {
+        source
+            .as_ref()
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
+            .map(|source| source.object_id.as_str().to_owned())
+    };
+    let object_id = |sequence: u32| crate::entities::geometry::SourceObjectId::new(sequence).text();
+    // The neutral records projected from each entity, keyed by its source
+    // object id.
+    let curve_objects = ir
+        .geometry
+        .curves
+        .iter()
+        .filter_map(|curve| iges_object(&curve.source_object))
+        .collect::<BTreeSet<_>>();
+    let mut surface_objects = BTreeMap::<String, Vec<&str>>::new();
+    for surface in &ir.geometry.surfaces {
+        if let Some(object) = iges_object(&surface.source_object) {
+            surface_objects
+                .entry(object)
+                .or_default()
+                .push(surface.id.as_str());
+        }
+    }
+    let point_ids = ir
+        .geometry
+        .points
+        .iter()
+        .map(|point| point.id.as_str())
+        .collect::<BTreeSet<_>>();
+    // Each dropped entity with its reason; the first reason stated wins.
+    let mut drops = BTreeMap::<String, &'static str>::new();
+    for record in native_entities {
+        let name_property_represented = represented_name_properties
+            .as_ref()
+            .is_some_and(|properties| properties.contains(record.id()));
+        let unencoded = match entity_type(record) {
+            Some(406) => {
+                !name_property_represented && !omitted_property_sources.contains(record.id())
+            }
+            Some(
+                100 | 102 | 104 | 106 | 108 | 110 | 112 | 114 | 116 | 118 | 120 | 122 | 123 | 124
+                | 126 | 128 | 130 | 140 | 141 | 142 | 143 | 144 | 186 | 190 | 192 | 194 | 196 | 198
+                | 502 | 504 | 508 | 510 | 514,
+            ) => false,
+            _ => true,
+        };
+        if unencoded {
+            drop_entity(&mut drops, record.id(), UNENCODED_ENTITY);
+        }
+    }
+    // Curves, Type 106 included except its point forms: each is written from
+    // the neutral curve projected from it.
+    for record in native_entities
+        .iter()
+        .filter(|record| match entity_type(record) {
+            Some(100 | 102 | 104 | 110 | 112 | 126 | 130) => true,
+            Some(106) => !is_point_copious_data(record),
+            _ => false,
+        })
+    {
         if degenerate_native_line(record) {
-            native.drop_records(
-                "iges",
-                "that are lines with coincident endpoints, which the semantic writer omits",
-                [record.id()],
-            );
+            drop_entity(&mut drops, record.id(), DEGENERATE_LINE);
             continue;
         }
         let Some(sequence) = directory_sequence(record) else {
-            without_sequence.push(record.id().to_owned());
+            drop_entity(&mut drops, record.id(), WITHOUT_SEQUENCE);
             continue;
         };
-        let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
-        if !ir.geometry.curves.iter().any(|curve| {
-            curve.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::codec_id!("iges")
-                    && source.object_id.as_str() == object_id
-            })
-        }) {
-            without_geometry.push(record.id().to_owned());
+        if !curve_objects.contains(&object_id(sequence)) {
+            drop_entity(&mut drops, record.id(), WITHOUT_GEOMETRY);
         }
     }
-    for record in native_entities.clone().filter(|record| {
-        record.field("entity_type").and_then(|value| value.as_i64()) == Some(116)
-            && record
-                .field("subordinate_status")
-                .and_then(|value| value.as_i64())
-                != Some(1)
-    }) {
+    // Points: an independent Type 116 projects to one neutral point, and a
+    // Type 106 point form to one per tuple.
+    for record in native_entities
+        .iter()
+        .filter(|record| match entity_type(record) {
+            Some(116) => !physically_dependent(record),
+            Some(106) => is_point_copious_data(record),
+            _ => false,
+        })
+    {
         let Some(sequence) = directory_sequence(record) else {
-            without_sequence.push(record.id().to_owned());
+            drop_entity(&mut drops, record.id(), WITHOUT_SEQUENCE);
             continue;
         };
-        let point_id = format!("iges:model:point#D{sequence}");
-        if !ir
-            .geometry
-            .points
-            .iter()
-            .any(|point| point.id.as_str() == point_id)
-        {
-            without_geometry.push(record.id().to_owned());
+        let point = format!("iges:model:point#D{sequence}");
+        let projected = if entity_type(record) == Some(116) {
+            point_ids.contains(point.as_str())
+        } else {
+            // The tuples project to `{point}-1`, `{point}-2`, and on.
+            let tuple = format!("{point}-");
+            point_ids
+                .range(tuple.as_str()..)
+                .next()
+                .is_some_and(|id| id.starts_with(&tuple))
+        };
+        if !projected {
+            drop_entity(&mut drops, record.id(), WITHOUT_GEOMETRY);
         }
     }
-    // The Type 123 entities a written analytic surface references; the
-    // writer states each again from that surface's neutral axes.
-    let mut referenced_directions = BTreeSet::new();
-    for record in native_entities.clone().filter(|record| {
+    // Surfaces: one is written where the writer emitted the neutral surface
+    // projected from it. A written analytic surface states its location and
+    // directions again from that surface's neutral frame.
+    let mut written_pointers = BTreeSet::new();
+    let mut withheld_locations = BTreeSet::new();
+    for record in native_entities.iter().filter(|record| {
         matches!(
-            record.field("entity_type").and_then(|value| value.as_i64()),
+            entity_type(record),
             Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
         )
     }) {
         let Some(sequence) = directory_sequence(record) else {
-            without_sequence.push(record.id().to_owned());
+            drop_entity(&mut drops, record.id(), WITHOUT_SEQUENCE);
             continue;
         };
-        let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
-        if ir.geometry.surfaces.iter().any(|surface| {
-            surface.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::codec_id!("iges")
-                    && source.object_id.as_str() == object_id
-            })
-        }) {
-            referenced_directions.extend(analytic_surface_directions(record));
+        let neutral = surface_objects
+            .get(&object_id(sequence))
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let pointers = analytic_surface_pointers(record);
+        if neutral.is_empty() {
+            drop_entity(&mut drops, record.id(), WITHOUT_GEOMETRY);
+        } else if neutral
+            .iter()
+            .any(|surface| written_surfaces.contains(*surface))
+        {
+            if let Some(pointers) = pointers {
+                written_pointers.extend(pointers.location);
+                written_pointers.extend(pointers.directions);
+            }
         } else {
-            without_geometry.push(record.id().to_owned());
+            drop_entity(&mut drops, record.id(), WITHHELD_SURFACE);
+            withheld_locations.extend(pointers.and_then(|pointers| pointers.location));
         }
     }
-    // A direction no written analytic surface references is omitted in both
-    // of its native views: the `directions` record and its Type 123 entity.
-    let unreferenced_directions = namespace
-        .arenas()
-        .get("directions")
-        .into_iter()
-        .flatten()
-        .filter_map(|record| {
-            let source = record
-                .field("source_entity")
-                .and_then(|value| value.as_str().map(str::to_owned));
-            match source {
-                Some(source) if referenced_directions.contains(&source) => None,
-                source => Some((record.id().to_owned(), source)),
-            }
-        })
-        .collect::<Vec<_>>();
-    native.drop_records(
-        "iges",
-        UNREFERENCED_DIRECTION,
-        unreferenced_directions.iter().map(|(id, _)| id.as_str()),
-    );
-    native.drop_records(
-        "iges",
-        UNREFERENCED_DIRECTION,
-        unreferenced_directions
-            .iter()
-            .filter_map(|(_, source)| source.as_deref()),
-    );
+    for record in native_entities.iter().filter(|record| {
+        entity_type(record) == Some(123) && !written_pointers.contains(record.id())
+    }) {
+        drop_entity(&mut drops, record.id(), UNREFERENCED_DIRECTION);
+    }
+    // An independent point is written from its own neutral point; a
+    // physically dependent one only as a written surface's location.
+    for record in native_entities.iter().filter(|record| {
+        withheld_locations.contains(record.id())
+            && !written_pointers.contains(record.id())
+            && physically_dependent(record)
+    }) {
+        drop_entity(&mut drops, record.id(), WITHHELD_LOCATION);
+    }
     if !has_trimmed_sheet_topology(ir) {
         // With no neutral faces the writer emits no trimmed surface, B-rep
         // shell or solid, so every native topology record is left out.
-        native.drop_records(
-            "iges",
-            NATIVE_TOPOLOGY,
-            native_entities
-                .filter(|record| {
-                    matches!(
-                        record.field("entity_type").and_then(|value| value.as_i64()),
-                        Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
-                    )
-                })
-                .map(cadmpeg_ir::NativeRecord::id),
-        );
+        for record in native_entities.iter().filter(|record| {
+            matches!(
+                entity_type(record),
+                Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
+            )
+        }) {
+            drop_entity(&mut drops, record.id(), NATIVE_TOPOLOGY);
+        }
         native.drop_arena("iges", "manifold_solids", NATIVE_TOPOLOGY);
         native.drop_arena("iges", "boundary_vertex_sewing", NATIVE_TOPOLOGY);
     }
-    native.drop_records(
-        "iges",
-        "whose entity has no neutral geometry for the semantic writer to encode",
-        without_geometry,
-    );
-    native.drop_records(
-        "iges",
-        "whose record states no Directory sequence that ties it to a neutral geometry record",
-        without_sequence,
-    );
+    // A transformation is restated only as the placement of a written record
+    // (§3.3: it drops with the records that use it).
+    let transformations = native_entities
+        .iter()
+        .filter(|record| entity_type(record) == Some(124))
+        .map(|record| (record.id().to_owned(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut used = native_entities
+        .iter()
+        .filter(|record| entity_type(record) != Some(124) && !drops.contains_key(record.id()))
+        .flat_map(|record| transformations_named(record, &transformations))
+        .collect::<BTreeSet<_>>();
+    let mut pending = used.iter().cloned().collect::<Vec<_>>();
+    while let Some(id) = pending.pop() {
+        let Some(record) = transformations.get(&id) else {
+            continue;
+        };
+        for parent in transformations_named(record, &transformations) {
+            if used.insert(parent.clone()) {
+                pending.push(parent);
+            }
+        }
+    }
+    for id in transformations.keys().filter(|id| !used.contains(*id)) {
+        drop_entity(&mut drops, id, UNUSED_TRANSFORMATION);
+    }
+    // Each other view of a dropped entity drops with it: its direction,
+    // copious data or transformation record.
+    let mut mirrored = Vec::new();
+    for arena in ["directions", "copious_data", "transformations"] {
+        for record in namespace.arenas().get(arena).into_iter().flatten() {
+            let source = record.field("source_entity");
+            match source.as_ref().and_then(|value| value.as_str()) {
+                Some(source) => {
+                    if let Some(reason) = drops.get(source) {
+                        mirrored.push((record.id().to_owned(), *reason));
+                    }
+                }
+                None if arena == "directions" => {
+                    mirrored.push((record.id().to_owned(), UNREFERENCED_DIRECTION));
+                }
+                None => {}
+            }
+        }
+    }
+    let mut by_reason = BTreeMap::<&str, Vec<String>>::new();
+    for (id, reason) in drops.into_iter().chain(mirrored) {
+        by_reason.entry(reason).or_default().push(id);
+    }
+    for (reason, ids) in by_reason {
+        native.drop_records("iges", reason, ids);
+    }
     native
 }
 

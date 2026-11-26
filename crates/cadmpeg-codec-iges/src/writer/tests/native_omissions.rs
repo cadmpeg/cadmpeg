@@ -93,3 +93,96 @@ fn native_topology_without_neutral_faces_is_listed_by_id() {
         "{messages:#?}"
     );
 }
+
+/// The messages of `messages` about arena `arena`.
+fn of_arena<'a>(messages: &'a [String], arena: &str) -> Vec<&'a str> {
+    messages
+        .iter()
+        .filter(|message| message.contains(&format!("arena `{arena}`")))
+        .map(String::as_str)
+        .collect()
+}
+
+#[test]
+fn a_cylinder_on_no_face_is_listed_with_its_axis_and_location() {
+    let messages = omitted(&owned_test_file(&[
+        entity(116, "LOCATION", "00010000", "116,1,2,3,0;"),
+        entity(123, "AXIS", "00010000", "123,0,0,1;"),
+        entity(123, "REFDIR", "00010000", "123,1,0,0;"),
+        OwnedTestEntity {
+            form: 1,
+            ..entity(192, "CYLINDER", "00000000", "192,1,3,2,5;")
+        },
+    ]));
+    // The writer withholds a Type 192 on no face, so its location and both
+    // directions leave the file with it.
+    let directions = "that are directions no written analytic surface references, which the \
+                      semantic writer does not regenerate";
+    let location = "that are points that locate only analytic surfaces the semantic writer \
+                    withholds";
+    let surface = "whose neutral surface the semantic writer withholds";
+    assert_eq!(
+        of_arena(&messages, "directions"),
+        [format!(
+            "the IGES write omits 2 native record(s) of `iges` arena `directions` {directions}: \
+             iges:native:direction#D3, iges:native:direction#D5"
+        )]
+    );
+    assert_eq!(
+        of_arena(&messages, "entities"),
+        [format!(
+            "the IGES write omits 4 native record(s) of `iges` arena `entities`: \
+             iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5, \
+             iges:entity:directory#7; {directions}: iges:entity:directory#3, \
+             iges:entity:directory#5; {location}: iges:entity:directory#1; {surface}: \
+             iges:entity:directory#7"
+        )]
+    );
+}
+
+#[test]
+fn a_witness_line_is_listed_in_both_native_views() {
+    let messages = omitted(&owned_test_file(&[OwnedTestEntity {
+        form: 40,
+        ..entity(106, "COPIOUS", "00000100", "106,1,3,0,0,0,1,0,2,0;")
+    }]));
+    let reason = "whose entity has no neutral geometry for the semantic writer to encode";
+    assert_eq!(
+        of_arena(&messages, "copious_data"),
+        [format!(
+            "the IGES write omits 1 native record(s) of `iges` arena `copious_data` {reason}: \
+             iges:native:copious-data#D1"
+        )]
+    );
+    assert_eq!(
+        of_arena(&messages, "entities"),
+        [format!(
+            "the IGES write omits 1 native record(s) of `iges` arena `entities` {reason}: \
+             iges:entity:directory#1"
+        )]
+    );
+}
+
+#[test]
+fn a_transformation_no_written_record_uses_is_listed_in_both_native_views() {
+    let messages = omitted(&owned_test_file(&[
+        entity(124, "MOVE", "00000000", "124,1,0,0,10,0,1,0,0,0,0,1,0;"),
+        entity(116, "POINT", "00000000", "116,1,2,3,0;"),
+    ]));
+    let reason = "that are transformations no written record uses, which the semantic writer \
+                  does not regenerate";
+    assert_eq!(
+        of_arena(&messages, "transformations"),
+        [format!(
+            "the IGES write omits 1 native record(s) of `iges` arena `transformations` \
+             {reason}: iges:native:transformation#D1"
+        )]
+    );
+    assert_eq!(
+        of_arena(&messages, "entities"),
+        [format!(
+            "the IGES write omits 1 native record(s) of `iges` arena `entities` {reason}: \
+             iges:entity:directory#1"
+        )]
+    );
+}
