@@ -422,7 +422,7 @@ fn bind_combine_producers(
     let mut bound: [Option<CombineSideBinding>; 2] = [None, None];
     for ((name, side), slot) in sides.into_iter().zip(&mut bound) {
         let Some(side) = side else { continue };
-        match combine_side_binding(context, feature, scope, &side) {
+        match combine_side_binding(context, feature, scope, &side, (true, None)) {
             Ok(binding) => *slot = Some(binding),
             Err(reason) => losses.push(F3dLossCode::FeatureCombineBodyProducerUnresolved.note(
                 format!(
@@ -487,8 +487,11 @@ fn bind_combine_producers(
 }
 
 /// Bind a historical body-pattern seed or `Move` body selection of `slots`
-/// that names a live slot by the rule of [`combine_side_binding`]. A
-/// selection that the rule leaves unbound keeps its input-state bodies.
+/// that names a live slot to the features that last insert or update each
+/// slot up to the selection's input state, by the rule of
+/// [`combine_side_binding`] for a slot that the model bodies do not
+/// represent. A selection that the rule
+/// leaves unbound keeps its input-state bodies.
 fn bind_by_writer(
     context: &ReverseContext<'_>,
     feature: &mut cadmpeg_ir::features::Feature,
@@ -499,13 +502,30 @@ fn bind_by_writer(
     use cadmpeg_ir::features::patterns::PatternSeed;
     use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let input_state = match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => match seeds.as_slice() {
+            [PatternSeed::Bodies(BodySelection::Historical { state, .. })] => {
+                historical_state_number(state.as_str())
+            }
+            _ => None,
+        },
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            bodies: BodySelection::Historical { state, .. },
+            ..
+        }) => historical_state_number(state.as_str()),
+        _ => None,
+    };
+    let Some(input_state) = input_state else {
+        return;
+    };
+    let input_state = Some(input_state);
     let side = CombineSide {
         slots: slots.to_vec(),
         natives: vec![native.to_owned()],
         single_native: true,
     };
     let Ok((selection, producers, dependencies, assumed)) =
-        combine_side_binding(context, feature, Some(scope), &side)
+        combine_side_binding(context, feature, Some(scope), &side, (false, input_state))
     else {
         return;
     };
@@ -555,6 +575,7 @@ fn combine_side_binding(
     feature: &cadmpeg_ir::features::Feature,
     scope: Option<&crate::records::feature::scope::DesignParameterScope>,
     side: &CombineSide,
+    (model_bodies, input_state): (bool, Option<i64>),
 ) -> Result<CombineSideBinding, String> {
     use cadmpeg_ir::features::selections::{BodyMembers, BodySelection, GeneratedBodyRef};
     let inputs = context.inputs;
@@ -598,8 +619,20 @@ fn combine_side_binding(
         let (position, _) = positions.next()?;
         positions.next().is_none().then_some(position)
     });
+    let input_end = input_state.map(|input_state| {
+        let order = order.as_ref()?;
+        let mut positions = order.iter().enumerate().filter(|(_, index)| {
+            history.states().get(**index).map(|state| state.state_id) == Some(input_state)
+        });
+        let (position, _) = positions.next()?;
+        positions.next().is_none().then_some(position + 1)
+    });
     let last_writer = |slot: i64| -> Option<Producer> {
-        let (order, end) = (order.as_ref()?, result_position?);
+        let end = match input_end {
+            Some(end) => end?,
+            None => result_position?,
+        };
+        let order = order.as_ref()?;
         let state = order[..end]
             .iter()
             .rev()
@@ -630,7 +663,7 @@ fn combine_side_binding(
             side.natives.clone()
         }
     };
-    if unchanged == side.slots.len() {
+    if model_bodies && unchanged == side.slots.len() {
         let bodies = context
             .active
             .resolve(&side.slots, Some(source))
@@ -661,7 +694,7 @@ fn combine_side_binding(
         };
         return Ok((selection, Vec::new(), dependencies, Vec::new()));
     }
-    if unchanged != 0 {
+    if model_bodies && unchanged != 0 {
         return Err(format!(
             "BREP source {source} keeps some of the slots unchanged, and the model bodies do not represent the others"
         ));

@@ -194,23 +194,17 @@ fn a_move_of_a_body_that_a_later_transition_updates_names_its_last_writer() {
 }
 
 #[test]
-fn a_move_of_a_body_that_no_later_transition_changes_names_its_model_body() {
+fn a_move_of_a_body_that_no_later_transition_changes_names_its_last_writer() {
     let (moved, losses) = move_case(false);
-    let BodySelection::Resolved { bodies, native } = moved_bodies(&moved) else {
-        panic!("model bodies: {:?}", moved_bodies(&moved));
+    let BodySelection::Generated { bodies, .. } = moved_bodies(&moved) else {
+        panic!("generated bodies: {:?}", moved_bodies(&moved));
     };
     assert_eq!(
         bodies
             .iter()
-            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .map(|body| (body.feature.as_str(), body.local_id.as_str()))
             .collect::<Vec<_>>(),
-        [MODEL_BODY]
+        [(SECOND, "1")]
     );
-    assert_eq!(native.as_str(), MOVE_NATIVE);
-    assert!(moved
-        .dependencies
-        .as_slice()
-        .iter()
-        .any(|dependency| dependency.as_str() == FIRST));
     assert!(losses.is_empty(), "{losses:?}");
 }
