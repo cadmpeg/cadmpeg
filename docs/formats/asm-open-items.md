@@ -435,7 +435,7 @@ projection.
 
 **Question.** What native record layout does each recovered SAT source extent carry, and which stream owns each rebased reference?
 
-**Known.** `asm.md` §2.3 "Other pure ACIS and SpaceClaim SAB envelopes use" states that the byte layouts in §§5–6 cover the named ACIS bands. A SAT text-grammar section is still missing. The SAT decoder recovers independently headed concatenated streams with rebased entity tables, retains record extensions and legacy spline contexts natively, and withholds a later stream with an unreadable or different native layout. These behaviours carry the loss codes `SourceConcatenatedStreamsRecovered`, `SourceRecordExtensionsUnprojected`, and `SourceStreamLayoutUnprojected`. The SAT goldens are code-built streams with no source stream file, so they test that the decoder follows these rules on synthetic streams.
+**Known.** `asm.md` §2.3 "SpaceClaim SAB envelopes use" states that the byte layouts in §§5–6 cover the named ACIS bands. A SAT text-grammar section is still missing. The SAT decoder recovers independently headed concatenated streams with rebased entity tables, retains record extensions and legacy spline contexts natively, and withholds a later stream with an unreadable or different native layout. These behaviours carry the loss codes `SourceConcatenatedStreamsRecovered`, `SourceRecordExtensionsUnprojected`, and `SourceStreamLayoutUnprojected`. The SAT goldens are code-built streams with no source stream file, so they test that the decoder follows these rules on synthetic streams.
 
 **Need.** Native SAT specimens with concatenated streams, record extensions, legacy contexts, and divergent later-stream layouts must settle each recovered extent's grammar and reference ownership. Until then the recovered extents stay unprojected.
 
@@ -461,3 +461,29 @@ projection.
 
 **Note.** The schema-row map and the residual rule live in `crates/cadmpeg-parasolid/src/lib.rs:179-192`. This item tracks the layer without adding a facade or codec.
 
+
+## 8. Interned binary encoding
+
+### BE-01. Header extension of an interned ACIS binary stream
+
+**Question.** What do the boolean and the string of the header extension encode (`asm.md` §2.4 "An interned ACIS binary stream")?
+
+**Known.** The header extension stores the token `0x0A` and one `0x07` string of 77 bytes. The string holds uppercase ASCII letters, digits, and `_`. Two streams of one kernel record pair store the same string. The decoder reads the tokens and projects neither.
+
+**Need.** Save one model in two sessions and on two installations, and save a model with the extension boolean false if a save option selects it. Compare the boolean and the string.
+
+### BE-02. Extension integers of the interned entity prefix
+
+**Question.** What do the extension integer of the extended entity prefix and the `body` integer before the first lump encode (`asm.md` §2.4 "A record whose fields 1 and 2")?
+
+**Known.** The extension integer is `-1` in each topology and geometry record. The `body` integer is `0`. The decoder removes both integers before it reads the §5.2 fields, retains the kernel record, and charges `ironcad.body.extensions-retained`.
+
+**Need.** Save a body with a pattern, a body with several lumps, and a body after a boolean operation. Compare the extension integers and the `body` integer.
+
+### BE-03. Record tails of an interned ACIS binary stream
+
+**Question.** What do the record tails of `asm.md` §2.4 "In `body`, `lump`, `shell`" encode?
+
+**Known.** Each tail is a boolean and two positions; a `face` tail adds one boolean, and a `loop` tail adds one enumeration value. The boolean is `TRUE` in each `body`, `lump`, `shell`, `loop`, and `edge` tail. The two positions are the low and high corners of the axis-aligned box of the record's points in model units. A `face` tail stores `TRUE` for each planar face, the box of the face, and `FALSE`. The `loop` enumeration value is `0`. The decoder reads the tails and projects none.
+
+**Need.** Save a body with a curved face whose box is wider than its vertices, a face with two loops, and a stream after a move without a recompute. Compare the tail booleans, boxes, and enumeration values.

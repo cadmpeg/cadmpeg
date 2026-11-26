@@ -112,7 +112,19 @@ The `asmheader` row participates in RecordTable indexing; the first following en
 
 ### 2.3 Version/product gates
 
-Other pure ACIS and SpaceClaim SAB envelopes use separate version-gated record layouts and string interning. The byte layouts in §§5–6 apply to ASM streams and the ACIS 217/218 Inventor carrier envelope. Other ACIS save-format bands are not admitted by this grammar.
+SpaceClaim SAB envelopes use separate version-gated record layouts. The byte layouts in §§5–6 apply to ASM streams, the ACIS 217/218 Inventor carrier envelope, and the interned ACIS binary streams of §2.4.
+
+### 2.4 Interned ACIS binary streams
+
+An interned ACIS binary stream has the 31-byte ACIS prefix and the string region of §1. A header extension follows the three doubles: the token `0x0A` and one string, or the token `0x0B` alone. The first identifier token after the header extension defines name id 1; this identifies the interned form.
+
+Each `0x0D` and `0x0E` payload is the identifier text, the byte `%`, and a little-endian `u32` name id. The 1-byte length counts all three parts. Name ids start at 1 and increase by one in stream order. A token with non-empty text defines the next name id. A token with empty text repeats the text of the name id that it holds. Record names and payload identifiers share one name table. The `End-of-ACIS-data` identifier holds its text only.
+
+RecordTable index 0 is the first record after the header extension. The stream stores no `asmheader` record. The stream ends with the `End-of-ACIS-data` identifier, which no `0x11` follows.
+
+A record whose fields 1 and 2 are integers and whose field 3 is a reference has the extended entity prefix of §7.6: the attribute reference, the entity-id integer, the extension integer, and the pattern reference. The shared entity prefix of §§5–6 is this prefix without the extension integer. An attribute record stores the attribute reference, one integer, and its chain references; its field 2 is a reference. A `body` record stores one integer between the pattern reference and the first lump. The fields of §5.2 follow these integers. A `vertex` record stores no endpoint-index integer, and a `coedge` record stores no reserved integer (§7.4).
+
+In `body`, `lump`, `shell`, `face`, `loop`, and `edge` records, further fields follow the fields of §5.2. Each of these tails starts with a boolean and two positions.
 
 ---
 
