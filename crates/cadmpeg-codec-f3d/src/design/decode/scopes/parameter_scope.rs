@@ -1491,9 +1491,8 @@ fn scope_variant_json(
     let Ok(text) = cadmpeg_core::serde_erase::to_json_string(scope) else {
         return Ok(None);
     };
-    let bytes = text.into_bytes();
     let mut refusal = None;
-    let mut deserializer = serde_json::Deserializer::from_slice(&bytes);
+    let mut deserializer = serde_json::Deserializer::from_str(&text);
     let parsed = crate::design::json_value::ValueSeed {
         ctx,
         refusal: &mut refusal,

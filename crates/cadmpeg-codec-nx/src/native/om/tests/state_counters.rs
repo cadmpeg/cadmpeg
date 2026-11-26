@@ -6,6 +6,7 @@ use crate::native::om::state_status::OmOperationStateStatus;
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_message::{StateMessage, StateMessageSeverity};
 use crate::om::state_status::StateStatusPayload;
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -215,10 +216,7 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
         .arena_as::<FeatureOperationStateJournalUse>("feature_operation_state_journal_uses")
         .expect("operation-state journal use arena");
     assert_eq!(uses.len(), 1);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&uses[0]).unwrap()["state_ordinal"],
-        2
-    );
+    assert_eq!(json::to_value(&uses[0]).unwrap()["state_ordinal"], 2);
     assert_eq!(uses[0].journal_row_ordinal, 0);
 }
 
@@ -389,18 +387,13 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
 fn message_body_preserves_flat_tagged_value_wire() {
     let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":"a00000","count_or_severity":0}"#;
     let body: StateMessage<String> = serde_json::from_str(json).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&body).unwrap(),
-        json
-    );
+    assert_eq!(json::to_string(&body).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["value"] = 1.into();
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<StateMessage<String>>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("value")
-    );
+    assert!(json::from_value::<StateMessage<String>>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("value"));
 }
 
 #[test]
@@ -419,10 +412,7 @@ fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
             r#"{{"id":"group","opener":"0100","count_prefix":{prefix},"declared_count":{count},"rows":[],"source_offset":0}}"#
         );
         let group: OmRollForwardStateGroup = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&group).unwrap(), json);
     }
     let json = r#"{"id":"group","opener":"0100","count_prefix":1,"declared_count":2,"rows":[],"source_offset":0}"#;
     assert!(serde_json::from_str::<OmRollForwardStateGroup>(json)
@@ -435,34 +425,24 @@ fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
 fn roll_forward_group_derives_row_ordinals() {
     let json = r#"{"id":"group","opener":"0100","count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":"01","position":1,"raw_position":"01","source_offset":4}}],"source_offset":0}"#;
     let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
-        json
-    );
+    assert_eq!(json::to_string(&group).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["rows"][0]["List"]["ordinal"] = 1.into();
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<OmRollForwardStateGroup>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("rows.ordinal")
-    );
+    assert!(json::from_value::<OmRollForwardStateGroup>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("rows.ordinal"));
 }
 
 #[test]
 fn state_slot_lane_derives_ordinals_and_preserves_null_tokens() {
     let json = r#"{"id":"lane","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":null,"raw_object_index":"ff"},{"ordinal":1,"object_index":255,"raw_object_index":"9000ff"}],"source_entry":"om","source_offset":0,"end_offset":9}"#;
     let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
-        json
-    );
+    assert_eq!(json::to_string(&lane).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["slots"][1]["ordinal"] = 0.into();
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<OmOperationStateSlotLane>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("slots.ordinal")
-    );
+    assert!(json::from_value::<OmOperationStateSlotLane>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("slots.ordinal"));
 }

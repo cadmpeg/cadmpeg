@@ -5,6 +5,7 @@ use crate::geometry::procedural_curves::{DirectedParameterRange, SupportPcurve};
 use crate::scalar::FiniteReal;
 use crate::test_support::nurbs::pcurve;
 use crate::topology::ParameterInterval;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn numerical_audit_identity_map_keeps_a_small_finite_parameter() {
@@ -52,10 +53,7 @@ fn support_mapping_preserves_decreasing_parameter_direction() {
     assert_eq!(range.endpoints(), [5.0, 2.0]);
     assert_eq!(range.finite_endpoints().map(FiniteReal::get), [5.0, 2.0]);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<IntcurveSupportSide>(
-            cadmpeg_core::serde_erase::json::to_value(&side).unwrap()
-        )
-        .unwrap(),
+        json::from_value::<IntcurveSupportSide>(json::to_value(&side).unwrap()).unwrap(),
         side
     );
 }
@@ -164,14 +162,14 @@ fn a_support_context_holds_its_admitted_interval_and_discontinuities() {
         FiniteReal::raw_lanes(context.discontinuities()),
         [vec![2.5], vec![], vec![3.0, 4.0]]
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&context).unwrap();
+    let wire = json::to_value(&context).unwrap();
     assert_eq!(wire["parameter_range"], serde_json::json!([2.0, 5.0]));
     assert_eq!(
         wire["discontinuities"],
         serde_json::json!([[2.5], [], [3.0, 4.0]])
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<IntcurveSupportContext>(wire).unwrap(),
+        json::from_value::<IntcurveSupportContext>(wire).unwrap(),
         context
     );
 }

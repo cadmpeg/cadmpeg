@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
@@ -298,10 +299,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(reference.record_index, 77);
     assert_eq!(reference.trailing_zero_count, 6);
     assert_eq!(operation_offset, 36);
-    let serialized = cadmpeg_core::serde_erase::json::to_value(reference).unwrap();
+    let serialized = json::to_value(reference).unwrap();
     assert_eq!(serialized["trailing_zero_count"], 6);
     let decoded: crate::records::feature::extrude::DesignExtrudePrologueReference =
-        cadmpeg_core::serde_erase::json::from_value(serialized).unwrap();
+        json::from_value(serialized).unwrap();
     assert_eq!(decoded.trailing_zero_count, 6);
 
     let compact_reference = scope(

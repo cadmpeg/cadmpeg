@@ -9,12 +9,13 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup, face::DesignFaceOperand,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::FaceId;
 
 #[test]
 fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
     crate::test_support::with_decode_context(|decode_ctx| {
-        let mut operand: DesignFaceOperand = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let mut operand: DesignFaceOperand = json::from_value(serde_json::json!({
         "id": "f3d:test:face-operand#200",
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,
@@ -65,32 +66,31 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             reference(20, "selected-b", 201),
         ];
 
-        let mut group: DesignConstructionOperandGroup =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "id": "f3d:test:construction-group#150",
-                "scope_record_index": 100,
-                "scope_reference_ordinal": 0,
-                "record_index": 150,
-                "byte_offset": 0,
-                "class_tag": "346",
-                "role": 0x0000_0010_0000_0000_u64,
-                "members": [200],
-                "member_offsets": [0],
-                "frame": {
-                    "member_count_offset": 0,
-                    "opaque_index": 1,
-                    "opaque_index_offset": 18,
-                    "opaque_scalar": 0.0,
-                    "opaque_scalar_offset": 22,
-                    "variant": false
-                },
-                "role_offset": 0,
-                "paired_class_tag": "262",
-                "paired_byte_offset": 325,
-                "next_record_index": 151,
-                "next_byte_offset": 0
-            }))
-            .expect("legacy Draft face group");
+        let mut group: DesignConstructionOperandGroup = json::from_value(serde_json::json!({
+            "id": "f3d:test:construction-group#150",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 150,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "role": 0x0000_0010_0000_0000_u64,
+            "members": [200],
+            "member_offsets": [0],
+            "frame": {
+                "member_count_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 18,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22,
+                "variant": false
+            },
+            "role_offset": 0,
+            "paired_class_tag": "262",
+            "paired_byte_offset": 325,
+            "next_record_index": 151,
+            "next_byte_offset": 0
+        }))
+        .expect("legacy Draft face group");
 
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
@@ -102,28 +102,27 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         );
         group.operand_role =
             crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile;
-        let scope: DesignParameterScope =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "id": "f3d:test:scope#100",
-                "byte_offset": 0,
-                "class_tag": "304",
-                "record_index": 100,
-                "frame_length": 300,
-                "kind": "Extrude",
-                "kind_offset": 32,
-                "feature_ordinal": 1,
-                "feature_ordinal_offset": 228,
-                "history_state_id": 2,
-                "history_state_id_offset": 24,
-                "previous_history_state_id": 1,
-                "previous_history_state_id_offset": 258,
-                "reference_count_offset": 9,
-                "reference_members": [150],
-                "reference_member_offsets": [14],
-                "paired_class_tag": "258",
-                "paired_byte_offset": 300
-            }))
-            .expect("Extrude scope");
+        let scope: DesignParameterScope = json::from_value(serde_json::json!({
+            "id": "f3d:test:scope#100",
+            "byte_offset": 0,
+            "class_tag": "304",
+            "record_index": 100,
+            "frame_length": 300,
+            "kind": "Extrude",
+            "kind_offset": 32,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 228,
+            "history_state_id": 2,
+            "history_state_id_offset": 24,
+            "previous_history_state_id": 1,
+            "previous_history_state_id_offset": 258,
+            "reference_count_offset": 9,
+            "reference_members": [150],
+            "reference_member_offsets": [14],
+            "paired_class_tag": "258",
+            "paired_byte_offset": 300
+        }))
+        .expect("Extrude scope");
         assert_eq!(
             resolved_extrude_profile_face_group(
                 decode_ctx,

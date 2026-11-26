@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face operands, source groups and the face-recipe postlude.
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn face_source_group_borrowed_wire_matches_owned_wire_bytes() {
     let prefix = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303""#;
@@ -15,10 +17,7 @@ fn face_source_group_borrowed_wire_matches_owned_wire_bytes() {
         ))
         .unwrap();
         let owned = super::DesignFaceSourceGroupWire::from(group.clone());
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&group).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&group).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -65,10 +64,7 @@ fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
         );
         let group: super::DesignFaceSourceGroup =
             serde_json::from_str(&wire).expect("Face source rows");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&group).expect("Face source wire"),
-            wire
-        );
+        assert_eq!(json::to_string(&group).expect("Face source wire"), wire);
         let invalid = wire.replace(
             &format!("\"source_reference_offsets\":{offsets}"),
             "\"source_reference_offsets\":[25,36,47]",
@@ -91,18 +87,14 @@ fn face_source_span_rejects_empty_reversed_and_conflicting_lengths() {
     ] {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).expect("Face source wire");
         invalid[field] = value.into();
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignFaceSourceGroup>(invalid)
-                .expect_err("invalid carrier span")
-                .to_string();
+        let error = json::from_value::<super::DesignFaceSourceGroup>(invalid)
+            .expect_err("invalid carrier span")
+            .to_string();
         assert!(error.contains(field));
     }
     let group: super::DesignFaceSourceGroup =
         serde_json::from_str(wire).expect("positive carrier span");
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&group).expect("Face source wire"),
-        wire
-    );
+    assert_eq!(json::to_string(&group).expect("Face source wire"), wire);
 }
 
 #[test]
@@ -146,43 +138,30 @@ fn face_operand_wire_derives_node_offsets() {
                     .unwrap()
                     .remove("group_member_ordinal");
                 invalid[field] = serde_json::json!(5);
-                let error =
-                    cadmpeg_core::serde_erase::json::from_value::<super::DesignFaceOperand>(
-                        invalid,
-                    )
+                let error = json::from_value::<super::DesignFaceOperand>(invalid)
                     .unwrap_err()
                     .to_string();
                 assert!(error.contains("group_record_index"));
                 assert!(error.contains("group_member_ordinal"));
             }
-            let operand: super::DesignFaceOperand =
-                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(&operand).unwrap(),
-                wire
-            );
+            let operand: super::DesignFaceOperand = json::from_value(wire.clone()).unwrap();
+            assert_eq!(json::to_value(&operand).unwrap(), wire);
             let mut invalid = wire.clone();
             invalid["recipe_node_offsets"]
                 .as_array_mut()
                 .unwrap()
                 .push(serde_json::json!(999));
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::DesignFaceOperand>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("recipe_node_offsets")
-            );
+            assert!(json::from_value::<super::DesignFaceOperand>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("recipe_node_offsets"));
             if count != 0 {
                 let mut invalid = wire;
                 invalid["recipe_node_offsets"][0] = serde_json::json!(999);
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<super::DesignFaceOperand>(
-                        invalid
-                    )
+                assert!(json::from_value::<super::DesignFaceOperand>(invalid)
                     .unwrap_err()
                     .to_string()
-                    .contains("recipe_node_offsets")
-                );
+                    .contains("recipe_node_offsets"));
             }
         }
     }
@@ -207,7 +186,7 @@ fn face_operand_for_borrowed(grouped: bool) -> super::DesignFaceOperand {
         wire["group_record_index"] = serde_json::json!(5);
         wire["group_member_ordinal"] = serde_json::json!(0);
     }
-    cadmpeg_core::serde_erase::json::from_value(wire).unwrap()
+    json::from_value(wire).unwrap()
 }
 
 #[test]
@@ -216,16 +195,15 @@ fn face_operand_borrowed_wire_matches_owned_wire_bytes() {
         let operand = face_operand_for_borrowed(grouped);
         let owned = super::DesignFaceOperandWire::from(operand.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&operand).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+            json::to_vec(&operand).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
 
 #[test]
 fn registered_recipe_frame_borrowed_and_owned_wire_match() {
-    let mut wire =
-        cadmpeg_core::serde_erase::json::to_value(face_operand_for_borrowed(false)).unwrap();
+    let mut wire = json::to_value(face_operand_for_borrowed(false)).unwrap();
     wire["next_record_index"] = 5.into();
     wire["registered_recipe_frame"] = serde_json::json!({
         "record_index": 5,
@@ -234,16 +212,15 @@ fn registered_recipe_frame_borrowed_and_owned_wire_match() {
         "end_offset": 211,
         "next_primary_index": 6
     });
-    let operand: super::DesignFaceOperand =
-        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    let operand: super::DesignFaceOperand = json::from_value(wire).unwrap();
     let owned = super::DesignFaceOperandWire::from(operand.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&operand).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+        json::to_vec(&operand).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
-    let mut null = cadmpeg_core::serde_erase::json::to_value(&operand).unwrap();
+    let mut null = json::to_value(&operand).unwrap();
     null["registered_recipe_frame"] = serde_json::Value::Null;
-    assert!(cadmpeg_core::serde_erase::json::from_value::<super::DesignFaceOperand>(null).is_err());
+    assert!(json::from_value::<super::DesignFaceOperand>(null).is_err());
 }
 
 #[test]
@@ -265,19 +242,13 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
         let wire = format!(r#"{prefix},"postlude":[-1,{value},-1,0,0,-1]}}"#);
         let structure: super::DesignFaceRecipeStructure = serde_json::from_str(&wire).unwrap();
         assert_eq!(structure.postlude_value, Some(value));
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&structure).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_string(&structure).unwrap(), wire);
     }
     let omitted = format!("{prefix}}}");
     for wire in [omitted.clone(), format!(r#"{prefix},"postlude":[]}}"#)] {
         let structure: super::DesignFaceRecipeStructure = serde_json::from_str(&wire).unwrap();
         assert_eq!(structure.postlude_value, None);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&structure).unwrap(),
-            omitted
-        );
+        assert_eq!(json::to_string(&structure).unwrap(), omitted);
     }
     for postlude in [
         "[-1]",
@@ -299,7 +270,7 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
 fn face_recipe_ordinals_keep_zero_and_group_design_references() {
     let mut references = Vec::new();
     for (offset, design_reference) in [(100, 418), (100, 419), (125, 418), (150, 418), (175, 418)] {
-        references.push(cadmpeg_core::serde_erase::json::from_value::<crate::records::dimensions::DesignRecipeReference>(
+        references.push(json::from_value::<crate::records::dimensions::DesignRecipeReference>(
             serde_json::json!({"selector":1,"selector_offset":offset,"token":"2","token_offset":offset+8,"design_reference":design_reference,"design_reference_offset":offset+17}),
         ).unwrap());
     }
@@ -316,7 +287,7 @@ fn face_recipe_ordinals_keep_zero_and_group_design_references() {
         postlude_value: None,
     };
     assert!(structure.has_valid_operand_ordinals(&references));
-    let wire = cadmpeg_core::serde_erase::json::to_value(&structure).unwrap();
+    let wire = json::to_value(&structure).unwrap();
     assert_eq!(wire["sides"][0]["field_count"], 3);
     assert_eq!(wire["sides"][0]["scalars"], serde_json::json!([0, 0]));
     for pair in [[1, 0], [3, 0], [0, 1], [0, 2]] {
@@ -365,7 +336,7 @@ fn recipe_reference(
     selector_offset: u64,
     token_offset: u64,
 ) -> crate::records::dimensions::DesignRecipeReference {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "selector": 1, "selector_offset": selector_offset, "token": "2",
         "token_offset": token_offset, "design_reference": 418,
         "design_reference_offset": selector_offset + 17

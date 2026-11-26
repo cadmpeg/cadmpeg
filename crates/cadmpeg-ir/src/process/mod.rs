@@ -55,7 +55,10 @@ pub type ProcessDimension<T> = Dimension<T, ParamRef>;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>")
+    bound(
+        serialize = "T: Serialize",
+        deserialize = "T: ::serde::de::DeserializeOwned"
+    )
 )]
 pub struct Choice<T> {
     /// The variant the parameters map to.

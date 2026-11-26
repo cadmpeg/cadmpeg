@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn dimension_controls_preserve_sorted_serialization_and_replacement() {
     let mut entries = crate::presentation::DimensionControlEntries::default();
@@ -17,7 +19,7 @@ fn dimension_controls_preserve_sorted_serialization_and_replacement() {
         extra: None,
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&controls).expect("control serialization"),
+        json::to_string(&controls).expect("control serialization"),
         "{\"a\":2,\"z\":3}"
     );
 }

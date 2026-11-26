@@ -83,6 +83,7 @@ impl TryFrom<SupportUvWire> for ParasolidSupportUvRecord {
 #[cfg(test)]
 mod tests {
     use super::super::ParasolidSupportUvRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn support_tuples_preserve_wire_and_reject_invalid_count_or_packing() {
@@ -98,24 +99,16 @@ mod tests {
             for identity in [0, 1] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire["xmt"] = serde_json::json!(identity);
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<ParasolidSupportUvRecord>(wire)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("xmt")
-                );
+                assert!(json::from_value::<ParasolidSupportUvRecord>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("xmt"));
             }
             let record: ParasolidSupportUvRecord = serde_json::from_str(&json).unwrap();
+            assert_eq!(json::to_string(&record).unwrap(), json);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
-                json
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&super::SupportUvWire::from(
-                    record.clone()
-                ))
-                .unwrap()
+                json::to_vec(&record).unwrap(),
+                json::to_vec(&super::SupportUvWire::from(record.clone())).unwrap()
             );
             for (field, value) in [
                 ("count", serde_json::json!(1)),
@@ -124,12 +117,10 @@ mod tests {
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire[field] = value;
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<ParasolidSupportUvRecord>(wire)
-                        .unwrap_err()
-                        .to_string()
-                        .contains(field)
-                );
+                assert!(json::from_value::<ParasolidSupportUvRecord>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field));
             }
         }
     }

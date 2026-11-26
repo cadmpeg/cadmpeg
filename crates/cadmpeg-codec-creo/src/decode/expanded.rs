@@ -323,6 +323,7 @@ mod tests {
         feature_surface_replay_association_count, feature_surface_replay_associations,
         primitive_scalar_array_records,
     };
+    use cadmpeg_core::serde_erase::json;
 
     fn primitive_scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::test_support::empty_container_scan();
@@ -426,7 +427,7 @@ mod tests {
     fn native_surface_replay_row_records_visible_and_replay_surfaces() {
         let scan = replay_scan();
         let records = feature_surface_replay_associations(&scan).expect("replay associations");
-        let record = cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record JSON");
+        let record = json::to_value(&records[0]).expect("record JSON");
         assert_eq!(record["id"], "creo:allfeatur:surface_replay#4:0:0:7");
         assert_eq!(record["visible_surface_id"], 7);
         assert_eq!(record["replay_surface_id"], 9);
@@ -627,7 +628,7 @@ mod tests {
     fn native_double_xar_row_records_table() {
         let scan = primitive_scan();
         let records = double_xar_records(&scan);
-        let value = cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record JSON");
+        let value = json::to_value(&records[0]).expect("record JSON");
         assert_eq!(value["id"], "creo:Body:double_xar#0:0");
         assert_eq!(value["count"], 0);
     }
@@ -636,7 +637,7 @@ mod tests {
     fn native_scalar_array_row_records_values() {
         let scan = primitive_scan();
         let records = primitive_scalar_array_records(&scan);
-        let value = cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record JSON");
+        let value = json::to_value(&records[0]).expect("record JSON");
         assert_eq!(value["id"], "creo:solid_primdata:scalar_array#pts:0");
         assert_eq!(value["field"], "pts");
         assert_eq!(value["values"], serde_json::json!([2.5]));
@@ -646,7 +647,7 @@ mod tests {
     fn native_fc05_circle_row_records_circle() {
         let scan = primitive_scan();
         let records = fc05_circle_records(&scan);
-        let value = cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record JSON");
+        let value = json::to_value(&records[0]).expect("record JSON");
         assert_eq!(value["id"], "creo:curve:fc05_circle#20");
         assert_eq!(value["radius_mm"], 2.0);
         assert_eq!(value["point_count"], 8);
@@ -656,7 +657,7 @@ mod tests {
     fn native_fc05_cap_pair_row_records_caps() {
         let scan = primitive_scan();
         let records = fc05_cylinder_cap_pair_records(&scan);
-        let value = cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record JSON");
+        let value = json::to_value(&records[0]).expect("record JSON");
         assert_eq!(value["id"], "creo:surface:fc05_cylinder_cap_pair#10");
         assert_eq!(value["curve_ids"], serde_json::json!([20, 21]));
         assert_eq!(value["cap_plane_ids"], serde_json::json!([11, 12]));

@@ -167,6 +167,7 @@ impl TryFrom<FeaturePayloadNameWire> for FeaturePayloadName {
 #[cfg(test)]
 mod tests {
     use super::FeaturePayloadName;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn payload_names_reject_inconsistent_compact_type_codes() {
@@ -177,26 +178,17 @@ mod tests {
                 "type_code_payload_offset": 11, "payload_leading": false,
                 "value": "Point1", "payload_offset": 10, "source_offset": 100,
             });
-            let name: FeaturePayloadName =
-                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+            let name: FeaturePayloadName = json::from_value(wire.clone()).unwrap();
+            assert_eq!(json::to_value(&name).unwrap(), wire);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(&name).unwrap(),
-                wire
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&name).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&super::FeaturePayloadNameWire::from(
-                    name.clone()
-                ))
-                .unwrap()
+                json::to_vec(&name).unwrap(),
+                json::to_vec(&super::FeaturePayloadNameWire::from(name.clone())).unwrap()
             );
             for invalid_raw in [vec![], vec![255], vec![128], vec![0, 0], vec![127]] {
                 let mut invalid = wire.clone();
                 invalid["raw_type_code"] =
                     serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(invalid_raw));
-                let name =
-                    cadmpeg_core::serde_erase::json::from_value::<FeaturePayloadName>(invalid)
-                        .unwrap_err();
+                let name = json::from_value::<FeaturePayloadName>(invalid).unwrap_err();
                 assert!(name.to_string().contains("type_code/raw_type_code"));
             }
         }
@@ -209,16 +201,10 @@ mod tests {
             r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"type_code":131,"raw_type_code":"8083","type_code_payload_offset":11,"type_code_source_offset":20,"payload_leading":false,"value":"Point1","payload_offset":10,"source_offset":100}"#,
         ] {
             let name: FeaturePayloadName = serde_json::from_str(json).unwrap();
+            assert_eq!(json::to_string(&name).unwrap(), json);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&name).unwrap(),
-                json
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&name).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&super::FeaturePayloadNameWire::from(
-                    name.clone()
-                ))
-                .unwrap()
+                json::to_vec(&name).unwrap(),
+                json::to_vec(&super::FeaturePayloadNameWire::from(name.clone())).unwrap()
             );
             let wire: serde_json::Value = serde_json::from_str(json).unwrap();
             for (field, replacement) in [
@@ -228,10 +214,7 @@ mod tests {
             ] {
                 let mut invalid = wire.clone();
                 invalid[field] = replacement;
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<FeaturePayloadName>(invalid)
-                        .is_err()
-                );
+                assert!(json::from_value::<FeaturePayloadName>(invalid).is_err());
             }
         }
         let overflowing = serde_json::json!({
@@ -240,8 +223,7 @@ mod tests {
             "type_code_payload_offset": u64::MAX, "payload_leading": false,
             "value": "A", "payload_offset": u64::MAX - 1, "source_offset": 100,
         });
-        let name = cadmpeg_core::serde_erase::json::from_value::<FeaturePayloadName>(overflowing)
-            .unwrap_err();
+        let name = json::from_value::<FeaturePayloadName>(overflowing).unwrap_err();
         assert!(name.to_string().contains("payload_offset"));
     }
 
@@ -255,8 +237,7 @@ mod tests {
             "payload_leading": false, "value": "Point1",
             "payload_offset": 10, "source_offset": 100
         });
-        let name: FeaturePayloadName =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let name: FeaturePayloadName = json::from_value(wire.clone()).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(&name, wire);
     }
 }

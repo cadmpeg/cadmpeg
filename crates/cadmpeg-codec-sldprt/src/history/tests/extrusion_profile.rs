@@ -2,6 +2,7 @@
 //! Extrusion projection and adjacent-profile binding decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -207,11 +208,8 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             |configuration| configuration.feature_states.len() == decoded.ir().model.features.len()
         ));
     let round_trip: Vec<cadmpeg_ir::features::parameters::DesignConfiguration> =
-        serde_json::from_str(
-            &cadmpeg_core::serde_erase::json::to_string(&decoded.ir().model.configurations)
-                .unwrap(),
-        )
-        .unwrap();
+        serde_json::from_str(&json::to_string(&decoded.ir().model.configurations).unwrap())
+            .unwrap();
     assert_eq!(
         round_trip[0].feature_states.get(&feature_id),
         decoded.ir().model.configurations[0]

@@ -248,14 +248,16 @@ fn a_table_id_another_document_holds_is_written_unique_with_a_charge() {
     let renamed = DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
-        serde_json::from_slice(&plan.payload(0, &documents[0]).unwrap()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_slice(&plan.payload(0, &documents[0]).unwrap())
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(renamed.tables()[0].id, "1-1");
     let untouched = DesignConfiguration::try_new(
         SECOND.into(),
         DesignConfigurationKind::Table,
-        serde_json::from_slice(&plan.payload(1, &documents[1]).unwrap()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_slice(&plan.payload(1, &documents[1]).unwrap())
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(untouched.tables()[0].id, "1");
