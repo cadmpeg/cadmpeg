@@ -65,7 +65,12 @@ pub(super) fn project(
             Some(sketch) if owners.get(sketch) == Some(&feature.id) => {
                 FeatureOperation::Sketch(sketch.clone())
             }
-            _ => operation(feature)?,
+            _ => {
+                if sketches::is_sketch(feature) {
+                    losses.push(sketches::unheld(&feature.id));
+                }
+                operation(feature)?
+            }
         };
         features.push(Feature {
             id: feature.id.clone(),

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NX sketches (§6.1): each sketch a history feature of its own holds, with
-//! its entities.
+//! its entities. A sketch feature that holds no decoded sketch charges a
+//! loss naming it.
 //!
 //! An NX sketch entity is a native point record with no curve. The decoder
 //! reads no sketch support, so a sketch's plane states the stored frame where
@@ -35,6 +36,23 @@ pub(super) fn sketch_of(feature: &LegacyFeature) -> Option<&SketchId> {
         FeatureOperation::Sketch { sketch, .. } => sketch.id(),
         _ => None,
     }
+}
+
+/// Whether `feature` is a sketch feature of the history.
+pub(super) fn is_sketch(feature: &LegacyFeature) -> bool {
+    matches!(
+        feature.evaluation.definition().operation(),
+        FeatureOperation::Sketch { .. }
+    )
+}
+
+/// The loss of a sketch feature that holds no decoded sketch: its design
+/// feature states no sketch.
+pub(super) fn unheld(feature: &FeatureId) -> LossNote {
+    NxLossCode::SketchDesignUnprojected.note(format!(
+        "NX sketch feature {feature} holds no decoded sketch, so its design feature states no \
+         sketch."
+    ))
 }
 
 /// The history feature that owns each decoded sketch: the first feature, in

@@ -226,7 +226,7 @@ fn a_later_feature_naming_a_held_sketch_keeps_its_family() {
     let mut ir = CadIr::empty();
     ir.model.features = vec![owning("b", 1), owning("a", 0)];
     ir.model.sketches = vec![model_sketch(SketchPlacement::Unresolved {})];
-    project_ir(&mut ir);
+    let losses = project_ir(&mut ir);
     let operations = ir
         .design
         .features
@@ -252,6 +252,10 @@ fn a_later_feature_naming_a_held_sketch_keeps_its_family() {
         ir.design.sketches[0].owner.as_str(),
         "nx:feature-history:feature#a"
     );
+    assert_eq!(
+        unprojected(&losses),
+        ["NX sketch feature nx:feature-history:feature#b holds no decoded sketch, so its design feature states no sketch."]
+    );
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
@@ -268,6 +272,7 @@ fn a_record_with_no_design_record_charges_a_loss_naming_it() {
     assert_eq!(
         unprojected(&losses),
         [
+            "NX sketch feature nx:feature-history:feature#a holds no decoded sketch, so its design feature states no sketch.",
             "NX sketch nx:feature-history:sketch#1 has no design record and is not written.",
             "NX sketch entity nx:feature-history:sketch-entity#g0 has no design record and is not written.",
             "NX sketch constraint nx:feature-history:sketch-constraint#1 has no design record and is not written.",
