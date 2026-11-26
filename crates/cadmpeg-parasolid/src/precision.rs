@@ -88,11 +88,11 @@ pub fn unusable_resolution_message(body: &str, res_linear: Option<f64>) -> Strin
     match res_linear {
         Some(value) => format!(
             "body {body} stores res_linear {value:e} m, which states no linear precision; the \
-             part's linear tolerance comes from its other bodies"
+             part's linear tolerance excludes it"
         ),
         None => format!(
             "body {body} stores no res_linear value the decoder reads; the part's linear \
-             tolerance comes from its other bodies"
+             tolerance excludes it"
         ),
     }
 }

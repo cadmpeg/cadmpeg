@@ -2027,6 +2027,18 @@
           "code": {
             "kind": "namespaced",
             "value": {
+              "code": "body.resolution-unread",
+              "kind": "decode_diagnostic",
+              "namespace": "nx"
+            }
+          },
+          "message": "body nx:s0:body#2 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
               "code": "topology.face-boundary-unstated",
               "kind": "topology_not_transferred",
               "namespace": "nx"
