@@ -816,9 +816,10 @@ fn explicit_second_termination(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
 
     fn feature(second: Option<&str>) -> Feature {
-        let mut feature: Feature = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let mut feature: Feature = json::from_value(serde_json::json!({
             "id":"feature", "parent":"history", "ordinal":0,
             "name":"Extrude", "kind":"Extrude", "xml_tag":"Extrusion",
             "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm", "Draft":"1deg"},

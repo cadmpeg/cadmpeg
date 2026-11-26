@@ -68,6 +68,7 @@
 //!   compared values, so it cannot agree across platforms either. See
 //!   [`fidelity_snapshot`].
 
+use cadmpeg_core::serde_erase::json;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::compare::values_agree;
@@ -586,8 +587,7 @@ pub const NATIVE_ELISION_MARKER: &str =
 /// The fidelity does not serialize.
 #[must_use]
 pub fn fidelity_snapshot(fidelity: &cadmpeg_ir::SourceFidelity) -> serde_json::Value {
-    let mut value =
-        cadmpeg_core::serde_erase::json::to_value(fidelity).expect("serialize source_fidelity");
+    let mut value = json::to_value(fidelity).expect("serialize source_fidelity");
     if let Some(digest) = value.get_mut("content_digest") {
         *digest = ELIDED_DIGEST.into();
     }
@@ -625,6 +625,7 @@ pub fn snapshot_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::cell::Cell;
     use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};
@@ -744,9 +745,8 @@ mod tests {
             serde_json::Value::Null,
             serde_json::json!({"z": [1.25, true, null], "a": "é\n\""}),
         ] {
-            let expected = cadmpeg_core::serde_erase::json::to_string_pretty(&value)
-                .expect("pretty JSON for the fixture")
-                + "\n";
+            let expected =
+                json::to_string_pretty(&value).expect("pretty JSON for the fixture") + "\n";
             assert_eq!(snapshot_text(&value), expected);
         }
     }

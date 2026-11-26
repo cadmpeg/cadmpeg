@@ -35,7 +35,7 @@ impl Annotations {
     pub fn prepare_overlay(&self, changes: Annotations) -> PreparedAnnotationDelta {
         let mut transaction = self.sparse_transaction();
         for id in changes.provenance.keys().chain(changes.exactness.keys()) {
-            transaction.selected.insert(id.to_owned());
+            transaction.selected.insert(id.as_str().to_owned());
         }
         transaction.changes = changes;
         transaction.prepare()
@@ -126,26 +126,26 @@ impl PreparedAnnotationDelta {
     /// the base is permitted; intervening annotation edits are not.
     pub fn apply(mut self, annotations: &mut Annotations) {
         for id in self.selected {
-            if let Some((key, value)) = self.changes.provenance.remove_entry(&id) {
+            if let Some((key, value)) = self.changes.provenance.remove_entry(id.as_str()) {
                 annotations.provenance.insert(key, value);
             } else {
-                annotations.provenance.remove(&id);
+                annotations.provenance.remove(id.as_str());
             }
-            if let Some((key, value)) = self.changes.exactness.remove_entry(&id) {
+            if let Some((key, value)) = self.changes.exactness.remove_entry(id.as_str()) {
                 annotations.exactness.insert(key, value);
             } else {
-                annotations.exactness.remove(&id);
+                annotations.exactness.remove(id.as_str());
             }
         }
     }
 }
 
 fn copy_identity(base: &Annotations, changes: &mut Annotations, id: &str) {
-    if let Some(source) = base.provenance.get(id) {
-        changes.provenance.insert(id.to_owned(), source.clone());
+    if let Some((key, source)) = base.provenance.get_key_value(id) {
+        changes.provenance.insert(key.clone(), source.clone());
     }
-    if let Some(note) = base.exactness.get(id) {
-        changes.exactness.insert(id.to_owned(), note.clone());
+    if let Some((key, note)) = base.exactness.get_key_value(id) {
+        changes.exactness.insert(key.clone(), note.clone());
     }
 }
 

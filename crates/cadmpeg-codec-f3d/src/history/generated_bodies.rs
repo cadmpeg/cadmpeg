@@ -636,7 +636,7 @@ fn combine_side_binding(
 
 /// The body slots that a transition after the result state of `scope`
 /// updates or deletes in `history`.
-fn later_body_changes(
+pub(super) fn later_body_changes(
     history: &AsmHistory,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Option<HashSet<i64>> {
@@ -789,6 +789,7 @@ fn live_seed_binding(
             || changes_existing_rows(&rows.vertex_points, &delta.vertices.inserted)
             || changes_existing_rows(&rows.point_positions, &delta.points.inserted)
             || changes_existing_rows(&rows.edge_samples, &delta.edges.inserted)
+            || changes_existing_rows(&rows.face_samples, &delta.faces.inserted)
         {
             return None;
         }

@@ -159,6 +159,7 @@ pub(crate) fn project<'a>(
         ctx.charge_entities(3, "project Inventor oriented chamfer")?;
         states.push(FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
             id: state,
             input_of: feature.id.clone(),
             bodies: DistinctMembers::default(),

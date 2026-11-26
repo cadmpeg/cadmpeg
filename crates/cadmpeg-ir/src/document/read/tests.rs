@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use serde_json::{json, Value};
 
 use super::{CadirRead, ReadFailure, ReadOptions};
@@ -12,7 +13,7 @@ use crate::CadIr;
 
 fn wire() -> (CadIr, Value) {
     let ir = unit_cube().unwrap();
-    let value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    let value = json::to_value(&ir).unwrap();
     (ir, value)
 }
 
@@ -52,15 +53,9 @@ fn a_scope_that_breaks_its_rules_is_read_as_written() {
         value["scope"] = scope.clone();
         let read = read(value.to_string().as_bytes());
         assert!(read.report.is_empty(), "{:?}", read.report);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(read.document.scope()).unwrap(),
-            scope
-        );
+        assert_eq!(json::to_value(read.document.scope()).unwrap(), scope);
         assert!(!read.document.scope_violations().is_empty());
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&read.document).unwrap()["scope"],
-            scope
-        );
+        assert_eq!(json::to_value(&read.document).unwrap()["scope"], scope);
     }
 }
 
@@ -146,7 +141,7 @@ fn a_member_spelled_in_another_case_is_read_and_an_unknown_member_is_left_out() 
 fn an_invalid_utf8_sequence_in_a_string_is_replaced() {
     let mut ir = unit_cube().unwrap();
     ir.geometry.points[0].native_ref = Some("ab".into());
-    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
+    let text = json::to_string(&ir).unwrap();
     let marker = "\"native_ref\":\"ab\"";
     assert_eq!(text.matches(marker).count(), 1);
     let bytes = text
@@ -170,14 +165,17 @@ fn a_record_its_type_refuses_is_given_up_and_the_rest_is_read() {
     let read = read(value.to_string().as_bytes());
     assert_eq!(read.document.geometry.points[..], ir.geometry.points[1..]);
     assert_eq!(codes(&read.report), ["decode/record.unreadable"]);
+    let reason = &read.report[0].message;
+    assert!(reason.contains("invalid type"), "{reason}");
+    assert!(!reason.contains(" at line "), "{reason}");
     assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 1);
 }
 
 #[test]
 fn text_that_stops_being_json_keeps_every_record_read_before_it() {
     let ir = unit_cube().unwrap();
-    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
-    let second = cadmpeg_core::serde_erase::json::to_string(&ir.geometry.points[1]).unwrap();
+    let text = json::to_string(&ir).unwrap();
+    let second = json::to_string(&ir.geometry.points[1]).unwrap();
     let cut = text.find(&second).unwrap() + second.len() / 2;
     let read = read(&text.as_bytes()[..cut]);
     assert_eq!(read.document.geometry.points[..], ir.geometry.points[..1]);
@@ -213,11 +211,7 @@ fn a_given_up_part_retains_the_canonical_json_of_its_text() {
     let (_, mut value) = wire();
     points(&mut value)[0]["position"] = json!("not a point");
     let record = points(&mut value)[0].clone();
-    let read = read(
-        cadmpeg_core::serde_erase::json::to_string_pretty(&value)
-            .unwrap()
-            .as_bytes(),
-    );
+    let read = read(json::to_string_pretty(&value).unwrap().as_bytes());
     let stubs = read.document.native_unknowns("cadir").unwrap();
     let [stub] = stubs.as_slice() else {
         panic!("one stub: {stubs:?}");
@@ -236,6 +230,44 @@ fn listed<'m>(message: &'m str, field: &str) -> Vec<&'m str> {
         .and_then(|tail| tail.split(']').next())
         .map(|list| list.split(", ").filter(|id| !id.is_empty()).collect())
         .unwrap_or_default()
+}
+
+/// The annotations of a sidecar read with the document leave with each
+/// record the read gives up and each record it drops with one; a record
+/// the read keeps keeps its annotations (§3.3).
+#[test]
+fn a_given_up_record_takes_the_annotations_of_its_sidecar() {
+    let (ir, mut value) = wire();
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    let [entry] = read.report.as_slice() else {
+        panic!("one entry: {:?}", read.report);
+    };
+    let dropped = listed(&entry.message, "dropped");
+    let marked = listed(&entry.message, "marked");
+    assert!(dropped.contains(&point.as_str()), "{}", entry.message);
+    let [kept, ..] = marked.as_slice() else {
+        panic!("a marked record: {}", entry.message);
+    };
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for id in dropped.iter().chain([kept]) {
+        annotations.note(id, &stream, 0, None);
+    }
+    let mut fidelity =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
+    fidelity.annotations = annotations.build();
+
+    read.remove_given_up_annotations(&mut fidelity);
+
+    let keys: Vec<&str> = fidelity
+        .annotations
+        .provenance
+        .keys()
+        .map(crate::annotations::AnnotationKey::as_str)
+        .collect();
+    assert_eq!(keys, [*kept]);
 }
 
 /// Each record that needs a given-up record is dropped, transitively, until
@@ -286,7 +318,7 @@ fn a_record_that_needs_a_given_up_record_is_dropped_and_named() {
             .unwrap_or_else(|| panic!("{id} is a record of the document"))
             .to_string()
     };
-    let text = cadmpeg_core::serde_erase::json::to_string(&read.document).unwrap();
+    let text = json::to_string(&read.document).unwrap();
     for id in &dropped {
         assert!(!names(&text, id), "the document still names {id}");
     }
@@ -297,7 +329,7 @@ fn a_record_that_needs_a_given_up_record_is_dropped_and_named() {
         "the drop reaches a record that does not name {point}: {}",
         entry.message
     );
-    let after = records(&cadmpeg_core::serde_erase::json::to_value(&read.document).unwrap());
+    let after = records(&json::to_value(&read.document).unwrap());
     for id in &marked {
         let held = record(id);
         assert!(dropped.iter().any(|gone| names(&held, gone)), "{id}");
@@ -328,7 +360,7 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
             cadmpeg_core::nonblank_literal!("annotations"),
             vec![annotation],
         );
-    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    let mut value = json::to_value(&ir).unwrap();
     points(&mut value)[0]["position"] = json!("not a point");
     let read = read(value.to_string().as_bytes());
     let entry = read
@@ -344,7 +376,7 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
         "{}",
         entry.message
     );
-    let native = cadmpeg_core::serde_erase::json::to_string(&read.document.native).unwrap();
+    let native = json::to_string(&read.document.native).unwrap();
     assert!(!native.contains(&format!("\"{point}\"")), "{native}");
 }
 
@@ -364,11 +396,7 @@ fn a_record_given_up_for_its_depth_drops_each_record_that_needs_it() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| {
-            cadmpeg_core::serde_erase::json::to_string(vertex)
-                .unwrap()
-                .contains(&point)
-        })
+        .find(|vertex| json::to_string(vertex).unwrap().contains(&point))
         .unwrap()
         .id
         .as_str();
@@ -395,8 +423,8 @@ fn a_record_given_up_for_its_depth_drops_each_record_that_needs_it() {
 #[test]
 fn a_record_that_states_a_member_twice_retains_both_values() {
     let ir = unit_cube().unwrap();
-    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
-    let point = cadmpeg_core::serde_erase::json::to_string(&ir.geometry.points[0]).unwrap();
+    let text = json::to_string(&ir).unwrap();
+    let point = json::to_string(&ir.geometry.points[0]).unwrap();
     assert_eq!(text.matches(&point).count(), 1);
     let restated = format!("{},\"position\":[9.5,8.5,7.5]}}", &point[..point.len() - 1]);
     let read = read(text.replacen(&point, &restated, 1).as_bytes());
@@ -423,10 +451,8 @@ fn a_record_that_states_a_member_twice_retains_both_values() {
 fn a_record_past_the_expression_bound_is_given_up() {
     use crate::design::parameter::{DesignParameter, ParameterDefinition};
 
-    let shallow: crate::design::expr::Neutral = cadmpeg_core::serde_erase::json::from_value(
-        json!({"text": "1", "refs": [], "measures": []}),
-    )
-    .unwrap();
+    let shallow: crate::design::expr::Neutral =
+        json::from_value(json!({"text": "1", "refs": [], "measures": []})).unwrap();
     let parameter = |id: &str| DesignParameter {
         id: crate::features::ParameterId::mint(id).unwrap(),
         scope: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
@@ -452,7 +478,7 @@ fn a_record_past_the_expression_bound_is_given_up() {
         parameter("synthetic:test:parameter#a-deep"),
         parameter("synthetic:test:parameter#b-shallow"),
     ]);
-    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    let mut value = json::to_value(&ir).unwrap();
     let mut deep = "1".to_owned();
     for _ in 0..=crate::bounds::MAX_EXPRESSION_DEPTH / 6 {
         deep = format!("sin(true or true and true == 1 + 1 * {deep})");
@@ -478,8 +504,8 @@ fn a_record_past_the_expression_bound_is_given_up() {
 /// The text of `ir` with the last character of the id of point 0, in that
 /// point's record, made an invalid UTF-8 byte.
 fn point_id_corrupted(ir: &CadIr) -> Vec<u8> {
-    let text = cadmpeg_core::serde_erase::json::to_string(ir).unwrap();
-    let point = cadmpeg_core::serde_erase::json::to_string(&ir.geometry.points[0]).unwrap();
+    let text = json::to_string(ir).unwrap();
+    let point = json::to_string(&ir.geometry.points[0]).unwrap();
     assert_eq!(text.matches(&point).count(), 1);
     let id = ir.geometry.points[0].id.as_str();
     let stated = format!("\"id\":\"{id}\"");
@@ -501,6 +527,28 @@ fn an_id_with_an_invalid_utf8_sequence_is_given_up_and_the_rest_is_read() {
     assert_eq!(codes(&read.report), ["decode/record.unreadable"]);
     assert!(read.report[0].message.contains("geometry.points[0]"));
     assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 1);
+}
+
+#[test]
+fn an_id_whose_format_is_no_codec_id_is_given_up_and_the_rest_is_read() {
+    for format in ["Step", "st-ep", "st\u{e9}p"] {
+        let (ir, mut value) = wire();
+        let id = ir.geometry.points[0].id.as_str();
+        let (_, rest) = id.split_once(':').unwrap();
+        points(&mut value)[0]["id"] = json!(format!("{format}:{rest}"));
+        let read = read(value.to_string().as_bytes());
+        assert_eq!(
+            read.document.geometry.points[..],
+            ir.geometry.points[1..],
+            "{format}"
+        );
+        assert_eq!(
+            codes(&read.report),
+            ["decode/record.unreadable"],
+            "{format}"
+        );
+        assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 1);
+    }
 }
 
 #[test]
@@ -562,8 +610,8 @@ fn a_member_in_another_case_beside_its_exact_name_is_one_member_stated_twice() {
 fn a_key_restated_with_different_values_in_a_kept_record_is_given_up_as_parts() {
     let mut ir = unit_cube().unwrap();
     ir.geometry.points[0].native_ref = None;
-    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
-    let point = cadmpeg_core::serde_erase::json::to_string(&ir.geometry.points[0]).unwrap();
+    let text = json::to_string(&ir).unwrap();
+    let point = json::to_string(&ir.geometry.points[0]).unwrap();
     assert_eq!(text.matches(&point).count(), 1);
     let restated = format!(
         "{},\"native_ref\":\"a\",\"native_ref\":\"b\"}}",

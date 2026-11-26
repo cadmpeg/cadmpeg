@@ -203,7 +203,7 @@ fn write_without_source(
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let mut written = Vec::new();
     let report = crate::SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .unwrap()
         .write_to(&mut written)
         .unwrap();
@@ -621,7 +621,7 @@ fn a_part_written_with_its_partition_charges_no_producer_note() {
     let report = crate::SldprtCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut written)

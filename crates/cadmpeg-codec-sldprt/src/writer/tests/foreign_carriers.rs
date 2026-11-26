@@ -28,7 +28,7 @@ fn cube() -> cadmpeg_ir::CadIr {
 
 pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .losses
@@ -481,6 +481,7 @@ pub(super) fn push_foreign_feature(
             vertices: DistinctMembers::default(),
             edge_geometry: Vec::new(),
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
             native_ref: None,
         });
     let ordinal = u64::try_from(ir.model.features.len()).unwrap();

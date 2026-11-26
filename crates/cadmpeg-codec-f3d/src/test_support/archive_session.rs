@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode entry point with archive-session equivalence checks.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, SeekFrom};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext};
@@ -14,12 +15,12 @@ pub(crate) fn assert_equal(
     match (left, right) {
         (Ok(left), Ok(right)) => {
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(left.ir()).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(right.ir()).unwrap()
+                json::to_vec(left.ir()).unwrap(),
+                json::to_vec(right.ir()).unwrap()
             );
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(left.report()).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(right.report()).unwrap()
+                json::to_vec(left.report()).unwrap(),
+                json::to_vec(right.report()).unwrap()
             );
             assert!(left == right, "decode result or source fidelity differs");
         }
@@ -31,8 +32,8 @@ pub(crate) fn assert_equal(
                     DecodeFailure::StrictRejected { rejection: right },
                 ) => {
                     assert_eq!(
-                        cadmpeg_core::serde_erase::json::to_vec(left.report()).unwrap(),
-                        cadmpeg_core::serde_erase::json::to_vec(right.report()).unwrap()
+                        json::to_vec(left.report()).unwrap(),
+                        json::to_vec(right.report()).unwrap()
                     );
                 }
                 (

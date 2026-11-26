@@ -57,6 +57,7 @@ fn is_lowercase_hex(value: &str, digits: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::ToggleId;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::hash::digest::Sha256Digest;
 
     #[test]
@@ -102,12 +103,9 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let expected = "0123456789abcdef0123456789abcdef";
         let identity = ToggleId::try_from(expected.to_owned())?;
+        assert_eq!(json::to_value(&identity)?, serde_json::json!(expected));
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&identity)?,
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<ToggleId>(serde_json::json!(expected))?,
+            json::from_value::<ToggleId>(serde_json::json!(expected))?,
             identity
         );
         for invalid in [
@@ -118,10 +116,7 @@ mod tests {
             "é".repeat(16),
         ] {
             assert!(ToggleId::try_from(invalid.clone()).is_err());
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ToggleId>(serde_json::json!(invalid))
-                    .is_err()
-            );
+            assert!(json::from_value::<ToggleId>(serde_json::json!(invalid)).is_err());
         }
         Ok(())
     }

@@ -97,7 +97,7 @@ fn coincident_bodies_pair_by_multiplicity() {
     let cube = cube();
     let twice = merged(&cube, &renamed(&cube, "synthetic:cube:", "synthetic:twin:"));
     assert_eq!(twice.geometry.bodies.len(), 2);
-    let copy = renamed(&twice, "synthetic:", "synthetic-b:");
+    let copy = renamed(&twice, "synthetic:", "syntheticb:");
     let result = comparison(&twice, &copy);
     assert_eq!(result.verdict(), Verdict::Agree);
     assert_eq!(result.pairs().len(), 2);

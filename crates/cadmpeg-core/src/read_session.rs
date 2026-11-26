@@ -66,7 +66,7 @@ pub fn active() -> bool {
 
 /// Records a repair when a session is open and returns whether one is. A
 /// reader repairs only where this returns `true`, and refuses otherwise.
-pub fn repair(repair: Repair, what: impl FnOnce() -> String) -> bool {
+pub fn repair(repair: Repair, what: &dyn Fn() -> String) -> bool {
     SESSION.with(|session| match session.borrow_mut().as_mut() {
         Some(repairs) => {
             repairs.push(Repaired {
@@ -85,12 +85,12 @@ mod tests {
 
     #[test]
     fn repairs_are_recorded_only_inside_a_session_and_do_not_leak_outward() {
-        assert!(!repair(Repair::Spelling, || "outside".into()));
+        assert!(!repair(Repair::Spelling, &|| "outside".into()));
         let ((), outer) = run(|| {
             assert!(active());
-            assert!(repair(Repair::Spelling, || "outer".into()));
+            assert!(repair(Repair::Spelling, &|| "outer".into()));
             let ((), inner) = run(|| {
-                assert!(repair(Repair::Value, || "inner".into()));
+                assert!(repair(Repair::Value, &|| "inner".into()));
             });
             assert_eq!(inner.len(), 1);
             assert_eq!(inner[0].what, "inner");

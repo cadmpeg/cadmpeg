@@ -200,6 +200,14 @@ pub(crate) enum SldprtLossCode {
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
     SketchRelationMultiplyProjected,
+    /// A sketch dimension of a compound-file lane that no relation-class
+    /// declaration claims has an unknown relation class and forms no
+    /// relation instance (open item EV-05).
+    SketchDimensionClassUnknown,
+    /// A sketch dimension of a compound-file lane whose relation-class token
+    /// gives it the family and the two sketch points of a kept relation
+    /// forms no second relation instance (open item EV-05).
+    SketchDimensionRepeated,
     /// Feature retains its native kind without a complete neutral operation.
     FeatureNativeKindRetained,
     /// Native feature-input operation object does not bind uniquely to a feature.
@@ -617,6 +625,11 @@ pub(crate) enum SldprtLossCode {
     /// Typed revolves whose `Sketch` pick's closed regions the decoder did
     /// not compare with the stored profile loops.
     DesignRevolveProfileUnchecked,
+    /// Revolves whose solid depends on the turn sense, a partial turn on one
+    /// side or a two-sided turn, whose decoded axis turns about the axis
+    /// direction their record stores, reversed where their record's reverse
+    /// byte is `1`.
+    DesignRevolveSenseAssumed,
 }
 
 impl SldprtLossCode {
@@ -693,6 +706,8 @@ impl SldprtLossCode {
         Self::SketchListedCurveRelationDropped,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
+        Self::SketchDimensionClassUnknown,
+        Self::SketchDimensionRepeated,
         Self::FeatureNativeKindRetained,
         Self::FeatureInputObjectUnbound,
         Self::FeatureInputSolidBodyRetained,
@@ -847,6 +862,7 @@ impl SldprtLossCode {
         Self::DesignRevolveBooleanUnstated,
         Self::DesignRevolveProfileDiffers,
         Self::DesignRevolveProfileUnchecked,
+        Self::DesignRevolveSenseAssumed,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -921,6 +937,8 @@ impl SldprtLossCode {
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
+            Self::SketchDimensionClassUnknown => "sketch.dimension-class-unknown",
+            Self::SketchDimensionRepeated => "sketch.dimension-repeated",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureInputObjectUnbound => "feature.input-object-unbound",
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
@@ -1108,6 +1126,7 @@ impl SldprtLossCode {
             Self::DesignRevolveBooleanUnstated => "design.revolve-boolean-unstated",
             Self::DesignRevolveProfileDiffers => "design.revolve-profile-differs",
             Self::DesignRevolveProfileUnchecked => "design.revolve-profile-unchecked",
+            Self::DesignRevolveSenseAssumed => "design.revolve-sense-assumed",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
@@ -1228,6 +1247,7 @@ impl SldprtLossCode {
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
+            | Self::SketchDimensionClassUnknown
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputSolidBodyRetained
@@ -1326,7 +1346,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignSketchDimensionCircle
             | Self::DesignRevolveAxisDerived
-            | Self::DesignRevolveProfileDiffers => Severity::Warning,
+            | Self::DesignRevolveProfileDiffers
+            | Self::DesignRevolveSenseAssumed => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1335,6 +1356,7 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
             | Self::SketchSecondReading
+            | Self::SketchDimensionRepeated
             | Self::DesignExtrudeProfileUnchecked
             | Self::DesignRevolveAxisLineInferred
             | Self::DesignRevolveBooleanUnstated
@@ -1447,7 +1469,8 @@ impl SldprtLossCode {
             | Self::DesignRevolveAxisDerived
             | Self::DesignRevolveBooleanUnstated
             | Self::DesignRevolveProfileDiffers
-            | Self::DesignRevolveProfileUnchecked => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignRevolveProfileUnchecked
+            | Self::DesignRevolveSenseAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1553,6 +1576,8 @@ impl SldprtLossCode {
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
+            | Self::SketchDimensionClassUnknown
+            | Self::SketchDimensionRepeated
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputSolidBodyRetained
@@ -1600,7 +1625,7 @@ impl SldprtLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `sldprt/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -1834,6 +1859,8 @@ mod tests {
                 "sketch.listed-curve-relation-dropped",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
+                "sketch.dimension-class-unknown",
+                "sketch.dimension-repeated",
                 "feature.native-kind-retained",
                 "feature.input-object-unbound",
                 "feature.input-solid-body-retained",
@@ -1988,6 +2015,7 @@ mod tests {
                 "design.revolve-boolean-unstated",
                 "design.revolve-profile-differs",
                 "design.revolve-profile-unchecked",
+                "design.revolve-sense-assumed",
             ]
         );
     }

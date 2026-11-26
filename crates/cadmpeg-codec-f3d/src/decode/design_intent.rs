@@ -1006,6 +1006,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         construction_recipes: &prereqs.construction_recipes,
         persistent_design_links: geometry.persistent_design_links,
         histories: &design.asm_histories,
+        scope_histories: &scope_histories,
         bodies: geometry.bodies,
         regions: geometry.regions,
         shells: geometry.shells,
@@ -1021,6 +1022,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
+        (&design.asm_histories, &scope_histories),
     );
     losses.extend(tool_losses);
     losses.extend(
@@ -1059,6 +1061,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             operands: &design.design_body_recipe_operands,
             recipes: &prereqs.construction_recipes,
         },
+        geometry.bodies,
         derived_snapshots,
         &mut losses,
     )?;
@@ -1613,6 +1616,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.feature_input_topologies,
     )?;
     crate::history::input_topologies::retain_selected_face_owners(
+        inputs.ctx,
+        &model.features,
+        &mut model.feature_input_topologies,
+    )?;
+    crate::history::input_topologies::retain_selected_face_geometry(
         inputs.ctx,
         &model.features,
         &mut model.feature_input_topologies,

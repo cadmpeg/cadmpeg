@@ -467,14 +467,17 @@ pub enum SplitMethod {
 
 /// The pieces a split keeps. `S` is the side flag of the tools, or one per
 /// element.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "S: Serialize", deserialize = "S: Deserialize<'de>")
+    bound(
+        serialize = "S: Serialize",
+        deserialize = "S: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Kept<S> {
     /// Every piece.

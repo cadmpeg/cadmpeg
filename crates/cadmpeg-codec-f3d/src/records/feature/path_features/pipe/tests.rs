@@ -3,6 +3,7 @@
 use super::{PipeIndex, PipeRoleAssessment};
 use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture};
+use cadmpeg_core::serde_erase::json;
 
 fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
@@ -102,20 +103,13 @@ fn reject_mutation_of(config: Config, arena: &str, mutate: impl FnOnce(&mut serd
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     let mut values = match arena {
-        "design_parameter_scopes" => {
-            cadmpeg_core::serde_erase::json::to_value(&native.design_parameter_scopes).unwrap()
-        }
-        "design_parameter_owners" => {
-            cadmpeg_core::serde_erase::json::to_value(&native.design_parameter_owners).unwrap()
-        }
+        "design_parameter_scopes" => json::to_value(&native.design_parameter_scopes).unwrap(),
+        "design_parameter_owners" => json::to_value(&native.design_parameter_owners).unwrap(),
         "design_construction_operand_groups" => {
-            cadmpeg_core::serde_erase::json::to_value(&native.design_construction_operand_groups)
-                .unwrap()
+            json::to_value(&native.design_construction_operand_groups).unwrap()
         }
-        "design_types" => cadmpeg_core::serde_erase::json::to_value(&native.design_types).unwrap(),
-        "design_record_headers" => {
-            cadmpeg_core::serde_erase::json::to_value(&native.design_record_headers).unwrap()
-        }
+        "design_types" => json::to_value(&native.design_types).unwrap(),
+        "design_record_headers" => json::to_value(&native.design_record_headers).unwrap(),
         _ => panic!("mutation arena"),
     };
     mutate(&mut values);
@@ -202,7 +196,7 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
     let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
         panic!("Pipe fixture")
     };
-    let wire = cadmpeg_core::serde_erase::json::to_value(pipe).unwrap();
+    let wire = json::to_value(pipe).unwrap();
     assert_eq!(wire["opaque_post_operation"], "0101");
     for key in [
         "section_shape",
@@ -215,10 +209,7 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
         let mut bad = wire.clone();
         bad[key] = serde_json::json!(0);
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::super::DesignPipeConstruction>(
-                bad
-            )
-            .is_err(),
+            json::from_value::<super::super::DesignPipeConstruction>(bad).is_err(),
             "deleted {key}"
         );
     }
@@ -232,10 +223,7 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
         let mut bad = wire.clone();
         bad.as_object_mut().unwrap().remove(key);
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::super::DesignPipeConstruction>(
-                bad
-            )
-            .is_err(),
+            json::from_value::<super::super::DesignPipeConstruction>(bad).is_err(),
             "missing {key}"
         );
     }
@@ -247,12 +235,7 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
     ] {
         let mut bad = wire.clone();
         bad["opaque_post_operation"] = bytes;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::super::DesignPipeConstruction>(
-                bad
-            )
-            .is_err()
-        );
+        assert!(json::from_value::<super::super::DesignPipeConstruction>(bad).is_err());
     }
 }
 

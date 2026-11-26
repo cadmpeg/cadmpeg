@@ -9,7 +9,8 @@ use crate::features::datums::DecalMapping;
 use crate::features::direct_edit::{FlexForm, FlexMode, ScaleFactors, ThickenSide};
 use crate::features::evaluation::{
     EdgeSupport, FeatureInputTopology, FeatureResultMembers, FeatureResultTopology,
-    HistoricalEdgeCarrier, HistoricalEdgeGeometry, HistoricalFaceOwner,
+    HistoricalEdgeCarrier, HistoricalEdgeGeometry, HistoricalFaceGeometry, HistoricalFaceOwner,
+    HistoricalFaceSurface,
 };
 use crate::features::geometry::{
     FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc, FeatureImageBounds,
@@ -62,8 +63,10 @@ rewrite_scalar!(FeatureCircularArc);
 rewrite_scalar!(FeatureCoordinateFrame);
 rewrite_scalar!(FeatureEllipticArc);
 rewrite_scalar!(FeatureImageBounds);
-rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, face_owners, native_ref});
+rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, face_owners, face_geometry, native_ref});
 rewrite_record!(HistoricalFaceOwner, []; {face, body});
+rewrite_record!(HistoricalFaceGeometry, []; {face, surface, reversed});
+rewrite_scalar!(HistoricalFaceSurface);
 rewrite_record!(EdgeSupport, []; {face, normal, with_edge});
 rewrite_scalar!(HistoricalEdgeCarrier);
 rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces, carrier, supports});

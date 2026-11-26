@@ -14,7 +14,7 @@ use crate::SldprtCodec;
 fn written_cube() -> Vec<u8> {
     let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .expect("the cube plans");
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the cube writes");
@@ -210,7 +210,7 @@ fn write(ir: &cadmpeg_ir::CadIr) -> Vec<u8> {
 
 fn write_with_losses(ir: &cadmpeg_ir::CadIr) -> (Vec<u8>, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .expect("the part plans");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("the part writes");

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::validate::design_records::validate_body_bindings;
 use crate::validate::Ctx;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::{report::check::Check, CadIr};
 
 #[test]
 fn repro_fragment_skips_external_body_keys_and_checks_local_binding_frames() {
-    let binding = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let binding = json::from_value(serde_json::json!({
         "id":"f3d:Design1/BulkStream.dat:design-body-binding#16",
         "stream":"Design1/BulkStream.dat", "pair_count":1, "pair_ordinal":0,
         "asm_body_key":1, "asm_body_key_offset":16,
