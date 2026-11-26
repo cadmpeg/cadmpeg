@@ -16,6 +16,7 @@
 //! that `Group` is its one root, and its bodies are unproduced.
 
 mod configurations;
+mod datum;
 mod equations;
 mod extrude;
 mod names;
@@ -164,6 +165,7 @@ pub(crate) fn project(
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     losses.extend(typed.loss);
@@ -180,6 +182,7 @@ pub(crate) fn project(
     losses.extend(typed.revolve_profile_unchecked);
     losses.extend(typed.revolve_sense_assumed);
     losses.extend(typed.sketch_notes);
+    losses.extend(typed.datums);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
@@ -355,11 +358,13 @@ fn sketches_only(
             definition: &definition,
             outside_profile: part.outside_profile,
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     losses.extend(typed.state_construction);
     losses.extend(typed.dimension_circles);
     losses.extend(typed.sketch_notes);
+    losses.extend(typed.datums);
     let mut sketches = typed.sketches;
     let Some((group, features)) = group(std::mem::take(&mut sketches.outside)) else {
         return Ok(Projection::default());
