@@ -6,8 +6,9 @@
 //! references an id it does not hold, the first such id, so that the checks
 //! of a delta read what the delta changes and the records that reach it.
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::hash::BuildHasher;
+use std::hash::{Hash, Hasher};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -19,7 +20,7 @@ use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::Topology;
 use crate::ids::{BodyId, ProductDefinitionId};
-use crate::index::identities::{FastBuildHasher, IdentitySet};
+use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
 use crate::report::check::Finding;
 use crate::transform::Transform;
@@ -57,7 +58,9 @@ impl Closure<'_, '_, '_, '_> {
 
 /// A key for an id that may be a record of no `Topology`.
 fn key(id: &str) -> u64 {
-    FastBuildHasher::default().hash_one(id)
+    let mut hasher = DefaultHasher::new();
+    id.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// One change to a state, holding the value it replaced.
@@ -95,9 +98,9 @@ pub(super) struct State<'a> {
     pub(super) records: BTreeMap<&'a str, Located<'a>>,
     /// The records that reference each id, by the id's key, once per
     /// reference.
-    referrers: HashMap<u64, Vec<&'a str>, FastBuildHasher>,
+    referrers: HashMap<u64, Vec<&'a str>>,
     pub(super) names: BTreeMap<&'a EntityRef, &'a NameEntry>,
-    names_by_id: HashMap<&'a str, Vec<&'a EntityRef>, FastBuildHasher>,
+    names_by_id: HashMap<&'a str, Vec<&'a EntityRef>>,
     pub(super) owners: BTreeMap<&'a BodyId, &'a ProductDefinitionId>,
     pub(super) members: BTreeMap<&'a str, &'a ProductDefinitionId>,
     pub(super) instance_bodies: BTreeMap<&'a OccurrencePath, &'a [BodyId]>,
@@ -409,7 +412,7 @@ impl<'a> State<'a> {
             Some((&id, _)) => Node::Record(id),
             None => Node::Missing(key(id)),
         };
-        let mut seen: HashSet<Node<'a>, FastBuildHasher> = HashSet::default();
+        let mut seen: HashSet<Node<'a>> = HashSet::new();
         let mut pending: Vec<Node<'a>> = applied.seeds.iter().map(|id| node(id)).collect();
         while let Some(at) = pending.pop() {
             if !seen.insert(at) {
