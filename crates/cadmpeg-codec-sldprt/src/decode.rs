@@ -3804,16 +3804,16 @@ fn build_geometry_ir(
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    crate::resolved_features::walked_patterns::enrich_circular_patterns(
-        &mut histories,
-        &walked_patterns,
-    );
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
         .transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &walked_patterns,
+    );
     let linear = ir.tolerances.linear;
     pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
         ctx, &histories, &mut lanes, linear,
@@ -5360,16 +5360,16 @@ fn build_metadata_ir(
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    crate::resolved_features::walked_patterns::enrich_circular_patterns(
-        &mut histories,
-        &walked_patterns,
-    );
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
         .transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &walked_patterns,
+    );
     let linear = ir.tolerances.linear;
     pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
         ctx, &histories, &mut lanes, linear,
