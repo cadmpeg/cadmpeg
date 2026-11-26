@@ -79,6 +79,8 @@ fn mutated_parent_graphs_write_and_produce_located_validation_findings() {
         let model = cadmpeg_core::serde_erase::json::to_value(&ir.model).expect(mutation);
         assert!(model.get("features").is_none(), "{mutation}");
         cadmpeg_core::serde_erase::json::to_value(&ir).expect(mutation);
+        cadmpeg_core::serde_erase::json::to_value(ir.geometry.geometry_snapshot(&ir.model, "brep"))
+            .expect(mutation);
         let written = ir.to_canonical_json().expect(mutation);
         assert!(!written.contains("test:parent-wire:feature#"), "{mutation}");
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");

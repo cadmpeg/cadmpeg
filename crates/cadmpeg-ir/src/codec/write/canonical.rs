@@ -4,14 +4,14 @@
 //! owning carrier, and native-record links that name a written record
 //! (§2.1, §2.5, §3.3, §3.4).
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{ArenaClass, ContentScope};
 use cadmpeg_core::CodecError;
 
 use super::loss::{value_unwritable, ExportLossCode};
 use super::{CadirEncoder, EncoderBackend};
-use crate::document::procedural::standard_owners;
+use crate::design::evaluation::StateDelta;
 use crate::document::{ArenaName, CadIr, DifferingCopies, ScopeViolation, Topology};
 use crate::give_up::{Arena, Seed};
 use crate::report::loss::LossNote;
@@ -110,118 +110,194 @@ pub(super) fn record_invalid_code(arena: &Arena) -> ExportLossCode {
     }
 }
 
-/// Each procedural construction of `geometry` without one owning carrier,
-/// with the carriers that name it: none, or more than one.
-fn unowned_constructions(geometry: &Topology) -> Vec<(Seed, &'static str)> {
-    fn unowned<T: crate::schema::ArenaRecord, O>(
-        field: &'static str,
-        constructions: &[T],
-        owners: &HashMap<&str, Option<O>>,
-        found: &mut Vec<(Seed, &'static str)>,
-    ) {
-        for construction in constructions {
-            let id = construction.record_identity();
-            let named = match owners.get(id) {
-                Some(Some(_)) => continue,
-                Some(None) => "more than one carrier names",
-                None => "no carrier names",
-            };
-            let arena = Arena::Home {
-                home: "geometry",
-                field,
-            };
-            found.push((
-                Seed {
-                    arena,
-                    id: id.to_owned(),
-                },
-                named,
-            ));
-        }
-    }
-    let mut found = Vec::new();
-    if !geometry.procedural_surfaces.is_empty() {
-        let owners = standard_owners(geometry.surfaces.iter().filter_map(|carrier| {
-            carrier
-                .geometry
-                .procedural_construction()
-                .map(|construction| (construction.as_str(), &carrier.id))
-        }));
-        unowned(
-            "procedural_surfaces",
-            &geometry.procedural_surfaces,
-            &owners,
-            &mut found,
-        );
-    }
-    if !geometry.procedural_curves.is_empty() {
-        let owners = standard_owners(geometry.curves.iter().filter_map(|carrier| {
-            carrier
-                .geometry
-                .procedural_construction()
-                .map(|construction| (construction.as_str(), &carrier.id))
-        }));
-        unowned(
-            "procedural_curves",
-            &geometry.procedural_curves,
-            &owners,
-            &mut found,
-        );
-    }
-    found
+/// Each procedural construction of `geometry` without one owning carrier:
+/// no carrier, or more than one, names it.
+fn unowned_constructions(geometry: &Topology) -> Vec<Seed> {
+    let seed = |field: &'static str, id: &str| Seed {
+        arena: Arena::Home {
+            home: "geometry",
+            field,
+        },
+        id: id.to_owned(),
+    };
+    let surfaces = crate::hash::procedural_owners(geometry.surfaces.iter().filter_map(|carrier| {
+        carrier
+            .geometry
+            .procedural_construction()
+            .map(|construction| (construction.as_str(), &carrier.id))
+    }));
+    let curves = crate::hash::procedural_owners(geometry.curves.iter().filter_map(|carrier| {
+        carrier
+            .geometry
+            .procedural_construction()
+            .map(|construction| (construction.as_str(), &carrier.id))
+    }));
+    let surfaces = geometry
+        .procedural_surfaces
+        .iter()
+        .filter(|construction| surfaces.get(construction.id.as_str()).is_none())
+        .map(|construction| seed("procedural_surfaces", construction.id.as_str()));
+    let curves = geometry
+        .procedural_curves
+        .iter()
+        .filter(|construction| curves.get(construction.id.as_str()).is_none())
+        .map(|construction| seed("procedural_curves", construction.id.as_str()));
+    surfaces.chain(curves).collect()
 }
 
 /// Whether a procedural construction of `ir`, of its geometry or of the
 /// delta of one of its stored states, has no one owning carrier.
 fn holds_unowned_constructions(ir: &CadIr) -> bool {
-    let evaluations = ir
-        .design
-        .evaluations
-        .iter()
-        .filter_map(|evaluation| evaluation.content.as_ref())
-        .map(|content| &content.delta.records);
-    let states = ir
-        .process
-        .states
-        .iter()
-        .filter_map(|state| state.content.as_ref())
-        .map(|content| &content.delta.records);
     std::iter::once(&ir.geometry)
-        .chain(evaluations)
-        .chain(states)
+        .chain(
+            stored_deltas(ir)
+                .into_iter()
+                .map(|(_, delta)| &delta.records),
+        )
         .any(|geometry| !unowned_constructions(geometry).is_empty())
+}
+
+/// The stored state of `field`, `evaluations` of the design or `states` of
+/// the process, whose id is `id`.
+fn stored_state(field: &'static str, id: &str) -> Seed {
+    let home = if field == "evaluations" {
+        "design"
+    } else {
+        "process"
+    };
+    Seed {
+        arena: Arena::Home { home, field },
+        id: id.to_owned(),
+    }
+}
+
+/// The delta of each stored state of `ir`, with the state.
+fn stored_deltas(ir: &CadIr) -> Vec<(Seed, &StateDelta)> {
+    let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
+        let content = evaluation.content.as_ref()?;
+        Some((
+            stored_state("evaluations", evaluation.id.as_str()),
+            &content.delta,
+        ))
+    });
+    let states = ir.process.states.iter().filter_map(|stored| {
+        let content = stored.content.as_ref()?;
+        Some((stored_state("states", stored.id.as_str()), &content.delta))
+    });
+    evaluations.chain(states).collect()
 }
 
 /// The records of the delta of each stored state of `ir`, with the state.
 fn stored_deltas_mut(ir: &mut CadIr) -> Vec<(Seed, &mut Topology)> {
     let evaluations = ir.design.evaluations.iter_mut().filter_map(|evaluation| {
-        let state = Seed {
-            arena: Arena::Home {
-                home: "design",
-                field: "evaluations",
-            },
-            id: evaluation.id.as_str().to_owned(),
-        };
+        let state = stored_state("evaluations", evaluation.id.as_str());
         let content = evaluation.content.as_mut()?;
         Some((state, &mut content.delta.records))
     });
     let states = ir.process.states.iter_mut().filter_map(|stored| {
-        let state = Seed {
-            arena: Arena::Home {
-                home: "process",
-                field: "states",
-            },
-            id: stored.id.as_str().to_owned(),
-        };
+        let state = stored_state("states", stored.id.as_str());
         let content = stored.content.as_mut()?;
         Some((state, &mut content.delta.records))
     });
     evaluations.chain(states).collect()
 }
 
+/// Copies into the delta of each stored state, for each procedural
+/// construction of the delta that no carrier of the delta names, the first
+/// carrier in identity order of the state's base that names it and that the
+/// delta neither holds nor removes. The delta then replaces that carrier
+/// with an equal copy, so the state holds what the source stored, and the
+/// construction has its one owning carrier in the delta (§5.4).
+fn adopt_base_owners(ir: &mut CadIr) {
+    use crate::design::edit::states::{ids, record_ref_id};
+
+    let mut adopted: Vec<(Seed, Topology)> = Vec::new();
+    for (state, delta) in stored_deltas(ir) {
+        let unowned = unowned_constructions(&delta.records);
+        if unowned.is_empty() {
+            continue;
+        }
+        let base = if matches!(state.arena, Arena::Home { home: "design", .. }) {
+            ir.evaluation_base_records(&state.id)
+        } else {
+            ir.process_base_records(&state.id)
+        };
+        let Some(base) = base else {
+            continue;
+        };
+        let mut excluded = ids(&delta.records);
+        excluded.extend(
+            delta
+                .removed
+                .iter()
+                .map(|record| record_ref_id(record).to_owned()),
+        );
+        let mut carriers = Topology::default();
+        for construction in &unowned {
+            let field = match &construction.arena {
+                Arena::Home { field, .. } => *field,
+                Arena::Native { .. } => continue,
+            };
+            if field == "procedural_surfaces" {
+                carriers.surfaces.extend(first_owner(
+                    &base.surfaces,
+                    &construction.id,
+                    &excluded,
+                    |carrier| {
+                        carrier
+                            .geometry
+                            .procedural_construction()
+                            .map(crate::ids::ProceduralSurfaceId::as_str)
+                    },
+                ));
+            } else {
+                carriers.curves.extend(first_owner(
+                    &base.curves,
+                    &construction.id,
+                    &excluded,
+                    |carrier| {
+                        carrier
+                            .geometry
+                            .procedural_construction()
+                            .map(crate::ids::ProceduralCurveId::as_str)
+                    },
+                ));
+            }
+        }
+        if !carriers.surfaces.is_empty() || !carriers.curves.is_empty() {
+            adopted.push((state, carriers));
+        }
+    }
+    for (state, records) in stored_deltas_mut(ir) {
+        if let Some((_, carriers)) = adopted.iter_mut().find(|(held, _)| *held == state) {
+            records.surfaces.append(&mut carriers.surfaces);
+            records.curves.append(&mut carriers.curves);
+        }
+    }
+}
+
+/// The first carrier of `carriers` in identity order that names
+/// `construction` through `names` and whose id `excluded` does not hold.
+fn first_owner<T: crate::schema::ArenaRecord + Clone>(
+    carriers: &[T],
+    construction: &str,
+    excluded: &BTreeSet<String>,
+    names: impl Fn(&T) -> Option<&str>,
+) -> Option<T> {
+    carriers
+        .iter()
+        .filter(|carrier| {
+            !excluded.contains(carrier.record_identity()) && names(carrier) == Some(construction)
+        })
+        .min_by(|left, right| left.record_identity().cmp(right.record_identity()))
+        .cloned()
+}
+
 /// Keeps each procedural construction of `geometry` that more than one
 /// carrier names with the first of them in identity order, and states each
-/// other carrier without it (§3.3). Each construction charges one
+/// other carrier without it (§3.3). A construction `geometry` does not hold
+/// has no row to keep: the wire writes each carrier that names it from its
+/// cache. Each construction charges one
 /// `export:record.invalid` that names it and the carriers, with `place`,
 /// where `geometry` is not the document's own.
 fn shared_constructions(geometry: &mut Topology, place: &str) -> Vec<LossNote> {
@@ -241,15 +317,26 @@ fn shared_constructions(geometry: &mut Topology, place: &str) -> Vec<LossNote> {
             released.join(", ")
         ))
     };
+    let surfaces: BTreeSet<String> = geometry
+        .procedural_surfaces
+        .iter()
+        .map(|construction| construction.id.as_str().to_owned())
+        .collect();
+    let curves: BTreeSet<String> = geometry
+        .procedural_curves
+        .iter()
+        .map(|construction| construction.id.as_str().to_owned())
+        .collect();
     let mut losses: Vec<LossNote> = release_shared(
         &mut geometry.surfaces,
+        &surfaces,
         |carrier| {
             carrier
                 .geometry
                 .procedural_construction()
                 .map(crate::ids::ProceduralSurfaceId::as_str)
         },
-        |carrier| carrier.geometry.release_construction(),
+        |carrier| carrier.geometry.release(true, false),
     )
     .into_iter()
     .map(|shared| loss("surfaces", "procedural_surfaces", shared))
@@ -257,13 +344,14 @@ fn shared_constructions(geometry: &mut Topology, place: &str) -> Vec<LossNote> {
     losses.extend(
         release_shared(
             &mut geometry.curves,
+            &curves,
             |carrier| {
                 carrier
                     .geometry
                     .procedural_construction()
                     .map(crate::ids::ProceduralCurveId::as_str)
             },
-            |carrier| carrier.geometry.release_construction(),
+            |carrier| carrier.geometry.release(true, false),
         )
         .into_iter()
         .map(|shared| loss("curves", "procedural_curves", shared)),
@@ -276,10 +364,11 @@ fn shared_constructions(geometry: &mut Topology, place: &str) -> Vec<LossNote> {
 type Shared = (String, String, Vec<String>);
 
 /// Applies `release` to each carrier of `carriers` that names, through
-/// `construction`, a construction that a carrier before it in identity
-/// order names, and returns each construction so shared.
+/// `construction`, a construction of `held` that a carrier before it in
+/// identity order names, and returns each construction so shared.
 fn release_shared<T: crate::schema::ArenaRecord>(
     carriers: &mut [T],
+    held: &BTreeSet<String>,
     construction: impl Fn(&T) -> Option<&str>,
     release: impl Fn(&mut T),
 ) -> Vec<Shared> {
@@ -292,7 +381,7 @@ fn release_shared<T: crate::schema::ArenaRecord>(
     }
     let mut shared = Vec::new();
     for (construction, mut slots) in named {
-        if slots.len() < 2 {
+        if slots.len() < 2 || !held.contains(&construction) {
             continue;
         }
         slots.sort_by(|left, right| {
@@ -316,42 +405,44 @@ fn release_shared<T: crate::schema::ArenaRecord>(
 /// Keeps each procedural construction that more than one carrier names with
 /// one of them, then drops each construction that no carrier names and each
 /// record that needs it, as §3.3 drops a record: of the geometry of `ir`,
-/// and of the delta of each stored state, from that delta alone (§3.4).
-/// Each dropped construction charges one `export:record.invalid` that names
-/// it and the records dropped and marked with it.
+/// and of the delta of each stored state, from that delta alone, where the
+/// state's base holds no carrier that names it (§3.4). Each dropped
+/// construction charges one `export:record.invalid` that names it and the
+/// records dropped and marked with it.
 fn without_unowned_constructions(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     let format = CadirEncoder::FORMAT.as_str();
     let mut losses = shared_constructions(&mut ir.geometry, "");
     loop {
-        let unowned: std::collections::BTreeMap<Seed, &str> =
-            unowned_constructions(&ir.geometry).into_iter().collect();
+        let unowned = unowned_constructions(&ir.geometry);
         if unowned.is_empty() {
             break;
         }
-        let removed = drop_seeds(ir, unowned.keys().cloned().collect())?;
+        let removed = give_up_in(ir, |ctx, ir| crate::give_up::drop_records(ctx, ir, unowned))?;
         if removed.is_empty() {
             break;
         }
         for (seed, released) in removed {
             losses.push(record_invalid_code(&seed.arena).note(format!(
-                "the {format} write drops procedural construction {} of arena {}, which {}, \
-                 with each record that needs it: a construction has one owning carrier; \
-                 dropped=[{}], marked=[{}]",
+                "the {format} write drops procedural construction {} of arena {}, which no \
+                 carrier names, with each record that needs it: a construction has one \
+                 owning carrier; dropped=[{}], marked=[{}]",
                 seed.id,
                 seed.arena,
-                unowned.get(&seed).copied().unwrap_or_default(),
                 listed(&released.dropped),
                 listed(&released.marked)
             )));
         }
     }
-    let mut unowned = Vec::new();
     for (state, records) in stored_deltas_mut(ir) {
         let place = format!(" in the delta of {}/{}", state.arena, state.id);
         losses.extend(shared_constructions(records, &place));
+    }
+    adopt_base_owners(ir);
+    let mut unowned = Vec::new();
+    for (state, records) in stored_deltas_mut(ir) {
         let mut by_arena: std::collections::BTreeMap<Arena, BTreeSet<String>> =
             std::collections::BTreeMap::new();
-        for (construction, _) in unowned_constructions(records) {
+        for construction in unowned_constructions(records) {
             by_arena
                 .entry(construction.arena)
                 .or_default()
@@ -365,14 +456,17 @@ fn without_unowned_constructions(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecE
     }
     for (state, arena, ids) in unowned {
         let constructions = listed(&ids);
-        let Some(released) = drop_state_records(ir, &state, ids)? else {
+        let Some(released) = give_up_in(ir, |ctx, ir| {
+            crate::give_up::drop_state_records(ctx, ir, &state, ids)
+        })?
+        else {
             continue;
         };
         losses.push(record_invalid_code(&arena).note(format!(
             "the {format} write drops procedural constructions [{constructions}] of arena \
-             {arena} from the delta of {}/{}, which no carrier of the delta names, with \
-             each record of the delta that needs one: a construction has one owning \
-             carrier; dropped=[{}], marked=[{}]",
+             {arena} from the delta of {}/{}, which no carrier of the delta or of the \
+             state's base names, with each record of the delta that needs one: a \
+             construction has one owning carrier; dropped=[{}], marked=[{}]",
             state.arena,
             state.id,
             listed(&released.dropped),
@@ -390,30 +484,16 @@ pub(super) fn listed(ids: &BTreeSet<String>) -> String {
         .join(", ")
 }
 
-/// Drops from `ir` each record of `seeds` and each record that needs one, as
-/// §3.3 drops a record, and returns what each drop removed.
-pub(super) fn drop_seeds(
+/// Runs the give-up `drop` on `ir` under a decode context that reads no
+/// source bytes.
+pub(super) fn give_up_in<T>(
     ir: &mut CadIr,
-    seeds: Vec<Seed>,
-) -> Result<Vec<(Seed, crate::give_up::Released)>, CodecError> {
+    drop: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>, &mut CadIr) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    crate::give_up::drop_records(&ctx, ir, seeds)
-}
-
-/// Drops from the delta of the stored state `state` each of its records of
-/// `ids` and each record of the delta that needs one, as §3.3 drops a
-/// record, and returns what the delta dropped and marked.
-fn drop_state_records(
-    ir: &mut CadIr,
-    state: &Seed,
-    ids: BTreeSet<String>,
-) -> Result<Option<crate::give_up::Released>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    crate::give_up::drop_state_records(&ctx, ir, state, ids)
+    drop(&ctx, ir)
 }
 
 /// Drops each record of a class the scope of `ir` excludes and each record
@@ -482,7 +562,7 @@ fn drop_excluded(ir: &mut CadIr, held: ContentScope) -> Result<BTreeSet<String>,
             .filter(|class| !held.holds(*class))
             .flat_map(|class| ir.arenas().seeds_of(class)),
     );
-    for (_, released) in drop_seeds(ir, seeds)? {
+    for (_, released) in give_up_in(ir, |ctx, ir| crate::give_up::drop_records(ctx, ir, seeds))? {
         marked.extend(released.marked);
     }
     Ok(marked)

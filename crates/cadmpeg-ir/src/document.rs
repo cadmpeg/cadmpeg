@@ -512,7 +512,7 @@ macro_rules! model_write_value {
             Vec::new()
         } else {
             let owners =
-                procedural::standard_owners($model.surfaces.iter().filter_map(|carrier| {
+                crate::hash::procedural_owners($model.surfaces.iter().filter_map(|carrier| {
                     carrier
                         .geometry
                         .procedural_construction()
@@ -522,7 +522,7 @@ macro_rules! model_write_value {
                 .procedural_surfaces
                 .iter()
                 .map(|procedural| ProceduralSurfaceWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -532,17 +532,18 @@ macro_rules! model_write_value {
         if $model.procedural_curves.is_empty() {
             Vec::new()
         } else {
-            let owners = procedural::standard_owners($model.curves.iter().filter_map(|carrier| {
-                carrier
-                    .geometry
-                    .procedural_construction()
-                    .map(|construction| (construction.as_str(), &carrier.id))
-            }));
+            let owners =
+                crate::hash::procedural_owners($model.curves.iter().filter_map(|carrier| {
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &carrier.id))
+                }));
             $model
                 .procedural_curves
                 .iter()
                 .map(|procedural| ProceduralCurveWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -2061,16 +2062,14 @@ pub struct GeometrySnapshot<'a> {
 }
 
 impl Topology {
-    /// Admit `model`'s feature parents and indexed owners for a borrowed
-    /// geometry serialization view that embeds `model`'s tessellations.
+    /// Index owners for a borrowed geometry serialization view that embeds
+    /// `model`'s tessellations.
+    #[must_use]
     pub fn geometry_snapshot<'a>(
         &'a self,
         model: &'a Model,
         kind: &'a str,
-    ) -> Result<GeometrySnapshot<'a>, CodecError> {
-        if let Err(error) = feature_parents::validate(&[model]) {
-            return Err(CodecError::malformed(format_args!("{error}")));
-        }
+    ) -> GeometrySnapshot<'a> {
         let curves = if self.procedural_curves.is_empty() {
             Vec::new()
         } else {
@@ -2100,13 +2099,13 @@ impl Topology {
                 .map(|procedural| (owners.get(procedural.id.as_str()), procedural))
                 .collect()
         };
-        Ok(GeometrySnapshot {
+        GeometrySnapshot {
             geometry: self,
             tessellations: &model.tessellations,
             kind,
             curves: ProceduralCurveRows(curves),
             surfaces: ProceduralSurfaceRows(surfaces),
-        })
+        }
     }
 }
 

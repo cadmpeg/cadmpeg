@@ -308,6 +308,120 @@ fn the_cadir_writer_keeps_a_stored_state_whose_delta_holds_an_unowned_constructi
     );
 }
 
+/// A construction of a stored state's delta that no carrier of the delta
+/// names takes as its owner an equal copy of the carrier of the state's base
+/// that names it (§3.3, §5.4): the state reads the construction the delta
+/// stores, and the write drops nothing.
+#[test]
+fn the_cadir_writer_copies_the_base_owner_of_a_delta_construction() {
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{CurveGeometry, ProceduralCurve};
+    use crate::ids::ProceduralCurveId;
+
+    const REPLACED: &str = "test:writer:curve-construction#replaced";
+    let mut ir = crate::validate::design::fixture::document();
+    let carrier = &mut ir.geometry.curves[0];
+    let CurveGeometry::Solved(line) = carrier.geometry.clone() else {
+        panic!("the fixture's curves are solved");
+    };
+    carrier.geometry = CurveGeometry::Procedural {
+        construction: ProceduralCurveId::mint(REPLACED).unwrap(),
+        cache: Some(line),
+    };
+    let owner = carrier.clone();
+    let base = ProceduralCurve::new(
+        ProceduralCurveId::mint(REPLACED).unwrap(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    );
+    ir.geometry.procedural_curves.push(base.clone());
+    let replacement: ProceduralCurve =
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            "id": REPLACED,
+            "definition": {"kind": "unknown"}
+        }))
+        .unwrap();
+    assert_ne!(replacement, base);
+    let evaluation = ir.design.evaluations[0].id.clone();
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta
+        .records
+        .procedural_curves = vec![replacement.clone()];
+    ir.finalize();
+    assert!(ir.to_canonical_json().is_err());
+
+    let (invalid, read) = written_with_losses(&ir, "record.invalid");
+    assert!(invalid.is_empty(), "{invalid:?}");
+    let records = &read
+        .design
+        .evaluations
+        .iter()
+        .find(|stored| stored.id == evaluation)
+        .and_then(|stored| stored.content.as_ref())
+        .expect("the evaluation keeps its stored state")
+        .delta
+        .records;
+    assert_eq!(records.procedural_curves, [replacement]);
+    let copied = records
+        .curves
+        .iter()
+        .find(|curve| curve.id == owner.id)
+        .expect("the delta holds a copy of the owning carrier");
+    assert_eq!(copied, &owner);
+    assert_eq!(read.geometry.procedural_curves, [base]);
+}
+
+/// A construction the document does not hold has no row to keep: the wire
+/// writes each carrier that names it from its cache, so two such carriers
+/// charge no loss. The construction that no carrier names is dropped and
+/// named alone.
+#[test]
+fn the_cadir_writer_charges_nothing_for_carriers_of_a_construction_it_does_not_hold() {
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{CurveGeometry, ProceduralCurve};
+    use crate::ids::ProceduralCurveId;
+
+    const ABSENT: &str = "test:writer:curve-construction#absent";
+    const ORPHAN: &str = "test:writer:curve-construction#orphan";
+    let mut ir = unit_cube().unwrap();
+    let mut lines = Vec::new();
+    for carrier in &mut ir.geometry.curves[..2] {
+        let CurveGeometry::Solved(line) = carrier.geometry.clone() else {
+            panic!("the unit cube's curves are solved");
+        };
+        carrier.geometry = CurveGeometry::Procedural {
+            construction: ProceduralCurveId::mint(ABSENT).unwrap(),
+            cache: Some(line.clone()),
+        };
+        lines.push((carrier.id.clone(), line));
+    }
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
+        ProceduralCurveId::mint(ORPHAN).unwrap(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    ));
+
+    let (invalid, read) = written_with_losses(&ir, "record.invalid");
+    let [orphan] = invalid.as_slice() else {
+        panic!("one loss, for the construction no carrier names: {invalid:?}");
+    };
+    assert!(
+        orphan.contains(ORPHAN) && !orphan.contains(ABSENT),
+        "{orphan}"
+    );
+    assert!(read.geometry.procedural_curves.is_empty());
+    for (carrier, line) in lines {
+        let stated = read
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == carrier)
+            .unwrap();
+        assert_eq!(stated.geometry, CurveGeometry::Solved(line));
+    }
+}
+
 /// An expression whose tree has no canonical text is a record CADIR cannot
 /// write (§3.4): the writer drops the record that holds it, writes the
 /// rest, and names the record.
@@ -372,14 +486,19 @@ fn state_document_fields(ir: &mut CadIr) {
         ),
         roots: vec!["test:design:parameter#root".to_owned()],
         context: crate::attributes::AttributeJson::Null,
-        manifest: Vec::new(),
-        incomplete_reason: None,
+        manifest: vec![crate::repro::ManifestEntry {
+            arena: cadmpeg_core::text::NonBlankString::new("design.parameters").unwrap(),
+            rows: 1,
+            serialized_bytes: 2,
+            description: "parameters".to_owned(),
+        }],
+        incomplete_reason: cadmpeg_core::text::NonBlankString::new("bounded cut"),
     }));
 }
 
 /// `written` holds no record and states each document-level field as `ir`
-/// states it, except that `repro.roots` is empty: a root names a record of
-/// the file (§3.4).
+/// states it, except that `repro` has no root, manifest row or incomplete
+/// reason: each describes records of the file (§3.4).
 fn assert_document_fields_without_records(ir: &CadIr, written: &CadIr) {
     assert_eq!(written.entity_count(), 0);
     assert!(written.native.0.is_empty());
@@ -387,6 +506,8 @@ fn assert_document_fields_without_records(ir: &CadIr, written: &CadIr) {
     let mut repro = ir.repro.clone();
     if let Some(repro) = &mut repro {
         repro.roots.clear();
+        repro.manifest.clear();
+        repro.incomplete_reason = None;
     }
     assert_eq!(written.repro, repro);
     assert!(written.repro.is_some());

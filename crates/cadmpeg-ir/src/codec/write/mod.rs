@@ -708,7 +708,13 @@ impl EncoderBackend for CadirEncoder {
                         &refusal,
                     )?;
                     losses.extend(unwritable);
-                    let measured = crate::hash::measured_canonical_json(&ir).map_err(malformed)?;
+                    let measured = crate::hash::measured_canonical_json(&ir);
+                    debug_assert!(
+                        measured.is_ok(),
+                        "a document without each record whose canonical JSON alone is refused \
+                         writes: every value outside the records is a checked type"
+                    );
+                    let measured = measured.map_err(malformed)?;
                     canonical = Some(ir);
                     measured
                 }
@@ -733,9 +739,13 @@ impl EncoderBackend for CadirEncoder {
                  dropped or needs one that is",
             ));
             empty = without_records(ir);
-            bytes = crate::hash::finite_json::to_canonical_json_string(&empty)
-                .map_err(malformed)?
-                .into_bytes();
+            let written = crate::hash::finite_json::to_canonical_json_string(&empty);
+            debug_assert!(
+                written.is_ok(),
+                "the CADIR empty file writes: it holds no record, and each document-level \
+                 field it states is a checked type"
+            );
+            bytes = written.map_err(malformed)?.into_bytes();
             &empty
         } else {
             ir
@@ -781,7 +791,10 @@ fn without_unwritable_records(
          is a checked type"
     );
     let mut ir = ir.clone();
-    let removed = canonical::drop_seeds(&mut ir, unwritable.keys().cloned().collect())?;
+    let seeds = unwritable.keys().cloned().collect();
+    let removed = canonical::give_up_in(&mut ir, |ctx, ir| {
+        crate::give_up::drop_records(ctx, ir, seeds)
+    })?;
     let losses = removed
         .into_iter()
         .filter_map(|(seed, released)| {
@@ -825,14 +838,16 @@ fn within_the_bounds(
 
 /// The CADIR empty file of `ir` (§3.4): no records, with the document-level
 /// fields of `ir`, its `fragment` flag, `repro` metadata, scope, source
-/// metadata and tolerances, and `repro.roots` empty, since the file holds
-/// no record a root names.
+/// metadata and tolerances. Its `repro` has no root, manifest row or
+/// incomplete reason, since the file holds no record they describe.
 fn without_records(ir: &CadIr) -> CadIr {
     let mut empty = CadIr::empty();
     empty.fragment = ir.fragment;
     empty.repro.clone_from(&ir.repro);
     if let Some(repro) = &mut empty.repro {
         repro.roots.clear();
+        repro.manifest.clear();
+        repro.incomplete_reason = None;
     }
     empty.source.clone_from(&ir.source);
     empty.tolerances = ir.tolerances;
