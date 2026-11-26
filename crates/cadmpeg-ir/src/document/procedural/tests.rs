@@ -170,9 +170,7 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let snapshot = cadmpeg_core::serde_erase::json::to_value(
-        geometry
-            .geometry_snapshot(&crate::document::Model::default(), "brep")
-            .unwrap(),
+        geometry.geometry_snapshot(&crate::document::Model::default(), "brep"),
     )
     .unwrap();
     assert_eq!(snapshot["procedural_curves"], encoded["procedural_curves"]);

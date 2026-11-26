@@ -843,7 +843,7 @@ mod supplied_subtype_tests {
             &ctx,
             &records,
             &[],
-            crate::ids::IdFormat::from_literal("f3d").unwrap(),
+            crate::ids::IdFormat::from_literal("f3d"),
             &table
         )
         .is_err());
@@ -852,7 +852,7 @@ mod supplied_subtype_tests {
             &records,
             &[],
             "history",
-            crate::ids::IdFormat::from_literal("f3d").unwrap(),
+            crate::ids::IdFormat::from_literal("f3d"),
             super::DecodePurpose::History
         )
         .is_ok());
