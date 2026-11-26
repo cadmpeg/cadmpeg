@@ -385,9 +385,9 @@ mod tests {
             pair
         );
         for (field, invalid) in [
-            ("discriminator", serde_json::json!("04")),
-            ("value_payload_offsets", serde_json::json!([28, 38])),
-            ("payload_offset", serde_json::json!(u64::MAX)),
+            ("discriminator", cadmpeg_core::json!("04")),
+            ("value_payload_offsets", cadmpeg_core::json!([28, 38])),
+            ("payload_offset", cadmpeg_core::json!(u64::MAX)),
         ] {
             let mut invalid_wire = wire.clone();
             invalid_wire[field] = invalid;

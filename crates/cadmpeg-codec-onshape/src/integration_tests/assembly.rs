@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly product, placement and mate admission.
 use crate::test_support::{assembly::*, read_bytes, Report};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 use std::path::Path;
 
 fn read(definition: serde_json::Value) -> (crate::reader::Model, Report) {

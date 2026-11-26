@@ -303,15 +303,15 @@ pub(super) fn emit_topology(
         let id: BodyId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
-            annotate_node(annotations, id.as_str(), source_stream, node, "BODY");
+            annotate_node(annotations, &id, source_stream, node, "BODY");
         } else {
             annotations.note(
-                id.as_str(),
+                &id,
                 source_stream,
                 cadmpeg_core::decode::u64_from_index(shell.pos()),
                 Some("UNRESOLVED_BODY_REFERENCE"),
             );
-            annotations.exactness(id.as_str(), Exactness::Unknown);
+            annotations.exactness(&id, Exactness::Unknown);
         }
         bodies.insert(body_xmt, id.clone());
 
@@ -352,23 +352,17 @@ pub(super) fn emit_topology(
             let region: RegionId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("region"), region_xmt)?;
             if let Some(region_node) = graph.get(NodeKind::Region, region_xmt) {
-                annotate_node(
-                    annotations,
-                    region.as_str(),
-                    source_stream,
-                    region_node,
-                    "REGION",
-                );
+                annotate_node(annotations, &region, source_stream, region_node, "REGION");
             } else {
                 annotations.note(
-                    region.as_str(),
+                    &region,
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("UNRESOLVED_REGION_REFERENCE"),
                 );
-                annotations.exactness(region.as_str(), Exactness::Unknown);
+                annotations.exactness(&region, Exactness::Unknown);
             }
-            annotations.derived(region.as_str(), "body")?;
+            annotations.derived(&region, "body")?;
 
             ir.geometry
                 .regions
@@ -378,7 +372,7 @@ pub(super) fn emit_topology(
         };
         let shell_id: ShellId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("shell"), node.xmt())?;
-        annotate_node(annotations, shell_id.as_str(), source_stream, node, "SHELL");
+        annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
         let mut shell_faces = Vec::new();
         for face_xmt in admitted_shell_faces.get(&node.xmt()).into_iter().flatten() {
             shell_faces.push(
@@ -458,7 +452,7 @@ pub(super) fn emit_topology(
         let tolerance = decoded_tolerance(fields.tolerance());
         let vertex: VertexId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), node.xmt())?;
-        annotate_node(annotations, vertex.as_str(), source_stream, node, "VERTEX");
+        annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
         if tolerance.is_some() {
             annotations
                 .derived(&vertex, "tolerance")
@@ -576,12 +570,12 @@ pub(super) fn emit_topology(
                     node.xmt(),
                 )?;
                 annotations.note(
-                    carrier.as_str(),
+                    &carrier,
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("PARAMETRIC_SURFACE_CURVE"),
                 );
-                annotations.derived(carrier.as_str(), "geometry")?;
+                annotations.derived(&carrier, "geometry")?;
 
                 ir.geometry.curves.push(Curve {
                     parameter_range: None,
@@ -703,7 +697,7 @@ pub(super) fn emit_topology(
         let mut against_source = !curve_forward;
         let id: EdgeId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("edge"), node.xmt())?;
-        annotate_node(annotations, id.as_str(), source_stream, node, "EDGE");
+        annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance()).is_some() {
             annotations
                 .derived(&id, "tolerance")
@@ -816,7 +810,7 @@ pub(super) fn emit_topology(
         };
         let id: FaceId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("face"), node.xmt())?;
-        annotate_node(annotations, id.as_str(), source_stream, node, "FACE");
+        annotate_node(annotations, &id, source_stream, node, "FACE");
         if decoded_tolerance(fields.tolerance()).is_some() {
             annotations
                 .derived(&id, "tolerance")
@@ -881,7 +875,7 @@ pub(super) fn emit_topology(
             partial_faces.insert(face_ref.clone());
             continue;
         }
-        annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
+        annotate_node(annotations, &id, source_stream, node, "LOOP");
         loop_specs.insert(node.xmt(), (id.clone(), face_ref.clone()));
         loops.insert(node.xmt(), id);
     }
@@ -1115,7 +1109,7 @@ pub(super) fn emit_topology(
         let loop_id: LoopId = loop_id_ref.clone();
         let edge: EdgeId = edge_ref.clone();
         let id: CoedgeId = id_ref.clone();
-        annotate_node(annotations, id.as_str(), source_stream, node, "FIN");
+        annotate_node(annotations, &id, source_stream, node, "FIN");
         let partner = fields
             .other
             .and_then(|target| fin_ids.get(&u32::from(target)))
@@ -1170,15 +1164,15 @@ pub(super) fn emit_topology(
                     fin_xmt,
                 )?;
                 annotations.note(
-                    pcurve_id.as_str(),
+                    &pcurve_id,
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("INTERSECTION_PCURVE"),
                 );
-                annotations.derived(pcurve_id.as_str(), "geometry")?;
-                annotations.derived(pcurve_id.as_str(), "metadata.form.parameter_range")?;
+                annotations.derived(&pcurve_id, "geometry")?;
+                annotations.derived(&pcurve_id, "metadata.form.parameter_range")?;
                 if fit_tolerance.is_some() {
-                    annotations.derived(pcurve_id.as_str(), "metadata.form.fit_tolerance")?;
+                    annotations.derived(&pcurve_id, "metadata.form.fit_tolerance")?;
                 }
 
                 ir.geometry.pcurves.push(Pcurve {
@@ -1244,7 +1238,7 @@ pub(super) fn emit_topology(
                     };
                     let id: LoopId = scope
                         .id_from_display(&cadmpeg_ir::identity_component!("loop"), *loop_xmt)?;
-                    annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
+                    annotate_node(annotations, &id, source_stream, node, "LOOP");
                     ir.geometry.loops.push(Loop {
                         id: id.clone(),
                         face: face.clone(),
@@ -1485,12 +1479,12 @@ pub(super) fn retain_unresolved_topology_carriers(
             format_args!("unknown-{surface_xmt}"),
         )?;
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             cadmpeg_core::decode::u64_from_index(face.pos()),
             Some("UNRESOLVED_SURFACE_REFERENCE"),
         );
-        annotations.exactness(id.as_str(), Exactness::Unknown);
+        annotations.exactness(&id, Exactness::Unknown);
 
         ir.geometry.surfaces.push(Surface {
             id: id.clone(),
@@ -1518,12 +1512,12 @@ pub(super) fn retain_unresolved_topology_carriers(
             format_args!("unknown-{curve_xmt}"),
         )?;
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             cadmpeg_core::decode::u64_from_index(edge.pos()),
             Some("UNRESOLVED_CURVE_REFERENCE"),
         );
-        annotations.exactness(id.as_str(), Exactness::Unknown);
+        annotations.exactness(&id, Exactness::Unknown);
 
         ir.geometry.curves.push(Curve {
             parameter_range: None,
@@ -1541,13 +1535,13 @@ pub(super) fn retain_unresolved_topology_carriers(
 
 pub(super) fn annotate_node(
     annotations: &mut AnnotationBuilder,
-    id: &str,
+    key: impl Into<cadmpeg_ir::annotations::AnnotationKey>,
     stream: &cadmpeg_ir::annotations::StreamHandle,
     node: &Node,
     tag: &str,
 ) {
     annotations.note(
-        id,
+        key,
         stream,
         cadmpeg_core::decode::u64_from_index(node.pos()),
         Some(tag),
@@ -1645,19 +1639,19 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         format_args!("closed-edge-{}", edge.xmt()),
     )?;
     annotations.note(
-        point.as_str(),
+        &point,
         source_stream,
         cadmpeg_core::decode::u64_from_index(edge.pos()),
         Some("CLOSED_EDGE_POINT"),
     );
-    annotations.exactness(point.as_str(), Exactness::Inferred);
+    annotations.exactness(&point, Exactness::Inferred);
     annotations.note(
-        vertex.as_str(),
+        &vertex,
         source_stream,
         cadmpeg_core::decode::u64_from_index(edge.pos()),
         Some("CLOSED_EDGE_VERTEX"),
     );
-    annotations.exactness(vertex.as_str(), Exactness::Inferred);
+    annotations.exactness(&vertex, Exactness::Inferred);
 
     ir.geometry
         .points
@@ -1718,20 +1712,10 @@ fn whole_sphere_pole_loops(
             scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), &label)?;
         let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), &label)?;
         let offset = cadmpeg_core::decode::u64_from_index(node.pos());
-        annotations.note(
-            point.as_str(),
-            source_stream,
-            offset,
-            Some("SPHERE_POLE_POINT"),
-        );
-        annotations.exactness(point.as_str(), Exactness::Inferred);
-        annotations.note(
-            vertex.as_str(),
-            source_stream,
-            offset,
-            Some("SPHERE_POLE_VERTEX"),
-        );
-        annotations.exactness(vertex.as_str(), Exactness::Inferred);
+        annotations.note(&point, source_stream, offset, Some("SPHERE_POLE_POINT"));
+        annotations.exactness(&point, Exactness::Inferred);
+        annotations.note(&vertex, source_stream, offset, Some("SPHERE_POLE_VERTEX"));
+        annotations.exactness(&vertex, Exactness::Inferred);
         ir.geometry
             .points
             .push(Point::new(point.clone(), position, None));

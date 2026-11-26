@@ -1269,7 +1269,7 @@ mod tests {
                     );
                     assert_eq!(
                         record["links"],
-                        serde_json::json!(["rhino:object:record#000000"])
+                        cadmpeg_core::json!(["rhino:object:record#000000"])
                     );
                     assert!(record.get("data").is_none());
                     assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
@@ -1450,11 +1450,11 @@ mod tests {
             .arenas()["annotations"][0];
         assert_eq!(
             record.field("legacy_user_text"),
-            Some(serde_json::json!("legacy text"))
+            Some(cadmpeg_core::json!("legacy text"))
         );
         assert_eq!(
             record.field("legacy_text_height"),
-            Some(serde_json::json!(1.5))
+            Some(cadmpeg_core::json!(1.5))
         );
     }
 
@@ -1547,7 +1547,9 @@ mod tests {
         );
         assert!(records.iter().all(|record| {
             record.field("source_uuid")
-                == Some(serde_json::json!(Uuid::from_wire(duplicate_id).to_string()))
+                == Some(cadmpeg_core::json!(
+                    Uuid::from_wire(duplicate_id).to_string()
+                ))
         }));
     }
 

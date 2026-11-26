@@ -29,7 +29,10 @@ fn live_annotation_lookup_scales_with_tree_depth() {
                 None,
             ));
         }
-        builder.exactness("nx:model:point#absent", cadmpeg_ir::Exactness::Derived);
+        builder.exactness(
+            cadmpeg_ir::ids::Identity::new("nx:model:point#absent").expect("identity grammar"),
+            cadmpeg_ir::Exactness::Derived,
+        );
         builder.build()
     };
     ({

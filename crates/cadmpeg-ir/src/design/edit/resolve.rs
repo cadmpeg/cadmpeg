@@ -447,8 +447,8 @@ fn cache_as<T: DeserializeOwned>(
         (ParameterValue::Text(text), false) => {
             let forms = [
                 Json::from(text.as_str()),
-                serde_json::json!({ "kind": text }),
-                serde_json::json!({ "kind": "native", "value": text }),
+                cadmpeg_core::json!({ "kind": text }),
+                cadmpeg_core::json!({ "kind": "native", "value": text }),
             ];
             let mut last = None;
             for form in forms {

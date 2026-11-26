@@ -4,7 +4,7 @@ use super::super::ParasolidDeltasRecord;
 use cadmpeg_core::serde_erase::json;
 
 fn wire(references: &[u32]) -> serde_json::Value {
-    serde_json::json!({
+    cadmpeg_core::json!({
         "id":"nx:test:region#0", "stream_ordinal":0, "family":"REGION", "kind":19,
         "xmt":52, "node_id":49, "region_type":83,
         "byte_len":9+references.len()*3, "references":references,
@@ -59,7 +59,7 @@ fn region_wire_requires_the_type_and_exact_nonzero_pointer_cardinality() {
         ("node_id", serde_json::Value::Null),
         ("kind", 18.into()),
         ("family", "SHELL".into()),
-        ("position", serde_json::json!([0.0, 0.0, 0.0])),
+        ("position", cadmpeg_core::json!([0.0, 0.0, 0.0])),
         ("group_selector", 1.into()),
         ("group_linked_reference_status", 1.into()),
     ] {

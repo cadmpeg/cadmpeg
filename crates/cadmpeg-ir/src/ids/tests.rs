@@ -97,7 +97,7 @@ fn the_format_component_is_a_codec_id() {
         let id = format!("{format}:file:signature#0");
         assert_eq!(is_valid_identity(&id), valid, "{format}");
         assert_eq!(
-            json::from_value::<super::Identity>(serde_json::json!(id)).is_ok(),
+            json::from_value::<super::Identity>(cadmpeg_core::json!(id)).is_ok(),
             valid,
             "{format}"
         );

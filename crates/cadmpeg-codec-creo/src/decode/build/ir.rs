@@ -480,7 +480,7 @@ fn transfer_display_tessellations(
         )?;
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "SolidPrimdata",
             cadmpeg_core::decode::u64_from_index(strip.offset),
             "display_triangle_strip",

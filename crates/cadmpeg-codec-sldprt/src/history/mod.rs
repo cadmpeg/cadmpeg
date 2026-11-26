@@ -449,7 +449,7 @@ pub(crate) fn histories(
                     let id = format!("sldprt:history:configuration#{source}:{ordinal}");
                     crate::annotations::note(
                         annotations,
-                        id.as_str(),
+                        crate::annotations::native_key(&id)?,
                         stream,
                         cadmpeg_core::decode::u64_from_index(node.range().start),
                         "Configuration",
@@ -516,7 +516,7 @@ pub(crate) fn histories(
                     let id = source_id.clone();
                     crate::annotations::note(
                         annotations,
-                        id.as_str(),
+                        crate::annotations::native_key(&id)?,
                         stream,
                         cadmpeg_core::decode::u64_from_index(node.range().start),
                         node.tag_name().name(),
@@ -668,7 +668,7 @@ pub(crate) fn histories(
             let id = parent;
             crate::annotations::note(
                 annotations,
-                id.as_str(),
+                crate::annotations::native_key(&id)?,
                 stream,
                 0,
                 "Keywords",

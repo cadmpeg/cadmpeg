@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn finding_without_related_writes_an_empty_list() -> Result<(), serde_json::Error> {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "check": "referential_integrity",
             "rule": "test.invalid-reference",
             "severity": "error",
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn a_finding_names_its_rule_in_the_rule_grammar() {
         let wire = |rule: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "check": "referential_integrity",
                 "rule": rule,
                 "severity": "error",
@@ -498,7 +498,7 @@ mod tests {
             ],
         };
         let wire = json::to_value(&finding)?;
-        assert_eq!(wire["related"], serde_json::json!(finding.related));
+        assert_eq!(wire["related"], cadmpeg_core::json!(finding.related));
         assert_eq!(json::from_value::<Finding>(wire)?, finding);
         Ok(())
     }

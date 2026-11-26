@@ -208,7 +208,7 @@ fn type316_scale_is_scoped_to_the_property_owner() {
     let units = &native.arenas()["units_data"][0];
     assert_eq!(
         units.fields().unwrap()["owners"],
-        serde_json::json!(["iges:entity:directory#1"])
+        cadmpeg_core::json!(["iges:entity:directory#1"])
     );
     let unowned = native.arenas()["entities"]
         .iter()
@@ -874,7 +874,7 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
         expansion.fields().unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
     assert_eq!(
         result
@@ -902,7 +902,7 @@ fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
         expansion.fields().unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 
     let admitted = IgesCodec
@@ -952,7 +952,7 @@ fn decode_does_not_promote_network_instance_in_rejected_definition() {
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
         expansion.fields().unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 
     let admitted = IgesCodec
@@ -1385,7 +1385,7 @@ fn decode_reports_occurrence_issue_for_rejected_subfigure_definition() {
         native.arenas()["product_occurrence_expansion"][0]
             .fields()
             .unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 }
 
@@ -1416,6 +1416,6 @@ fn invalid_network_metadata_does_not_hide_a_rejected_definition() {
         native.arenas()["product_occurrence_expansion"][0]
             .fields()
             .unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 }

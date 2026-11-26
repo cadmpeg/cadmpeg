@@ -238,7 +238,7 @@ pub(super) struct CsgData {
     /// Boolean that uses them.
     representations: BTreeMap<u64, Vec<u64>>,
     /// Every identity of a derived body.
-    pub(super) derived: Vec<String>,
+    pub(super) derived: Vec<cadmpeg_ir::annotations::AnnotationKey>,
 }
 
 /// Read every CSG item, derive the bodies of those outside Boolean trees,

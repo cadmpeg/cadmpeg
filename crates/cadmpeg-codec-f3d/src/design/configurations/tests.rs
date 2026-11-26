@@ -14,12 +14,13 @@ use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document, Row,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, DesignParameter as NeutralParameter,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 const ENTRY: &str =

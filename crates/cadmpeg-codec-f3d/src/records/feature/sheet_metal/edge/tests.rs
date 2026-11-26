@@ -2,8 +2,8 @@ use super::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange, DesignReferenceFla
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn reference_edge_wire_retains_independent_controls() {

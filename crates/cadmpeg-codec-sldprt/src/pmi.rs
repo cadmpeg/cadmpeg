@@ -755,7 +755,7 @@ fn collect_dimensions(
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    crate::annotations::native_key(&record.id)?,
                     stream,
                     u64_from_index(offset),
                     "messagepack_dim_sem_data",

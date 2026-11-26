@@ -378,7 +378,7 @@ fn an_assembly_with_its_own_parasolid_stream_keeps_the_part_model_losses() {
 }
 
 fn body(id: &str) -> cadmpeg_ir::topology::Body {
-    json::from_value(serde_json::json!({ "id": id, "kind": "solid" })).expect("a body")
+    json::from_value(cadmpeg_core::json!({ "id": id, "kind": "solid" })).expect("a body")
 }
 
 #[test]

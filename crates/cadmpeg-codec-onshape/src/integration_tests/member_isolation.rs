@@ -4,7 +4,7 @@ use crate::loss::OnshapeLossCode;
 use crate::test_support::fixture;
 use crate::test_support::review::{decode, edit, members, validate, wire};
 use cadmpeg_core::decode::{index_from_u32, View};
-use serde_json::json;
+use cadmpeg_core::json;
 use std::io::{Cursor, Read, Write};
 
 const TABLE: &str = "partstudios/studio/bodydetails/2.json";

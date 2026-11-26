@@ -822,7 +822,7 @@ fn type_123_accepts_a_finite_non_unit_direction() {
     let direction = &result.ir().native.namespace("iges").unwrap().arenas()["directions"][0];
     assert_eq!(
         direction.fields().unwrap()["components"],
-        serde_json::json!([2.0, -3.0, 4.0])
+        cadmpeg_core::json!([2.0, -3.0, 4.0])
     );
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(

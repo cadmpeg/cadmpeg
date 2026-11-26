@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face-removal shell features map to the typed Shell operation.
 use crate::test_support::{fixture, review};
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 fn shell_bundle(edit: impl Fn(&mut Vec<Value>)) -> Vec<u8> {
     review::edit(&fixture("plate-fillet"), |path, value| {

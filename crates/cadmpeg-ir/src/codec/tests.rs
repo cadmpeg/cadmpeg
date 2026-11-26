@@ -231,7 +231,7 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(json::from_value(serde_json::json!({
+        Ok(json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "foreign"},
             "container_kind": "flat",
             "entries": [],
@@ -589,7 +589,7 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
 fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))

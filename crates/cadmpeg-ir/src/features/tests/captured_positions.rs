@@ -26,7 +26,7 @@ fn captured_positions_keep_repeated_targets_and_order_on_the_wire() {
     let wire = json::to_value(&operation).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"kind":"captured_component_positions", "value":{"positions":[
+        cadmpeg_core::json!({"kind":"captured_component_positions", "value":{"positions":[
             {"selector":"synthetic:test:selector#one", "occurrence":"synthetic:test:occurrence#one", "transform":{"kind":"affine", "transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0]]}},
             {"selector":"synthetic:test:selector#one", "transform":{"kind":"affine", "transform":[[1.0,0.0,0.0,20.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0]]}}
         ]}})
@@ -42,10 +42,10 @@ fn captured_positions_keep_repeated_targets_and_order_on_the_wire() {
         .to_string()
         .contains("occurrence"));
     let mut invalid = wire;
-    invalid["value"]["positions"][0]["selector"] = serde_json::json!("");
+    invalid["value"]["positions"][0]["selector"] = cadmpeg_core::json!("");
     assert!(json::from_value::<FeatureOperation>(invalid).is_err());
     let empty =
-        serde_json::json!({"kind":"captured_component_positions", "value":{"positions":[]}});
+        cadmpeg_core::json!({"kind":"captured_component_positions", "value":{"positions":[]}});
     assert_eq!(
         json::to_value(json::from_value::<FeatureOperation>(empty.clone()).unwrap()).unwrap(),
         empty
@@ -69,7 +69,7 @@ fn captured_position_identity_rewrite_maps_selector_and_occurrence() {
     let wire = json::to_value(&source).unwrap();
     assert_eq!(
         wire["value"]["positions"][0]["transform"],
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "native", "scope": "synthetic:source:scope#capture", "row": 3
         })
     );

@@ -13,7 +13,7 @@ fn cloud(value: serde_json::Value) -> crate::point_cloud::PointCloud {
 }
 
 fn scan(definition: &str) -> crate::point_cloud::PointCloud {
-    cloud(serde_json::json!({
+    cloud(cadmpeg_core::json!({
         "id": "test:model:point-cloud#scan",
         "definition": definition,
         "positions": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 0.0, "z": 0.0}],
@@ -88,7 +88,7 @@ fn a_cloud_is_not_held_by_an_external_definition() {
 #[test]
 fn per_point_values_must_match_the_points() {
     let mut ir = with_definition(Storage::Embedded);
-    ir.model.point_clouds.push(cloud(serde_json::json!({
+    ir.model.point_clouds.push(cloud(cadmpeg_core::json!({
         "id": "test:model:point-cloud#scan",
         "definition": DEFINITION,
         "positions": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 0.0, "z": 0.0}],

@@ -405,7 +405,7 @@ fn projector_rejects_unwitnessed_groups_and_does_not_publish_failed_attempts() {
     archive.write_all(b"synthetic resource").unwrap();
     let archive = archive.finish().unwrap().into_inner();
     let scope = form_scope(201, vec![]);
-    let feature: Feature = json::from_value(serde_json::json!({
+    let feature: Feature = json::from_value(cadmpeg_core::json!({
         "id":"f3d:model:feature#form", "ordinal":0, "native_ref":scope.id,
         "definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},
         "dependencies":[], "source_properties":{}, "source_content":[], "outputs":[]

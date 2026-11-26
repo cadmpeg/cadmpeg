@@ -10,15 +10,15 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
     for (value, expected) in [
         (
             VertexBlendTwists::None {},
-            serde_json::json!({ "kind": "none"}),
+            cadmpeg_core::json!({ "kind": "none"}),
         ),
         (
             VertexBlendTwists::One { twist: point },
-            serde_json::json!({ "kind": "one", "twist": point }),
+            cadmpeg_core::json!({ "kind": "one", "twist": point }),
         ),
         (
             VertexBlendTwists::Two { twists: [point; 2] },
-            serde_json::json!({ "kind": "two", "twists": [point, point] }),
+            cadmpeg_core::json!({ "kind": "two", "twists": [point, point] }),
         ),
     ] {
         assert_eq!(json::to_value(&value).unwrap(), expected);
@@ -31,13 +31,13 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
     // exactly the entries it carries, and the native integer forms 0, 1 and 3
     // are the names none, one and two.
     for invalid in [
-        serde_json::json!({ "kind": "none", "twist": point }),
-        serde_json::json!({ "kind": "one", "twists": [point] }),
-        serde_json::json!({ "kind": "one"}),
-        serde_json::json!({ "kind": "two", "twists": [point] }),
-        serde_json::json!({ "kind": "two", "twists": [point, point, point] }),
-        serde_json::json!({ "kind": 2, "twists": [point, point] }),
-        serde_json::json!({ "kind": 1, "twists": [point] }),
+        cadmpeg_core::json!({ "kind": "none", "twist": point }),
+        cadmpeg_core::json!({ "kind": "one", "twists": [point] }),
+        cadmpeg_core::json!({ "kind": "one"}),
+        cadmpeg_core::json!({ "kind": "two", "twists": [point] }),
+        cadmpeg_core::json!({ "kind": "two", "twists": [point, point, point] }),
+        cadmpeg_core::json!({ "kind": 2, "twists": [point, point] }),
+        cadmpeg_core::json!({ "kind": 1, "twists": [point] }),
     ] {
         assert!(json::from_value::<VertexBlendTwists>(invalid).is_err());
     }
@@ -46,7 +46,7 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
 #[test]
 fn vertex_blend_circle_keeps_the_flat_form_and_twists_fields() {
     use crate::geometry::blends::VertexBlendBoundaryGeometry;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "circle",
         "curve": "test:model:curve#0",
         "curve_endpoints": [null, null],
@@ -57,6 +57,6 @@ fn vertex_blend_circle_keeps_the_flat_form_and_twists_fields() {
     let definition: VertexBlendBoundaryGeometry = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(definition).unwrap(), wire);
     let mut invalid = wire;
-    invalid["twists"]["kind"] = serde_json::json!("two");
+    invalid["twists"]["kind"] = cadmpeg_core::json!("two");
     assert!(json::from_value::<VertexBlendBoundaryGeometry>(invalid).is_err());
 }

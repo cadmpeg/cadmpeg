@@ -322,7 +322,7 @@ fn settings_decoder_skips_unregistered_bulk_without_requesting_a_metastream() {
 #[test]
 fn settings_name_every_linked_record_for_header_retention() {
     let settings: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20", "record_index": 50,
             "byte_offset": 20, "paired_byte_offset": 100, "mask": 4,
             "inputs": {"version": "v2", "slots": [null, 55, null, null, null, null, null]},

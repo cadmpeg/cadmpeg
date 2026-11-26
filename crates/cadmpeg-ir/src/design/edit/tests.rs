@@ -5,8 +5,8 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
-use serde_json::json;
 
 use super::eval::{check_types, ExpressionSite, Type};
 use super::wire::{positions, retarget};

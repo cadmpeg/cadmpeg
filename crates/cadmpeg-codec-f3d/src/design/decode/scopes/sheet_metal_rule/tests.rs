@@ -211,7 +211,7 @@ fn linked_settings_rule_takes_the_decoded_record_for_the_owning_scope() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use crate::records::sheet_metal_settings::DesignSheetMetalSettings;
     let settings = |stream: &str, owner: u64| -> DesignSheetMetalSettings {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("f3d:{stream}/BulkStream.dat:design-sheet-metal-settings#20"),
             "record_index": 30, "byte_offset": 20, "paired_byte_offset": 100,
             "inputs": {"version": "v3_leading_reference", "first": 55, "rule_reference_tail": "0000"},

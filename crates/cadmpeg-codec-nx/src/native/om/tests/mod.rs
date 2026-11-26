@@ -20,7 +20,7 @@ fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         (0, vec![0x90, 0, 0]),
         (6466, vec![0x90, 0x19, 0x42]),
     ] {
-        let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+        let wire = cadmpeg_core::json!({"id":"reference", "data_block":"block", "ordinal":0,
             "object_id":value, "raw_object_id":cadmpeg_ir::native::bytes::NativeBytes::from(raw), "source_offset":12});
         let record: super::DataBlockReference = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(record).unwrap(), wire);
@@ -32,7 +32,7 @@ fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         (0, vec![0x90, 0]),
         (0, vec![0, 0]),
     ] {
-        let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+        let wire = cadmpeg_core::json!({"id":"reference", "data_block":"block", "ordinal":0,
             "object_id":value, "raw_object_id":cadmpeg_ir::native::bytes::NativeBytes::from(raw), "source_offset":12});
         assert!(json::from_value::<super::DataBlockReference>(wire)
             .unwrap_err()

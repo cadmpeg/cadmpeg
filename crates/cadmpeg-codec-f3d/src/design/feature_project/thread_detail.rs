@@ -36,7 +36,7 @@ mod tests {
 
     #[test]
     fn native_thread_detail_has_a_named_loss() {
-        let mut construction: DesignThreadConstruction = json::from_value(serde_json::json!({
+        let mut construction: DesignThreadConstruction = json::from_value(cadmpeg_core::json!({
             "form": "standard_extended", "designation_offset": 100,
             "designation": "M10x1.5", "nominal_size_text": "10", "nominal_size": 10.0,
             "profile": "ISO Metric profile", "major_diameter": 1.0,

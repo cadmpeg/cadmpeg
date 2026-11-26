@@ -1042,10 +1042,14 @@ fn attach_e5_free_vertices(
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let shell_id = ShellId::mint("catia:e5:shell#unbound-points".to_owned())
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "e5_0d_03",
             0,
             "unbound_point_owner",

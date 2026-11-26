@@ -640,7 +640,7 @@ mod tests {
         let value = json::to_value(&records[0]).expect("record JSON");
         assert_eq!(value["id"], "creo:solid_primdata:scalar_array#pts:0");
         assert_eq!(value["field"], "pts");
-        assert_eq!(value["values"], serde_json::json!([2.5]));
+        assert_eq!(value["values"], cadmpeg_core::json!([2.5]));
     }
 
     #[test]
@@ -659,15 +659,15 @@ mod tests {
         let records = fc05_cylinder_cap_pair_records(&scan);
         let value = json::to_value(&records[0]).expect("record JSON");
         assert_eq!(value["id"], "creo:surface:fc05_cylinder_cap_pair#10");
-        assert_eq!(value["curve_ids"], serde_json::json!([20, 21]));
-        assert_eq!(value["cap_plane_ids"], serde_json::json!([11, 12]));
+        assert_eq!(value["curve_ids"], cadmpeg_core::json!([20, 21]));
+        assert_eq!(value["cap_plane_ids"], cadmpeg_core::json!([11, 12]));
         assert_eq!(
             value["curve_cap_ordinates_row_frame"],
-            serde_json::json!([-5.0, 7.0])
+            cadmpeg_core::json!([-5.0, 7.0])
         );
         assert_eq!(
             value["cap_ordinates_row_frame"],
-            serde_json::json!([-5.0, 7.0])
+            cadmpeg_core::json!([-5.0, 7.0])
         );
     }
 }

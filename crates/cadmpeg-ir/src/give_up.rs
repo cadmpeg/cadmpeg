@@ -110,9 +110,10 @@ pub(crate) struct Released {
     /// The records kept in a partial form or with a mark, sorted.
     pub(crate) marked: BTreeSet<String>,
     /// The records of the delta of each stored state that the delta dropped
-    /// and marked, by the state's path. A record of a delta is the state's
-    /// own: the document's record of the same id keeps its own outcome.
-    pub(crate) states: BTreeMap<String, Released>,
+    /// and marked, by the state's arena and id, each under the state's path.
+    /// A record of a delta is the state's own: the document's record of the
+    /// same id keeps its own outcome.
+    pub(crate) states: BTreeMap<(Arena, String), Released>,
     /// The stored states dropped whole, each with the occurrences whose
     /// member entry names a removed definition: no delta states that an
     /// occurrence leaves a state (§5.4, §6.7).
@@ -161,9 +162,10 @@ impl Released {
     /// dropped because its delta cannot state what leaves it.
     pub(crate) fn stated(&self) -> Vec<String> {
         let mut parts = Vec::new();
-        for (path, state) in &self.states {
+        for state in self.states.values() {
             parts.push(format!(
-                "delta of {path}: dropped=[{}]; marked=[{}]",
+                "delta of {}: dropped=[{}]; marked=[{}]",
+                state.path,
                 list(state.dropped.iter().map(String::as_str)),
                 list(state.marked.iter().map(String::as_str))
             ));
@@ -452,9 +454,7 @@ pub(crate) fn give_up(
         losses.push(part.commit(ctx, ir, fidelity)?);
     }
     if let Some(before) = before {
-        fidelity
-            .annotations
-            .remove(&before.after(std::iter::empty(), ir));
+        fidelity.annotations.remove(&before.after(ir));
     }
     Ok(losses)
 }
@@ -1154,11 +1154,11 @@ fn release_states(
             .get(id)
             .is_some_and(|states| states.iter().any(|state| *state != holder.id))
     };
-    let path = format!("{}/{}", holder.arena, holder.id);
+    let key = (holder.arena.clone(), holder.id.clone());
     let mut state = released
         .states
-        .remove(&path)
-        .unwrap_or_else(|| Released::new(path.clone()));
+        .remove(&key)
+        .unwrap_or_else(|| Released::new(format!("{}/{}", holder.arena, holder.id)));
     let plans: Vec<Withdrawn> = deltas(ir, &holder.arena, &holder.id)
         .into_iter()
         .map(|delta| withdrawn(ir, &holder.id, delta, here))
@@ -1171,7 +1171,7 @@ fn release_states(
         changed |= release_delta(ctx, references, lazy, &elsewhere, delta, plan, &mut state)?;
     }
     if !state.dropped.is_empty() || !state.marked.is_empty() {
-        released.states.insert(path, state);
+        released.states.insert(key, state);
     }
     Ok(changed)
 }

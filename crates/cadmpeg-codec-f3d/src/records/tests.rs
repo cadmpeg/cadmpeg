@@ -313,8 +313,8 @@ fn dimension_locus_rows_preserve_return_order_and_derive_state_views() {
             assert!(error.contains(field), "{field}: {error}");
         }
         for (field, replacement) in [
-            ("constraint_kinds", serde_json::json!(["parallel"])),
-            ("unknown_constraint_bits", serde_json::json!(1)),
+            ("constraint_kinds", cadmpeg_core::json!(["parallel"])),
+            ("unknown_constraint_bits", cadmpeg_core::json!(1)),
         ] {
             let mut invalid = value.clone();
             invalid[field] = replacement;
@@ -444,8 +444,8 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
         (vec![2, 3], vec![10]),
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(base).unwrap();
-        wire["auxiliary_references"] = serde_json::json!(values);
-        wire["auxiliary_reference_offsets"] = serde_json::json!(offsets);
+        wire["auxiliary_references"] = cadmpeg_core::json!(values);
+        wire["auxiliary_reference_offsets"] = cadmpeg_core::json!(offsets);
         assert!(
             json_wire::from_value::<crate::records::sketch_relations::SketchRelation>(wire)
                 .unwrap_err()
@@ -505,7 +505,7 @@ fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
 
 #[test]
 fn native_sketch_nurbs_refuses_decreasing_knots_and_negative_weight() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "nurbs", "subtype_class_tag": "302", "subtype_record_index": 7,
         "degree": 1, "fit_tolerance": 0.125, "scalar_width": 8,
         "knots": [0.0, 0.0, 1.0, 1.0], "weights": [1.0, 1.0],
@@ -515,7 +515,7 @@ fn native_sketch_nurbs_refuses_decreasing_knots_and_negative_weight() {
         ]
     });
     let mut decreasing = wire.clone();
-    decreasing["knots"] = serde_json::json!([1.0, 0.0, 1.0, 1.0]);
+    decreasing["knots"] = cadmpeg_core::json!([1.0, 0.0, 1.0, 1.0]);
     assert!(
         json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(decreasing)
             .unwrap_err()
@@ -523,7 +523,7 @@ fn native_sketch_nurbs_refuses_decreasing_knots_and_negative_weight() {
             .contains("nondecreasing")
     );
     let mut negative_weight = wire;
-    negative_weight["weights"] = serde_json::json!([-1.0, 1.0]);
+    negative_weight["weights"] = cadmpeg_core::json!([-1.0, 1.0]);
     assert!(
         json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(
             negative_weight
@@ -536,7 +536,7 @@ fn native_sketch_nurbs_refuses_decreasing_knots_and_negative_weight() {
 
 #[test]
 fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "nurbs", "subtype_class_tag": "302", "subtype_record_index": 7,
         "degree": 1, "fit_tolerance": 0.125, "scalar_width": 8,
         "knots": [0.0, 0.0, 1.0, 1.0], "weights": [],
@@ -546,7 +546,7 @@ fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
         ]
     });
     let mut wrong_count = wire.clone();
-    wrong_count["degree"] = serde_json::json!(2);
+    wrong_count["degree"] = cadmpeg_core::json!(2);
     assert!(
         json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(wrong_count)
             .unwrap_err()
@@ -554,7 +554,7 @@ fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
             .contains("knot count")
     );
     let mut negative_fit = wire;
-    negative_fit["fit_tolerance"] = serde_json::json!(-0.125);
+    negative_fit["fit_tolerance"] = cadmpeg_core::json!(-0.125);
     assert!(
         json_wire::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(negative_fit)
             .unwrap_err()
@@ -586,7 +586,7 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
             let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
             if kind != "user" {
                 let mut wrong_kind = value.clone();
-                wrong_kind["kind"] = serde_json::json!(if kind == "feature" {
+                wrong_kind["kind"] = cadmpeg_core::json!(if kind == "feature" {
                     "dimension"
                 } else {
                     "feature"
@@ -602,7 +602,7 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
             }
             let mut changed_owner = value.clone();
             if kind == "user" {
-                changed_owner["owner_record_index"] = serde_json::json!(2);
+                changed_owner["owner_record_index"] = cadmpeg_core::json!(2);
                 assert!(
                     json_wire::from_value::<crate::records::parameters::DesignParameter>(
                         changed_owner
@@ -622,7 +622,7 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
                 assert_eq!(json_wire::to_value(&ownerless).unwrap(), changed_owner);
             }
             let mut invalid_discriminator = value.clone();
-            invalid_discriminator["family_discriminator"] = serde_json::json!(7);
+            invalid_discriminator["family_discriminator"] = cadmpeg_core::json!(7);
             assert!(
                 json_wire::from_value::<crate::records::parameters::DesignParameter>(
                     invalid_discriminator
@@ -820,7 +820,7 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
             .expect("valid entity ID");
         assert_eq!(id.as_str(), name);
         assert_eq!(id.suffix(), suffix);
-        let wire = serde_json::json!({"entity_id": name, "entity_suffix": suffix, "entity_reference_offset": 20});
+        let wire = cadmpeg_core::json!({"entity_id": name, "entity_suffix": suffix, "entity_reference_offset": 20});
         let binding: crate::records::feature::scope::DesignSketchEntityBinding =
             json_wire::from_value(wire.clone()).expect("matching suffix");
         assert_eq!(json_wire::to_value(binding).unwrap(), wire);
@@ -846,7 +846,7 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
                 .contains("entity_id")
         );
     }
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "scope_reference_ordinal": 0, "record_index": 1, "byte_offset": 10,
         "class_tag": "300", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
         "asset_id_offset": 20,
@@ -876,7 +876,7 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
 
 #[test]
 fn sketch_placement_preserves_identity_wire() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "placement", "entity_id": "Sketch_+0007",
         "byte_offset": 10, "class_tag": "300", "record_index": 1,
         "frame_length": 201,
@@ -985,7 +985,7 @@ fn lost_edge_reference_derives_offsets_and_rejects_inconsistent_wire() {
         "next_byte_offset",
     ] {
         let mut invalid = json_wire::to_value(&record).unwrap();
-        invalid[field] = serde_json::json!(0);
+        invalid[field] = cadmpeg_core::json!(0);
         assert!(
             json_wire::from_value::<crate::records::references::LostEdgeReference>(invalid)
                 .unwrap_err()
@@ -994,7 +994,7 @@ fn lost_edge_reference_derives_offsets_and_rejects_inconsistent_wire() {
         );
     }
     let mut invalid = json_wire::to_value(&record).unwrap();
-    invalid["record_byte_offset"] = serde_json::json!(u64::MAX - 47);
+    invalid["record_byte_offset"] = cadmpeg_core::json!(u64::MAX - 47);
     assert!(
         json_wire::from_value::<crate::records::references::LostEdgeReference>(invalid)
             .unwrap_err()
@@ -1037,9 +1037,9 @@ fn lost_edge_reference_requires_three_digit_class_tags() {
         .unwrap_err()
         .contains("next_class_tag"));
         assert!(
-            json_wire::from_value::<crate::records::references::DesignClassTag>(serde_json::json!(
-                invalid
-            ))
+            json_wire::from_value::<crate::records::references::DesignClassTag>(
+                cadmpeg_core::json!(invalid)
+            )
             .unwrap_err()
             .to_string()
             .contains("class_tag")
@@ -1047,9 +1047,12 @@ fn lost_edge_reference_requires_three_digit_class_tags() {
     }
     for value in ["000", "019", "999"] {
         let tag: crate::records::references::DesignClassTag =
-            json_wire::from_value(serde_json::json!(value)).unwrap();
+            json_wire::from_value(cadmpeg_core::json!(value)).unwrap();
         assert_eq!(tag.as_str(), value);
-        assert_eq!(json_wire::to_value(tag).unwrap(), serde_json::json!(value));
+        assert_eq!(
+            json_wire::to_value(tag).unwrap(),
+            cadmpeg_core::json!(value)
+        );
     }
 }
 
@@ -1070,7 +1073,7 @@ fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
             transform[0][3] = 12.0;
         }
         let paired = if member { 50 } else { 100 + length };
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "id": "placement", "scope_record_index": 1,
             "entity_id": "Sketch_7",
             "byte_offset": 100, "class_tag": "300", "record_index": 1,
@@ -1165,7 +1168,7 @@ fn sketch_placement_extent_and_matrix_are_checked_at_construction() {
 
 #[test]
 fn timeline_frame_rejects_invalid_source_spans() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:design-feature-timeline#200", "byte_offset": 200, "class_tag": "256",
         "record_index": 35, "source_ordinal": 0, "frame_length": 100,
         "context_record_index": 17, "context_record_index_offset": 220,
@@ -1173,72 +1176,76 @@ fn timeline_frame_rejects_invalid_source_spans() {
         "item_record_index_offsets": [245, 278]
     });
     for (field, bad, diagnostic) in [
-        ("class_tag", serde_json::json!("25x"), "class_tag"),
-        ("record_index", serde_json::json!(0), "record_index"),
+        ("class_tag", cadmpeg_core::json!("25x"), "class_tag"),
+        ("record_index", cadmpeg_core::json!(0), "record_index"),
         (
             "context_record_index",
-            serde_json::json!(0),
+            cadmpeg_core::json!(0),
             "context_record_index",
         ),
         (
             "item_record_indices",
-            serde_json::json!([101, 0]),
+            cadmpeg_core::json!([101, 0]),
             "item_record_indices",
         ),
         (
             "item_record_indices",
-            serde_json::json!([101, 101]),
+            cadmpeg_core::json!([101, 101]),
             "item_record_indices",
         ),
-        ("frame_length", serde_json::json!(u64::MAX), "frame_length"),
+        (
+            "frame_length",
+            cadmpeg_core::json!(u64::MAX),
+            "frame_length",
+        ),
         (
             "context_record_index_offset",
-            serde_json::json!(200),
+            cadmpeg_core::json!(200),
             "context_record_index_offset",
         ),
         (
             "context_record_index_offset",
-            serde_json::json!(231),
+            cadmpeg_core::json!(231),
             "context_record_index_offset",
         ),
         (
             "context_record_index_offset",
-            serde_json::json!(u64::MAX),
+            cadmpeg_core::json!(u64::MAX),
             "context_record_index_offset",
         ),
         (
             "item_count_offset",
-            serde_json::json!(297),
+            cadmpeg_core::json!(297),
             "item_count_offset",
         ),
         (
             "item_count_offset",
-            serde_json::json!(u64::MAX),
+            cadmpeg_core::json!(u64::MAX),
             "item_count_offset",
         ),
         (
             "item_record_index_offsets",
-            serde_json::json!([0, 0]),
+            cadmpeg_core::json!([0, 0]),
             "item_record_index_offsets",
         ),
         (
             "item_record_index_offsets",
-            serde_json::json!([244, 278]),
+            cadmpeg_core::json!([244, 278]),
             "item_record_index_offsets",
         ),
         (
             "item_record_index_offsets",
-            serde_json::json!([245, 255]),
+            cadmpeg_core::json!([245, 255]),
             "item_record_index_offsets",
         ),
         (
             "item_record_index_offsets",
-            serde_json::json!([245, 291]),
+            cadmpeg_core::json!([245, 291]),
             "item_record_index_offsets",
         ),
         (
             "item_record_index_offsets",
-            serde_json::json!([245, u64::MAX]),
+            cadmpeg_core::json!([245, u64::MAX]),
             "item_record_index_offsets",
         ),
     ] {
@@ -1446,7 +1453,7 @@ fn sketch_text_layout_preserves_flat_wire_pairs_and_independent_references() {
 fn sketch_text_layout_rejects_partial_placement_and_alignment() {
     use crate::records::sketch_geometry::SketchText;
 
-    let base = serde_json::json!({
+    let base = cadmpeg_core::json!({
         "id": "text", "record_index": 1, "owner_reference": 2,
         "class_tag": "000", "class_version": 4, "byte_offset": 0,
         "text": "text", "font_family": "Arial", "font_weight": 400,
@@ -1454,10 +1461,10 @@ fn sketch_text_layout_rejects_partial_placement_and_alignment() {
         "color": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0}, "raw_bytes": ""
     });
     for (field, value) in [
-        ("anchor", serde_json::json!({"u": 2.0, "v": 3.0})),
-        ("rotation", serde_json::json!(0.5)),
-        ("horizontal_alignment", serde_json::json!(3)),
-        ("vertical_alignment", serde_json::json!(7)),
+        ("anchor", cadmpeg_core::json!({"u": 2.0, "v": 3.0})),
+        ("rotation", cadmpeg_core::json!(0.5)),
+        ("horizontal_alignment", cadmpeg_core::json!(3)),
+        ("vertical_alignment", cadmpeg_core::json!(7)),
     ] {
         let mut wire = base.clone();
         wire[field] = value;
@@ -1469,7 +1476,7 @@ fn sketch_text_layout_rejects_partial_placement_and_alignment() {
 #[test]
 fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
     use crate::records::sketch_geometry::SketchPoint;
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     for (form, count) in [
         (json!({"kind": "version0"}), 1),
@@ -1697,7 +1704,7 @@ fn segment_base_guid_rejects_invalid_text() {
 
 #[test]
 fn material_assignment_sidecar_rejects_invalid_visual_guid() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "material#0", "asm_body_key": 42, "asm_body_key_offset": 10,
         "entity_suffix_offset": 20, "entity_id": "0_985",
         "entity_id_offset": 30, "visual_guid": "not-a-guid", "visual_guid_offset": 40
@@ -1711,7 +1718,7 @@ fn visual_token_wire_preserves_revision_spelling() {
         "abcdef01-2222-3333-4444-555555555555",
         "ABCDEF01-2222-3333-4444-555555555555_Post2015_Post2015",
     ] {
-        let wire = serde_json::json!(text);
+        let wire = cadmpeg_core::json!(text);
         let token: super::references::DesignVisualToken =
             json_wire::from_value(wire.clone()).unwrap();
         assert_eq!(json_wire::to_value(token).unwrap(), wire);
@@ -1722,8 +1729,10 @@ fn visual_token_wire_preserves_revision_spelling() {
         "abcdef01-2222-3333-4444-555555555555_post2015",
     ] {
         assert!(
-            json_wire::from_value::<super::references::DesignVisualToken>(serde_json::json!(text))
-                .is_err()
+            json_wire::from_value::<super::references::DesignVisualToken>(cadmpeg_core::json!(
+                text
+            ))
+            .is_err()
         );
     }
 }
@@ -1731,7 +1740,7 @@ fn visual_token_wire_preserves_revision_spelling() {
 #[test]
 fn sketch_link_sidecar_rejects_present_sentinels() {
     for sense in [-1, super::sketch_links::SKETCH_LINK_SENSE_UNCONSTRAINED] {
-        let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
+        let wire = cadmpeg_core::json!({"id": "link", "target": {"kind": "document"},
             "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
         assert!(json_wire::from_value::<super::sketch_links::SketchCurveLink>(wire).is_err());
     }
@@ -1740,7 +1749,7 @@ fn sketch_link_sidecar_rejects_present_sentinels() {
 #[test]
 fn sketch_link_sidecar_preserves_all_non_sentinel_senses() {
     for sense in [i64::MIN, -2, 0, 1, 2, i64::MAX] {
-        let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
+        let wire = cadmpeg_core::json!({"id": "link", "target": {"kind": "document"},
             "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
         let record: super::sketch_links::SketchCurveLink =
             json_wire::from_value(wire.clone()).unwrap();
@@ -1762,14 +1771,14 @@ fn sketch_pattern_count_enforces_both_bounds() {
         assert_eq!(count.get(), value);
         assert_eq!(
             json_wire::to_value(count).unwrap(),
-            serde_json::json!(value)
+            cadmpeg_core::json!(value)
         );
     }
 }
 
 #[test]
 fn sketch_identity_sidecar_rejects_zero() {
-    let point = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
+    let point = cadmpeg_core::json!({"id": "point", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 0, "closure": {"selector": 0, "state": 0},
@@ -1780,10 +1789,10 @@ fn sketch_identity_sidecar_rejects_zero() {
             .to_string()
             .contains("persistent_id")
     );
-    let curve = serde_json::json!({"id": "curve", "record_index": 1, "class_tag": "000",
+    let curve = cadmpeg_core::json!({"id": "curve", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "geometry_offset": 0, "primary_id": 0, "secondary_id": 0});
     assert!(json_wire::from_value::<super::sketch_geometry::SketchCurveIdentity>(curve).is_err());
-    let surface = serde_json::json!({"id": "surface", "record_index": 1, "class_tag": "000",
+    let surface = cadmpeg_core::json!({"id": "surface", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "persistent_id": 0, "u_degree": 0, "v_degree": 0,
         "u_knots": [], "v_knots": [], "control_points": []});
     assert!(json_wire::from_value::<super::sketch_geometry::SketchSurface>(surface).is_err());
@@ -1844,7 +1853,7 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
 
 #[test]
 fn sketch_point_requires_a_distinct_companion_on_every_route() {
-    let mut wire = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
+    let mut wire = cadmpeg_core::json!({"id": "point", "record_index": 1, "class_tag": "000",
         "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 1, "closure": {"selector": 0, "state": 0},
@@ -1853,7 +1862,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         json_wire::from_value(wire.clone()).unwrap();
     assert!(original.companion().incident_curves.is_empty());
     assert_eq!(json_wire::to_value(&original).unwrap(), wire);
-    wire["companion"]["incident_curves"] = serde_json::json!([7, 7]);
+    wire["companion"]["incident_curves"] = cadmpeg_core::json!([7, 7]);
     assert!(
         json_wire::from_value::<super::sketch_geometry::SketchPoint>(wire.clone())
             .unwrap_err()
@@ -1891,23 +1900,26 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
 
 #[test]
 fn body_bounds_admit_only_ordered_finite_cache_frames() {
-    let wire = serde_json::json!({"id": "f3d:Design/BulkStream.dat:design-body-bounds#0", "entity_suffix": 10, "entity_byte_offset": 0,
+    let wire = cadmpeg_core::json!({"id": "f3d:Design/BulkStream.dat:design-body-bounds#0", "entity_suffix": 10, "entity_byte_offset": 0,
         "record_indices": [11, 12, 13], "record_byte_offsets": [20, 40, 60],
         "value_byte_offsets": [21, 41, 61], "maximum": {"x": 1.0, "y": 0.0, "z": 0.0},
         "minimum": {"x": 0.0, "y": 0.0, "z": 0.0}});
     let record: super::bodies::DesignBodyBounds = json_wire::from_value(wire.clone()).unwrap();
     assert_eq!(json_wire::to_value(&record).unwrap(), wire);
     for (field, value) in [
-        ("entity_suffix", serde_json::json!(u64::MAX)),
-        ("entity_suffix", serde_json::json!(u32::MAX)),
-        ("record_indices", serde_json::json!([11, 12, 14])),
-        ("record_byte_offsets", serde_json::json!([20, 20, 60])),
-        ("value_byte_offsets", serde_json::json!([20, 41, 61])),
+        ("entity_suffix", cadmpeg_core::json!(u64::MAX)),
+        ("entity_suffix", cadmpeg_core::json!(u32::MAX)),
+        ("record_indices", cadmpeg_core::json!([11, 12, 14])),
+        ("record_byte_offsets", cadmpeg_core::json!([20, 20, 60])),
+        ("value_byte_offsets", cadmpeg_core::json!([20, 41, 61])),
         (
             "maximum",
-            serde_json::json!({"x": -1.0, "y": 0.0, "z": 0.0}),
+            cadmpeg_core::json!({"x": -1.0, "y": 0.0, "z": 0.0}),
         ),
-        ("maximum", serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0})),
+        (
+            "maximum",
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
+        ),
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;
@@ -1925,18 +1937,18 @@ fn body_bounds_admit_only_ordered_finite_cache_frames() {
 
 #[test]
 fn body_binding_wire_rejects_invalid_pair_frames() {
-    let wire = serde_json::json!({"id": "f3d:Design/BulkStream.dat:design-body-binding#10", "stream": "Design/BulkStream.dat",
+    let wire = cadmpeg_core::json!({"id": "f3d:Design/BulkStream.dat:design-body-binding#10", "stream": "Design/BulkStream.dat",
         "pair_count": 1, "pair_ordinal": 0, "asm_body_key": 0, "asm_body_key_offset": 10,
         "entity_suffix": 0, "entity_suffix_offset": 18, "blob_name": "BREP.", "blob_name_offset": 19});
     let record: super::bodies::DesignBodyBinding = json_wire::from_value(wire.clone()).unwrap();
     assert_eq!(json_wire::to_value(record).unwrap(), wire);
     for (field, value) in [
-        ("pair_count", serde_json::json!(0)),
-        ("pair_ordinal", serde_json::json!(1)),
-        ("asm_body_key_offset", serde_json::json!(u64::MAX)),
-        ("entity_suffix_offset", serde_json::json!(19)),
-        ("blob_name", serde_json::json!("body.smbh")),
-        ("blob_name_offset", serde_json::json!(18)),
+        ("pair_count", cadmpeg_core::json!(0)),
+        ("pair_ordinal", cadmpeg_core::json!(1)),
+        ("asm_body_key_offset", cadmpeg_core::json!(u64::MAX)),
+        ("entity_suffix_offset", cadmpeg_core::json!(19)),
+        ("blob_name", cadmpeg_core::json!("body.smbh")),
+        ("blob_name_offset", cadmpeg_core::json!(18)),
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;

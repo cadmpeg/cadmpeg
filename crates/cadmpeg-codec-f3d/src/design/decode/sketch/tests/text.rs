@@ -136,7 +136,7 @@ fn native_sketch_text_refuses_zero_height() {
     ))
     .expect("sketch text record");
     let mut zero_height = json::to_value(&text).expect("serialize sketch text");
-    zero_height["height"] = serde_json::json!(0.0);
+    zero_height["height"] = cadmpeg_core::json!(0.0);
     assert!(json::from_value::<crate::records::sketch_geometry::SketchText>(zero_height).is_err());
 }
 
@@ -149,7 +149,7 @@ fn native_sketch_text_refuses_negative_width_factor() {
     ))
     .expect("sketch text record");
     let mut negative_width = json::to_value(&text).expect("serialize sketch text");
-    negative_width["width_factor"] = serde_json::json!(-1.0);
+    negative_width["width_factor"] = cadmpeg_core::json!(-1.0);
     assert!(
         json::from_value::<crate::records::sketch_geometry::SketchText>(negative_width).is_err()
     );

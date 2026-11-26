@@ -1194,10 +1194,14 @@ fn attach_free_vertices(
         Vec::new(),
         free_vertices,
     );
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "MainDataStream+SurfacicReps",
             0,
             "unbound_point_owner",
@@ -4057,13 +4061,19 @@ fn partition_standard_face_components(
             }
             continue;
         }
-        for (id, tag) in [
-            (region_id.as_str(), "derived_region"),
-            (shell_id.as_str(), "derived_shell"),
+        for (key, tag) in [
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+                "derived_region",
+            ),
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+                "derived_shell",
+            ),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 "MainDataStream+SurfacicReps",
                 0,
                 tag,

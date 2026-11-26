@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 use std::rc::Rc;
 
 fn model() -> CadIr {

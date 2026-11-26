@@ -267,13 +267,13 @@ fn mirror_options_have_exactly_nine_native_bytes() {
 
     for bytes in ["", "00", "0000000000000000", "00000000000000000000"] {
         assert!(json::from_value::<Property>(
-            serde_json::json!({"kind": "options", "bytes": bytes})
+            cadmpeg_core::json!({"kind": "options", "bytes": bytes})
         )
         .is_err());
     }
     assert_eq!(
         json::from_value::<Property>(
-            serde_json::json!({"kind": "options", "bytes": "000000000000000000"})
+            cadmpeg_core::json!({"kind": "options", "bytes": "000000000000000000"})
         )
         .expect("nine bytes"),
         Property::Options {
@@ -468,7 +468,7 @@ fn validator_admits_each_measured_body_copy_outline() {
     for outline in [3, 9, 15] {
         let (mut fixture, source) = new_body_form();
         let mut node = json::to_value(&fixture.generated_features[0]).expect("node");
-        node["outline_value"] = serde_json::json!(outline);
+        node["outline_value"] = cadmpeg_core::json!(outline);
         fixture.generated_features[0] = json::from_value(node).expect("outline form");
         let (feature, result) = fixture
             .index()
@@ -524,7 +524,7 @@ fn validator_checks_the_replacement_form_and_each_neighbouring_refusal() {
 }
 
 fn rse_record(token: &str, ordinal: u32, type_id: &str, payload_len: u64) -> RseRecordRecord {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("record-{ordinal}"),
         "token": token,
         "ordinal": ordinal,

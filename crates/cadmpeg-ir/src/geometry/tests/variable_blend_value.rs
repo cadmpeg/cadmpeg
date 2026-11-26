@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::geometry::variable_blends::VariableBlendValue;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn a_variable_blend_value_states_no_native_name_on_its_wire() {

@@ -134,7 +134,7 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     let wire = json::to_value(operand.clone()).unwrap();
     assert_eq!(
         wire["registered_recipe_frame"],
-        serde_json::json!({
+        cadmpeg_core::json!({
             "record_index": 103, "primary_offset": 44, "secondary_offset": 87, "end_offset": 98,
             "next_primary_index": 104
         })

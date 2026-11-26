@@ -157,7 +157,7 @@ fn transition_complete_group_refuses_exact_identity_slots() {
 }
 
 fn changed_reference_context(edge: i64) -> DesignEdgeRecipeReferenceContext {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "reference_ordinal": 0,
         "result_faces": [],
         "result_shared_edge_slots": [],
@@ -177,7 +177,7 @@ fn hem_operand() -> crate::records::topology::edge_identity::DesignEdgeOperand {
         .into_iter()
         .enumerate()
         .map(|(ordinal, edge)| {
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "reference_ordinal": ordinal,
                 "result_faces": if edge.is_some() { vec!["f3d:model:face#1"] } else { Vec::new() },
                 "result_shared_edge_slots": [],
@@ -325,13 +325,13 @@ fn fragment_transition_group() -> (
             (base + 1, vec![202, 203]),
             (base + 2, vec![edge, 204]),
         ] {
-            boundaries.push(json::from_value(serde_json::json!({
+            boundaries.push(json::from_value(cadmpeg_core::json!({
                 "id": format!("face-{face}"), "parent": "state-7", "face_slot": face,
                 "loops": [{"loop_slot": face, "coedge_slots": [face*2, face*2+1], "edge_slots": edges}],
             })).unwrap());
         }
         operand.recipe_reference_contexts = [vec![base,base+1],vec![base+2]].into_iter()
-            .enumerate().map(|(ordinal,faces)| json::from_value(serde_json::json!({
+            .enumerate().map(|(ordinal,faces)| json::from_value(cadmpeg_core::json!({
                 "reference_ordinal": ordinal, "result_faces": [], "result_shared_edge_slots": [],
                 "preceding_faces": faces.iter().map(|f| format!("f3d:brep:entity#{f}")).collect::<Vec<_>>(),
                 "preceding_face_boundary_ids": faces.iter().map(|f| format!("face-{f}")).collect::<Vec<_>>(),
@@ -565,7 +565,7 @@ fn two_side_operand(
         .iter()
         .enumerate()
         .map(|(ordinal, (face, edges))| {
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "reference_ordinal": ordinal,
                 "result_faces": [],
                 "result_shared_edge_slots": [],

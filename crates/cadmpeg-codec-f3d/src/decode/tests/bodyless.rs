@@ -190,7 +190,7 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
     let loss = super::super::saved_free_edge_bodies_loss(&ir).unwrap();
     assert!(loss.message.starts_with("2 saved free-edge bodies"));
     let definition: cadmpeg_ir::products::ProductDefinition =
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:design:product-definition#1", "kind": "part", "bodies": [], "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": []
         }))
         .unwrap();

@@ -1135,7 +1135,12 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                         .unwrap()],
                     );
                 {
-                    set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
+                    set_exactness(
+                        annotations,
+                        cadmpeg_ir::ids::Identity::new("rhino:test:asset#rejected")
+                            .expect("identity grammar"),
+                        Exactness::Derived,
+                    );
                 }
                 if admission_failure {
                     return Err::<(), String>("source admission refusal".into());

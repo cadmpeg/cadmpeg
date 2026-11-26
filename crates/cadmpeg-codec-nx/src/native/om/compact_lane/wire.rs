@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn counted_wire_rejects_each_inconsistent_derived_position() {
-        let json = serde_json::json!({
+        let json = cadmpeg_core::json!({
             "id": "lane", "data_block": "block", "ordinal": 0, "declared_count": 4,
             "anchor_index": 1, "raw_anchor_index": "8001", "anchor_data_block": "anchor",
             "member_indices": [2, 3], "raw_member_indices": ["8002","03"], "member_data_blocks": ["a", "b"],
@@ -230,13 +230,13 @@ mod tests {
         assert_eq!(json::to_value(lane).unwrap(), json);
         for field in ["source_offset", "anchor_source_offset"] {
             let mut invalid = json.clone();
-            invalid[field] = serde_json::json!(u64::MAX);
+            invalid[field] = cadmpeg_core::json!(u64::MAX);
             let error = json::from_value::<DataBlockCountedIndexLane>(invalid).unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
         for member in 0..2 {
             let mut invalid = json.clone();
-            invalid["member_source_offsets"][member] = serde_json::json!(u64::MAX);
+            invalid["member_source_offsets"][member] = cadmpeg_core::json!(u64::MAX);
             let error = json::from_value::<DataBlockCountedIndexLane>(invalid).unwrap_err();
             assert!(
                 error.to_string().contains("member_source_offsets"),
@@ -269,16 +269,16 @@ mod tests {
         assert_eq!(decoded, lane);
         assert_eq!(
             json["slot_source_offsets"],
-            serde_json::json!([10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 30, 31, 33])
+            cadmpeg_core::json!([10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 30, 31, 33])
         );
         for slot in 0..16 {
             let mut invalid = json.clone();
-            invalid["slot_source_offsets"][slot] = serde_json::json!(u64::MAX);
+            invalid["slot_source_offsets"][slot] = cadmpeg_core::json!(u64::MAX);
             let error = json::from_value::<DataBlockAbrReferenceLane>(invalid).unwrap_err();
             assert!(error.to_string().contains("slot_source_offsets"), "{error}");
         }
         let mut invalid = json;
-        invalid["source_offset"] = serde_json::json!(u64::MAX);
+        invalid["source_offset"] = cadmpeg_core::json!(u64::MAX);
         let error = json::from_value::<DataBlockAbrReferenceLane>(invalid).unwrap_err();
         assert!(error.to_string().contains("source_offset"), "{error}");
     }
@@ -306,7 +306,7 @@ mod tests {
             "member_source_offsets",
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-            malformed[field] = serde_json::json!([]);
+            malformed[field] = cadmpeg_core::json!([]);
             assert!(
                 json::from_value::<crate::native::om::compact_lane::DataBlockCountedIndexLane>(
                     malformed
@@ -315,9 +315,9 @@ mod tests {
             );
         }
         for (field, invalid) in [
-            ("declared_count", serde_json::json!(4)),
-            ("raw_anchor_index", serde_json::json!("ff")),
-            ("raw_member_indices", serde_json::json!(["03"])),
+            ("declared_count", cadmpeg_core::json!(4)),
+            ("raw_anchor_index", cadmpeg_core::json!("ff")),
+            ("raw_member_indices", cadmpeg_core::json!(["03"])),
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field] = invalid;
@@ -381,7 +381,7 @@ mod tests {
         for (slot, raw) in [(0, vec![3]), (1, vec![0])] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed["raw_slot_indices"][slot] =
-                serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
+                cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
             let error = json::from_value::<
                 crate::native::om::compact_lane::DataBlockAbrReferenceLane,
             >(malformed)

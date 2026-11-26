@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::{
     body as body_ops, dressup as dressup_ops,
@@ -13,7 +14,7 @@ use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::scalar::{Length, PositiveLength};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::*;
 

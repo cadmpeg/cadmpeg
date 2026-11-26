@@ -2,8 +2,9 @@
 //! A nested construction's kind fits its relation, a measuring origin is a
 //! point, and a `Fold` reference picks straight edges.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::super::fixture::{design_findings, document};
 use crate::document::CadIr;

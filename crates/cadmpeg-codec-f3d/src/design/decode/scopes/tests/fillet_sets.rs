@@ -469,7 +469,7 @@ fn empty_or_unpaired_prefix_lists_reject_the_set_list() {
 }
 
 fn group() -> crate::records::topology::construction::DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:group#{GROUP}"),
         "scope_record_index": SCOPE,
         "scope_reference_ordinal": 0,

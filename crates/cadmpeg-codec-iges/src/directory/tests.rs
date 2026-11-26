@@ -226,7 +226,7 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         assert!(!parsed.is_logically_dependent());
         assert_eq!(
             json::to_value(parsed).unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "blank_status": 99,
                 "subordinate_status": 99,
                 "use_flag": 99,

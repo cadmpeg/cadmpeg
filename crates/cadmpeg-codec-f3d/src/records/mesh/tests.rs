@@ -41,10 +41,10 @@ fn mesh_record_identity_native_retained_limit_refuses_before_record_clone() {
 
 #[test]
 fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
-    let identity = serde_json::json!({
+    let identity = cadmpeg_core::json!({
         "class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 200
     });
-    let body = serde_json::json!({
+    let body = cadmpeg_core::json!({
         "scope_record_index":104, "scope_body_ordinal":0,
         "body_words":{"form":"plain","body_word":0}, "body_words_offset":121,
         "body_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 575},
@@ -63,8 +63,8 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "scene_state_reference_offset": 133, "scene_auxiliary_reference_offset": 148
     });
     let mut second_body = body.clone();
-    second_body["scope_body_ordinal"] = serde_json::json!(1);
-    let base = serde_json::json!({
+    second_body["scope_body_ordinal"] = cadmpeg_core::json!(1);
+    let base = cadmpeg_core::json!({
         "id": "mesh-feature", "scopes": [{"scope_record": identity, "scope_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 270, "frame_length": 30}, "scope_owner_record_index":109, "scope_owner_reference_offset":289, "scope_body_count_offset":121}],
         "collection_record": {"class_tag": "256", "record_index": 104, "byte_offset": 0, "frame_length": 95}, "collection_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 38, "frame_length": 57},
         "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [21, 58],
@@ -87,9 +87,9 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
                 .expect("wire array")
                 .truncate(count);
         }
-        value["collection_record"]["frame_length"] = serde_json::json!(73 + 11 * count);
-        value["collection_base_record"]["frame_length"] = serde_json::json!(35 + 11 * count);
-        value["collection_owner_reference_offset"] = serde_json::json!(62 + 11 * count);
+        value["collection_record"]["frame_length"] = cadmpeg_core::json!(73 + 11 * count);
+        value["collection_base_record"]["frame_length"] = cadmpeg_core::json!(35 + 11 * count);
+        value["collection_owner_reference_offset"] = cadmpeg_core::json!(62 + 11 * count);
         let wire: crate::records::mesh::DesignMeshFeatureWire =
             json::from_value(value).expect("mesh wire");
         let expected = json::to_string(&wire).expect("original mesh wire");
@@ -113,30 +113,30 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "collection_body_reference_offsets",
     ] {
         let mut value = base.clone();
-        value[field][0] = serde_json::json!(0);
+        value[field][0] = cadmpeg_core::json!(0);
         let error = json::from_value::<crate::records::mesh::DesignMeshFeature>(value)
             .expect_err("misplaced body reference")
             .to_string();
         assert!(error.contains(field));
     }
     let mut wrong_count = base.clone();
-    wrong_count["collection_record"]["frame_length"] = serde_json::json!(84);
-    wrong_count["collection_base_record"]["frame_length"] = serde_json::json!(46);
-    wrong_count["collection_owner_reference_offset"] = serde_json::json!(73);
+    wrong_count["collection_record"]["frame_length"] = cadmpeg_core::json!(84);
+    wrong_count["collection_base_record"]["frame_length"] = cadmpeg_core::json!(46);
+    wrong_count["collection_owner_reference_offset"] = cadmpeg_core::json!(73);
     let error = json::from_value::<crate::records::mesh::DesignMeshFeature>(wrong_count)
         .expect_err("body count mismatch")
         .to_string();
     assert!(error.contains("bodies count"));
     let mut short_scope = base.clone();
-    short_scope["scopes"][0]["scope_record"]["frame_length"] = serde_json::json!(76);
-    short_scope["scopes"][0]["scope_base_record"]["byte_offset"] = serde_json::json!(146);
-    short_scope["scopes"][0]["scope_owner_reference_offset"] = serde_json::json!(165);
+    short_scope["scopes"][0]["scope_record"]["frame_length"] = cadmpeg_core::json!(76);
+    short_scope["scopes"][0]["scope_base_record"]["byte_offset"] = cadmpeg_core::json!(146);
+    short_scope["scopes"][0]["scope_owner_reference_offset"] = cadmpeg_core::json!(165);
     let error = json::from_value::<crate::records::mesh::DesignMeshFeature>(short_scope)
         .expect_err("body references overlap base")
         .to_string();
     assert!(error.contains("bodies reference run"));
     let mut changed_identity = base;
-    changed_identity["body_record_indices"][0] = serde_json::json!(105);
+    changed_identity["body_record_indices"][0] = cadmpeg_core::json!(105);
     let error = json::from_value::<crate::records::mesh::DesignMeshFeature>(changed_identity)
         .expect_err("conflicting body identity")
         .to_string();
@@ -144,10 +144,10 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
 }
 
 fn mesh_feature_wire_for_borrowed(count: usize, textures: bool) -> serde_json::Value {
-    let identity = serde_json::json!({
+    let identity = cadmpeg_core::json!({
         "class_tag":"256", "record_index":104, "byte_offset":100, "frame_length":200
     });
-    let body = serde_json::json!({
+    let body = cadmpeg_core::json!({
         "scope_record_index":104, "scope_body_ordinal":0,
         "body_words":{"form":"plain","body_word":0}, "body_words_offset":121,
         "body_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":575},
@@ -168,7 +168,7 @@ fn mesh_feature_wire_for_borrowed(count: usize, textures: bool) -> serde_json::V
     });
     let texture_rows = if textures {
         let row = |ordinal, filename_ordinal, guid, flags_guid, filename_guid| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ordinal":ordinal,"resource_guid":guid,"flags_guid_offset":flags_guid,
                 "flags":7,"flags_offset":flags_guid + 36,
                 "filename_ordinal":filename_ordinal,"filename_guid_offset":filename_guid,
@@ -178,20 +178,20 @@ fn mesh_feature_wire_for_borrowed(count: usize, textures: bool) -> serde_json::V
                 "archive_entry_name":"Textures/a.png","asset":"test:model:asset#texture"
             })
         };
-        serde_json::json!([
+        cadmpeg_core::json!([
             row(1, 0, "BBBBBBBB-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 173, 221),
             row(0, 1, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 129, 272)
         ])
     } else {
-        serde_json::json!([])
+        cadmpeg_core::json!([])
     };
     let body_indices = [104, 104];
     let scope_offsets = [125, 136];
     let collection_offsets = [62, 73];
     let mut second_body = body.clone();
-    second_body["scope_body_ordinal"] = serde_json::json!(1);
+    second_body["scope_body_ordinal"] = cadmpeg_core::json!(1);
     let body_rows = [body, second_body];
-    serde_json::json!({
+    cadmpeg_core::json!({
         "id":"f3d:native:mesh-feature#0", "scopes":[{"scope_record":identity,
         "scope_base_record":{"class_tag":"256","record_index":104,"byte_offset":270,"frame_length":30}, "scope_owner_record_index":109,"scope_owner_reference_offset":289,"scope_body_count_offset":121}],
         "collection_record":{"class_tag":"256","record_index":104,"byte_offset":0,"frame_length":73 + 11 * count},
@@ -214,7 +214,8 @@ fn mesh_feature_wire_for_borrowed(count: usize, textures: bool) -> serde_json::V
 #[test]
 fn mesh_feature_preserves_split_stream_descriptor() {
     let mut wire = mesh_feature_wire_for_borrowed(1, false);
-    wire["bodies"][0]["split_streams"] = serde_json::json!([{"name":"v", "descriptor":"84a14403"}]);
+    wire["bodies"][0]["split_streams"] =
+        cadmpeg_core::json!([{"name":"v", "descriptor":"84a14403"}]);
     let feature: super::DesignMeshFeature = json::from_value(wire).unwrap();
     assert_eq!(
         json::to_value(feature).unwrap()["bodies"][0]["split_streams"][0]["descriptor"],
@@ -225,7 +226,7 @@ fn mesh_feature_preserves_split_stream_descriptor() {
 #[test]
 fn mesh_feature_preserves_face_group_registry() {
     let mut wire = mesh_feature_wire_for_borrowed(1, false);
-    wire["bodies"][0]["face_group_metadata"] = serde_json::json!({"declared_count":1, "entries":[{"key":0,"guid":"10000000-0000-4000-8000-000000000001"},{"key":2,"guid":"20000000-0000-4000-8000-000000000002"}]});
+    wire["bodies"][0]["face_group_metadata"] = cadmpeg_core::json!({"declared_count":1, "entries":[{"key":0,"guid":"10000000-0000-4000-8000-000000000001"},{"key":2,"guid":"20000000-0000-4000-8000-000000000002"}]});
     let feature: super::DesignMeshFeature = json::from_value(wire).unwrap();
     let output = json::to_value(feature).unwrap();
     assert_eq!(
@@ -277,10 +278,10 @@ fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
     );
     assert_eq!(bounds.into_wire([100, 124]).offsets, [100, 124]);
     for (field, bad) in [
-        ("minimum", serde_json::json!([2.0, -5.0, -6.0])),
-        ("maximum", serde_json::json!([-5.0, 2.0, 3.0])),
-        ("offsets", serde_json::json!([100, 125])),
-        ("offsets", serde_json::json!([u64::MAX, 0])),
+        ("minimum", cadmpeg_core::json!([2.0, -5.0, -6.0])),
+        ("maximum", cadmpeg_core::json!([-5.0, 2.0, 3.0])),
+        ("offsets", cadmpeg_core::json!([100, 125])),
+        ("offsets", cadmpeg_core::json!([u64::MAX, 0])),
     ] {
         let mut invalid = json::to_value(bounds.into_wire([100, 124])).unwrap();
         invalid[field] = bad;
@@ -310,11 +311,11 @@ fn mesh_record_identity_preserves_wire_and_rejects_invalid_headers() {
         serde_json::from_str(wire).unwrap();
     assert_eq!(json::to_string(&record).unwrap(), wire);
     for (field, bad) in [
-        ("class_tag", serde_json::json!("25x")),
-        ("class_tag", serde_json::json!("2560")),
-        ("record_index", serde_json::json!(0)),
-        ("frame_length", serde_json::json!(10)),
-        ("frame_length", serde_json::json!(u64::MAX)),
+        ("class_tag", cadmpeg_core::json!("25x")),
+        ("class_tag", cadmpeg_core::json!("2560")),
+        ("record_index", cadmpeg_core::json!(0)),
+        ("frame_length", cadmpeg_core::json!(10)),
+        ("frame_length", cadmpeg_core::json!(u64::MAX)),
     ] {
         let mut invalid = json::to_value(&record).unwrap();
         invalid[field] = bad;
@@ -405,7 +406,7 @@ fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
             vec![json::from_value(wire).map_err(|error| error.to_string())?],
         )
     }
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "ordinal": 0, "resource_guid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
         "flags_guid_offset": 29, "flags": 7, "flags_offset": 65,
         "filename_ordinal": 0, "filename_guid_offset": 77,
@@ -504,9 +505,10 @@ fn mesh_uuid_preserves_wire_and_requires_lowercase_version_four() {
     let text = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     let value = crate::records::mesh::DesignMeshUuid::try_from(text.to_owned()).unwrap();
     assert_eq!(value.as_str(), text);
-    assert_eq!(json::to_value(&value).unwrap(), serde_json::json!(text));
+    assert_eq!(json::to_value(&value).unwrap(), cadmpeg_core::json!(text));
     assert_eq!(
-        json::from_value::<crate::records::mesh::DesignMeshUuid>(serde_json::json!(text)).unwrap(),
+        json::from_value::<crate::records::mesh::DesignMeshUuid>(cadmpeg_core::json!(text))
+            .unwrap(),
         value
     );
     for invalid in [
@@ -516,7 +518,7 @@ fn mesh_uuid_preserves_wire_and_requires_lowercase_version_four() {
         "",
     ] {
         assert!(
-            json::from_value::<crate::records::mesh::DesignMeshUuid>(serde_json::json!(invalid))
+            json::from_value::<crate::records::mesh::DesignMeshUuid>(cadmpeg_core::json!(invalid))
                 .is_err()
         );
     }
@@ -788,7 +790,7 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
         .unwrap()
     };
     let row = |ordinal, filename_ordinal, guid, flags_guid, filename_guid| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "ordinal": ordinal, "resource_guid": guid, "flags_guid_offset": flags_guid,
             "flags": 7, "flags_offset": flags_guid + 36,
             "filename_ordinal": filename_ordinal, "filename_guid_offset": filename_guid,
@@ -798,7 +800,7 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
             "archive_entry_name": "Textures/a.png", "asset": "test:model:asset#texture"
         })
     };
-    let rows = serde_json::json!([row(1, 0, GUID_B, 73, 121), row(0, 1, GUID_A, 29, 172)]);
+    let rows = cadmpeg_core::json!([row(1, 0, GUID_B, 73, 121), row(0, 1, GUID_A, 29, 172)]);
     let parse = |rows: serde_json::Value| {
         crate::records::mesh::DesignMeshTextureTable::from_wire(
             record(219),
