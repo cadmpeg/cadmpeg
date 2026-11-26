@@ -144,3 +144,15 @@ response. Enabled or unclassified parameters beyond the plain mate set charge
 not charged. A switch set to `false` silences the limit or offset parameters
 whose names carry its own qualifying words, and a switch with more qualifying
 words than a parameter silences that parameter. Source responses remain assets.
+
+## ONSHAPE-030 — Shell wall sense with opposite direction
+
+Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?
+
+Known: A `false` value places the wall inside the original boundary. The Onshape `shell` specification names the control "Opposite direction" and lists no other direction control.
+
+Need: A stored shell with `oppositeDirection` set to `true`, its input body and its final STEP body.
+
+Conflict: None.
+
+Note: The decoder retains a shell with `oppositeDirection` set to `true`, the hollow form or an unlisted parameter as Native with `shell.not-supported` or `history.not-supported`.
