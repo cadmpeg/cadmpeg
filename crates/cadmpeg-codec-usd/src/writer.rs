@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeInput, ExportBody, NativeDispositions, WritePath,
 };
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::{
@@ -241,6 +241,8 @@ pub(crate) fn plan(
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
+        // A USD layer holds no native record of any format.
+        native: NativeDispositions::dropped("which the USD writer does not write"),
         losses,
         notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
         written_row: None,
@@ -1192,8 +1194,11 @@ impl<'ir> Writer<'ir> {
         let mut prims = Vec::new();
         let tessellations = self.tessellations(&body.id);
         let faces = self.body_faces(body);
+        let mut meshed_faces = brep::FaceMeshes::new();
         if !faces.is_empty() && self.exact_brep {
-            if let Some(packed) = self.brep_packed(body) {
+            let (packed, meshes) = self.brep_packed(body);
+            meshed_faces = meshes;
+            if let Some(packed) = packed {
                 prims.push(Geometry::Brep(packed));
             }
         }
@@ -1220,7 +1225,8 @@ impl<'ir> Writer<'ir> {
             if !meshed.is_empty() {
                 self.tessellator
                     .set_options(brep::mesh_options(&self.index, body));
-                let (mesh, unmeshed) = brep::mesh(body, &meshed, &mut self.tessellator);
+                let (mesh, unmeshed) =
+                    brep::mesh(body, &meshed, &mut self.tessellator, meshed_faces);
                 self.unwritten.unmeshed.extend(unmeshed);
                 if let Some((mesh, faces)) = mesh {
                     if !exact {

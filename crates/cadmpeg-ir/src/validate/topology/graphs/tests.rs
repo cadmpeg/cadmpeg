@@ -74,7 +74,7 @@ fn vertex_loop_model(faces: &[(&str, usize, &[&str])], shell_count: usize) -> cr
 
 fn disconnected_shells(ir: &crate::CadIr) -> Vec<String> {
     let mut findings = Vec::new();
-    super::check_shell_connectivity(ir, &mut findings);
+    super::check_shell_connectivity(&crate::index::ModelIndex::new_model_only(ir), &mut findings);
     findings
         .into_iter()
         .map(|finding| {
@@ -268,7 +268,7 @@ fn loopless_model(faces: &[(&str, usize, &str)], shell_count: usize) -> crate::C
 
 fn loopless_findings(ir: &crate::CadIr) -> Vec<(String, String)> {
     let mut findings = Vec::new();
-    super::check_loopless_faces(ir, &mut findings);
+    super::check_loopless_faces(&crate::index::ModelIndex::new_model_only(ir), &mut findings);
     findings
         .into_iter()
         .map(|finding| {
