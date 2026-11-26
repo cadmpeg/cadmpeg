@@ -19,6 +19,7 @@ use cadmpeg_ir::design::feature::{
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
 use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::projection::fields::{FeatureField, ModelFeatureField};
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::projection::Restatement;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
@@ -205,13 +206,15 @@ fn timeline(
 }
 
 /// The NX arrangements, each a positional arrangement that states no
-/// overrides, and the one the part names as in use.
+/// overrides and restates the configuration it is minted from (§5.11), and
+/// the one the part names as in use.
 fn arrangements(
-    ir: &CadIr,
+    ir: &mut CadIr,
     scope: &ProductDefinitionId,
 ) -> Result<(Vec<Arrangement>, BTreeSet<ArrangementId>), CodecError> {
     let mut arrangements = Vec::with_capacity(ir.model.configurations.len());
     let mut active = BTreeSet::new();
+    let mut restated = Vec::new();
     for configuration in &ir.model.configurations {
         let Some(name) = configuration.name.clone().and_then(NonBlankString::new) else {
             continue;
@@ -226,6 +229,7 @@ fn arrangements(
         if configuration.active {
             active.insert(id.clone());
         }
+        restated.push((configuration.id.as_str().to_owned(), id.as_str().to_owned()));
         arrangements.push(Arrangement {
             id,
             scope: scope.clone(),
@@ -238,6 +242,10 @@ fn arrangements(
             nested: Vec::new(),
             native_ref: configuration.native_ref.clone(),
         });
+    }
+    for (configuration, arrangement) in restated {
+        let by = Restater::Record(arrangement);
+        ir.model.restated_mut().record(&configuration, by, []);
     }
     Ok((arrangements, active))
 }

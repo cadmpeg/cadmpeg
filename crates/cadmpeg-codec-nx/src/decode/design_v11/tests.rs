@@ -281,6 +281,33 @@ fn arrangements_are_positional_and_the_active_one_is_in_force() {
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
+/// Each arrangement restates the configuration it is minted from; a
+/// configuration with no name states no arrangement and nothing restates it.
+#[test]
+fn each_arrangement_restates_its_configuration() {
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        configuration(0, "Default", true),
+        configuration(1, " ", false),
+    ];
+    ir.model.features = vec![feature("a", 0, sketch())];
+    project_ir(&mut ir);
+    let restating = ir
+        .model
+        .restated()
+        .get("nx:arrangements:configuration#0")
+        .expect("restated");
+    assert_eq!(
+        restating.by(),
+        &Restater::Record("nx:arrangements:arrangement#0".to_owned())
+    );
+    assert!(restating.cut().is_empty());
+    assert_eq!(
+        ir.model.restated().get("nx:arrangements:configuration#1"),
+        None
+    );
+}
+
 #[test]
 fn operations_keep_their_family_or_their_nx_kind() {
     let mut native = feature(

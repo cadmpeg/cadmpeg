@@ -6,6 +6,7 @@ use cadmpeg_core::CodecError;
 
 use super::fields::{FeatureField, ModelFeatureField, ModelParameterField, ParameterField};
 use super::project_layer;
+use super::restated::Restater;
 use crate::design::scope::DesignScope;
 use crate::ids::ProductDefinitionId;
 use crate::products::{ExternalDocument, ProductDefinition};
@@ -48,12 +49,18 @@ fn a_failed_projection_leaves_the_document_as_it_was_with_one_loss() {
             ExternalDocument::default(),
         ));
         ir.design.scopes.push(scope(root));
+        ir.model.restated_mut().record(
+            "test:model:feature#body",
+            Restater::Record("test:design:container#body".to_owned()),
+            [],
+        );
         losses.push(kept_loss());
         Err(CodecError::malformed("the third record has no frame"))
     })
     .expect("a record error does not end the session");
     assert_eq!(ir.geometry, geometry);
     assert_eq!(ir.model, model);
+    assert_eq!(ir.model.restated().get("test:model:feature#body"), None);
     assert_eq!(ir.design.entity_count(), 0);
     assert_eq!(losses.len(), 2);
     assert_eq!(losses[0], kept_loss());
@@ -141,6 +148,59 @@ fn restated_document() -> CadIr {
 }
 
 const FILLET: &str = "test:design:feature#fillet";
+
+/// A projection that succeeds states the fields each design feature leaves
+/// out of the model feature of its id: the operands of an operation it states
+/// as `Unresolved`, and a name and a suppression state it does not state.
+#[test]
+fn a_projection_states_the_fields_a_design_feature_leaves_out_of_its_model_feature() {
+    use crate::design::feature::{FeatureOperation, OperationFamily};
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::{
+        FeatureDefinition, FeatureOperation as ModelOperation, NativeFeatureKind,
+    };
+
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut ir = restated_document();
+    let model = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id.as_str() == FILLET)
+        .expect("model fillet");
+    model.name = Some("Fillet1".to_owned());
+    model.suppressed = Some(false);
+    model.evaluation =
+        FeatureEvaluation::from_definition(FeatureDefinition::Operation(ModelOperation::Native {
+            kind: NativeFeatureKind::Fillet,
+            parameters: BTreeMap::from([(
+                cadmpeg_core::text::NonBlankString::new("radius".to_owned()).expect("name"),
+                "2 mm".to_owned(),
+            )]),
+        }));
+    let mut losses = Vec::new();
+    project_layer(&ctx, "test", &mut ir, &mut losses, |ir, _| {
+        let feature = ir
+            .design
+            .features
+            .iter_mut()
+            .find(|feature| feature.id.as_str() == FILLET)
+            .expect("design fillet");
+        feature.name = None;
+        feature.suppressed = None;
+        feature.definition.operation = FeatureOperation::Unresolved {
+            family: OperationFamily::Fillet,
+        };
+        Ok(())
+    })
+    .expect("projection");
+    let restating = ir.model.restated().get(FILLET).expect("restated in part");
+    assert_eq!(restating.by(), &Restater::Record(FILLET.to_owned()));
+    assert_eq!(
+        restating.cut().iter().copied().collect::<Vec<_>>(),
+        ["definition", "name", "suppressed"]
+    );
+}
 
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {

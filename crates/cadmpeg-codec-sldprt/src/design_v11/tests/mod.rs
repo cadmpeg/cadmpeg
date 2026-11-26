@@ -293,6 +293,94 @@ fn configurations_mark_the_active_one() {
     assert_no_design_findings(&ir);
 }
 
+/// A configuration is restated without its custom properties, and one other
+/// than the active one without the feature suppressions that differ from the
+/// active one's and that its overrides do not state.
+#[test]
+fn a_configuration_is_restated_without_what_its_record_does_not_state() {
+    use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::features::parameters::{
+        ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Model,
+    };
+    use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let id =
+        |key: &str| ConfigurationId::mint(format!("sldprt:model:configuration#{key}")).unwrap();
+    let boss = FeatureId::mint("sldprt:model:feature#boss").unwrap();
+    let state = |evaluation| ConfigurationFeatureState {
+        evaluation,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    };
+    let model = |key: &str, ordinal, evaluation, properties: &[(&str, &str)]| Model {
+        id: id(key),
+        ordinal,
+        active: ordinal == 0,
+        source_index: Some(ordinal),
+        name: Some(key.to_owned()),
+        material: None,
+        properties: properties
+            .iter()
+            .map(|(name, value)| {
+                (
+                    cadmpeg_core::text::NonBlankString::new(*name).unwrap(),
+                    (*value).to_owned(),
+                )
+            })
+            .collect(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(boss.clone(), state(evaluation))]),
+        native_ref: None,
+    };
+    let design = |key: &str| DesignConfiguration {
+        id: id(key),
+        scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
+        name: key.to_owned(),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    };
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        model(
+            "default",
+            0,
+            ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            &[],
+        ),
+        model(
+            "short",
+            1,
+            ConfigurationEvaluation::Suppressed {},
+            &[("PartNo", "2")],
+        ),
+    ];
+    let configurations = super::configurations::Configurations {
+        records: vec![design("default"), design("short")],
+        active: Some(id("default")),
+    };
+    super::configurations::restate(&mut ir, &configurations);
+    assert_eq!(ir.model.restated().get(id("default").as_str()), None);
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    assert_eq!(
+        short.by(),
+        &Restater::Record(id("short").as_str().to_owned())
+    );
+    assert_eq!(
+        short.cut().iter().copied().collect::<Vec<_>>(),
+        ["feature_states", "properties"]
+    );
+}
+
 #[test]
 fn a_lone_configuration_without_source_index_is_the_active_one() {
     let keywords: [&[u8]; 2] = [
@@ -1469,6 +1557,13 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
             last: 2,
         }]
     );
+    let group = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Group"))
+        .unwrap();
+    assert_eq!(timeline.folder_records, std::slice::from_ref(&group.id));
 
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");

@@ -122,3 +122,51 @@ fn a_pick_names_only_a_producer_before_the_picking_feature() {
         Some(native(7))
     );
 }
+
+/// The name table restates a result topology whose faces and edges it names
+/// with the producing feature, a result topology with a member it does not
+/// name so without its members, and no result topology it names nothing of.
+#[test]
+fn the_name_table_restates_the_result_topologies_it_names() {
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+    use cadmpeg_ir::ids::FeatureResultTopologyId;
+
+    let local = |text: &str| cadmpeg_core::text::NonBlankString::new(text).expect("local id");
+    let result = |key: &str, producer: u32, faces: &[&str], edges: &[&str]| {
+        FeatureResultTopology::new(
+            FeatureResultTopologyId::mint(format!("creo:model:feature-result-topology#{key}"))
+                .expect("result id"),
+            feature(producer),
+            FeatureResultMembers::new(
+                Vec::new(),
+                faces.iter().map(|face| local(face)).collect(),
+                edges.iter().map(|edge| local(edge)).collect(),
+                Vec::new(),
+            )
+            .expect("members"),
+            None,
+        )
+    };
+    let scan = scan();
+    let mut ir = geometry();
+    ir.model.feature_result_topologies = vec![
+        result("named", 10, &["surface#7"], &["curve#9"]),
+        result("consumed", 10, &["surface#7", "surface#5"], &[]),
+        result("unnamed", 11, &["surface#8"], &[]),
+    ];
+    let order = [feature(10), feature(11)];
+    Names::new(&scan, order.iter()).restate_results(&mut ir);
+    let restated = |key: &str| {
+        ir.model
+            .restated()
+            .get(&format!("creo:model:feature-result-topology#{key}"))
+            .map(|restating| {
+                assert_eq!(restating.by(), &Restater::Names);
+                restating.cut().iter().copied().collect::<Vec<_>>()
+            })
+    };
+    assert_eq!(restated("named"), Some(Vec::new()));
+    assert_eq!(restated("consumed"), Some(vec!["members"]));
+    assert_eq!(restated("unnamed"), None);
+}

@@ -9,6 +9,7 @@ use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{FeatureOperation, FuzzyTolerance, OperationFamily};
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
@@ -131,6 +132,28 @@ fn a_partdesign_body_is_an_ordered_body_container_at_its_tip() {
             family: OperationFamily::Sketch
         }
     );
+}
+
+/// The Body container restates the Body's model feature whole: its children
+/// as members and its `Tip` as the rollback.
+#[test]
+fn the_body_container_restates_the_body_feature() {
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(DESIGN_HISTORY), &DecodeOptions::default())
+        .unwrap();
+    let ir = decoded.ir();
+    let body = Restater::Record("fcstd:design:container#Body".to_owned());
+    let restated = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| ir.model.restated().get(feature.id.as_str()))
+        .filter(|restating| restating.by() == &body)
+        .collect::<Vec<_>>();
+    let [restating] = restated.as_slice() else {
+        panic!("one Body feature: {restated:?}");
+    };
+    assert!(restating.cut().is_empty(), "{restating:?}");
 }
 
 #[test]
