@@ -2618,7 +2618,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder reports `feature.mesh-import-placement-combined`.
 
-### DR-1064. Stored state of a mesh body that a Convert Mesh consumes
+### DR-1065. Stored state of a mesh body that a Convert Mesh consumes
 
 **Question.** Do the matrices and the `.paramesh` container of a mesh body that a `Convert Mesh` consumes hold the state at the input of that `Convert Mesh`?
 
