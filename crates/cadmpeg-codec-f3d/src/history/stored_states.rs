@@ -9,12 +9,15 @@
 //! does not hold that are no sketch region, and the consumed bodies that
 //! the timeline position of the state keeps (§5.5). A state whose table
 //! takes the revision of a slot from the board of a later state that updates
-//! that slot twice is not read.
+//! that slot twice is not read. The record tables of the stored states of one
+//! decode retain at most half of the retained-byte allowance left when the
+//! walk starts; a table that would pass it is not read.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_asm::kernel_header::RefWidth;
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::ids::BodyId;
@@ -35,6 +38,48 @@ pub(crate) const MAX_STATE_WORK: usize = 1 << 22;
 /// The record work, in table entries, that each byte of the model blobs
 /// with a history adds to [`MAX_STATE_WORK`].
 pub(crate) const STATE_WORK_PER_BYTE: usize = 4;
+
+/// What the stored states of one decode may spend: record-table entries,
+/// and retained bytes. Half the retained-byte allowance left when the walk
+/// starts is theirs; the other half covers the native records that their
+/// evaluations carry, which the decode charges again when it attaches them.
+pub(crate) struct Budget {
+    work: WorkBudget,
+    remaining: Cell<u64>,
+    /// The most retained bytes that one record-table entry of a decoded
+    /// state has cost.
+    rate: Cell<u64>,
+}
+
+impl Budget {
+    /// A budget of `work` table entries and half the retained allowance.
+    pub(crate) fn new(ctx: &DecodeContext<'_>, work: usize) -> Self {
+        Self {
+            work: WorkBudget::new(work),
+            remaining: Cell::new(ctx.retained_allowance() / 2),
+            rate: Cell::new(0),
+        }
+    }
+
+    /// Whether a record table of `entries` entries fits what remains, at
+    /// the highest cost per entry seen.
+    fn admits(&self, ctx: &DecodeContext<'_>, entries: usize) -> bool {
+        let estimate = self.rate.get().saturating_mul(u64_from_index(entries));
+        ctx.observe_retained_allowance(self.remaining.get(), estimate);
+        estimate < self.remaining.get()
+    }
+
+    /// Takes from what remains the bytes retained since `before`, the
+    /// available retained bytes before a decode of `entries` table entries.
+    fn spend(&self, ctx: &DecodeContext<'_>, before: u64, entries: usize) {
+        let cost = before.saturating_sub(ctx.retained_bytes_available());
+        self.remaining
+            .set(self.remaining.get().saturating_sub(cost));
+        if let Some(rate) = cost.checked_div(u64_from_index(entries)) {
+            self.rate.set(self.rate.get().max(rate.saturating_add(1)));
+        }
+    }
+}
 
 /// The model blob of one ASM history.
 pub(crate) struct Blob<'a> {
@@ -85,7 +130,7 @@ pub(crate) struct Read {
 /// The states `wanted` of the history of `blob`, whose head holds the
 /// `current` bodies and the consumed bodies that `keys` select. The outer
 /// error is a decode ceiling. The inner error says why the history gives no
-/// states.
+/// states. The decoded states charge `budget`.
 pub(crate) fn read(
     ctx: &DecodeContext<'_>,
     blob: &Blob<'_>,
@@ -93,13 +138,15 @@ pub(crate) fn read(
     keys: &BTreeSet<u64>,
     wanted: &BTreeSet<Want>,
     tolerances: &Tolerances,
-    work: &WorkBudget,
+    budget: &Budget,
 ) -> Result<Result<Read, String>, CodecError> {
     let Some(header) = cadmpeg_asm::asm_header::parse(blob.bytes) else {
         return Ok(Err("the blob has no ASM header".to_owned()));
     };
-    let Some((states, archive)) = super::decode_unbound(ctx, blob.bytes, blob.stream, blob.width)?
-    else {
+    let before = ctx.retained_bytes_available();
+    let unbound = super::decode_unbound(ctx, blob.bytes, blob.stream, blob.width)?;
+    budget.spend(ctx, before, 0);
+    let Some((states, archive)) = unbound else {
         return Ok(Err(
             "the history or its record archive does not decode".to_owned()
         ));
@@ -126,7 +173,7 @@ pub(crate) fn read(
         subtypes: &subtypes,
         archive: &archive,
         tolerances,
-        work,
+        budget,
     };
     let mut head = None::<Result<(i64, Head), String>>;
     let mut read = Vec::new();
@@ -147,9 +194,11 @@ pub(crate) fn read(
             }
             let state_id = states[index].state_id;
             let outcome = match &head {
-                None => decoder.head(versions, current, keys).map(|found| {
-                    head = Some(found.map(|found| (state_id, found)));
-                }),
+                None => decoder
+                    .measured(versions.len(), || decoder.head(versions, current, keys))
+                    .map(|found| {
+                        head = Some(found.map(|found| (state_id, found)));
+                    }),
                 Some(Err(_)) => Ok(()),
                 Some(Ok((_, found))) => {
                     let mut outcome = Ok(());
@@ -164,7 +213,9 @@ pub(crate) fn read(
                             read.push((want.clone(), Err(reason)));
                             continue;
                         }
-                        match decoder.state(versions, current, found, &want.consumed) {
+                        match decoder.measured(versions.len(), || {
+                            decoder.state(versions, current, found, &want.consumed)
+                        }) {
                             Ok(records) => {
                                 if let Err(reason) = &records {
                                     stopped = Some(format!("a later state is not read ({reason})"));
@@ -224,10 +275,23 @@ struct StateDecoder<'a, 'c> {
     subtypes: &'a cadmpeg_asm::nurbs::toks::SubtypeTable,
     archive: &'a super::HistoricalRecordArchive,
     tolerances: &'a Tolerances,
-    work: &'a WorkBudget,
+    budget: &'a Budget,
 }
 
 impl StateDecoder<'_, '_> {
+    /// Runs `decode` of a record table of `entries` entries and charges the
+    /// bytes it retains to the budget.
+    fn measured<T>(
+        &self,
+        entries: usize,
+        decode: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
+        let before = self.ctx.retained_bytes_available();
+        let out = decode();
+        self.budget.spend(self.ctx, before, entries);
+        out
+    }
+
     /// The head, or why it is not read.
     fn head(
         &self,
@@ -320,7 +384,12 @@ impl StateDecoder<'_, '_> {
         &self,
         versions: &super::binding::FastMap<i64, i64>,
     ) -> Result<Result<Brep, String>, CodecError> {
-        if !self.work.charge_by(versions.len()) {
+        if !self.budget.admits(self.ctx, versions.len()) {
+            return Ok(Err(
+                "the retained-byte allowance of the stored states is reached".to_owned(),
+            ));
+        }
+        if !self.budget.work.charge_by(versions.len()) {
             return Ok(Err("the state work bound is reached".to_owned()));
         }
         let Some(table) = super::history_bodies::materialize_hashed_table(versions, self.archive)

@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The slots whose revision the walk of a history does not fix.
+//! The slots whose revision the walk of a history does not fix, and the
+//! budget of the stored states of one decode.
+
+use std::collections::BTreeSet;
+
+use cadmpeg_asm::kernel_header::RefWidth;
+use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::units::Tolerances;
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind,
 };
 
-use super::Ambiguous;
+use super::{Ambiguous, Blob, Budget, Read, MAX_STATE_WORK};
 
 fn state(state_id: i64, changes: Vec<AsmEntityChangeKind>) -> AsmDeltaState {
     AsmDeltaState {
@@ -74,4 +82,51 @@ fn a_board_that_updates_each_slot_once_leaves_no_slot_ambiguous() {
         ],
     ));
     assert_eq!(ambiguous.first(), None);
+}
+
+/// The read of the head of the history `bytes`, charged to `budget`.
+fn read_head(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    budget: &Budget,
+) -> Result<Result<Read, String>, CodecError> {
+    let blob = Blob {
+        bytes,
+        stream: "history",
+        width: RefWidth::Eight,
+        namespace: None,
+    };
+    super::read(
+        ctx,
+        &blob,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &Tolerances::default(),
+        budget,
+    )
+}
+
+#[test]
+fn a_table_past_the_retained_share_of_the_stored_states_is_not_read_and_the_decode_goes_on() {
+    let bytes = crate::history::tests::budgets::geometry_history(true);
+    let head_cost = crate::test_support::with_decode_policy(&DecodePolicy::desktop(), |ctx| {
+        let before = ctx.retained_bytes_available();
+        let budget = Budget::new(ctx, MAX_STATE_WORK);
+        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
+        before - ctx.retained_bytes_available()
+    });
+    assert!(head_cost > 1);
+    let mut policy = DecodePolicy::desktop();
+    policy.limits.max_retained_bytes = 2 * head_cost - 1;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let budget = Budget::new(ctx, MAX_STATE_WORK);
+        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
+        let second = read_head(ctx, &bytes, &budget).expect("no ceiling");
+        assert_eq!(
+            second.err().as_deref(),
+            Some("its head is not read (the retained-byte allowance of the stored states is reached)")
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
 }

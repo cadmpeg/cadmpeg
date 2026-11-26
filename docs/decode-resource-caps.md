@@ -171,6 +171,16 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
+F3D stored states are the second user. The design-state walk of a decode
+reads the availability once and gives its stored states half of it; the
+other half covers the native records that their evaluations carry, which the
+decode charges again when it attaches them. Each decoded record table takes
+the bytes it retained from that half. Before it decodes a table, the walk
+estimates the table's cost as its entry count times the highest cost per
+entry of the tables decoded so far. A table whose estimate does not fit is
+not read, and the walk stops that history's states with
+`history.state-unread`.
+
 ## Scan limits
 
 `ScanLimits` in `crates/cadmpeg-core/src/scan/mod.rs` bounds a feature-only

@@ -32,7 +32,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::edit::state_view::ResolvedState;
 use cadmpeg_ir::design::evaluation::{
@@ -976,7 +976,8 @@ impl<'r> Reader<'r, '_> {
             .ok_or_else(|| {
                 CodecError::malformed("F3D model blobs with a history exceed the state work range")
             })?;
-        let work = WorkBudget::new(stored_states::MAX_STATE_WORK.max(scaled));
+        let budget =
+            stored_states::Budget::new(self.ctx, stored_states::MAX_STATE_WORK.max(scaled));
         let mut out = Vec::with_capacity(histories.len());
         for (index, history) in histories.iter().enumerate() {
             let head = heads[index].map(|state| Want {
@@ -1000,7 +1001,7 @@ impl<'r> Reader<'r, '_> {
                 &keys,
                 &wanted,
                 &self.ir.tolerances,
-                &work,
+                &budget,
             )? {
                 Ok(read) => read,
                 Err(reason) => {
