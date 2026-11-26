@@ -140,6 +140,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         construction_recipes: &[],
         persistent_design_links: &[],
         histories: &[],
+        scope_histories: &std::collections::HashMap::new(),
         bodies: &bodies,
         regions: &regions,
         shells: &shells,
