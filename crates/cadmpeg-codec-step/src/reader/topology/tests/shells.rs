@@ -377,7 +377,7 @@ fn failed_void_shell_does_not_commit_the_outer_brep() {
 }
 
 /// A root that fails drops no shell or face that another root built: the
-/// shell, its face, and the style bound to the face stay with the root that
+/// shell, its face, and the styles bound to them stay with the root that
 /// built them.
 #[test]
 fn a_failed_root_keeps_the_shell_a_second_root_built() {
@@ -393,7 +393,7 @@ fn a_failed_root_keeps_the_shell_a_second_root_built() {
     .replace(
         "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
         "#33=OPEN_SHELL('',(#29));\n#34=CLOSED_SHELL('',(#99));\n#99=UNSUPPORTED_FACE('',());\n\
-         #70=MANIFOLD_SOLID_BREP('',#30);",
+         #70=MANIFOLD_SOLID_BREP('',#30);\n#69=STYLED_ITEM('',(#66),#30);",
     );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -416,6 +416,14 @@ fn a_failed_root_keeps_the_shell_a_second_root_built() {
     assert!(serde_json::to_string(&ir.model.appearance_bindings)
         .unwrap()
         .contains(&format!("\"{}\"", face.id.as_str())));
+    assert!(
+        ir.model
+            .appearance_bindings
+            .iter()
+            .any(|binding| binding.source_entity_id.as_deref() == Some("#30")),
+        "{:#?}",
+        ir.model.appearance_bindings
+    );
 }
 
 #[test]
