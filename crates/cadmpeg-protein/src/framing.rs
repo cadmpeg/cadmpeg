@@ -73,21 +73,14 @@ pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
                 .ok_or_else(|| {
                     CodecError::Malformed("Protein terminal payload is truncated".into())
                 })?;
+            if View::u16_le_at(page, terminal_page::RECORD_START) == Some(1) {
+                close_open_record(&mut current, &mut logical_offset, &mut records)?;
+            }
             (payload, true)
         } else if page.get(record_start_page::MARKER..record_start_page::BODY)
             == Some(RECORD_MARKER)
         {
-            if let Some(record) = current.take() {
-                logical_offset =
-                    logical_offset
-                        .checked_add(record.bytes.len())
-                        .ok_or_else(|| {
-                            CodecError::Malformed(
-                                "Protein record-start logical offset overflow".into(),
-                            )
-                        })?;
-                records.push(record);
-            }
+            close_open_record(&mut current, &mut logical_offset, &mut records)?;
             (&page[record_start_page::BODY..], false)
         } else if page.get(continuation_page::MARKER..continuation_page::BODY)
             == Some(CONTINUATION_MARKER)
@@ -129,6 +122,23 @@ pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
         records.push(record);
     }
     Ok(records)
+}
+
+/// End the open record, if any, at the page that starts the next record.
+fn close_open_record(
+    current: &mut Option<RecordFrame>,
+    logical_offset: &mut usize,
+    records: &mut Vec<RecordFrame>,
+) -> Result<(), CodecError> {
+    if let Some(record) = current.take() {
+        *logical_offset = logical_offset
+            .checked_add(record.bytes.len())
+            .ok_or_else(|| {
+                CodecError::Malformed("Protein record-start logical offset overflow".into())
+            })?;
+        records.push(record);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -201,6 +211,20 @@ mod tests {
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0].bytes(), record(&[(b'a', 128)]));
         assert_eq!(frames[1].bytes(), record(&[(b'b', 7)]));
+
+        // A full one-page record after a record-start page that names a next
+        // page: the page that starts a record ends the record before it.
+        let frames = super::record_frames(&paged(&[(1, 128, 1, b'a'), (-1, 128, 1, b'b')]))
+            .expect("valid pages");
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].bytes(), record(&[(b'a', 128)]));
+        assert_eq!(frames[1].bytes(), record(&[(b'b', 128)]));
+
+        // A last page states at most the 128 bytes of its body.
+        let mut oversized = paged(&[(-1, 128, 1, b'a')]);
+        let used_at = crate::STREAM_HEADER_LEN + crate::layout::terminal_page::USED;
+        oversized[used_at..used_at + 2].copy_from_slice(&129_u16.to_le_bytes());
+        assert!(super::record_frames(&oversized).is_err());
 
         // A continuation page after a full last page has no open record.
         assert!(super::record_frames(&paged(&[
