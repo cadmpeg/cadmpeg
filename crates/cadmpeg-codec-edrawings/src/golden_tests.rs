@@ -50,7 +50,9 @@ fn branches() -> [Branch; 2] {
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match EdrawingsCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
-        Ok(summary) => serde_json::to_value(summary).expect("serialize inspect summary"),
+        Ok(summary) => {
+            cadmpeg_core::serde_erase::json::to_value(summary).expect("serialize inspect summary")
+        }
         Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
     };
     snapshot_text(&value)

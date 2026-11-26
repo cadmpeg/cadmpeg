@@ -31,7 +31,7 @@ fn whole_region_curve_membership_checks_the_selected_outer_and_hole_loops() {
 #[test]
 fn trimmed_region_curve_membership_uses_each_boundary_entity_identity() {
     let boundary = |name| {
-        serde_json::from_value::<SketchProfileBoundaryUse>(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value::<SketchProfileBoundaryUse>(serde_json::json!({
             "entity":format!("test:model:sketch-entity#{name}"), "parameter_range":[0.0,1.0], "reversed": false
         }))
         .expect("boundary")

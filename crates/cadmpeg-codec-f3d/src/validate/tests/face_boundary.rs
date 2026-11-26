@@ -62,7 +62,7 @@ fn native() -> crate::native::F3dNative {
     let mut result = state(7, 20);
     let preceding = state(6, 10);
     result.0.next_ref = Some(preceding.0.node_index);
-    let scope = serde_json::from_value(serde_json::json!({
+    let scope = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "f3d:test:scope#1811",
         "byte_offset": 0,
         "class_tag": "272",
@@ -83,27 +83,28 @@ fn native() -> crate::native::F3dNative {
         "paired_byte_offset": 200
     }))
     .unwrap();
-    let mut operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:edge-operand#1",
-        "scope_record_index": 1811,
-        "scope_reference_ordinal": 3,
-        "record_index": 1,
-        "byte_offset": 0,
-        "class_tag": "376",
-        "paired_byte_offset": 16,
-        "paired_class_tag": "260",
-        "recipe_record_index": 4,
-        "recipe_record_byte_offset": 32,
-        "recipe_id": "f3d:test:recipe",
-        "recipe_prefix_offset": 43,
-        "recipe_prefix_bytes": "",
-        "recipe_references": [],
-        "recipe_program_offset": 0,
-        "recipe_program": [-1, -1, 2],
-        "next_record_index": 5,
-        "next_byte_offset": 160
-    }))
-    .unwrap();
+    let mut operand: DesignEdgeOperand =
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            "id": "f3d:test:edge-operand#1",
+            "scope_record_index": 1811,
+            "scope_reference_ordinal": 3,
+            "record_index": 1,
+            "byte_offset": 0,
+            "class_tag": "376",
+            "paired_byte_offset": 16,
+            "paired_class_tag": "260",
+            "recipe_record_index": 4,
+            "recipe_record_byte_offset": 32,
+            "recipe_id": "f3d:test:recipe",
+            "recipe_prefix_offset": 43,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_program_offset": 0,
+            "recipe_program": [-1, -1, 2],
+            "next_record_index": 5,
+            "next_byte_offset": 160
+        }))
+        .unwrap();
     let result_boundary = boundary(&result.0, 100);
     let preceding_boundary = boundary(&preceding.0, 100);
     operand.recipe_state_id = Some(6);

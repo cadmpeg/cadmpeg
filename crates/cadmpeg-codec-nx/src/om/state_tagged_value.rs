@@ -108,7 +108,10 @@ mod tests {
             r#"{"value_marker":255,"value":4294967295,"raw_value":"ffffffffff"}"#,
         ] {
             let value: StateTaggedValue = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+                json
+            );
         }
     }
 

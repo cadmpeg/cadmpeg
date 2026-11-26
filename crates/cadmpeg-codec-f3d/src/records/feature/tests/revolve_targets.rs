@@ -18,7 +18,10 @@ fn to_object_targets_preserve_their_wire() {
     ] {
         let wire = format!(r#"{PREFIX},{targets},{OWNER},"solid":true}}"#);
         let value = decode(&wire).expect("to-object revolve");
-        assert_eq!(serde_json::to_string(&value).expect("revolve wire"), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&value).expect("revolve wire"),
+            wire
+        );
     }
 }
 

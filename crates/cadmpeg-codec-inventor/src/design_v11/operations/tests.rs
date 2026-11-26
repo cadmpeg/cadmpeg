@@ -29,14 +29,15 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    serde_json::from_value(Value::Object(fields)).expect("synthetic operation")
+    cadmpeg_core::serde_erase::json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
     let operation = typed(&legacy(kind, value), selections::SketchData::default(), &[])
         .expect("typed projection");
-    let wire = serde_json::to_value(&operation).expect("v11 wire");
-    let decoded: FeatureOperation = serde_json::from_value(wire).expect("admitted v11 operation");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation =
+        cadmpeg_core::serde_erase::json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
     operation
 }
@@ -640,7 +641,7 @@ fn unresolved_and_reversing_operands_take_the_native_gate() {
 fn split_face_and_surface_trim_keep_every_selection() {
     let FeatureOperation::Split(value) = project_value(
         "split_face",
-        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":serde_json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
+        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":cadmpeg_core::serde_erase::json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
     ) else {
         panic!("split face");
     };

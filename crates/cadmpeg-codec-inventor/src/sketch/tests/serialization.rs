@@ -28,8 +28,8 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
     };
     let wire = PointTailWire::from(tail.clone());
     assert_eq!(
-        serde_json::to_vec(&tail).expect("borrowed tail"),
-        serde_json::to_vec(&wire).expect("owned tail")
+        cadmpeg_core::serde_erase::json::to_vec(&tail).expect("borrowed tail"),
+        cadmpeg_core::serde_erase::json::to_vec(&wire).expect("owned tail")
     );
     let record = Record {
         id: "inventor:pmdc:point-tail#1",
@@ -43,8 +43,9 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
     PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
 
     assert_eq!(
-        serde_json::to_vec(&PointTail::Absent).expect("borrowed absent tail"),
-        serde_json::to_vec(&PointTailWire::from(PointTail::Absent)).expect("owned absent tail")
+        cadmpeg_core::serde_erase::json::to_vec(&PointTail::Absent).expect("borrowed absent tail"),
+        cadmpeg_core::serde_erase::json::to_vec(&PointTailWire::from(PointTail::Absent))
+            .expect("owned absent tail")
     );
 }
 
@@ -68,8 +69,8 @@ fn transform_payload_streams_flat_matrix_under_retained_limit() {
     };
     let wire = PmDcTransformPayloadWire::from(transform.clone());
     assert_eq!(
-        serde_json::to_vec(&transform).expect("borrowed transform"),
-        serde_json::to_vec(&wire).expect("owned transform")
+        cadmpeg_core::serde_erase::json::to_vec(&transform).expect("borrowed transform"),
+        cadmpeg_core::serde_erase::json::to_vec(&wire).expect("owned transform")
     );
     let record = Record {
         id: "inventor:pmdc:transform#1",

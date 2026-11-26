@@ -1626,9 +1626,10 @@ fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     assert_eq!(relation.state_ordinal, 7);
     assert_eq!(relation.operation_source_offset, 420);
     assert_eq!(relation.journal_source_offset, 520);
-    let wire = serde_json::to_value(relation).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(relation).unwrap();
     assert_eq!(wire["state_ordinal"], 7);
-    let admitted: FeatureOperationStateJournalUse = serde_json::from_value(wire).unwrap();
+    let admitted: FeatureOperationStateJournalUse =
+        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     assert_eq!(&admitted, relation);
 }
 

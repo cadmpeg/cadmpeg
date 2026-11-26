@@ -12,7 +12,7 @@ fn scope(matrices: &[Option<[[f64; 4]; 4]>]) -> DesignParameterScope {
 }
 
 fn feature(scope: &DesignParameterScope) -> Feature {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "synthetic:test:feature#position", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id, "definition": project(scope, &mut Vec::new()).unwrap(), "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .unwrap()

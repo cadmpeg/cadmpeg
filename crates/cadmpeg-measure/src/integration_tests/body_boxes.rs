@@ -20,7 +20,7 @@ use crate::test_support::builders::{
 use crate::value::{BoxKind, Quantity, Reading};
 
 fn json<T: serde::Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).expect("a quantity serializes")
+    cadmpeg_core::serde_erase::json::to_value(value).expect("a quantity serializes")
 }
 
 /// The agreement of each body of `ir`.

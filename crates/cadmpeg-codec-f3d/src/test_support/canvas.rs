@@ -42,5 +42,5 @@ pub(crate) fn canvas_wire_fixture() -> serde_json::Value {
 pub(crate) fn canvas_image_fixture() -> crate::records::canvas::DesignCanvasImage {
     let mut wire = canvas_wire_fixture();
     wire["id"] = serde_json::json!("f3d:native:canvas#0");
-    serde_json::from_value(wire).unwrap()
+    cadmpeg_core::serde_erase::json::from_value(wire).unwrap()
 }

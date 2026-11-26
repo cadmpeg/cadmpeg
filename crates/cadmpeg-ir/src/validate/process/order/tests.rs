@@ -161,20 +161,25 @@ fn nested(depth: usize) -> CadIr {
 /// `CadIr`, so validation reports no nesting.
 #[test]
 fn step_folders_nest_to_the_document_bound() {
-    let depth = |folders: usize| text_depth(&serde_json::to_string(&nested(folders)).unwrap());
+    let depth = |folders: usize| {
+        text_depth(&cadmpeg_core::serde_erase::json::to_string(&nested(folders)).unwrap())
+    };
     let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&folders| depth(folders) > MAX_DOCUMENT_DEPTH)
         .unwrap();
 
     let admitted = nested(past - 1);
     assert_no_process_finding(&admitted);
-    let text = serde_json::to_string(&admitted).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&admitted).unwrap();
     let back = CadIr::from_json(&text).unwrap();
-    assert_eq!(serde_json::to_string(&back).unwrap(), text);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&back).unwrap(),
+        text
+    );
 
     let refused = nested(past);
     assert_no_process_finding(&refused);
-    let text = serde_json::to_string(&refused).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&refused).unwrap();
     let error = CadIr::from_json(&text).unwrap_err();
     assert!(
         error.to_string().contains("levels of a CADIR document"),

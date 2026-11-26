@@ -297,13 +297,18 @@ mod tests {
                 r#"{{"ordinal":{ordinal},"declared_count":{count},"terminal":{terminal}}}"#
             );
             let position: SketchReferencePosition = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&position).unwrap(), wire);
-            let mut invalid = serde_json::to_value(position).unwrap();
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&position).unwrap(),
+                wire
+            );
+            let mut invalid = cadmpeg_core::serde_erase::json::to_value(position).unwrap();
             invalid["terminal"] = serde_json::json!(!terminal);
-            assert!(serde_json::from_value::<SketchReferencePosition>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("terminal"));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<SketchReferencePosition>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("terminal")
+            );
             for ordinal in [
                 u32::from(
                     SketchReferenceCount::from_count_byte(count)

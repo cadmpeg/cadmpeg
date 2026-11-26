@@ -108,12 +108,15 @@ mod tests {
             |token| Some(format!("block#{}", token.value())),
         )
         .unwrap();
-        let borrowed = serde_json::to_vec(&branch).unwrap();
-        let owned = serde_json::to_vec(&super::super::FeatureSwp104LeadingBranchWire::from(
-            branch.clone(),
-        ))
+        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&branch).unwrap();
+        let owned = cadmpeg_core::serde_erase::json::to_vec(
+            &super::super::FeatureSwp104LeadingBranchWire::from(branch.clone()),
+        )
         .unwrap();
         assert_eq!(borrowed, owned);
-        assert_native_limit(&branch, serde_json::to_value(&branch).unwrap());
+        assert_native_limit(
+            &branch,
+            cadmpeg_core::serde_erase::json::to_value(&branch).unwrap(),
+        );
     }
 }

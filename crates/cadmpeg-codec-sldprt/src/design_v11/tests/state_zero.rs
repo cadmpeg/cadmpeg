@@ -32,7 +32,8 @@ pub(super) fn set_profiles(ir: &mut CadIr, loops: &[&[(&str, bool)]]) {
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    ir.model.sketches[0].profiles = serde_json::from_value(serde_json::json!(loops)).unwrap();
+    ir.model.sketches[0].profiles =
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!(loops)).unwrap();
 }
 
 /// Projects the fixture's design with `outside` read from curve records of
@@ -137,12 +138,13 @@ fn an_extrude_picks_its_whole_sketch() {
 #[test]
 fn a_curve_of_state_zero_is_construction() {
     let (mut ir, _) = sketch_and_extrude();
-    let mut diagonal = serde_json::to_value(&ir.model.sketch_entities[4]).unwrap();
+    let mut diagonal =
+        cadmpeg_core::serde_erase::json::to_value(&ir.model.sketch_entities[4]).unwrap();
     diagonal["id"] = serde_json::json!(entity("diagonal").as_str());
     diagonal["geometry"]["end"] = serde_json::json!({"u": 50.0, "v": 30.0});
     ir.model
         .sketch_entities
-        .push(serde_json::from_value(diagonal).unwrap());
+        .push(cadmpeg_core::serde_erase::json::from_value(diagonal).unwrap());
     set_profiles(
         &mut ir,
         &[
@@ -199,7 +201,7 @@ fn add_c_ring(ir: &mut CadIr) {
     ] {
         ir.model
             .sketch_entities
-            .push(serde_json::from_value(added).unwrap());
+            .push(cadmpeg_core::serde_erase::json::from_value(added).unwrap());
     }
 }
 
@@ -245,9 +247,15 @@ fn a_line_closing_a_c_ring_charges_an_extra_region() {
     let (mut ir, _) = sketch_and_extrude();
     add_c_ring(&mut ir);
     let sketch = ir.model.sketches[0].id.as_str().to_owned();
-    ir.model
-        .sketch_entities
-        .push(serde_json::from_value(line(&sketch, "chord", [95.0, 0.0], [105.0, 0.0])).unwrap());
+    ir.model.sketch_entities.push(
+        cadmpeg_core::serde_erase::json::from_value(line(
+            &sketch,
+            "chord",
+            [95.0, 0.0],
+            [105.0, 0.0],
+        ))
+        .unwrap(),
+    );
     set_profiles(&mut ir, PROFILE);
     let (extrude, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(

@@ -56,7 +56,7 @@ fn check_unknown_keys(partition: usize) {
         let result = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode fixture");
-        let ir = serde_json::to_value(result.ir()).expect("serialize ir");
+        let ir = cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir");
         let sweep = accepting_shapes(&ir)
             .unwrap_or_else(|error| panic!("{} does not read back: {error}", path.display()));
         assert!(

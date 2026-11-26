@@ -55,7 +55,7 @@ fn scope(
             directions,
             secondary_direction: None,
             distribution: Some(
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "record_index": 15,
                     "symmetric": { "value": symmetric, "offset": 109 },
                     "symmetric_two": { "value": false, "offset": 110 },
