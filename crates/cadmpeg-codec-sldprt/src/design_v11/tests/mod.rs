@@ -856,7 +856,12 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     let (mut ir, native) = sketch_and_extrude();
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     let definition = ir.design.scopes[0].definition.clone();
-    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -1014,7 +1019,12 @@ fn typed_timeline<'a>(
     super::typed::Typed,
 ) {
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -1413,7 +1423,12 @@ fn members_follow_the_features_they_depend_on() {
     );
 
     let definition = ir.design.scopes[0].definition.clone();
-    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::typed::project(
         &ir.model,
         &native.feature_histories,

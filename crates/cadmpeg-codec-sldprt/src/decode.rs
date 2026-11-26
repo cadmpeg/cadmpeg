@@ -3847,7 +3847,7 @@ fn build_geometry_ir(
         linear,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    project_design_history(
+    let parameter_histories = project_design_history(
         ctx,
         &mut ir,
         DesignHistoryInput {
@@ -4771,6 +4771,7 @@ fn build_geometry_ir(
             &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
+                parameter_histories: &parameter_histories,
                 lanes: &native.feature_input_lanes,
                 configuration_maps: &configuration_maps,
                 bodies: current_bodies,
@@ -5451,7 +5452,7 @@ fn build_metadata_ir(
         &mut annotations,
         &mut unknowns,
     )?);
-    project_design_history(
+    let parameter_histories = project_design_history(
         ctx,
         &mut ir,
         DesignHistoryInput {
@@ -5891,6 +5892,7 @@ fn build_metadata_ir(
             &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
+                parameter_histories: &parameter_histories,
                 lanes: &native.feature_input_lanes,
                 configuration_maps: &configuration_maps,
                 bodies,
@@ -5943,7 +5945,7 @@ fn project_design_history(
     scan: &ContainerScan,
     form_padding: Option<usize>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<Vec<crate::records::FeatureHistory>, cadmpeg_core::CodecError> {
     let DesignHistoryInput {
         histories,
         lanes,
@@ -6035,7 +6037,7 @@ fn project_design_history(
         );
     }
 
-    Ok(())
+    Ok(parameter_projection)
 }
 
 fn parameter_identity_lanes(

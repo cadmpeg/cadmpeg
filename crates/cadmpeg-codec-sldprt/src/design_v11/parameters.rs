@@ -42,6 +42,14 @@
 //! stores, as a `Native` kind holds it (§5.12). The
 //! `design.parameter-value-unread` note names each dimension whose text is a
 //! bare number and that still has no value.
+//!
+//! A dimension that the history does not name and that the decoder read from
+//! another record (a `ResolvedFeatures` scalar, a PMI dimension, a Move Face
+//! translation) is a parameter of its feature under the decoder's id, its
+//! literal the stored value (§5.12). A parameter of a feature-tree node
+//! outside the timeline (the annotations node, a detail folder) has no owner
+//! that §5.12 types; the `design.parameter-owner-outside-timeline` note names
+//! it. Interim reading until the specification types that owner.
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroI8;
@@ -647,6 +655,9 @@ struct Entry<'a> {
     name: NonBlankString,
     id: ParameterId,
     text: &'a str,
+    /// The history names no such dimension: the decoder's own readings of
+    /// the feature's records hold it, and `text` is the decoder's rendering.
+    added: bool,
 }
 
 /// What the decoder read beside a parameter's text: its own parameters and
@@ -676,16 +687,23 @@ pub(super) struct Readings<'a> {
 /// before their expressions are read.
 pub(super) struct Entries<'a> {
     list: Vec<Entry<'a>>,
+    /// The decoder's parameters of the features outside the timeline that
+    /// are no equations folder.
+    outside: Vec<ParameterId>,
     by_owner: HashMap<(FeatureId, String), ParameterId>,
     ids: HashSet<ParameterId>,
 }
 
 impl<'a> Entries<'a> {
+    /// The parameters of `parameter_histories`, the copy of `histories`
+    /// whose features also hold the dimensions the decoder read from other
+    /// records.
     pub(super) fn new(
         histories: &'a [FeatureHistory],
+        parameter_histories: &'a [FeatureHistory],
         timeline: &Timeline,
     ) -> Result<Self, CodecError> {
-        let entries = entries(histories, timeline)?;
+        let (entries, outside) = entries(histories, parameter_histories, timeline)?;
         let by_owner = entries
             .iter()
             .filter_map(|entry| {
@@ -698,8 +716,33 @@ impl<'a> Entries<'a> {
         let ids = entries.iter().map(|entry| entry.id.clone()).collect();
         Ok(Self {
             list: entries,
+            outside,
             by_owner,
             ids,
+        })
+    }
+
+    /// The note naming the decoder's parameters, of `decoded`, that a
+    /// feature-tree node outside the timeline owns: §5.12 gives such an
+    /// owner no home.
+    pub(super) fn outside(
+        &self,
+        decoded: &[cadmpeg_ir::features::parameters::DesignParameter],
+    ) -> Option<LossNote> {
+        let decoded = decoded
+            .iter()
+            .map(|parameter| &parameter.id)
+            .collect::<HashSet<_>>();
+        let mut named = NamedCount::default();
+        for id in self.outside.iter().filter(|id| decoded.contains(id)) {
+            named.push(id.as_str());
+        }
+        (!named.is_empty()).then(|| {
+            SldprtLossCode::DesignParameterOwnerOutsideTimeline.note(format!(
+                "{} model parameters whose owner is a feature-tree node outside the timeline \
+                 state no design parameter: {named}",
+                named.count()
+            ))
         })
     }
 
@@ -808,21 +851,51 @@ impl<'a> Entries<'a> {
     }
 }
 
+/// The entries of the features of `parameter_histories`, each id the
+/// decoder's own (its ordinal among the enriched feature's names), and the
+/// ids of the parameters of the features outside the timeline that are no
+/// equations folder. A dimension the history names keeps the history's
+/// feature and text.
 fn entries<'a>(
     histories: &'a [FeatureHistory],
+    parameter_histories: &'a [FeatureHistory],
     timeline: &Timeline,
-) -> Result<Vec<Entry<'a>>, CodecError> {
+) -> Result<(Vec<Entry<'a>>, Vec<ParameterId>), CodecError> {
+    let stored = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
     let mut entries = Vec::new();
+    let mut outside = Vec::new();
     let mut user_names = HashSet::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let owner = match timeline.features_by_record.get(&feature.id) {
+    for enriched in parameter_histories
+        .iter()
+        .flat_map(|history| &history.features)
+    {
+        let owner = match timeline.features_by_record.get(&enriched.id) {
             Some(owner) => Some(owner.clone()),
-            None if timeline.equation_records.contains(&feature.id) => None,
-            None => continue,
-        };
-        for (ordinal, name) in projected_parameter_names(feature).into_iter().enumerate() {
-            let Some(text) = feature.parameters.get(name.as_str()) else {
+            None if timeline.equation_records.contains(&enriched.id) => None,
+            None => {
+                for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
+                    if enriched.parameters.contains_key(name.as_str()) {
+                        outside.push(neutral_parameter_id(enriched, ordinal)?);
+                    }
+                }
                 continue;
+            }
+        };
+        let feature = stored
+            .get(enriched.id.as_str())
+            .copied()
+            .unwrap_or(enriched);
+        for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
+            let (text, added) = match feature.parameters.get(name.as_str()) {
+                Some(text) => (text, false),
+                None => match enriched.parameters.get(name.as_str()) {
+                    Some(text) => (text, true),
+                    None => continue,
+                },
             };
             if owner.is_none() && !user_names.insert(name.clone()) {
                 continue;
@@ -834,12 +907,13 @@ fn entries<'a>(
                 feature,
                 owner: owner.clone(),
                 name: key,
-                id: neutral_parameter_id(feature, ordinal)?,
+                id: neutral_parameter_id(enriched, ordinal)?,
                 text,
+                added,
             });
         }
     }
-    Ok(entries)
+    Ok((entries, outside))
 }
 
 fn parameter(
@@ -960,6 +1034,9 @@ fn read(
     readings: &Readings<'_>,
     places: Option<u32>,
 ) -> Reading {
+    if entry.added {
+        return added(entry, readings);
+    }
     let decoded = &readings.decoded;
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
@@ -1144,6 +1221,113 @@ fn read(
         assumed,
         decided,
         unvalued,
+    }
+}
+
+/// The reading of a dimension that only the decoder's own readings hold:
+/// the kind and value of the decoder's parameter of the same id and name, a
+/// real typed by the archive class of the scalar it is bound to, as a
+/// literal (§5.12). A value whose kind no record states keeps its number
+/// under a `Native` kind, and a parameter with no value states none, each
+/// with a `Source` expression from which nothing was read (§3.3).
+fn added(entry: &Entry<'_>, readings: &Readings<'_>) -> Reading {
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    let name = entry.name.as_str();
+    let decoded = readings.decoded.parameter(&entry.id, name);
+    let mut assumed = false;
+    let typed = decoded
+        .and_then(|parameter| parameter.value.clone())
+        .and_then(|value| match value {
+            V10::Real(real) => {
+                match readings
+                    .decoded
+                    .dimension(&entry.id, name, None, readings.length_unit, None)
+                {
+                    Ok(Some(Typed {
+                        kind,
+                        value: Some(value),
+                        assumed: from_lane,
+                    })) => {
+                        assumed = from_lane;
+                        Some((kind, value))
+                    }
+                    _ => Some((
+                        ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
+                        ParameterValue::Number(FiniteReal::new(real.get())?),
+                    )),
+                }
+            }
+            V10::Integer(integer) => Some((ValueKind::Integer, ParameterValue::Integer(integer))),
+            value => cache(value),
+        });
+    let unread = || Expression::Source {
+        dialect: ExpressionDialect::SolidWorks,
+        tokens: Vec::new(),
+    };
+    let (kind, expression, value) = match typed {
+        Some((kind, value)) => {
+            let expression = stored_literal(&kind, &value, readings.length_unit)
+                .map_or_else(unread, |node| Expression::Neutral(Neutral(node)));
+            (kind, expression, Some(value))
+        }
+        None => (
+            ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
+            unread(),
+            None,
+        ),
+    };
+    let display = decoded
+        .and_then(|parameter| parameter.display)
+        .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
+        .map(|display| match display {
+            cadmpeg_ir::features::parameters::DimensionDisplay::Diameter => {
+                DimensionDisplay::Diameter
+            }
+            cadmpeg_ir::features::parameters::DimensionDisplay::Radius => DimensionDisplay::Radius,
+        })
+        .filter(|display| readings.measured.get(&entry.id) != Some(display));
+    Reading {
+        kind,
+        expression,
+        value,
+        display,
+        rounded: false,
+        assumed,
+        decided: false,
+        unvalued: None,
+    }
+}
+
+/// The literal of the canonical `value` of a parameter of kind `kind` that
+/// a record stores with no text: a length in the definition's length unit
+/// `length_unit`, else in metres, the unit the records store it in; an angle
+/// in degrees; a real or a count with no unit; a flag or a text as itself.
+/// Its number is the value in that unit to 15 significant digits (§5.12).
+fn stored_literal(
+    kind: &ValueKind,
+    value: &ParameterValue,
+    length_unit: Option<UnitSymbol>,
+) -> Option<Node<ParameterRef>> {
+    match (kind, value) {
+        (ValueKind::Quantity(quantity), ParameterValue::Number(number)) => {
+            let symbol = match *quantity {
+                Quantity::LENGTH => Some(length_unit.unwrap_or(UnitSymbol::M)),
+                Quantity::ANGLE => Some(UnitSymbol::Deg),
+                Quantity::REAL => None,
+                _ => return None,
+            };
+            let scale = match symbol {
+                Some(symbol) => canonical(symbol)?.1,
+                None => 1.0,
+            };
+            number_node(significant(number.get() / scale)?, symbol)
+        }
+        (ValueKind::Integer, ParameterValue::Integer(integer)) => {
+            number_node(exact_integer_f64(*integer)?, None)
+        }
+        (ValueKind::Boolean, ParameterValue::Boolean(flag)) => Some(Node::Boolean(*flag)),
+        (ValueKind::Text, ParameterValue::Text(text)) => Some(Node::Text(text.clone())),
+        _ => None,
     }
 }
 

@@ -572,6 +572,10 @@ pub(crate) enum SldprtLossCode {
     /// value: no record types the dimension or binds it to a stored value,
     /// or the part's length unit is not read.
     DesignParameterValueUnread,
+    /// Model parameters whose owner is a feature-tree node outside the
+    /// timeline (the annotations node, a detail folder), which no design
+    /// feature restates, state no design parameter.
+    DesignParameterOwnerOutsideTimeline,
     /// Parameters whose text is one reference to a parameter whose kind
     /// differs or is not read, and whose unit-blind tree does not type or is
     /// not confirmed by the document's values, hold the text and state no
@@ -861,6 +865,7 @@ impl SldprtLossCode {
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
+        Self::DesignParameterOwnerOutsideTimeline,
         Self::DesignParameterReferenceAsText,
         Self::DesignExtrudeDepthAssumed,
         Self::DesignParameterClassAssumed,
@@ -1130,6 +1135,7 @@ impl SldprtLossCode {
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
+            Self::DesignParameterOwnerOutsideTimeline => "design.parameter-owner-outside-timeline",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
@@ -1357,6 +1363,7 @@ impl SldprtLossCode {
             | Self::DesignFolderDropped
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
+            | Self::DesignParameterOwnerOutsideTimeline
             | Self::DesignParameterReferenceAsText
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
@@ -1479,7 +1486,9 @@ impl SldprtLossCode {
             | Self::DesignDatumUnresolved
             | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
-            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::DesignParameterReferenceAsText | Self::DesignParameterOwnerOutsideTimeline => {
+                LossTaxonomy::ParametricRecordOmitted
+            }
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
@@ -2029,6 +2038,7 @@ mod tests {
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
+                "design.parameter-owner-outside-timeline",
                 "design.parameter-reference-as-text",
                 "design.extrude-depth-assumed",
                 "design.parameter-class-assumed",

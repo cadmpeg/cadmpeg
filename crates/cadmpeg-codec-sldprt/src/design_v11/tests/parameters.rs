@@ -251,22 +251,25 @@ fn parameters_with_scalars(
             .push(*scalar);
     }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let (mut parameters, mut notes, bare) =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline)
-            .unwrap()
-            .parameters(
-                &ir.design.scopes[0].definition,
-                &super::super::parameters::Readings {
-                    decoded,
-                    length_unit,
-                    length_places,
-                    bound: std::collections::HashMap::new(),
-                    measured: std::collections::HashMap::new(),
-                    driven: std::collections::HashSet::new(),
-                    manager: std::collections::HashMap::new(),
-                    confirmed: std::collections::HashSet::new(),
-                },
-            );
+    let (mut parameters, mut notes, bare) = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap()
+    .parameters(
+        &ir.design.scopes[0].definition,
+        &super::super::parameters::Readings {
+            decoded,
+            length_unit,
+            length_places,
+            bound: std::collections::HashMap::new(),
+            measured: std::collections::HashMap::new(),
+            driven: std::collections::HashSet::new(),
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
+        },
+    );
     notes.extend(super::super::equations::bare_references(
         &mut parameters,
         &bare,
@@ -1452,22 +1455,25 @@ fn parameters_with_manager(
         );
     }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let (parameters, notes, _) =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline)
-            .unwrap()
-            .parameters(
-                &ir.design.scopes[0].definition,
-                &super::super::parameters::Readings {
-                    decoded,
-                    length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
-                    length_places: places,
-                    bound: std::collections::HashMap::new(),
-                    measured: std::collections::HashMap::new(),
-                    driven: std::collections::HashSet::new(),
-                    manager,
-                    confirmed,
-                },
-            );
+    let (parameters, notes, _) = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap()
+    .parameters(
+        &ir.design.scopes[0].definition,
+        &super::super::parameters::Readings {
+            decoded,
+            length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
+            length_places: places,
+            bound: std::collections::HashMap::new(),
+            measured: std::collections::HashMap::new(),
+            driven: std::collections::HashSet::new(),
+            manager,
+            confirmed,
+        },
+    );
     (parameters, notes)
 }
 
@@ -1770,3 +1776,5 @@ fn the_manager_length_decides_a_dimension_whose_classes_disagree() {
 }
 
 mod display_rounded;
+mod enriched;
+mod outside_timeline;

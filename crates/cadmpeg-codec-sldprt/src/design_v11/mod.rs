@@ -65,6 +65,10 @@ pub(crate) use units::{length_places, length_unit};
 /// What a part's design is projected from.
 pub(crate) struct Part<'a> {
     pub(crate) histories: &'a [FeatureHistory],
+    /// The histories whose features also hold the parameters the decoder
+    /// reads from `ResolvedFeatures` scalars, PMI dimensions, and Move Face
+    /// translations; their ordinals give the parameters their ids.
+    pub(crate) parameter_histories: &'a [FeatureHistory],
     /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
     pub(crate) lanes: &'a [FeatureInputLane],
     /// The `Config-N` class map each lane continues, by lane id.
@@ -118,6 +122,7 @@ pub(crate) fn project(
 ) -> Result<Projection, CodecError> {
     let Part {
         histories,
+        parameter_histories,
         lanes,
         configuration_maps,
         bodies,
@@ -137,7 +142,8 @@ pub(crate) fn project(
     }
     losses.extend(order::regeneration_order(&mut timeline, &ir.model));
     let definition = root_definition();
-    let entries = parameters::Entries::new(histories, &timeline)?;
+    let entries = parameters::Entries::new(histories, parameter_histories, &timeline)?;
+    losses.extend(entries.outside(&ir.model.parameters));
     let typed = typed::project(
         &ir.model,
         histories,
