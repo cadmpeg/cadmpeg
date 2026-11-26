@@ -266,22 +266,43 @@ pub(crate) fn bind_feature_outputs(
             let walked = walked_deletions.take();
             if let Some(Some(&previous)) = state.next_ref.map(|node| by_node.get(&node)) {
                 if output_states.contains(&(history_index, state.state_id)) {
-                    if let (Some(transition), Some(prev_topology)) = (
-                        state.transition.as_ref(),
-                        history.topology(&history.states()[previous]),
-                    ) {
-                        let prev_index = HistoricalBodyIndex::new(prev_topology);
-                        let whole_deleted: Vec<i64> = transition
-                            .topology
-                            .bodies
-                            .deleted
-                            .iter()
-                            .copied()
-                            .filter(|&b| prev_index.is_solid(b))
-                            .collect();
-                        if !whole_deleted.is_empty() {
-                            state_deleted_bodies
-                                .insert((history_index, state.state_id), whole_deleted);
+                    if let Some(transition) = state.transition.as_ref() {
+                        if !transition.topology.bodies.deleted.is_empty() {
+                            let prev_state_id = history.states()[previous].state_id;
+                            let whole_deleted: Vec<i64> =
+                                if measured_states.contains(&(history_index, prev_state_id)) {
+                                    state_solid_bodies
+                                        .get(&(history_index, prev_state_id))
+                                        .map(|prev_solid| {
+                                            transition
+                                                .topology
+                                                .bodies
+                                                .deleted
+                                                .iter()
+                                                .copied()
+                                                .filter(|b| prev_solid.contains(b))
+                                                .collect()
+                                        })
+                                        .unwrap_or_default()
+                                } else if let Some(prev_topology) =
+                                    history.topology(&history.states()[previous])
+                                {
+                                    let prev_index = HistoricalBodyIndex::new(prev_topology);
+                                    transition
+                                        .topology
+                                        .bodies
+                                        .deleted
+                                        .iter()
+                                        .copied()
+                                        .filter(|&b| prev_index.is_solid(b))
+                                        .collect()
+                                } else {
+                                    Vec::new()
+                                };
+                            if !whole_deleted.is_empty() {
+                                state_deleted_bodies
+                                    .insert((history_index, state.state_id), whole_deleted);
+                            }
                         }
                     }
                 }
@@ -311,6 +332,8 @@ pub(crate) fn bind_feature_outputs(
             let state_key = (history_index, cur_state_id);
             if let Some(requests) = treatment_states.remove(&state_key) {
                 let topology = history.topology(&history.states()[index]);
+                let edge_slots =
+                    topology.map(|topology| super::selection::FamilySlots::new(&topology.edges));
                 let samples = topology.map(|topology| KeyedRows::new(&topology.edge_samples));
                 for EdgeMidpointRequest {
                     feature_index,
@@ -319,8 +342,9 @@ pub(crate) fn bind_feature_outputs(
                 {
                     let mut midpoints = Vec::new();
                     for slot in slots {
-                        let sample = topology
-                            .filter(|topology| topology.edges.contains(&slot))
+                        let sample = edge_slots
+                            .as_ref()
+                            .filter(|edge_slots| edge_slots.contains(slot))
                             .and_then(|_| samples.as_ref()?.get(slot));
                         if let Some(sample) = sample {
                             midpoints.push(sample.interior);
