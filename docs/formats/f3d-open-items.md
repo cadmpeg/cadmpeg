@@ -24,9 +24,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which MetaStream type row registers the `DesignConfigurationRoot` record: its type GUID, base-type GUID, type version, and add-in name?
 
-**Known.** The record is an indexed Design record in a Design `BulkStream` (`f3d.md` §1.2 "The `DesignConfigurationRoot` record in the Design `BulkStream` names the active row."). Its three-digit class tag is the dynamic class tag `256 + k` of the type row at ordinal `k` whose entity list holds the record index, and the primary record index gives its extent. The indexed header is followed by a zero u32, the LP-ASCII key `DesignConfigurationRoot`, eleven zero bytes, u32 `1`, the LP-UTF16 table id, the LP-UTF16 row id of the active row, and u32 `0`; the extent ends after that u32. The key identifies the record without its type row. The table id and row id name a row of a `DesignConfigurationTable` JSON document.
+**Known.** The record is an indexed Design record in a Design `BulkStream`, and `f3d.md` §1.2 gives its layout. Its three-digit class tag is the dynamic class tag `256 + k` of the type row at ordinal `k` whose entity list holds the record index, and the primary record index gives its extent. The key `DesignConfigurationRoot` identifies the record without its type row. The table id and row id name a row of a `DesignConfigurationTable` JSON document. The serializer trigger records of the configuration-table and configuration-rule documents register under type version `0`, add-in `Fusion`, and one shared base type (`f3d.md` §3.1, "Records of a sketch-and-extrude design").
 
 **Need.** A save of a design that has a configuration table with two rows, saved once with each row active. Compare the Design `MetaStream` type rows and find the row whose entity list holds the index of the record with the key `DesignConfigurationRoot`.
+
+**Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` in `writer/generate/presentation.rs`, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names.
 
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 

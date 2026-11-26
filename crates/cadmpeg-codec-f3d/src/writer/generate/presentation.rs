@@ -362,22 +362,20 @@ impl GeneratedDesignRegistry {
         dynamic_class_tag(ordinal)
     }
 
-    /// Register `entity_id` in place of `source` under the one registered
-    /// type that lists `source`, and return the type's class tag; `None`
-    /// when no type or several list it.
+    /// Register `entity_id` in place of `source` under the registered type
+    /// that lists `source`, and return the type's class tag; `None` when no
+    /// type lists it or that type's GUID is `unless`.
     pub(super) fn register_in_place_of(
         &mut self,
         source: u32,
         entity_id: u32,
+        unless: &str,
     ) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
         let source = u64::from(source);
-        let mut listing = self
-            .types
-            .iter()
-            .enumerate()
-            .filter(|(_, design_type)| design_type.entity_ids.contains(&source))
-            .map(|(ordinal, _)| ordinal);
-        let (Some(ordinal), None) = (listing.next(), listing.next()) else {
+        let Some(ordinal) = self.types.iter().position(|design_type| {
+            design_type.entity_ids.contains(&source)
+                && !design_type.type_guid.as_str().eq_ignore_ascii_case(unless)
+        }) else {
             return Ok(None);
         };
         let entity_ids = &mut self.types[ordinal].entity_ids;
@@ -386,6 +384,14 @@ impl GeneratedDesignRegistry {
         entity_ids.sort_unstable();
         entity_ids.dedup();
         dynamic_class_tag(ordinal).map(Some)
+    }
+
+    /// Remove `entity_id` from the entity list of every registered type.
+    pub(super) fn unlist(&mut self, entity_id: u32) {
+        let entity_id = u64::from(entity_id);
+        for design_type in &mut self.types {
+            design_type.entity_ids.retain(|entity| *entity != entity_id);
+        }
     }
 }
 

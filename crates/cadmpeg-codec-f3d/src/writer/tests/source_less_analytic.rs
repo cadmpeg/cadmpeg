@@ -244,12 +244,10 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let (rooted_report, rooted_round_trip) = write_and_decode(&rooted);
     let medium_id = crate::ids::neutral_configuration_id(name, "medium");
     assert!(
-        rooted_report
-            .losses
-            .iter()
-            .any(|loss| loss.code.to_string() == "export/value.unwritable"
-                && loss.message.contains("DR-1063")
-                && loss.message.contains(medium_id.as_str())),
+        rooted_report.losses.iter().any(|loss| loss.code.to_string()
+            == "export/record.residual-unavailable"
+            && loss.message.contains("DR-1063")
+            && loss.message.contains(medium_id.as_str())),
         "{:#?}",
         rooted_report.losses
     );

@@ -13,6 +13,10 @@ use cadmpeg_core::CodecError;
 /// The LP-ASCII key of the record.
 pub(crate) const ROOT_KEY: &str = "DesignConfigurationRoot";
 
+/// The most UTF-16 code units the reader takes for the table id or the row
+/// id.
+pub(crate) const ID_WIDTH: usize = 256;
+
 /// Active rows named by root records, and the count of root records outside
 /// the admitted form.
 #[derive(Debug, Default)]
@@ -64,8 +68,8 @@ fn active_row(record: &[u8]) -> Option<DesignConfigurationActiveRow> {
     {
         return None;
     }
-    let (table_id, table_id_end) = lp_utf16_bounded(record, root::LEN, 1..=256)?;
-    let (row_id, row_id_end) = lp_utf16_bounded(record, table_id_end, 1..=256)?;
+    let (table_id, table_id_end) = lp_utf16_bounded(record, root::LEN, 1..=ID_WIDTH)?;
+    let (row_id, row_id_end) = lp_utf16_bounded(record, table_id_end, 1..=ID_WIDTH)?;
     if View::u32_le_at(record, row_id_end) != Some(0) || record.len() != row_id_end + 4 {
         return None;
     }
