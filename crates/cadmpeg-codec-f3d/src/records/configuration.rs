@@ -275,14 +275,14 @@ impl From<DesignConfiguration> for DesignConfigurationWire {
     }
 }
 
-/// Encode the native source document.
+/// Encode `payload`, the document of configuration entry `entry_name`.
 pub(crate) fn encode_configuration_payload(
-    configuration: &DesignConfiguration,
+    entry_name: &str,
+    payload: &Map<String, Value>,
 ) -> Result<Vec<u8>, CodecError> {
-    json::to_vec(configuration.payload()).map_err(|error| {
+    json::to_vec(payload).map_err(|error| {
         CodecError::malformed(format_args!(
-            "cannot encode F3D configuration JSON {}: {error}",
-            configuration.entry_name()
+            "cannot encode F3D configuration JSON {entry_name}: {error}"
         ))
     })
 }
