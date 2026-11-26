@@ -253,6 +253,27 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
         }
     }
 }
+/// The creator at `ordinal` made the only part of the final rollback state. The rollback
+/// ids are stable, so a derived feature cannot have supplied that part.
+fn creator_made_final_body(
+    ordinal: usize,
+    final_state: usize,
+    inputs: &topology::Inputs<'_>,
+) -> bool {
+    let (Ok(before), Ok(after), Ok(last)) = (
+        inputs.parts(ordinal),
+        inputs.parts(ordinal + 1),
+        inputs.parts(final_state),
+    ) else {
+        return false;
+    };
+    let mut made = after.keys().filter(|id| !before.contains_key(*id));
+    match (made.next(), made.next(), last.len()) {
+        (Some(id), None, 1) => last.contains_key(id),
+        _ => false,
+    }
+}
+
 pub(super) fn part_bodies(
     creators: &[usize],
     inputs: &topology::Inputs<'_>,
@@ -662,9 +683,14 @@ fn studio_in(
     let has_derived = features
         .iter()
         .any(|feature| derived::is_derived(feature) && suppression(feature) != Ok(true));
-    let single_body = (!has_derived && creators.len() == 1 && model.ir.geometry.bodies.len() == 1)
-        .then(|| model.ir.geometry.bodies.first().map(|body| body.id.clone()))
-        .flatten();
+    let single_body = match (creators.as_slice(), model.ir.geometry.bodies.as_slice()) {
+        ([ordinal], [body])
+            if !has_derived || creator_made_final_body(*ordinal, features.len(), &inputs) =>
+        {
+            Some(body.id.clone())
+        }
+        _ => None,
+    };
     let parts = model.ir.geometry.bodies.len();
     let part_bodies = if single_body.is_none() && parts > 1 && !creators.is_empty() {
         let bound = part_bodies(&creators, &inputs, &model);

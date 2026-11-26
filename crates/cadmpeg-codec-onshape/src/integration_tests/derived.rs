@@ -546,6 +546,20 @@ fn unmatched_root_element_leaves_the_studio_to_the_assembly_selection() {
 }
 
 #[test]
+fn creator_of_the_only_final_body_records_it_beside_a_derived_feature() {
+    let (model, report) = read(&fixture("derived")).unwrap();
+    let wire = timeline(&model);
+    let features = wire["model"]["features"].as_array().unwrap();
+    assert_eq!(
+        features[1]["outputs"].as_array().map(Vec::len),
+        Some(1),
+        "{:?}",
+        report.losses()
+    );
+    assert_eq!(features[2]["outputs"], json!([]));
+}
+
+#[test]
 fn derived_bundle_owns_members_of_a_host_studio_whose_id_ends_in_partstudios() {
     let renamed = renamed_host("hostpartstudios");
     // Each studio has its own pin, so a member checked against the wrong pin is omitted.
