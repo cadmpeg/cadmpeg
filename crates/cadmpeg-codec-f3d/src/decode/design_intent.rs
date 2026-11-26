@@ -1006,6 +1006,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         construction_recipes: &prereqs.construction_recipes,
         persistent_design_links: geometry.persistent_design_links,
         histories: &design.asm_histories,
+        scope_histories: &scope_histories,
         bodies: geometry.bodies,
         regions: geometry.regions,
         shells: geometry.shells,

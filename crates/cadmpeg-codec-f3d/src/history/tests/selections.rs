@@ -1801,6 +1801,19 @@ mod operand_list_combine {
         Vec<cadmpeg_ir::report::loss::LossNote>,
         Option<bool>,
     ) {
+        bind_with_scope_histories(operation, history, scopes, &std::collections::HashMap::new())
+    }
+
+    fn bind_with_scope_histories(
+        operation: DesignCombineOperation,
+        history: &crate::history_records::AsmHistory,
+        scopes: &[DesignParameterScope],
+        scope_histories: &std::collections::HashMap<String, String>,
+    ) -> (
+        (BodySelection, BodySelection),
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        Option<bool>,
+    ) {
         let combine_state = i64::try_from(history.states().len()).unwrap() - 1;
         let combine = scope(400, combine_state);
         let mut target = BodySelection::Native(format!("{STREAM}:design-record#11"));
@@ -1814,7 +1827,7 @@ mod operand_list_combine {
                 &FeatureId::mint("test:model:feature#combine").unwrap(),
                 combine_state - 1,
             ),
-            (std::slice::from_ref(history), scopes),
+            (std::slice::from_ref(history), scopes, scope_histories),
             &mut refusals,
         );
         let losses = refusals
@@ -1932,6 +1945,33 @@ mod operand_list_combine {
             assert_eq!(operand_refusals(&losses), 1);
             assert_eq!(shared_body, Some(true));
         }
+    }
+
+    #[test]
+    fn a_tool_whose_creator_reads_another_history_leaves_only_the_tools_native() {
+        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        let other = scope(250, 2);
+        let mut scopes = creators();
+        scopes.push(other.clone());
+        let scope_histories =
+            std::collections::HashMap::from([(other.id.clone(), "f3d:asm-history#2".to_owned())]);
+        let (selections, losses, shared_body) = bind_with_scope_histories(
+            operation(node(200), &[node(250)]),
+            &history,
+            &scopes,
+            &scope_histories,
+        );
+        assert_target_only(&selections, 2);
+        assert_eq!(operand_refusals(&losses), 1);
+        assert!(losses[0].message.contains("reads another history"), "{losses:?}");
+        assert_ne!(shared_body, Some(true));
+        let (selections, _, shared_body) = bind_with_outcome(
+            operation(node(200), &[node(250)]),
+            &history,
+            &scopes,
+        );
+        assert_native(&selections);
+        assert_eq!(shared_body, Some(true));
     }
 
     #[test]
