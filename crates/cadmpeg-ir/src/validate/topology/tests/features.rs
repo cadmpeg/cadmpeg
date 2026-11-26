@@ -31,6 +31,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: state_id.clone(),
             input_of: feature_id.clone(),
             bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1346,6 +1347,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#fillet").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::default(),
@@ -1417,6 +1419,7 @@ fn input_face_owners_name_their_own_state_members_once() {
         .push(FeatureInputTopology {
             face_owners: vec![owner(&face, &body)],
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#offset").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::try_from(vec![body.clone(), other.clone()]).unwrap(),
@@ -1497,6 +1500,7 @@ fn input_face_geometry_names_its_own_state_faces_once() {
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
             face_geometry: vec![geometry(&face)],
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#offset").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::default(),

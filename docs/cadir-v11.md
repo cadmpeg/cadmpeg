@@ -1255,6 +1255,8 @@ pub enum FuzzyTolerance { KernelDefault, Automatic, Explicit(Dimension<PositiveL
 
 `FeatureInputTopology.face_geometry` states the carrier surfaces of faces in the feature's input state. A `HistoricalFaceGeometry` names a face of `faces`, and a face has at most one entry. Its `surface` is a plane, cylinder, cone, sphere, torus, or NURBS surface in the frame of the body that the feature evaluates, before the feature applies. `reversed` is true when the face normal is opposite to the natural normal of `surface`.
 
+`FeatureInputTopology.body_writers` states the feature whose result last inserts or updates a body of the input state before that state. A `HistoricalBodyWriter` names a body of `bodies` and a feature of the model, and a body has at most one entry. A body with no entry has a writer the state does not state.
+
 A feature defined by stored geometry has the operation `FeatureOperation::Stored { bodies, tessellations, origin }` (part 6), whose origin types are:
 
 ```rust

@@ -58,6 +58,7 @@ pub(crate) mod body_recipe_operands;
 mod cache;
 pub(crate) mod chamfer_blends;
 mod combine_binding;
+pub(crate) mod body_writers;
 pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
