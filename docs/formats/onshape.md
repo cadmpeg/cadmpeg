@@ -66,7 +66,8 @@ selection text. The canonical member paths above bind the Part Studio.
 
 The feature response has a `features` array in timeline order and can have
 a `defaultFeatures` array. Each feature has a unique nonblank `featureId`.
-`featureType` selects the operation. `name` carries its display label.
+`featureType` selects the operation. `name` carries its display label; a blank or
+absent `name` leaves the `featureId` as the label.
 `parameters` is an array with unique `parameterId` keys; `btType` names each
 REST record class. `suppressed` and `parentSuppressed` are Boolean fields
 that mark inactive features. `rollbackIndex` is the number of features before the
@@ -243,11 +244,21 @@ is directed along its stored direction. The direction of a line with
 `clockwise` field establishes its sense. The `MODEL` domain binds the
 feature to its Part Studio model.
 
-A single planar target with a closed convex line boundary admits an exact
-`UP_TO_NEXT` intersection for a closed convex line profile. Each positive
-ray-plane intersection lies within all target boundary half-planes.
-Convexity extends coverage across the complete profile. The target plane,
-line carriers, endpoints and coedge directions are stored in the rollback.
+`UP_TO_NEXT` ends on the first stored planar face that every ray of the profile
+meets. The Boolean operation does not select the face. The profile is a closed
+convex line boundary. The rollback state lists the faces of every body before
+the feature. Each body stores a `type` and a `consumedByComposite` flag. A live
+body is a body that no composite consumes. Candidate faces and blocking faces
+belong to live bodies of every type. Each face stores a plane, line carriers,
+endpoints and loops with an outer or hole role. A face whose surface is not a
+plane, or whose loops are not closed chains of line edges, prevents the target
+wherever it lies in the rollback state. A ray meets a face where its positive
+plane intersection lies inside the outer loop and outside every hole. The
+target covers the complete profile. A face whose boundary overlaps the profile
+and whose plane meets a ray of the profile at a smaller positive distance than
+the target prevents the target; the position of that intersection inside the
+face boundary does not matter. A plane parallel to the travel direction that
+crosses the profile prevents the target.
 
 A present `booleanScope` or `scope` parameter has a `queries` array. A nonempty
 scope list identifies target bodies at the consuming rollback. An empty
