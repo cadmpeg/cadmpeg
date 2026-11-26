@@ -1874,9 +1874,11 @@ fn a_native_record_whose_label_equals_a_charged_id_is_kept() {
 fn a_surface_whose_source_object_equals_a_charged_id_is_kept() {
     fn labelled(ir: &mut CadIr) {
         ir.geometry.surfaces[0].source_object = Some(
-            json::from_value(
-                serde_json::json!({"format": "test", "object_id": "test:file:surface#7"}),
-            )
+            json::from_value(serde_json::json!({
+                "format": "test",
+                "object_id": "test:file:surface#7",
+                "instance_path": []
+            }))
             .unwrap(),
         );
     }
