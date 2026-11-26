@@ -77,7 +77,11 @@ pub(super) fn resolved_edge_group(
             previous_state_id,
             feature_id,
         },
-        (EdgeGroupProof::Generic, None, &mut EdgeGroupAssumptions::default()),
+        (
+            EdgeGroupProof::Generic,
+            None,
+            &mut EdgeGroupAssumptions::default(),
+        ),
         ctx,
     )
 }
