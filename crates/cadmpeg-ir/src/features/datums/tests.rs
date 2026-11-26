@@ -9,6 +9,7 @@ use crate::features::selections::DistinctMembers;
 use crate::features::{FeatureContent, FeatureOperation, ParameterId, UnresolvedFamily};
 use crate::math::{Point3, Vector3};
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+use cadmpeg_core::serde_erase::json;
 
 mod validation;
 
@@ -64,13 +65,10 @@ fn datum_axis_partial_states_have_one_checked_wire_spelling() {
         },
     ] {
         let axis = DatumAxis::try_from(draft).unwrap();
-        let text = cadmpeg_core::serde_erase::json::to_string(&axis).unwrap();
+        let text = json::to_string(&axis).unwrap();
         let back: DatumAxis = serde_json::from_str(&text).unwrap();
         assert_eq!(back, axis);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&back).unwrap(),
-            text
-        );
+        assert_eq!(json::to_string(&back).unwrap(), text);
     }
     assert!(DatumAxis::try_from(DatumAxisDraft::default()).is_err());
     assert!(matches!(
@@ -134,8 +132,7 @@ fn datum_axis_walks_bound_dimensions_and_preserves_colliding_option_literals() {
 #[cfg(feature = "schema")]
 #[test]
 fn datum_axis_schema_requires_a_readable_fact_and_nonnull_geometry() {
-    let schema =
-        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(DatumAxis)).unwrap();
+    let schema = json::to_value(schemars::schema_for!(DatumAxis)).unwrap();
     assert_eq!(schema["allOf"][0]["anyOf"].as_array().unwrap().len(), 5);
     assert_eq!(
         schema["allOf"][0]["anyOf"][2]["properties"]["inputs"]["minItems"],
@@ -424,7 +421,7 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
 fn datum_axis_validation_keeps_curve_origins_and_two_pick_parameters() {
     use crate::design::construction::{InputRole, Relation, ScalarDimension, Subject};
     use crate::design::selection::OrderedSelection;
-    let picks: OrderedSelection = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let picks: OrderedSelection = json::from_value(serde_json::json!({
         "at":{"kind":"input"}, "picks":{"kind":"named","value":[
             {"target":{"kind":"principal","value":{"entity":"x_axis"}}},
             {"target":{"kind":"principal","value":{"entity":"origin"}}}

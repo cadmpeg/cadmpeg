@@ -67,11 +67,12 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
 mod tests {
     use super::check_spreadsheets;
     use crate::document::CadIr;
+    use cadmpeg_core::serde_erase::json;
 
     fn parameter_fixture() -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.parameters.push(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "id": "test:model:parameter#cell", "name": "cell", "expression": "7", "ordinal": 0, "dependencies": [], "properties": {}
             }))
             .unwrap(),
@@ -83,7 +84,7 @@ mod tests {
     fn spreadsheet_reference_findings_keep_row_order_and_missing_owner_semantics() {
         let mut ir = parameter_fixture();
         ir.model.spreadsheets.push(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "id": "test:model:spreadsheet#sheet", "feature": "test:model:feature#missing",
                 "cells": [
                     {"address": "A1", "parameter": "test:model:parameter#cell"},

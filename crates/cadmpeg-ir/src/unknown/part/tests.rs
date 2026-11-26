@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The part helper's stub, retained bytes, and loss.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{
@@ -422,7 +423,7 @@ fn a_given_up_part_survives_the_wire() {
     .expect("commit");
     let parsed = CadIr::from_json(&ir.to_canonical_json().expect("serialize")).expect("parse");
     assert_eq!(parsed, ir);
-    let wire = cadmpeg_core::serde_erase::json::to_string(&fidelity).expect("serialize fidelity");
+    let wire = json::to_string(&fidelity).expect("serialize fidelity");
     assert_eq!(
         serde_json::from_str::<SourceFidelity>(&wire).expect("parse fidelity"),
         fidelity

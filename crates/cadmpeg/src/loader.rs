@@ -208,6 +208,7 @@ fn names_decode_sidecar(path: &Path) -> bool {
 mod tests {
     use super::load_artifact;
     use crate::application::document::LoadOrigin;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_ir::CadIr;
     use cadmpeg_ir::{report::decode::DecodeReport, DecodeSidecar, SourceFidelity};
@@ -252,7 +253,7 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},

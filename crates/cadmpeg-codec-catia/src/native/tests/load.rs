@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -29,8 +30,8 @@ fn alias_row_borrowed_wire_preserves_json_bytes() {
     let row = native.alias_rows.first().expect("alias row");
     let owned: crate::native::CatiaAliasRowWire = row.clone().into();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(row).expect("borrowed alias JSON"),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned alias JSON")
+        json::to_vec(row).expect("borrowed alias JSON"),
+        json::to_vec(&owned).expect("owned alias JSON")
     );
 }
 
@@ -39,9 +40,7 @@ fn alias_row_retained_limit_refuses_json_record() {
     let native = crate::native::CatiaNative::decode(&surface_alias_stream());
     let row = native.alias_rows.first().expect("alias row");
     let arena_name = "alias_rows";
-    let json_len = cadmpeg_core::serde_erase::json::to_vec(row)
-        .expect("alias JSON")
-        .len();
+    let json_len = json::to_vec(row).expect("alias JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -66,8 +65,8 @@ fn value_schema_selection_borrowed_wire_preserves_json_bytes() {
         .expect("selection");
     let owned: crate::native::CatiaValueSchemaSelectionWire = selection.clone().into();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(selection).expect("borrowed selection JSON"),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned selection JSON")
+        json::to_vec(selection).expect("borrowed selection JSON"),
+        json::to_vec(&owned).expect("owned selection JSON")
     );
 }
 
@@ -79,9 +78,7 @@ fn value_schema_selection_retained_limit_refuses_json_record() {
         .first()
         .expect("selection");
     let arena_name = "value_schema_selections";
-    let json_len = cadmpeg_core::serde_erase::json::to_vec(selection)
-        .expect("selection JSON")
-        .len();
+    let json_len = json::to_vec(selection).expect("selection JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -330,25 +327,17 @@ fn native_load_rejects_noncanonical_value_block_views() {
         ));
     };
 
-    let mut invalid_wire =
-        cadmpeg_core::serde_erase::json::to_value(&native.value_blocks[0]).unwrap();
+    let mut invalid_wire = json::to_value(&native.value_blocks[0]).unwrap();
     invalid_wire["declared_len"] = serde_json::json!(native.value_blocks[0].declared_len() + 1);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaValueBlock>(invalid_wire)
-            .is_err()
-    );
+    assert!(json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_payload = native.clone();
     invalid_payload.value_blocks[0].payload.push(0x80);
     assert_rejected(invalid_payload);
 
-    let mut invalid_wire =
-        cadmpeg_core::serde_erase::json::to_value(&native.value_blocks[0]).unwrap();
+    let mut invalid_wire = json::to_value(&native.value_blocks[0]).unwrap();
     invalid_wire["fields"] = serde_json::json!([]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaValueBlock>(invalid_wire)
-            .is_err()
-    );
+    assert!(json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_selections = native;
     assert!(!invalid_selections.value_blocks[0]

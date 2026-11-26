@@ -16,6 +16,7 @@ use crate::feature::{
     FACE_ITEM_TYPE,
 };
 use crate::pmdc::{PmDcListMetadata, PmDcReference, PmDcReferenceList, PmDcU32List};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
 use cadmpeg_ir::features::{
@@ -55,24 +56,22 @@ fn annotation(native: String) -> Feature {
 }
 
 fn property(kind: &PmDcFeaturePropertyKind, type_id: [u8; 16]) -> TestResult<PmDcFeatureProperty> {
-    Ok(cadmpeg_core::serde_erase::json::from_value(
-        serde_json::json!({
-            "id": "inventor:pmdc:feature-property#generated-0",
-            "segment_token": "generated",
-            "record_ordinal": 0,
-            "type_id": crate::pmdc::type_id_string(type_id),
-            "save_version_major": 19,
-            "header": {
-                "header_value": 0,
-                "header_id": 0,
-                "next": PmDcReference::from_packed(0),
-                "flags": 0,
-                "context": PmDcReference::from_packed(0),
-                "source_index": 0
-            },
-            "kind": kind
-        }),
-    )?)
+    Ok(json::from_value(serde_json::json!({
+        "id": "inventor:pmdc:feature-property#generated-0",
+        "segment_token": "generated",
+        "record_ordinal": 0,
+        "type_id": crate::pmdc::type_id_string(type_id),
+        "save_version_major": 19,
+        "header": {
+            "header_value": 0,
+            "header_id": 0,
+            "next": PmDcReference::from_packed(0),
+            "flags": 0,
+            "context": PmDcReference::from_packed(0),
+            "source_index": 0
+        },
+        "kind": kind
+    }))?)
 }
 
 fn face_item(marker: u16, values: &[u32]) -> TestResult<PmDcFeatureProperty> {
@@ -114,9 +113,9 @@ fn face_collection(marker: u16, references: &[u32]) -> TestResult<PmDcFeaturePro
 fn face_items_require_their_record_type_and_type_two_indices() -> TestResult {
     let valid = face_item(2, &[0, 0x8000_0001, u32::MAX])?;
     assert!(face_property_is_admitted(&valid, |_| None));
-    let wire = cadmpeg_core::serde_erase::json::to_value(&valid)?;
-    let restored: PmDcFeatureProperty = cadmpeg_core::serde_erase::json::from_value(wire.clone())?;
-    assert_eq!(cadmpeg_core::serde_erase::json::to_value(restored)?, wire);
+    let wire = json::to_value(&valid)?;
+    let restored: PmDcFeatureProperty = json::from_value(wire.clone())?;
+    assert_eq!(json::to_value(restored)?, wire);
     assert!(face_property_is_admitted(&face_item(2, &[])?, |_| None));
     assert!(!face_property_is_admitted(&face_item(3, &[1])?, |_| None));
     let wrong_type = property(&valid.kind, FACE_COLLECTION_TYPE)?;
@@ -296,17 +295,15 @@ fn thread_data() -> TestResult<super::NativeData> {
     )
     .ok_or("invalid Thread property fixture list")?;
     data.pm_dc_features
-        .push(cadmpeg_core::serde_erase::json::from_value(
-            serde_json::json!({
-                "id": "inventor:pmdc:feature#generated-4",
-                "segment_token": "generated", "record_ordinal": 4,
-                "type_id": "914d8790d011f8d10008cabc0663dc09",
-                "save_version_major": 19, "header": header,
-                "state": 69, "outline_value": 0, "properties": slots, "value": 0
-            }),
-        )?);
+        .push(json::from_value(serde_json::json!({
+            "id": "inventor:pmdc:feature#generated-4",
+            "segment_token": "generated", "record_ordinal": 4,
+            "type_id": "914d8790d011f8d10008cabc0663dc09",
+            "save_version_major": 19, "header": header,
+            "state": 69, "outline_value": 0, "properties": slots, "value": 0
+        }))?);
     data.pm_dc_feature_labels.push(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": "inventor:pmdc:feature-label#generated-8",
             "segment_token": "generated", "record_ordinal": 8,
             "type_id": "2ba4482bd2115864600074b79b49ebb0",
@@ -359,16 +356,13 @@ fn thread_data() -> TestResult<super::NativeData> {
         )
         .chain(data.pm_dc_parameters.iter().map(|record| &record.identity))
     {
-        data.records
-            .push(cadmpeg_core::serde_erase::json::from_value(
-                serde_json::json!({
-                    "id": format!("inventor:rse:record#generated-{}", identity.record_ordinal),
-                    "token": "generated", "ordinal": identity.record_ordinal,
-                    "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
-                    "payload_offset": 0, "payload_len": 0, "payload_sha256": "0".repeat(64),
-                    "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0".repeat(64)
-                }),
-            )?);
+        data.records.push(json::from_value(serde_json::json!({
+            "id": format!("inventor:rse:record#generated-{}", identity.record_ordinal),
+            "token": "generated", "ordinal": identity.record_ordinal,
+            "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
+            "payload_offset": 0, "payload_len": 0, "payload_sha256": "0".repeat(64),
+            "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0".repeat(64)
+        }))?);
     }
     Ok(data)
 }
@@ -400,9 +394,9 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
         "Inventor thread annotation does not match its PmDc face selection"
     );
     data.pm_dc_parameters.push(parameter);
-    let mut label = cadmpeg_core::serde_erase::json::to_value(&data.pm_dc_feature_labels[0])?;
+    let mut label = json::to_value(&data.pm_dc_feature_labels[0])?;
     label["class_id"] = serde_json::json!("00000000000000000000000000000000");
-    data.pm_dc_feature_labels[0] = cadmpeg_core::serde_erase::json::from_value(label)?;
+    data.pm_dc_feature_labels[0] = json::from_value(label)?;
     findings.clear();
     super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
@@ -450,9 +444,9 @@ fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestRe
         "808b00afd41140881000fca5bba647b5",
     ] {
         let mut data = thread_data()?;
-        let mut label = cadmpeg_core::serde_erase::json::to_value(&data.pm_dc_feature_labels[0])?;
+        let mut label = json::to_value(&data.pm_dc_feature_labels[0])?;
         label["class_id"] = serde_json::json!(class);
-        data.pm_dc_feature_labels[0] = cadmpeg_core::serde_erase::json::from_value(label)?;
+        data.pm_dc_feature_labels[0] = json::from_value(label)?;
         for (reference, invalid) in [(0, false), (1, true)] {
             let source = &data.pm_dc_features[0];
             let mut payload = (**source).clone();
@@ -496,7 +490,7 @@ fn sketch_point(
     });
     kind.as_object_mut().ok_or("point kind")?.extend(tail);
     let mut payload: crate::sketch::PmDcSketchEntityPayload =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "save_version_major": version,
             "header": {
                 "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
@@ -508,7 +502,7 @@ fn sketch_point(
                 "endpoint_of": list, "center_of": list, "state": null, "associations": null
             }
         }))?;
-    payload.kind = cadmpeg_core::serde_erase::json::from_value(kind)?;
+    payload.kind = json::from_value(kind)?;
     Ok(crate::record_identity::Located::new(
         payload,
         crate::record_identity::RecordTypeId::try_from(
@@ -532,16 +526,13 @@ fn paired_tail(operands: [u32; 2]) -> serde_json::Value {
 fn sketch_records(data: &mut super::NativeData) -> TestResult {
     for entity in &data.pm_dc_sketch_entities {
         let ordinal = entity.identity.record_ordinal;
-        data.records
-            .push(cadmpeg_core::serde_erase::json::from_value(
-                serde_json::json!({
-                    "id": format!("inventor:rse:record#generated-{ordinal}"),
-                    "token": "generated", "ordinal": ordinal, "selector": 0, "type_index": 0,
-                    "type_id": entity.identity.type_id.as_str(),
-                    "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
-                    "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": ""
-                }),
-            )?);
+        data.records.push(json::from_value(serde_json::json!({
+            "id": format!("inventor:rse:record#generated-{ordinal}"),
+            "token": "generated", "ordinal": ordinal, "selector": 0, "type_index": 0,
+            "type_id": entity.identity.type_id.as_str(),
+            "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
+            "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": ""
+        }))?);
     }
     Ok(())
 }

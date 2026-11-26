@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Human-readable and JSON command-report rendering.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::io::{self, Write};
 use std::path::Path;
@@ -435,9 +436,8 @@ pub(crate) fn write_report_text(
     let mut bytes = if value["command"].as_str() == Some("check")
         && value["check_report"]["findings"].is_array()
     {
-        value["input_path"] =
-            cadmpeg_core::serde_erase::json::to_value(std::fs::canonicalize(input)?)?;
-        cadmpeg_core::serde_erase::json::to_vec_pretty(&value)?
+        value["input_path"] = json::to_value(std::fs::canonicalize(input)?)?;
+        json::to_vec_pretty(&value)?
     } else {
         text.as_bytes().to_vec()
     };
@@ -535,6 +535,7 @@ mod tests {
     use cadmpeg_core::decode::ArenaClass;
 
     use super::{FidelityDiff, FidelitySummary};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn a_fidelity_diff_names_the_classes_that_became_or_ceased_to_be_unrepresented() {
@@ -562,7 +563,7 @@ mod tests {
         let diff = FidelityDiff::between(&left, &right);
         assert!(!diff.is_empty());
         assert_eq!(
-            serde_json::to_value(&diff).unwrap(),
+            json::to_value(&diff).unwrap(),
             serde_json::json!({
                 "annotations_changed": false,
                 "retained_records_changed": true,
@@ -576,19 +577,19 @@ mod tests {
     #[test]
     fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::None).unwrap(),
+            json::to_value(FidelitySummary::None).unwrap(),
             serde_json::Value::Null
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyLeft).unwrap(),
+            json::to_value(FidelitySummary::OnlyLeft).unwrap(),
             serde_json::json!({ "present": "left_only" })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyRight).unwrap(),
+            json::to_value(FidelitySummary::OnlyRight).unwrap(),
             serde_json::json!({ "present": "right_only" })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
+            json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
                 unrepresented_added: BTreeSet::new(),
@@ -607,7 +608,7 @@ mod tests {
             })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
+            json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
                 unrepresented_added: BTreeSet::new(),

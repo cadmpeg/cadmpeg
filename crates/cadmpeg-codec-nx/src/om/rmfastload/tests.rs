@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{Storage, TerminalAtom};
 use crate::test_support::{rmfastload::payload, with_decode_context_over};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn rmfastload_physical_boundaries_cross_logical_records() {
@@ -68,10 +69,7 @@ fn rmfastload_terminal_token_serde_preserves_width_without_numeric_meaning() {
     for text in ["00", "7f", "8000", "8fff", "a00000", "afffff", "c0000000"] {
         let json = format!("\"{text}\"");
         let atom: TerminalAtom = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&atom).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&atom).unwrap(), json);
     }
     for text in [
         "", "80", "800000", "9000", "a000", "b00000", "c00000", "c1000000", "AF0000",

@@ -693,6 +693,7 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::serde_erase::json;
 
     use super::{
         frame_bulk_records, parse_extended_record_trailer, parse_meta_tables,
@@ -943,15 +944,11 @@ mod tests {
     #[test]
     fn metadata_section_numbers_have_a_closed_numeric_wire_form() {
         for number in 0..=u8::MAX {
-            let parsed = cadmpeg_core::serde_erase::json::from_value::<super::MetaSectionNumber>(
-                serde_json::json!(number),
-            );
+            let parsed = json::from_value::<super::MetaSectionNumber>(serde_json::json!(number));
             if (1..=11).contains(&number) {
                 assert_eq!(
-                    cadmpeg_core::serde_erase::json::to_value(
-                        parsed.expect("section number is in 1..=11")
-                    )
-                    .expect("section number is in 1..=11"),
+                    json::to_value(parsed.expect("section number is in 1..=11"))
+                        .expect("section number is in 1..=11"),
                     serde_json::json!(number)
                 );
             } else {

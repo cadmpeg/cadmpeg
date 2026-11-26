@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::admit;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::geometry::legacy_cache::LegacyCache;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
@@ -49,14 +50,14 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve();
         ir.geometry.surfaces.push(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "id": "test:brep:surface#1",
                 "geometry": {"kind": "solved", "value": {"kind": "plane", "origin": {"x":0.0,"y":0.0,"z":0.0},
                     "normal": {"x":0.0,"y":0.0,"z":1.0}, "u_axis":{"x":1.0,"y":0.0,"z":0.0}}}
             }))
             .unwrap(),
         );
-        let definition = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let definition = json::from_value(serde_json::json!({
             "kind":"spring", "direction":0,
             "layout":{"kind":"cache_first",
                 "context":{"sides":[{"surface":"test:brep:surface#1",

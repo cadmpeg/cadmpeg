@@ -9,6 +9,7 @@ use crate::hash::finite_json::{
 use crate::scalar::FiniteReal;
 use crate::{report::check::Finding, CadIr};
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
@@ -364,8 +365,7 @@ pub fn cut_with_native(
     native_text_replacements: &BTreeMap<String, String>,
 ) -> Result<Bundle, CodecError> {
     let projection = project(document, options)?;
-    let mut value: Value =
-        cadmpeg_core::serde_erase::json::from_slice(&projection).map_err(CodecError::malformed)?;
+    let mut value: Value = json::from_slice(&projection).map_err(CodecError::malformed)?;
     let roots: Vec<String> = finding
         .entity
         .iter()
@@ -451,9 +451,7 @@ impl Bundle {
                         .ok_or_else(|| CodecError::malformed("an arena address is blank"))?,
                     rows: u64_from_index(values.as_array().map_or(0, Vec::len)),
                     serialized_bytes: u64_from_index(
-                        cadmpeg_core::serde_erase::json::to_vec(values)
-                            .map_err(CodecError::malformed)?
-                            .len(),
+                        json::to_vec(values).map_err(CodecError::malformed)?.len(),
                     ),
                 })
             })

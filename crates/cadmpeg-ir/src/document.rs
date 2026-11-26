@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned document structure and canonical arena ordering.
 
+use cadmpeg_core::serde_erase::json;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -1390,7 +1391,7 @@ macro_rules! declare_document_arenas {
                 &mut self,
                 arena: &crate::give_up::Arena,
                 id: &str,
-                mut rewrite: impl FnMut(&mut serde_json::Value) -> bool,
+                rewrite: &mut dyn FnMut(&mut serde_json::Value) -> bool,
             ) -> bool {
                 let crate::give_up::Arena::Home { home, field } = arena else {
                     return false;
@@ -3091,7 +3092,7 @@ impl CadIr {
     ///
     /// Where `value` is not a document of this IR version.
     pub fn from_projection(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        let wire: CadIrReadWire = cadmpeg_core::serde_erase::json::from_value(value)?;
+        let wire: CadIrReadWire = json::from_value(value)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.admit()
     }

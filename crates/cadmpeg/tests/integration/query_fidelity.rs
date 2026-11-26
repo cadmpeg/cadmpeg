@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 
 use predicates::prelude::{predicate, PredicateBooleanExt};
@@ -227,8 +228,7 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
         .output()
         .unwrap();
     assert!(json.status.success());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&json.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&json.stdout).unwrap();
     assert_eq!(value["command"], "query");
     assert_eq!(value["payload"]["annotations"]["provenance"], 1);
     assert_eq!(
