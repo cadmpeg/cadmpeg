@@ -16,10 +16,11 @@ fn sampled_constructor_omits_topology_and_refuses_explicit_null() {
     );
     let mut wire = serde_json::to_value(&sample).unwrap();
     assert!(wire.get("topology").is_none());
-    let decoded: HistoricalEdgeGeometry = serde_json::from_value(wire.clone()).unwrap();
+    let decoded: HistoricalEdgeGeometry =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(sample, decoded);
     wire["topology"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<HistoricalEdgeGeometry>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<HistoricalEdgeGeometry>(wire).is_err());
 }
 
 #[test]
@@ -43,7 +44,8 @@ fn loop_path_wire_and_rewrite_keep_local_face_keys() {
         wire["path"],
         serde_json::json!({"kind": "loop", "loop_id": "test:history:loop#outline"})
     );
-    let decoded: HistoricalEdgeTopologyRef = serde_json::from_value(wire).unwrap();
+    let decoded: HistoricalEdgeTopologyRef =
+        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     assert_eq!(reference, decoded);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace(":history:", ":renamed:")));

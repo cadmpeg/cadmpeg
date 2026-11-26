@@ -122,7 +122,8 @@ fn input_topology_round_trip_and_typed_rewrite_preserve_local_members() {
             .to_owned()
     ));
     let wire = serde_json::to_vec(&ir.model.feature_input_topologies).unwrap();
-    let decoded: Vec<FeatureInputTopology> = serde_json::from_slice(&wire).unwrap();
+    let decoded: Vec<FeatureInputTopology> =
+        cadmpeg_core::serde_erase::json::from_slice(&wire).unwrap();
     assert_eq!(decoded, ir.model.feature_input_topologies);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace('#', "#renamed-")));
