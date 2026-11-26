@@ -503,12 +503,14 @@ fn bind_by_writer(
     use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let input_state = match feature.evaluation.definition() {
-        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => match seeds.as_slice() {
-            [PatternSeed::Bodies(BodySelection::Historical { state, .. })] => {
-                historical_state_number(state.as_str())
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
+            match seeds.as_slice() {
+                [PatternSeed::Bodies(BodySelection::Historical { state, .. })] => {
+                    historical_state_number(state.as_str())
+                }
+                _ => None,
             }
-            _ => None,
-        },
+        }
         FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Historical { state, .. },
             ..
