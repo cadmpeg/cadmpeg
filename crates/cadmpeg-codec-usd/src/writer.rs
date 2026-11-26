@@ -49,6 +49,7 @@ use cadmpeg_ir::tessellation::{
 };
 use cadmpeg_ir::topology::{Body, Color, FaceBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::up_axis::UpAxis;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::UsdLossCode;
@@ -67,11 +68,9 @@ pub(super) const MILLIMETRES_PER_METRE: f64 = 1000.0;
 /// Name of the transform op that turns a root prim to the selected up axis.
 const UP_AXIS_OP: &str = "xformOp:rotateX:upAxis";
 /// Up axis of a layer whose source states none.
-const DEFAULT_UP_AXIS: &str = "Z";
+const DEFAULT_UP_AXIS: UpAxis = UpAxis::Z;
 /// Family name of the subsets that carry tessellation triangle groups.
 const GROUP_FAMILY: &str = "triangleGroup";
-/// Source attribute naming the stage up axis of a USD source.
-const SOURCE_UP_AXIS: &str = "up_axis";
 
 /// What the writer does with each model arena.
 ///
@@ -460,18 +459,17 @@ impl<'ir> Writer<'ir> {
         scene: cadmpeg_ir::codec::write::SceneOptions,
         metres: f64,
     ) -> Self {
-        use cadmpeg_ir::codec::write::UpAxis;
         let millimetres_per_unit = metres * MILLIMETRES_PER_METRE;
-        let model_axis = source_up_axis(ir);
-        let up_axis = match scene.up_axis {
-            None => model_axis,
-            Some(UpAxis::Y) => "Y",
-            Some(UpAxis::Z) => "Z",
-        };
+        let model_axis = model_up_axis(ir);
+        let up_axis = scene.up_axis.unwrap_or(model_axis);
         let turn = match (model_axis, up_axis) {
-            ("Z", "Y") => Some(-90.0),
-            ("Y", "Z") => Some(90.0),
+            (UpAxis::Z, UpAxis::Y) => Some(-90.0),
+            (UpAxis::Y, UpAxis::Z) => Some(90.0),
             _ => None,
+        };
+        let up_axis = match up_axis {
+            UpAxis::Y => "Y",
+            UpAxis::Z => "Z",
         };
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
@@ -2378,24 +2376,9 @@ fn named_as(body: &Body, name: &str) -> bool {
         .is_none_or(|own| text::identifier(own) == text::identifier(name))
 }
 
-/// The up axis of the model: that of a USD source, or Z.
-fn source_up_axis(ir: &CadIr) -> &'static str {
-    let axis = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format() == crate::dialect::FORMAT)
-        .and_then(|source| {
-            source
-                .attributes
-                .iter()
-                .find(|(key, _)| key.as_str() == SOURCE_UP_AXIS)
-                .map(|(_, value)| value.as_str())
-        });
-    match axis {
-        Some("Y") => "Y",
-        Some("Z") => "Z",
-        _ => DEFAULT_UP_AXIS,
-    }
+/// The up axis of the model: the document's, or Z where it states none.
+fn model_up_axis(ir: &CadIr) -> UpAxis {
+    ir.up_axis.unwrap_or(DEFAULT_UP_AXIS)
 }
 
 fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {

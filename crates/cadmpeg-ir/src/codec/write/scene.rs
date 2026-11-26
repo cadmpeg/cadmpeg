@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scene settings that the caller of an export selects.
 
-/// The up axis of a written scene.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpAxis {
-    /// The +Y axis points up.
-    Y,
-    /// The +Z axis points up.
-    Z,
-}
+use crate::up_axis::UpAxis;
 
 /// Scene settings for an encoder of a scene format. An encoder whose format
 /// has no such setting does not read them.

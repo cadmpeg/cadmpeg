@@ -55,7 +55,7 @@ pub use coverage::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
     ProcessArenaDispositions,
 };
-pub use scene::{SceneOptions, UpAxis};
+pub use scene::SceneOptions;
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// Implementation surface for one output format.

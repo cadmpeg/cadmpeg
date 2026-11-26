@@ -20,16 +20,6 @@ pub enum UpAxis {
     Z,
 }
 
-impl UpAxis {
-    /// The unit direction of the axis in model space.
-    pub const fn direction(self) -> [f64; 3] {
-        match self {
-            Self::Y => [0.0, 1.0, 0.0],
-            Self::Z => [0.0, 0.0, 1.0],
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::UpAxis;
@@ -42,11 +32,5 @@ mod tests {
         assert_eq!(serde_json::from_str::<UpAxis>("\"z\"").unwrap(), UpAxis::Z);
         assert!(serde_json::from_str::<UpAxis>("\"x\"").is_err());
         assert!(serde_json::from_str::<UpAxis>("\"Y\"").is_err());
-    }
-
-    #[test]
-    fn direction_is_the_named_axis() {
-        assert_eq!(UpAxis::Y.direction(), [0.0, 1.0, 0.0]);
-        assert_eq!(UpAxis::Z.direction(), [0.0, 0.0, 1.0]);
     }
 }

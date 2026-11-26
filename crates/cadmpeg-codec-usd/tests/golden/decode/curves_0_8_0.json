@@ -1172,8 +1172,7 @@
     "source": {
       "attributes": {
         "default_prim": "Curves",
-        "meters_per_unit": "1",
-        "up_axis": "Z"
+        "meters_per_unit": "1"
       },
       "identity": {
         "dialects": {
@@ -1200,7 +1199,8 @@
       "length": "millimeter",
       "mass": "kilogram",
       "time": "second"
-    }
+    },
+    "up_axis": "z"
   },
   "report": {
     "coverage": {},

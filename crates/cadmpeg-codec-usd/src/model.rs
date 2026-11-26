@@ -42,6 +42,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::up_axis::UpAxis;
 use cadmpeg_ir::CadIr;
 
 use crate::brep::patch::Trims;
@@ -84,7 +85,7 @@ pub(crate) struct Metrics {
     pub(crate) meters_per_unit: f64,
     /// Kilograms per scene mass unit (spec §16.1).
     pub(crate) kilograms_per_unit: f64,
-    pub(crate) up_axis: String,
+    pub(crate) up_axis: UpAxis,
     pub(crate) default_prim: Option<String>,
     /// `metersPerUnit` is authored and is not a positive finite number.
     pub(crate) malformed_units: bool,
@@ -129,9 +130,10 @@ pub(crate) fn metrics(layer: &Layer) -> Metrics {
         _ => None,
     };
     let (up_axis, malformed_up_axis) = match layer_value(layer, "upAxis") {
-        None => ("Y".to_owned(), false),
-        Some(Value::String(axis)) if axis == "Y" || axis == "Z" => (axis.clone(), false),
-        Some(_) => ("Y".to_owned(), true),
+        None => (UpAxis::Y, false),
+        Some(Value::String(axis)) if axis == "Y" => (UpAxis::Y, false),
+        Some(Value::String(axis)) if axis == "Z" => (UpAxis::Z, false),
+        Some(_) => (UpAxis::Y, true),
     };
     Metrics {
         scale: meters_per_unit * MILLIMETRES_PER_METRE,
