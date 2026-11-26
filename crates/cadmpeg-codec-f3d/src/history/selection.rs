@@ -574,13 +574,13 @@ pub(super) fn bind_body_recipe_face_selection(
 
 /// Membership in one topology family. Replayed families are in slot order and
 /// are searched in place; any other family is hashed.
-pub(super) enum FamilySlots<'a> {
+pub(crate) enum FamilySlots<'a> {
     Sorted(&'a [i64]),
     Hashed(HashSet<i64>),
 }
 
 impl<'a> FamilySlots<'a> {
-    pub(super) fn new(family: &'a [i64]) -> Self {
+    pub(crate) fn new(family: &'a [i64]) -> Self {
         if family.is_sorted() {
             Self::Sorted(family)
         } else {
@@ -588,7 +588,7 @@ impl<'a> FamilySlots<'a> {
         }
     }
 
-    pub(super) fn contains(&self, slot: i64) -> bool {
+    pub(crate) fn contains(&self, slot: i64) -> bool {
         match self {
             Self::Sorted(family) => family.binary_search(&slot).is_ok(),
             Self::Hashed(family) => family.contains(&slot),
