@@ -333,6 +333,50 @@ pub(crate) fn face_loop_participant<'a>(
     type_at(*other) == Some(type_id_string(FACE_LOOP_PARTICIPANT_TYPE).as_str())
 }
 
+/// What a surface-loft check reads beyond the loft's own records: the record
+/// type of a record ordinal, and whether an earlier feature names the loft's
+/// result wrapper.
+pub(crate) struct SurfaceContext<F> {
+    pub(crate) type_at: F,
+    pub(crate) wrapper_used_earlier: bool,
+}
+
+/// Whether the surface-body wrapper in slot 6 of `source` is already named by
+/// an earlier feature, so that this loft did not create it. `position` gives
+/// the history position of a feature; a feature without one cannot be ordered
+/// and counts as an earlier user.
+pub(crate) fn wrapper_used_earlier(
+    source: &PmDcFeature,
+    features: &[PmDcFeature],
+    position: impl Fn(&PmDcFeature) -> Option<u64>,
+) -> bool {
+    let Some(wrapper) = source
+        .properties
+        .references()
+        .get(Form::Surface.result_slot())
+        .and_then(|reference| reference.record_ordinal())
+    else {
+        return true;
+    };
+    let Some(own) = position(source) else {
+        return true;
+    };
+    features
+        .iter()
+        .filter(|other| {
+            other.identity.segment_token == source.identity.segment_token
+                && other.identity.record_ordinal != source.identity.record_ordinal
+        })
+        .filter(|other| {
+            other
+                .properties
+                .references()
+                .iter()
+                .any(|reference| reference.record_ordinal() == Some(wrapper))
+        })
+        .any(|other| position(other).is_none_or(|at| at < own))
+}
+
 /// Whether `definition` is a surface loft that keeps a native section
 /// selection.
 pub(crate) fn has_native_section(definition: &FeatureDefinition) -> bool {

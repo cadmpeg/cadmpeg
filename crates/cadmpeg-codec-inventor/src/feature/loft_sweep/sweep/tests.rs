@@ -308,7 +308,10 @@ fn projection_emits_the_first_refused_sweep_check() {
         &label,
         &index,
         crate::feature::FeatureFamily::Sweep,
-        |_| None,
+        crate::feature::loft_sweep::controls::SurfaceContext {
+            type_at: |_| None,
+            wrapper_used_earlier: false,
+        },
         &mut losses
     )
     .is_none());

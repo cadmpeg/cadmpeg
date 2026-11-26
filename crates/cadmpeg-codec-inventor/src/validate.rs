@@ -2538,11 +2538,26 @@ fn validate_features(
                                     .as_ref()?;
                                 Some((*parameter, value))
                             },
-                            |ordinal| {
-                                thicken_record_types
-                                    .get(&(token, ordinal))?
-                                    .as_ref()
-                                    .copied()
+                            crate::feature::loft_sweep::controls::SurfaceContext {
+                                type_at: |ordinal| {
+                                    thicken_record_types
+                                        .get(&(token, ordinal))?
+                                        .as_ref()
+                                        .copied()
+                                },
+                                wrapper_used_earlier:
+                                    crate::feature::loft_sweep::controls::wrapper_used_earlier(
+                                        raw_feature,
+                                        &data.pm_dc_features,
+                                        |other| {
+                                            extrusion_positions
+                                                .get(&(
+                                                    other.identity.segment_token.as_str(),
+                                                    other.identity.record_ordinal,
+                                                ))
+                                                .copied()
+                                        },
+                                    ),
                             },
                         )
                     })

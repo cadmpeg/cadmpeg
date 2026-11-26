@@ -26,7 +26,7 @@ pub(in crate::feature) fn project<'a>(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     family: FeatureFamily,
-    type_at: impl Fn(u32) -> Option<&'a str>,
+    surface: controls::SurfaceContext<impl Fn(u32) -> Option<&'a str>>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let operation = match family {
@@ -45,7 +45,8 @@ pub(in crate::feature) fn project<'a>(
             }
             Err(Refusal::Codec(error)) => return Some(Err(error)),
         },
-        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index, type_at) {
+        FeatureFamily::SurfaceLoft if surface.wrapper_used_earlier => return None,
+        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index, surface.type_at) {
             Ok(operation) => operation,
             Err(_) => return None,
         },
@@ -73,6 +74,9 @@ pub(in crate::feature) fn project<'a>(
         return Some(Err(error));
     }
     if matches!(family, FeatureFamily::SurfaceLoft) {
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftOperationAssumed.note(
+            "Surface loft reads part-operation value 5 as a new-body creation; the creation-or-combination rule is open.",
+        ));
         losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftFaceLoopNative.note(
             "Surface loft retains its face-loop section selection; the selected loop has no resolved neutral profile.",
         ));

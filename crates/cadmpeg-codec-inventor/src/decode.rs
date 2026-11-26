@@ -1008,7 +1008,7 @@ fn decode_container<'a>(
         }
         if unresolved.features != 0 {
             losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
-                "Retained {} typed Inventor feature record(s) whose operation graph is not closed.",
+                "{} typed Inventor feature record(s) have an operation graph that is not closed: each is retained as a native record, or typed with a native profile or section selection.",
                 unresolved.features
             )));
         }

@@ -2592,12 +2592,28 @@ pub(crate) fn project(
                             label,
                             &index,
                             family,
-                            |ordinal| {
-                                inventory
-                                    .record_types
-                                    .get(&feature.identity.segment_token)?
-                                    .get(&ordinal)?
-                                    .as_deref()
+                            loft_sweep::controls::SurfaceContext {
+                                type_at: |ordinal| {
+                                    inventory
+                                        .record_types
+                                        .get(&feature.identity.segment_token)?
+                                        .get(&ordinal)?
+                                        .as_deref()
+                                },
+                                wrapper_used_earlier: matches!(family, FeatureFamily::SurfaceLoft)
+                                    && loft_sweep::controls::wrapper_used_earlier(
+                                        feature,
+                                        &inventory.features,
+                                        |other| {
+                                            index
+                                                .positions
+                                                .get(&(
+                                                    other.identity.segment_token.as_str(),
+                                                    other.identity.record_ordinal,
+                                                ))
+                                                .copied()
+                                        },
+                                    ),
                             },
                             &mut loft_losses,
                         )
@@ -2929,7 +2945,7 @@ pub(crate) fn project(
                     if groups.iter().any(|group| group.spec.is_unresolved()))
         })
         .count();
-    let unresolved_extrusion_profiles = features
+    let native_operand_features = features
         .iter()
         .filter(|feature| {
             extrusion::has_native_profile(feature.evaluation.definition())
@@ -2940,7 +2956,7 @@ pub(crate) fn project(
         unresolved_features: total
             .checked_sub(neutral)
             .and_then(|unresolved| unresolved.checked_add(unresolved_chamfers))
-            .and_then(|unresolved| unresolved.checked_add(unresolved_extrusion_profiles))
+            .and_then(|unresolved| unresolved.checked_add(native_operand_features))
             .ok_or_else(|| {
                 CodecError::malformed("Inventor feature projection exceeds inventory")
             })?,
@@ -3253,9 +3269,6 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
             FeatureFamily::Split => NativeFeatureKind::Other("Split".into()),
         };
-    }
-    if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {
-        return NativeFeatureKind::Other(family.native_name().into());
     }
     NATIVE_CLASSES
         .iter()

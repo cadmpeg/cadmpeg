@@ -651,3 +651,27 @@ fn only_a_surface_loft_with_a_native_section_counts_as_unresolved() {
     let solid: FeatureDefinition = json::from_value(solid).expect("solid loft");
     assert!(!has_native_section(&solid));
 }
+
+#[test]
+fn the_slot_6_wrapper_must_not_be_named_by_an_earlier_feature() {
+    let f = surface_fixture();
+    // The loft is feature 20 at position 5; its wrapper is record 5.
+    let other = |ordinal: u32, wrapper: Option<u32>| {
+        let slots: Vec<(usize, u32)> = wrapper.map(|w| (3, w)).into_iter().collect();
+        test_feature(ordinal, 14, &slots)
+    };
+    let features = [f.source.clone(), other(21, Some(5)), other(22, None)];
+    let at = |feature: &PmDcFeature| Some(u64::from(feature.identity.record_ordinal));
+    // A later feature that names the wrapper consumes it.
+    assert!(!wrapper_used_earlier(&f.source, &features, at));
+    // An earlier feature that names it created or owns it.
+    let earlier = |feature: &PmDcFeature| Some(100 - u64::from(feature.identity.record_ordinal));
+    assert!(wrapper_used_earlier(&f.source, &features, earlier));
+    // A feature without a position cannot be ordered.
+    let unplaced = |feature: &PmDcFeature| (feature.identity.record_ordinal == 20).then_some(5);
+    assert!(wrapper_used_earlier(&f.source, &features, unplaced));
+    // A loft without a position, or without a wrapper, is refused.
+    assert!(wrapper_used_earlier(&f.source, &features, |_| None));
+    let bare = test_feature(20, 14, &[]);
+    assert!(wrapper_used_earlier(&bare, &features, at));
+}
