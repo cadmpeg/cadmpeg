@@ -635,7 +635,7 @@ impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gr
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
 impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, label, basis, precision, native_ref);
 impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, definition, name, color, visible, positions, normals, colors, channels, native_ref);
-impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state, topology);
+impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state_of, state, topology);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 
 #[cfg(test)]
