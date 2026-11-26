@@ -547,20 +547,18 @@ fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_rec
     ir.design.parameters.push(negated_parameter("kept", 1));
     let mut value = json::to_value(&ir).unwrap();
     value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
-    let read = CadIr::read(
+    let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),
     )
-    .expect("the read keeps the scope as written");
+    .expect("the read keeps the scope as written")
+    .without_sidecar();
 
-    assert_ne!(
-        read.document.scope(),
-        cadmpeg_core::decode::ContentScope::full()
-    );
+    assert_ne!(read.scope(), cadmpeg_core::decode::ContentScope::full());
 
-    let (losses, written) = written_with_losses(&read.document, "output.empty");
+    let (losses, written) = written_with_losses(&read, "output.empty");
     assert_eq!(losses.len(), 1, "{losses:?}");
-    assert_document_fields_without_records(&read.document, &written);
+    assert_document_fields_without_records(&read, &written);
 }
 
 /// The CADIR wire leaves out the legacy model arenas (§3.4): a document whose
@@ -621,13 +619,14 @@ fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
         .unwrap();
     let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
     value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
-    let read = CadIr::read(
+    let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),
     )
-    .expect("the read keeps the scope as written");
+    .expect("the read keeps the scope as written")
+    .without_sidecar();
 
-    let (omitted, written) = written_with_losses(&read.document, "native.records-omitted");
+    let (omitted, written) = written_with_losses(&read, "native.records-omitted");
     assert!(written
         .native
         .namespace("test")
@@ -650,7 +649,7 @@ fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
 fn the_cadir_writer_drops_the_annotations_of_the_records_it_leaves_out() {
     use crate::annotations::{AnnotationKey, StreamHandle};
     let mut ir = crate::validate::design::fixture::document();
-    let face = ir.geometry.faces[0].id.as_str().to_owned();
+    let face = ir.geometry.faces[0].id.clone();
     let copy = ir.geometry.faces[0].clone();
     let evaluation = ir.design.evaluations[0].id.clone();
     ir.design.evaluations[0]
@@ -699,15 +698,16 @@ fn the_cadir_writer_drops_the_annotations_of_the_records_it_leaves_out() {
 
 /// The annotations a CADIR write states are those of the document it writes
 /// (§3.2, §3.4): the key of a record of an arena the wire omits goes, and the
-/// key of a written design record that shares its id with such a record
-/// stays, as do the keys of the other written records.
+/// key of a written design record or native record that shares its id with
+/// such a record stays, as do the keys of the other written records.
 #[test]
 fn the_cadir_writer_states_the_annotations_of_the_records_it_writes() {
-    use crate::annotations::StreamHandle;
+    use crate::annotations::{Removed, StreamHandle};
     use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
     use crate::features::FeatureId;
 
     const SHARED: &str = "test:writer:feature#shared";
+    const NATIVE: &str = "test:writer:feature#native";
     const OMITTED: &str = "test:writer:feature#omitted";
     let legacy = |id: &str| crate::features::Feature {
         product_definition: None,
@@ -732,6 +732,17 @@ fn the_cadir_writer_states_the_annotations_of_the_records_it_writes() {
     let point = ir.geometry.points[0].id.as_str().to_owned();
     ir.model.features.push(legacy(OMITTED));
     ir.model.features.push(legacy(SHARED));
+    ir.model.features.push(legacy(NATIVE));
+    ir.native
+        .namespace_mut(cadmpeg_core::text::CodecId::new("test".to_owned()).unwrap())
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::text::NonBlankString::new("records").unwrap(),
+            vec![crate::native::NativeRecord::from_identity(
+                crate::ids::Identity::new(NATIVE).unwrap(),
+                [],
+            )],
+        );
     ir.design.features.push(Feature {
         id: FeatureId::mint(SHARED).unwrap(),
         name: None,
@@ -752,9 +763,14 @@ fn the_cadir_writer_states_the_annotations_of_the_records_it_writes() {
     ir.finalize();
     let stream = StreamHandle::new(crate::stream_name!("test:source"));
     let mut builder = crate::AnnotationBuilder::new();
-    for key in [point.as_str(), SHARED, OMITTED] {
+    for key in [point.as_str(), SHARED, NATIVE, OMITTED] {
         builder.note(key, &stream, 0, None);
     }
+    assert_eq!(
+        Removed::omitted_by_the_wire(&ir),
+        Removed::before(&ir).after_writing(&ir),
+        "a write that changes nothing else removes what the wire omits"
+    );
     let mut fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"source"));
     fidelity.annotations = builder.build();
 
@@ -773,7 +789,7 @@ fn the_cadir_writer_states_the_annotations_of_the_records_it_writes() {
         .map(crate::annotations::AnnotationKey::as_str)
         .collect();
     keys.sort_unstable();
-    let mut expected = vec![point.as_str(), SHARED];
+    let mut expected = vec![point.as_str(), SHARED, NATIVE];
     expected.sort_unstable();
     assert_eq!(keys, expected);
 }

@@ -179,7 +179,7 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
                 asm_body_key: Some(7),
             }],
             annotation_records: vec![AnnotationRecord {
-                id: "f3d:brep:entity#1".into(),
+                id: cadmpeg_ir::ids::Identity::new("f3d:brep:entity#1").unwrap(),
                 stream: "asset/BREP.source.smbh".into(),
                 offset: 10,
                 tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("body".into()),
@@ -205,7 +205,10 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
             .and_then(|record| record.asm_body_key.as_ref()),
         Some(&7)
     );
-    assert_eq!(brep.asm.annotation_records[0].id, qualified.as_str());
+    assert_eq!(
+        brep.asm.annotation_records[0].id.as_str(),
+        qualified.as_str()
+    );
     assert_eq!(
         brep.asm.body_native_keys[0].source_brep.as_deref(),
         Some("BREP.source.smbh")

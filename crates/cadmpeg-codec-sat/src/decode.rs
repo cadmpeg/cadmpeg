@@ -566,12 +566,15 @@ fn build_result(
     for record in annotation_records {
         let stream =
             StreamHandle::new(cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream));
-        let key = cadmpeg_ir::ids::Identity::new(record.id)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        annotations.note(&key, &stream, record.offset, Some(record.tag.as_str()));
+        annotations.note(
+            &record.id,
+            &stream,
+            record.offset,
+            Some(record.tag.as_str()),
+        );
         for field in record.derived_fields {
             annotations
-                .derived(&key, field)
+                .derived(&record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

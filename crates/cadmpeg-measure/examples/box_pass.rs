@@ -17,7 +17,9 @@ use cadmpeg_measure::test_support::box_pass::{agreements, Agreement};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bytes = Vec::new();
     std::io::stdin().read_to_end(&mut bytes)?;
-    let ir = CadIr::read(&bytes, &ReadOptions::default())?.document;
+    let ir = CadIr::read(&bytes, &ReadOptions::default())?
+        .without_sidecar()
+        .0;
     let bodies = agreements(&ir)?;
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for body in &bodies {

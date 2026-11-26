@@ -318,7 +318,8 @@ pub(super) fn write_plan_atomic(
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
 /// The sidecar holds `annotations`, the plan's annotations of the written
-/// document, and the origin's where the plan states none.
+/// document, which a CADIR plan states for every document with a decode
+/// origin.
 pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
     cadir_sha256: &Sha256Digest,
@@ -337,10 +338,14 @@ pub(super) fn persist_decode_sidecar(
         }
         | LoadOrigin::Restored { report, fidelity }
         | LoadOrigin::Read { report, fidelity } => {
+            let Some(annotations) = annotations else {
+                return Err(anyhow!(
+                    "the CADIR plan for {} states no annotations of the written document",
+                    cadir_path.display()
+                ));
+            };
             let mut fidelity = fidelity.as_ref().clone();
-            if let Some(annotations) = annotations {
-                fidelity.annotations = annotations;
-            }
+            fidelity.annotations = annotations;
             let sidecar =
                 DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity);
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();

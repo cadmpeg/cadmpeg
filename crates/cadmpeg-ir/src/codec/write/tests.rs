@@ -182,17 +182,15 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
     ]);
     let mut value = json::to_value(&ir).unwrap();
     value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
-    let read = CadIr::read(
+    let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),
     )
-    .expect("the read keeps the scope as written");
+    .expect("the read keeps the scope as written")
+    .without_sidecar();
 
     let plan = CadirEncoder
-        .plan(
-            EncodeInput::new(&read.document, None),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&read, None), TargetRequest::Unnamed)
         .expect("a scope breach does not refuse the write");
     let messages = |code: &str| {
         plan.report()
