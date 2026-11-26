@@ -199,7 +199,7 @@ pub(super) struct Facts {
 
 impl Facts {
     pub(super) fn of(ir: &CadIr, charged: &Charged) -> Self {
-        let geometry = serde_json::to_value(&ir.geometry).unwrap();
+        let geometry = cadmpeg_core::serde_erase::json::to_value(&ir.geometry).unwrap();
         let records = geometry_records(&geometry);
         let no_charge = Charged::default();
         let mut facts = BTreeMap::new();
@@ -391,7 +391,7 @@ pub(super) fn display_values(ir: &CadIr) -> BTreeMap<String, Value> {
                 Some(standard @ 1..) => crate::entities::presentation::standard_color(standard)
                     .map_or_else(
                         || Value::String(format!("standard colour {standard}")),
-                        |color| serde_json::json!([color.r(), color.g(), color.b()]),
+                        |color| cadmpeg_core::json!([color.r(), color.g(), color.b()]),
                     ),
                 _ => fields
                     .get("color_definition")
@@ -404,7 +404,7 @@ pub(super) fn display_values(ir: &CadIr) -> BTreeMap<String, Value> {
                                 .and_then(Value::as_f64)
                                 .map(|p| p / 100.0)
                         };
-                        serde_json::json!([
+                        cadmpeg_core::json!([
                             percent("red_percent"),
                             percent("green_percent"),
                             percent("blue_percent")
@@ -445,7 +445,7 @@ pub(super) fn appearance_values(ir: &CadIr) -> BTreeMap<String, Value> {
         .appearances
         .iter()
         .map(|appearance| {
-            let mut value = serde_json::to_value(appearance).unwrap();
+            let mut value = cadmpeg_core::serde_erase::json::to_value(appearance).unwrap();
             let fields = value.as_object_mut().unwrap();
             fields.remove("id");
             fields.remove("native_ref");
@@ -459,13 +459,13 @@ pub(super) fn appearance_values(ir: &CadIr) -> BTreeMap<String, Value> {
 /// binds written in place of its id, with the values `charged` charges
 /// replaced, and no ids.
 pub(super) fn binding_values(ir: &CadIr, charged: &Charged) -> BTreeMap<String, Value> {
-    let geometry = serde_json::to_value(&ir.geometry).unwrap();
+    let geometry = cadmpeg_core::serde_erase::json::to_value(&ir.geometry).unwrap();
     let records = geometry_records(&geometry);
     ir.model
         .appearance_bindings
         .iter()
         .map(|binding| {
-            let mut value = serde_json::to_value(binding).unwrap();
+            let mut value = cadmpeg_core::serde_erase::json::to_value(binding).unwrap();
             let fields = value.as_object_mut().unwrap();
             fields.remove("id");
             fields.remove("native_ref");
@@ -477,7 +477,7 @@ pub(super) fn binding_values(ir: &CadIr, charged: &Charged) -> BTreeMap<String, 
                 .and_then(|appearance| appearance.base_color);
             fields.insert(
                 "appearance".to_owned(),
-                serde_json::to_value(color).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(color).unwrap(),
             );
             let target = fields.remove("target").unwrap_or(Value::Null);
             let mut inliner = Inliner {

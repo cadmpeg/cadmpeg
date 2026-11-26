@@ -225,7 +225,7 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         panic!("expected a Shell scope");
     };
     *slot = Some(operation);
-    let group: DesignConstructionOperandGroup = json::from_value(serde_json::json!({
+    let group: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:group#91",
         "scope_record_index": 90,
         "scope_reference_ordinal": 0,

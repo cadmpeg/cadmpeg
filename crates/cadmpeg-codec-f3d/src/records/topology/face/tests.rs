@@ -104,13 +104,13 @@ fn face_operand_wire_derives_node_offsets() {
         let nodes: Vec<_> = offsets
             .iter()
             .map(|offset| {
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "byte_offset": offset, "end_byte_offset": offset + 16,
                     "program": [-1, -1, 2, 7], "recipe_structure": null
                 })
             })
             .collect();
-        let base = serde_json::json!({
+        let base = cadmpeg_core::json!({
             "id": "face", "scope_record_index": 1, "scope_reference_ordinal": 0,
             "record_index": 2, "byte_offset": 10, "class_tag": "346",
             "paired_byte_offset": 20, "paired_class_tag": "262",
@@ -124,8 +124,8 @@ fn face_operand_wire_derives_node_offsets() {
         for grouped in [false, true] {
             let mut wire = base.clone();
             if grouped {
-                wire["group_record_index"] = serde_json::json!(5);
-                wire["group_member_ordinal"] = serde_json::json!(0);
+                wire["group_record_index"] = cadmpeg_core::json!(5);
+                wire["group_member_ordinal"] = cadmpeg_core::json!(0);
             }
             for field in ["group_record_index", "group_member_ordinal"] {
                 let mut invalid = wire.clone();
@@ -137,7 +137,7 @@ fn face_operand_wire_derives_node_offsets() {
                     .as_object_mut()
                     .unwrap()
                     .remove("group_member_ordinal");
-                invalid[field] = serde_json::json!(5);
+                invalid[field] = cadmpeg_core::json!(5);
                 let error = json::from_value::<super::DesignFaceOperand>(invalid)
                     .unwrap_err()
                     .to_string();
@@ -150,14 +150,14 @@ fn face_operand_wire_derives_node_offsets() {
             invalid["recipe_node_offsets"]
                 .as_array_mut()
                 .unwrap()
-                .push(serde_json::json!(999));
+                .push(cadmpeg_core::json!(999));
             assert!(json::from_value::<super::DesignFaceOperand>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("recipe_node_offsets"));
             if count != 0 {
                 let mut invalid = wire;
-                invalid["recipe_node_offsets"][0] = serde_json::json!(999);
+                invalid["recipe_node_offsets"][0] = cadmpeg_core::json!(999);
                 assert!(json::from_value::<super::DesignFaceOperand>(invalid)
                     .unwrap_err()
                     .to_string()
@@ -168,7 +168,7 @@ fn face_operand_wire_derives_node_offsets() {
 }
 
 fn face_operand_for_borrowed(grouped: bool) -> super::DesignFaceOperand {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "id": "f3d:native:face-operand#0", "scope_record_index": 1,
         "scope_reference_ordinal": 0, "record_index": 2, "byte_offset": 10,
         "class_tag": "346", "paired_byte_offset": 20, "paired_class_tag": "262",
@@ -183,8 +183,8 @@ fn face_operand_for_borrowed(grouped: bool) -> super::DesignFaceOperand {
         "next_record_index": 4, "next_byte_offset": 200
     });
     if grouped {
-        wire["group_record_index"] = serde_json::json!(5);
-        wire["group_member_ordinal"] = serde_json::json!(0);
+        wire["group_record_index"] = cadmpeg_core::json!(5);
+        wire["group_member_ordinal"] = cadmpeg_core::json!(0);
     }
     json::from_value(wire).unwrap()
 }
@@ -205,7 +205,7 @@ fn face_operand_borrowed_wire_matches_owned_wire_bytes() {
 fn registered_recipe_frame_borrowed_and_owned_wire_match() {
     let mut wire = json::to_value(face_operand_for_borrowed(false)).unwrap();
     wire["next_record_index"] = 5.into();
-    wire["registered_recipe_frame"] = serde_json::json!({
+    wire["registered_recipe_frame"] = cadmpeg_core::json!({
         "record_index": 5,
         "primary_offset": 30,
         "secondary_offset": 200,
@@ -271,7 +271,7 @@ fn face_recipe_ordinals_keep_zero_and_group_design_references() {
     let mut references = Vec::new();
     for (offset, design_reference) in [(100, 418), (100, 419), (125, 418), (150, 418), (175, 418)] {
         references.push(json::from_value::<crate::records::dimensions::DesignRecipeReference>(
-            serde_json::json!({"selector":1,"selector_offset":offset,"token":"2","token_offset":offset+8,"design_reference":design_reference,"design_reference_offset":offset+17}),
+            cadmpeg_core::json!({"selector":1,"selector_offset":offset,"token":"2","token_offset":offset+8,"design_reference":design_reference,"design_reference_offset":offset+17}),
         ).unwrap());
     }
     let side = |fan: [i32; 3]| super::DesignTopologyRecipeSide {
@@ -289,7 +289,7 @@ fn face_recipe_ordinals_keep_zero_and_group_design_references() {
     assert!(structure.has_valid_operand_ordinals(&references));
     let wire = json::to_value(&structure).unwrap();
     assert_eq!(wire["sides"][0]["field_count"], 3);
-    assert_eq!(wire["sides"][0]["scalars"], serde_json::json!([0, 0]));
+    assert_eq!(wire["sides"][0]["scalars"], cadmpeg_core::json!([0, 0]));
     for pair in [[1, 0], [3, 0], [0, 1], [0, 2]] {
         let mut valid = structure.clone();
         valid.root = pair[0];
@@ -336,7 +336,7 @@ fn recipe_reference(
     selector_offset: u64,
     token_offset: u64,
 ) -> crate::records::dimensions::DesignRecipeReference {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "selector": 1, "selector_offset": selector_offset, "token": "2",
         "token_offset": token_offset, "design_reference": 418,
         "design_reference_offset": selector_offset + 17

@@ -235,7 +235,7 @@ mod tests {
             HEADER_INTO_WIRE_COUNT.with(|count| count.set(0));
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &record,
-                serde_json::json!({"id": record.id, "objects": old}),
+                cadmpeg_core::json!({"id": record.id, "objects": old}),
             );
             HEADER_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
         }

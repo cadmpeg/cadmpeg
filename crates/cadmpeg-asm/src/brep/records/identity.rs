@@ -211,7 +211,7 @@ mod tests {
     fn macro_record_namespace_is_admitted_before_typed_construction() {
         namespace_controls::<super::super::EdgeContinuity>(
             "edge-continuity",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "f3d:asm:edge-continuity#1", "record_index": 1,
                 "edge": "f3d:brep:entity#1", "sense": "forward", "continuity": "tangent"
             }),
@@ -222,7 +222,7 @@ mod tests {
     fn face_record_namespace_is_admitted_before_typed_construction() {
         namespace_controls::<super::super::FaceSidedness>(
             "face-sidedness",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "f3d:asm:face-sidedness#1", "record_index": 1,
                 "face": "f3d:brep:entity#1", "native_sense": "forward", "normalized_sense": "forward"
             }),

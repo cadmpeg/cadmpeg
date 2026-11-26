@@ -305,7 +305,7 @@ fn feature_input_lane(
             });
         crate::annotations::note(
             annotations,
-            entity.id(),
+            crate::annotations::native_key(entity.id())?,
             source.source_stream(),
             entity.offset(),
             signature,
@@ -314,7 +314,7 @@ fn feature_input_lane(
     }
     crate::annotations::note(
         annotations,
-        parent.as_str(),
+        crate::annotations::native_key(&parent)?,
         source.source_stream(),
         0,
         if family == "config-objects" {

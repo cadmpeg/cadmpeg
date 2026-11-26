@@ -20,7 +20,7 @@ fn vertex_admission_and_point_edits_require_finite_coordinates() {
             assert!(FinitePoint3::new(point).is_none());
             assert_eq!(vertex, original);
             let mut wire = json::to_value(&vertex).unwrap();
-            wire["point"] = serde_json::json!(point);
+            wire["point"] = cadmpeg_core::json!(point);
             assert!(json::from_value::<SubdVertex>(wire).is_err());
         }
     }
@@ -28,7 +28,7 @@ fn vertex_admission_and_point_edits_require_finite_coordinates() {
     vertex.set_point(FinitePoint3::new(point).unwrap());
     assert_eq!(vertex.point(), point);
     let wire = json::to_value(&vertex).unwrap();
-    assert_eq!(wire, serde_json::json!({"point": point, "tag": "smooth"}));
+    assert_eq!(wire, cadmpeg_core::json!({"point": point, "tag": "smooth"}));
     assert_eq!(json::from_value::<SubdVertex>(wire).unwrap(), vertex);
 }
 

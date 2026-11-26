@@ -326,21 +326,23 @@ fn states_native_elision(ir: &Value) -> bool {
 
 #[test]
 fn the_elision_predicate_reads_the_key_and_not_its_text() {
-    let elided = |marker: Value| serde_json::json!({ "native": { NATIVE_ELISION_KEY: marker } });
-    assert!(states_native_elision(&elided(serde_json::json!(
+    let elided = |marker: Value| cadmpeg_core::json!({ "native": { NATIVE_ELISION_KEY: marker } });
+    assert!(states_native_elision(&elided(cadmpeg_core::json!(
         NATIVE_ELISION_MARKER
     ))));
-    assert!(states_native_elision(&elided(serde_json::json!(
+    assert!(states_native_elision(&elided(cadmpeg_core::json!(
         "any other sentence a regeneration writes"
     ))));
 
-    assert!(!states_native_elision(&serde_json::json!({})));
-    assert!(!states_native_elision(&serde_json::json!({ "native": {} })));
-    assert!(!states_native_elision(&serde_json::json!({
+    assert!(!states_native_elision(&cadmpeg_core::json!({})));
+    assert!(!states_native_elision(
+        &cadmpeg_core::json!({ "native": {} })
+    ));
+    assert!(!states_native_elision(&cadmpeg_core::json!({
         "native": { "fcstd": { "objects": [] } }
     })));
     // A namespace of that name is an object, not the block's sentence.
-    assert!(!states_native_elision(&elided(serde_json::json!({
+    assert!(!states_native_elision(&elided(cadmpeg_core::json!({
         "objects": []
     }))));
 }

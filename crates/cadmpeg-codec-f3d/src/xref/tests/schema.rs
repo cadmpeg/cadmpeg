@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::Codec;
 fn unsupported_redirections_schema_preserves_error_kind() {
     let mut table: serde_json::Value =
         serde_json::from_str(&redirections_json("part.f3d", &[])).unwrap();
-    table["schema-version"] = serde_json::json!(1);
+    table["schema-version"] = cadmpeg_core::json!(1);
     let bytes = json::to_vec(&table).unwrap();
     crate::test_support::with_decode_context(|ctx| {
         let error = super::super::parse(ctx, &bytes).unwrap_err();

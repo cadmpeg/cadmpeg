@@ -3321,7 +3321,7 @@ impl CadIr {
     /// ```compile_fail
     /// use cadmpeg_ir::CadIr;
     /// let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    /// let raw = serde_json::json!({"id": "test:native:unknown#0", "extra": true});
+    /// let raw = cadmpeg_core::json!({"id": "test:native:unknown#0", "extra": true});
     /// CadIr::empty().set_native_unknowns_from(&ctx, "test", [raw]).unwrap();
     /// ```
     pub fn set_native_unknowns_from<T: Borrow<NativeUnknownRecord>, I: IntoIterator<Item = T>>(

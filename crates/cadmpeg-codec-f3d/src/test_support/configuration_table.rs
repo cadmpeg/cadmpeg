@@ -2,7 +2,8 @@
 //! Synthetic configuration-table documents and Design configuration root records.
 #![allow(clippy::unwrap_used)]
 
-use serde_json::{json, Map, Value};
+use cadmpeg_core::json;
+use serde_json::{Map, Value};
 
 use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
 

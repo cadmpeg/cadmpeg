@@ -178,23 +178,23 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
     let first_side = &wire["construction"]["sides"][0];
     assert_eq!(
         first_side["surface"]["parameter_ranges"],
-        serde_json::json!([[0.0, null], [null, 1.0]])
+        cadmpeg_core::json!([[0.0, null], [null, 1.0]])
     );
     assert_eq!(
         first_side["curve"]["parameter_range"],
-        serde_json::json!([null, 2.0])
+        cadmpeg_core::json!([null, 2.0])
     );
     assert_eq!(
         wire["construction"]["slice_range"],
-        serde_json::json!([3.0, null])
+        cadmpeg_core::json!([3.0, null])
     );
     assert_eq!(
         wire["construction"]["cache"]["parameterization"]["u_interval"],
-        serde_json::json!([4.0, null])
+        cadmpeg_core::json!([4.0, null])
     );
     assert_eq!(
         wire["construction"]["discontinuities"][0],
-        serde_json::json!([5.0])
+        cadmpeg_core::json!([5.0])
     );
     assert_eq!(
         json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),

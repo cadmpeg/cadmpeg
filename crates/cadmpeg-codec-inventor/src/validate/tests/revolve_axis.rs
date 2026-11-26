@@ -4,10 +4,10 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::features::revolve::RevolveConstruction;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity};
-use serde_json::json;
 
 use crate::validate::revolve_axis_finding;
 
