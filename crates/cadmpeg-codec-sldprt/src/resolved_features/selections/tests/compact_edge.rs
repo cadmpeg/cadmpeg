@@ -1364,9 +1364,13 @@ fn scalar_binding_refuses_sparse_path_nesting_limit() {
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        crate::resolved_features::bindings::bind_scalar_operands(&ctx, &[history], &mut [lane])
-            .unwrap_err();
+    let error = crate::resolved_features::bindings::bind_scalar_operands(
+        &ctx,
+        &[history],
+        &mut [lane],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth

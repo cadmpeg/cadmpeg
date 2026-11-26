@@ -117,6 +117,8 @@ class ContextTests(FixtureCase):
         self.assertTrue(preflight.is_test_path("crates/x/src/foo/tests/parsing.rs"))
         self.assertTrue(preflight.is_test_path("crates/x/tests/layout.rs"))
         self.assertTrue(preflight.is_test_path("crates/x/src/golden_tests.rs"))
+        self.assertTrue(preflight.is_test_path("crates/x/src/foo/foo_tests.rs"))
+        self.assertTrue(preflight.is_test_path("crates/x/src/foo/foo_tests/parsing.rs"))
         self.assertFalse(preflight.is_test_path("crates/x/src/foo.rs"))
 
 
