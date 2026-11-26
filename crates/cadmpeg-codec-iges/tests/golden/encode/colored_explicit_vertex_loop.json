@@ -88,19 +88,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `colors` that are colour definitions whose Directory colour number the semantic writer writes as 0: iges:presentation:color#D13",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "native.records-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "export"
-          }
-        },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` that are Directory colours the semantic writer does not write on the entity: iges:presentation:display-attributes#D13",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` that are Directory colour numbers of colour definitions, which colour definition records iges:presentation:color#D13 state as their fallback colour, and which the semantic writer writes as 0: iges:presentation:display-attributes#D13",
         "severity": "warning"
       },
       {

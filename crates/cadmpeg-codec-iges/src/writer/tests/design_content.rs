@@ -12,7 +12,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::ParameterId;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, NativeRecord};
 
 use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file;
 use crate::{IgesCodec, IgesVersion};
@@ -114,8 +114,12 @@ fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
         .native
         .namespace("iges")
         .and_then(|namespace| namespace.arenas().get("colors"))
-        .map_or(0, Vec::len);
-    assert_ne!(colors, 0, "the fixture holds a native color record");
+        .map(|records| records.iter().map(NativeRecord::id).collect::<Vec<_>>())
+        .unwrap_or_default();
+    assert!(
+        !colors.is_empty(),
+        "the fixture holds a native color record"
+    );
 
     let plan = IgesCodec
         .plan(
@@ -123,18 +127,24 @@ fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .expect("the loop is written without its native color records");
-    assert!(
-        plan.report()
+    for color in &colors {
+        let charges = plan
+            .report()
             .losses
             .iter()
-            .any(|loss| loss.message.starts_with(&format!(
-                "the IGES write omits {colors} native record(s) of `iges` arena `colors` that \
-                 are colour definitions whose Directory colour number the semantic writer \
-                 writes as 0:"
-            ))),
-        "{:?}",
-        plan.report().losses
-    );
+            .filter(|loss| {
+                loss.message
+                    .split_whitespace()
+                    .any(|token| token.trim_end_matches([',', ':', ';']) == *color)
+            })
+            .count();
+        assert_eq!(
+            charges,
+            1,
+            "{color} fallback colour number: {:?}",
+            plan.report().losses
+        );
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write");
     let written = IgesCodec
