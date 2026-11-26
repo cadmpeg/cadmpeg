@@ -5,8 +5,9 @@
 use std::collections::BTreeSet;
 
 use super::{AnnotationKey, AnnotationTarget, Annotations};
-use crate::document::{CadIr, Topology};
-use crate::index::ModelIndex;
+use crate::document::{ArenaHome, CadIr, Topology};
+use crate::index::identities::IdentitySet;
+use crate::index::{ModelIndex, StandardIndex};
 
 /// The id and the delta records of each evaluation and process state of `ir`
 /// that has content.
@@ -37,74 +38,108 @@ pub(crate) fn delta_records(ir: &CadIr) -> BTreeSet<(&str, &str)> {
         .collect()
 }
 
-/// The records of one document that an annotation key can name: the
-/// records of each arena, the native records, and the records of each delta.
+/// The ids of the records of the design and process arenas of `ir`. The
+/// model index holds the records of the other arenas and the native records.
+pub(crate) fn design_and_process_records(ir: &CadIr) -> BTreeSet<&str> {
+    ir.arenas()
+        .record_ids()
+        .into_iter()
+        .filter(|(arena, _)| matches!(arena.home(), ArenaHome::Design | ArenaHome::Process))
+        .flat_map(|(_, (_, ids))| ids)
+        .collect()
+}
+
+/// The records of one document that an annotation key can name.
 struct Named<'ir> {
+    index: ModelIndex<'ir>,
     records: BTreeSet<&'ir str>,
-    native: ModelIndex<'ir>,
     deltas: BTreeSet<(&'ir str, &'ir str)>,
 }
 
 impl<'ir> Named<'ir> {
     fn of(ir: &'ir CadIr) -> Self {
         Self {
-            records: ir
-                .arenas()
-                .record_ids()
-                .into_values()
-                .flat_map(|(_, ids)| ids)
-                .collect(),
-            native: ModelIndex::build(ir),
+            index: ModelIndex::build(ir),
+            records: design_and_process_records(ir),
             deltas: delta_records(ir),
         }
     }
 
-    fn names(&self, key: &AnnotationKey) -> bool {
+    fn names_entity(&self, id: &str) -> bool {
+        IdentitySet::contains(&self.index, id) || self.records.contains(id)
+    }
+}
+
+/// The records that one removal took out of a document, as annotation keys
+/// name them: each id and each delta record that the document named before
+/// the removal and does not name after it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Removed {
+    entities: BTreeSet<String>,
+    deltas: BTreeSet<(String, String)>,
+}
+
+impl Removed {
+    /// What `ir` names, before a removal.
+    pub(crate) fn before(ir: &CadIr) -> Self {
+        let named = Named::of(ir);
+        Self {
+            entities: named
+                .index
+                .identities(StandardIndex)
+                .chain(named.records.iter().copied())
+                .map(str::to_owned)
+                .collect(),
+            deltas: named
+                .deltas
+                .iter()
+                .map(|(qualifier, record)| ((*qualifier).to_owned(), (*record).to_owned()))
+                .collect(),
+        }
+    }
+
+    /// What of `self` and of `lost`, the ids of the records that left before
+    /// the document was built, `ir`, the document after the removal, does not
+    /// name.
+    pub(crate) fn after(mut self, lost: impl IntoIterator<Item = String>, ir: &CadIr) -> Self {
+        let named = Named::of(ir);
+        self.entities.extend(lost);
+        self.entities.retain(|id| !named.names_entity(id));
+        self.deltas.retain(|(qualifier, record)| {
+            !named
+                .deltas
+                .contains(&(qualifier.as_str(), record.as_str()))
+        });
+        self
+    }
+
+    /// Whether `key` names a removed record, a record of the delta of a
+    /// removed evaluation or process state, or a removed record of a delta.
+    pub(crate) fn names(&self, key: &AnnotationKey) -> bool {
         match key.target() {
-            AnnotationTarget::Entity(id) => {
-                self.records.contains(id) || self.native.native_record_owns(id)
-            }
+            AnnotationTarget::Entity(id) => self.entities.contains(id),
             AnnotationTarget::Delta { qualifier, record } => {
-                self.deltas.contains(&(qualifier, record))
+                self.entities.contains(qualifier)
+                    || self
+                        .deltas
+                        .contains(&(qualifier.to_owned(), record.to_owned()))
             }
         }
     }
 }
 
 impl Annotations {
-    fn is_empty(&self) -> bool {
+    /// Whether the tables hold no key.
+    pub(crate) fn is_empty(&self) -> bool {
         self.provenance.is_empty() && self.exactness.is_empty()
     }
 
-    /// The keys that name a record of `ir`: a top-level record by its id, or
-    /// a record of the delta of an evaluation or process state of `ir`.
-    pub(crate) fn named_in(&self, ir: &CadIr) -> BTreeSet<AnnotationKey> {
-        if self.is_empty() {
-            return BTreeSet::new();
-        }
-        let named = Named::of(ir);
-        self.provenance
-            .keys()
-            .chain(self.exactness.keys())
-            .filter(|key| named.names(key))
-            .cloned()
-            .collect()
-    }
-
-    /// Removes each key of `before`, the keys [`Self::named_in`] gave for a
-    /// document, that names no record of `ir`, that document after a removal
-    /// of records: the annotations of each record that left it, of each
-    /// record that left a delta, and of each evaluation or process state that
-    /// left it or lost its delta. Returns whether it removed a key.
-    pub(crate) fn remove_left(&mut self, before: &BTreeSet<AnnotationKey>, ir: &CadIr) -> bool {
-        if before.is_empty() {
-            return false;
-        }
-        let named = Named::of(ir);
-        let left = |key: &AnnotationKey| before.contains(key) && !named.names(key);
+    /// Removes each key that names a record of `removed`. Returns whether it
+    /// removed a key.
+    pub(crate) fn remove(&mut self, removed: &Removed) -> bool {
         let count = self.provenance.len() + self.exactness.len();
-        self.provenance.retain(|key, _| !left(key));
-        self.exactness.retain(|key, _| !left(key));
+        self.provenance.retain(|key, _| !removed.names(key));
+        self.exactness.retain(|key, _| !removed.names(key));
         count != self.provenance.len() + self.exactness.len()
     }
 }

@@ -19,7 +19,7 @@ mod key;
 mod named;
 mod sparse;
 pub use key::{AnnotationKey, AnnotationTarget, Qualifier};
-pub(crate) use named::{delta_records, deltas};
+pub(crate) use named::{delta_records, deltas, design_and_process_records, Removed};
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
 /// Document-wide provenance and exactness tables keyed by annotation key.

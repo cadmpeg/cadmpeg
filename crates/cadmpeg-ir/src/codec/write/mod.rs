@@ -777,11 +777,12 @@ impl EncoderBackend for CadirEncoder {
         body.losses = losses;
         body.annotations = input
             .fidelity
-            .filter(|_| !std::ptr::eq(ir, input.ir))
+            .filter(|fidelity| !std::ptr::eq(ir, input.ir) && !fidelity.annotations.is_empty())
             .and_then(|fidelity| {
-                let named = fidelity.annotations.named_in(input.ir);
+                let removed =
+                    crate::annotations::Removed::before(input.ir).after(std::iter::empty(), ir);
                 let mut annotations = fidelity.annotations.clone();
-                annotations.remove_left(&named, ir).then_some(annotations)
+                annotations.remove(&removed).then_some(annotations)
             });
         Ok(body)
     }

@@ -554,3 +554,74 @@ fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
         "{findings:?}"
     );
 }
+
+/// The design fixture with a process state that has no content.
+fn design_with_process_state() -> (crate::CadIr, crate::design::ids::ProcessStateId) {
+    use crate::design::evaluation::EvaluationStatus;
+    use crate::process::state::{ProcessState, ProcessStateOf};
+    let mut ir = crate::validate::design::fixture::document();
+    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
+    ir.process.states.push(ProcessState {
+        id: state.clone(),
+        of: ProcessStateOf::Stock(
+            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
+        ),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: None,
+        feature: None,
+    });
+    (ir, state)
+}
+
+#[test]
+fn keys_of_design_and_process_records_resolve() {
+    let (ir, state) = design_with_process_state();
+    let named = [
+        "test:design:feature#extrude",
+        "test:design:evaluation#after-extrude",
+        state.as_str(),
+    ];
+    let absent = "test:design:feature#absent";
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in named.iter().chain([&absent]) {
+        annotations.note(key, &stream, 0, None);
+        annotations.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    let findings = annotation_findings(&ir, annotations.build());
+    for rule in [
+        "annotations_native.provenance-key-does-not-resolve-entity",
+        "annotations_native.exactness-key-does-not-resolve-entity",
+    ] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.severity == crate::report::Severity::Error
+                    && finding.entity.as_deref() == Some(absent)
+                    && finding.rule.as_str() == rule
+            }),
+            "{rule}: {findings:?}"
+        );
+    }
+    assert_eq!(findings.len(), 2, "{findings:?}");
+}
+
+#[test]
+fn a_field_path_of_a_design_record_is_checked_against_that_record() {
+    let (ir, _) = design_with_process_state();
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations
+        .derived("test:design:feature#extrude", "definition")
+        .unwrap();
+    annotations
+        .derived("test:design:feature#fillet", "not_a_serialized_field")
+        .unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(
+        matches!(findings.as_slice(), [finding]
+            if finding.severity == crate::report::Severity::Warning
+                && finding.entity.as_deref() == Some("test:design:feature#fillet")
+                && finding.message.contains("`not_a_serialized_field`")),
+        "{findings:?}"
+    );
+}
