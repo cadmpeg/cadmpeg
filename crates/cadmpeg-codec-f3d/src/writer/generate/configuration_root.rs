@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::capacity::{FittedText, TextCapacity, TextUnit};
+use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
 use cadmpeg_ir::codec::write::{record_residual_unavailable, value_unwritable};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -70,15 +70,15 @@ struct WrittenId {
 }
 
 impl WrittenId {
-    fn new(stated: &str, written: FittedText<'_>) -> Self {
+    fn new(stated: &str, written: &str) -> Self {
         Self {
             stated: stated.to_owned(),
-            written: written.text.to_owned(),
+            written: written.to_owned(),
         }
     }
 
-    fn is_cut(&self) -> bool {
-        self.written.len() != self.stated.len()
+    fn is_renamed(&self) -> bool {
+        self.written != self.stated
     }
 }
 
@@ -185,8 +185,9 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
 }
 
 /// The root record that names `row`, with its ids fitted to [`TABLE_ID`]
-/// and [`ROW_ID`]; `None` when an id is empty or its cut names another table
-/// or row.
+/// and [`ROW_ID`], and a table id that another document also holds made
+/// unique; `None` when an id is empty, its cut names another table or row,
+/// or no unique table id fits.
 fn root(
     row: Candidate<'_>,
     documents: &[DesignConfiguration],
@@ -220,6 +221,53 @@ fn root(
         ));
         return None;
     }
+    // The decoder binds the record to the one table document that holds its
+    // table id (f3d.md §1.2): an id another document holds is renamed to one
+    // that no other table holds.
+    let held = |id: &str, elsewhere: bool| {
+        documents.iter().enumerate().any(|(index, document)| {
+            (!elsewhere || index != row.document)
+                && document
+                    .tables()
+                    .iter()
+                    .any(|table| table.id == id && !std::ptr::eq(table, row.table))
+        })
+    };
+    let mut written_table_id = table_id.text.to_owned();
+    if held(&written_table_id, true) {
+        let tables = documents
+            .iter()
+            .map(|document| document.tables().len())
+            .sum::<usize>();
+        let unique = (1..=tables + 1)
+            .map(|ordinal| {
+                let suffix = format!("-{ordinal}");
+                let base = TextCapacity {
+                    width: ID_WIDTH.saturating_sub(suffix.len()),
+                    ..TABLE_ID
+                }
+                .fit(&row.table.id);
+                format!("{}{suffix}", base.text)
+            })
+            .find(|candidate| TABLE_ID.fit(candidate).text == candidate && !held(candidate, false));
+        let Some(unique) = unique else {
+            losses.extend(value_unwritable(
+                "F3D",
+                "writes no DesignConfigurationRoot record for this active configuration: another configuration table document holds its table id, and no unique table id fits the record",
+                [named],
+            ));
+            return None;
+        };
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes the table id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: another configuration table document holds the id, and the record names its table by id alone",
+            [format!(
+                "{} table id {} written as {unique}",
+                row.configuration, row.table.id
+            )],
+        ));
+        written_table_id = unique;
+    }
     losses.extend(value_unwritable(
         "F3D",
         &format!("writes the ids of this active configuration cut at a character boundary to {ID_WIDTH} UTF-16 units, in the DesignConfigurationRoot record and in its configuration table document"),
@@ -231,8 +279,8 @@ fn root(
         .flatten(),
     ));
     Some(ConfigurationRoot {
-        table_id: WrittenId::new(&row.table.id, table_id),
-        row_id: WrittenId::new(row.row, row_id),
+        table_id: WrittenId::new(&row.table.id, &written_table_id),
+        row_id: WrittenId::new(row.row, row_id.text),
         configuration: row.configuration,
         document: row.document,
     })
@@ -240,7 +288,7 @@ fn root(
 
 impl Plan {
     /// The bytes of `configuration`, the document at `index`, with the ids
-    /// the root record cuts written cut.
+    /// the root record cuts or renames written as the record writes them.
     pub(super) fn payload(
         &self,
         index: usize,
@@ -250,7 +298,7 @@ impl Plan {
             .root
             .as_ref()
             .filter(|root| root.document == index)
-            .filter(|root| root.table_id.is_cut() || root.row_id.is_cut())
+            .filter(|root| root.table_id.is_renamed() || root.row_id.is_renamed())
         else {
             return encode_configuration_payload(configuration);
         };

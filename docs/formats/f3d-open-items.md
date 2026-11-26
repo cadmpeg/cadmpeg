@@ -28,7 +28,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A save of a design that has a configuration table with two rows, saved once with each row active. Compare the Design `MetaStream` type rows and find the row whose entity list holds the index of the record with the key `DesignConfigurationRoot`.
 
-**Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` in `writer/generate/presentation.rs`, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names.
+**Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` that `ROOT_TYPE` in `writer/generate/configuration_root.rs` holds, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names.
 
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 

@@ -21,12 +21,35 @@ use super::{
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use std::collections::BTreeSet;
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
 #[derive(Default)]
 pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) bytes: Vec<u8>,
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+    /// The record indices of the indexed records the stream holds with no
+    /// primary index entry.
+    pub(super) unindexed: BTreeSet<u64>,
+}
+
+impl EncodedDesignBulkStream {
+    /// The record index of every indexed record the stream holds.
+    fn written(&self) -> BTreeSet<u64> {
+        self.primary_records
+            .iter()
+            .map(|record| record.entity_id)
+            .chain(self.unindexed.iter().copied())
+            .collect()
+    }
+}
+
+/// Design parameter records and their record indices, which the stream
+/// holds with no primary index entry.
+#[derive(Default)]
+pub(in crate::writer::generate) struct ParameterRecords {
+    pub(in crate::writer::generate) bytes: Vec<u8>,
+    pub(in crate::writer::generate) indices: Vec<u32>,
 }
 
 pub(super) fn tolerant_coedge_range(
@@ -120,7 +143,7 @@ pub(super) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
-    parameter_bytes: Vec<u8>,
+    parameters: ParameterRecords,
     neutral: Option<&super::design::frames::DesignRecords>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     if !native.design_parameter_companions.is_empty()
@@ -150,6 +173,7 @@ pub(super) fn encode_design_bulkstream(
         .any(|body| body.visible.is_some());
     if neutral.is_none()
         && native.design_parameters.is_empty()
+        && parameters.bytes.is_empty()
         && native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
@@ -167,8 +191,13 @@ pub(super) fn encode_design_bulkstream(
         return Ok(None);
     }
 
-    let mut out = parameter_bytes;
+    let mut out = parameters.bytes;
     let mut primary_records = Vec::new();
+    let mut unindexed = parameters
+        .indices
+        .into_iter()
+        .map(u64::from)
+        .collect::<BTreeSet<_>>();
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
@@ -193,6 +222,12 @@ pub(super) fn encode_design_bulkstream(
         for &(record_index, offset) in &records.primaries {
             primary_records.push(primary_record(record_index, base + offset)?);
         }
+        unindexed.extend(
+            records
+                .secondaries
+                .iter()
+                .map(|&(record_index, _)| u64::from(record_index)),
+        );
         out.extend_from_slice(&records.bytes);
     }
     for recipe in &native.construction_recipes {
@@ -216,6 +251,9 @@ pub(super) fn encode_design_bulkstream(
             ));
         };
         prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
+        unindexed.insert(u64::from(u32::from_le_bytes(
+            record_index.value.to_le_bytes(),
+        )));
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| {
@@ -248,6 +286,7 @@ pub(super) fn encode_design_bulkstream(
     for header in &native.design_record_headers {
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
+        unindexed.insert(u64::from(header.record_index));
     }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
@@ -370,16 +409,19 @@ pub(super) fn encode_design_bulkstream(
         } else {
             native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
+            unindexed.insert(u64::from(reference.record_index));
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+        unindexed.insert(u64::from(reference.next_record_index));
     }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
+        unindexed,
     }))
 }
 
@@ -407,7 +449,7 @@ fn primary_record_u64(
 pub(super) fn encode_document_parameters(
     parameters: &[crate::records::parameters::DesignParameter],
     collection_record_index: u32,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<ParameterRecords, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
     let mut parameter_ordinals = std::collections::BTreeSet::new();
@@ -456,7 +498,13 @@ pub(super) fn encode_document_parameters(
         out.extend_from_slice(&collection_record_index.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
     }
-    Ok(out)
+    Ok(ParameterRecords {
+        bytes: out,
+        indices: parameters
+            .iter()
+            .map(|parameter| parameter.record_index)
+            .collect(),
+    })
 }
 
 fn encode_sketch_record_header(
@@ -905,20 +953,20 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
     }
 }
 
-/// The Design `MetaStream` of `registry`'s types and the primary index
-/// `primary_records`. Each type lists only the entities of `primary_records`,
-/// the records the sibling `BulkStream` holds.
+/// The Design `MetaStream` of `registry`'s types and the primary index of
+/// `bulk`, the sibling `BulkStream`. Each type lists only the records `bulk`
+/// holds (f3d.md §3.1).
 pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
-    primary_records: &[crate::metastream::RecordIndexEntry],
+    bulk: Option<&EncodedDesignBulkStream>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if registry.types.is_empty() {
         return Ok(None);
     }
-    let written = primary_records
-        .iter()
-        .map(|record| record.entity_id)
-        .collect::<std::collections::BTreeSet<_>>();
+    let written = bulk
+        .map(EncodedDesignBulkStream::written)
+        .unwrap_or_default();
+    let primary_records = bulk.map_or(&[][..], |bulk| bulk.primary_records.as_slice());
 
     // A generated segment writes the modern header shape, the type table, and
     // the primary offsets captured while writing its sibling BulkStream.
@@ -1094,19 +1142,25 @@ mod tests {
         ])
     }
 
-    /// The primary index entry of a record of `entity_id`.
-    fn written_record(entity_id: u64) -> crate::metastream::RecordIndexEntry {
-        crate::metastream::RecordIndexEntry {
-            entity_id,
-            bulk_offset: 0,
+    /// A stream holding one primary record of `entity_id`.
+    fn written_record(entity_id: u64) -> super::EncodedDesignBulkStream {
+        super::EncodedDesignBulkStream {
+            primary_records: vec![crate::metastream::RecordIndexEntry {
+                entity_id,
+                bulk_offset: 0,
+            }],
+            ..Default::default()
         }
     }
 
     #[test]
     fn metastream_lists_only_written_records() {
-        let bytes = super::encode_design_metastream(&registry_with_entity(7), &[])
-            .unwrap()
-            .unwrap();
+        let bytes = super::encode_design_metastream(
+            &registry_with_entity(7),
+            Some(&super::EncodedDesignBulkStream::default()),
+        )
+        .unwrap()
+        .unwrap();
         let meta = crate::metastream::parse(&bytes, "MetaStream.dat").unwrap();
         assert_eq!(meta.types[0].entities.values().count(), 0);
     }
@@ -1115,7 +1169,7 @@ mod tests {
     fn metastream_rejects_overflowed_next_entity_id() {
         let error = super::encode_design_metastream(
             &registry_with_entity(u64::MAX),
-            &[written_record(u64::MAX)],
+            Some(&written_record(u64::MAX)),
         )
         .expect_err("the next identity cannot be represented");
         assert!(
@@ -1128,7 +1182,7 @@ mod tests {
     fn metastream_preserves_largest_representable_next_entity_id() {
         let bytes = super::encode_design_metastream(
             &registry_with_entity(u64::MAX - 1),
-            &[written_record(u64::MAX - 1)],
+            Some(&written_record(u64::MAX - 1)),
         )
         .unwrap()
         .unwrap();

@@ -92,6 +92,25 @@ fn generated_source_less_writes_design_type_metastream() {
         )
         .unwrap(),
     ];
+    // Record 999 of the third type row, which the write holds with no
+    // primary index entry.
+    native.construction_recipes = vec![crate::records::recipes::ConstructionRecipe {
+        id: "f3d:generated:recipe#0".into(),
+        byte_offset: 0,
+        kind: crate::records::recipes::ConstructionRecipeKind::Body,
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
+                value: "258".into(),
+                offset: 0,
+            },
+            selector: None,
+        }),
+        recipe_index: 0,
+        record_index: Some(crate::records::identity::RecordedValue {
+            value: 999,
+            offset: 0,
+        }),
+    }];
 
     drop(native);
     let mut encoded = Vec::new();
@@ -160,7 +179,7 @@ fn generated_source_less_writes_design_type_metastream() {
         .iter()
         .find(|design_type| design_type.module == "FutureFeature")
         .expect("forward-compatible module");
-    assert_eq!(future.entities.values().count(), 0);
+    assert_eq!(future.entities.values().copied().collect::<Vec<_>>(), [999]);
     assert_eq!(future.version, 11);
 }
 
@@ -1260,4 +1279,109 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::SketchOwnerConflict.kind()));
+}
+
+#[test]
+fn written_parameter_records_stay_listed_under_their_type_row() {
+    use crate::records::entity_header::SegmentType;
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let parameter = |ordinal: u32, record_index: u32, name: &str, expression: &str| {
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("f3d:{stream}:design-parameter#{ordinal}"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                    .unwrap(),
+                record_index,
+                source_ordinal: ordinal,
+                source: crate::records::parameters::DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
+                    family_discriminator: Some(crate::records::identity::Located {
+                        value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                        offset: 22,
+                    }),
+                },
+                expression: expression.into(),
+                expression_offset: 36,
+                source_kind_offset: 70,
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: "mm".into(),
+                    offset: 110,
+                }),
+                name: name.into(),
+                name_offset: 120,
+                evaluated_value: 6.0,
+                evaluated_value_offset: 150,
+            },
+        )
+        .unwrap()
+    };
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.design_parameters = vec![
+            parameter(0, 700, "Width", "60 mm"),
+            parameter(1, 701, "Depth", "60 mm"),
+        ];
+        native.design_types = vec![SegmentType::try_new(
+            "f3d:generated/MetaStream.dat:design-type#0".into(),
+            crate::records::entity_header::SegmentTypeData {
+                byte_offset: 0,
+                module: "CommonData".to_owned(),
+                entities: crate::records::identity::ReferenceRun::unlocated(vec![700, 701]),
+                type_guid: "7A6A3D31-BE74-4E19-9115-20642944C2E4"
+                    .to_owned()
+                    .try_into()
+                    .expect("type GUID"),
+                type_guid_offset: 0,
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
+                    value: "63D6AD42-466A-40B7-9CCD-EB21BC500EF6"
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                    offset: 0,
+                },
+                version: 8,
+                version_offset: 0,
+            },
+        )
+        .unwrap()];
+    }
+    let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &f3d_native(&source_less).design_parameters,
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    source_less.model.parameters = parameters;
+    let mut encoded = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("source-less parameter encode");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less parameter round trip");
+    let native = f3d_native(decoded.ir());
+    assert_eq!(native.design_parameters.len(), 2, "{:#?}", report.losses);
+    let listed = native
+        .design_types
+        .iter()
+        .find(|row| row.type_guid.as_str() == "7A6A3D31-BE74-4E19-9115-20642944C2E4")
+        .expect("parameter type row")
+        .entities
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(listed, [700, 701]);
 }

@@ -314,17 +314,17 @@ fn attempt<W: Write + Seek>(
         return Ok((coverage, losses));
     }
     let mut neutral_records = None;
-    let parameter_bytes = match (neutral.as_mut(), &native_parameters) {
+    let parameter_records = match (neutral.as_mut(), &native_parameters) {
         (Some(neutral), _) => {
-            let (parameter_bytes, records) = neutral
+            let (parameter_records, records) = neutral
                 .records(&mut design_registry)
                 .map_err(Failure::neutral_design)?;
             neutral_records = Some(records);
-            parameter_bytes
+            parameter_records
         }
         (None, Some(source)) => design::parameters::encode(source, &native, &mut design_registry)
             .map_err(Failure::design)?,
-        (None, None) => Vec::new(),
+        (None, None) => records::ParameterRecords::default(),
     };
     let mut configurations = Vec::new();
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
@@ -359,7 +359,7 @@ fn attempt<W: Write + Seek>(
         target,
         &native,
         &design_registry,
-        parameter_bytes,
+        parameter_records,
         neutral_records.as_ref(),
     )
     .map_err(design_failure)?;
@@ -369,11 +369,8 @@ fn attempt<W: Write + Seek>(
                 .map_err(design_failure)?,
         );
     }
-    let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
-        bulk_stream.primary_records.as_slice()
-    });
     let meta_stream =
-        encode_design_metastream(&design_registry, primary_records).map_err(design_failure)?;
+        encode_design_metastream(&design_registry, design_bulk.as_ref()).map_err(design_failure)?;
     let proteins = target
         .model
         .appearances

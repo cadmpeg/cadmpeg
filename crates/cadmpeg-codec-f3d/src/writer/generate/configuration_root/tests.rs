@@ -12,6 +12,7 @@ use crate::test_support::configuration_table::table_document;
 
 const TABLE: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.synthetic.dsgcfg";
 const SECOND: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.second.dsgcfg";
+const THIRD: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.third.dsgcfg";
 
 fn table(entry: &str, table_id: &str, rows: &[&str]) -> DesignConfiguration {
     let names = rows
@@ -228,4 +229,45 @@ fn the_generated_type_guid_is_derived_from_the_record_key() {
             "DesignConfigurationRoot"
         )
     ));
+}
+
+#[test]
+fn a_table_id_another_document_holds_is_written_unique_with_a_charge() {
+    let documents = vec![
+        table(TABLE, "1", &["small", "large"]),
+        table(SECOND, "1", &["a"]),
+    ];
+    let ir = document(&documents, &[id("large")], None);
+    let (root, losses) = planned(&ir, &documents);
+    assert_eq!(root, Some(row("1-1", "large")));
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].0, "export/value.unwritable");
+    assert!(losses[0].1.contains(id("large").as_str()));
+
+    let plan = plan(&ir, &documents);
+    let renamed = DesignConfiguration::try_new(
+        TABLE.into(),
+        DesignConfigurationKind::Table,
+        serde_json::from_slice(&plan.payload(0, &documents[0]).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(renamed.tables()[0].id, "1-1");
+    let untouched = DesignConfiguration::try_new(
+        SECOND.into(),
+        DesignConfigurationKind::Table,
+        serde_json::from_slice(&plan.payload(1, &documents[1]).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(untouched.tables()[0].id, "1");
+}
+
+#[test]
+fn a_unique_table_id_avoids_every_other_table_id() {
+    let documents = vec![
+        table(TABLE, "1", &["large"]),
+        table(SECOND, "1", &["a"]),
+        table(THIRD, "1-1", &["b"]),
+    ];
+    let (root, _) = planned(&document(&documents, &[id("large")], None), &documents);
+    assert_eq!(root, Some(row("1-2", "large")));
 }
