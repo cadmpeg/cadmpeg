@@ -28,11 +28,11 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
-    validate_source_less_design_links, validate_source_less_design_ownership,
-    validate_source_less_history_graph, validate_source_less_procedural_carriers,
-    validate_source_less_recipes, validate_source_less_sketch_graph,
-    validate_source_less_topology_tolerances,
+    unreachable_record_headers, validate_source_less_auxiliary_geometry,
+    validate_source_less_design_bindings, validate_source_less_design_links,
+    validate_source_less_design_ownership, validate_source_less_history_graph,
+    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -241,6 +241,9 @@ fn attempt<W: Write + Seek>(
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
     if write_design {
+        if let Some(unwritable) = unreachable_record_headers(&native) {
+            return Err(Failure::unwritable(Stage::Design, unwritable));
+        }
         let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
             validate_configuration_projection(target, &native)?;
             validate_source_less_history_graph(target, &native)?;

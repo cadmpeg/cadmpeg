@@ -9,7 +9,8 @@
 //! omitted there, and its body is written open without it; a body with no
 //! writable face is left to the body fallback. An attempt that still fails
 //! names the stage that failed, and [`Reduction::degrade`] takes the next
-//! fallback for that stage:
+//! fallback for that stage. A failure that names the native records it
+//! concerns drops those records alone (W1). Otherwise the fallbacks are
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
 //! form; only a failure to write that is returned. A failure of the design
@@ -145,6 +146,25 @@ pub(super) enum Stage {
     Archive,
 }
 
+/// Native records an attempt cannot write as they stand, and why. The
+/// writer drops them alone (cadir-v11.md §3.4, W1).
+#[derive(Debug)]
+pub(super) struct Unwritable {
+    /// Completes "the F3D write omits N native record(s) ...".
+    pub(super) reason: String,
+    pub(super) records: BTreeSet<String>,
+}
+
+impl Unwritable {
+    /// The records `records` names, or `None` where it names none.
+    pub(super) fn of(reason: impl Into<String>, records: BTreeSet<String>) -> Option<Self> {
+        (!records.is_empty()).then(|| Self {
+            reason: reason.into(),
+            records,
+        })
+    }
+}
+
 /// A failed attempt and the stage it failed in.
 #[derive(Debug)]
 pub(super) struct Failure {
@@ -159,6 +179,8 @@ pub(super) struct Failure {
 /// The native records that cause a failure.
 #[derive(Debug)]
 pub(super) enum NativeCause {
+    /// Records the writer drops alone (W1).
+    Records(Box<Unwritable>),
     /// Parameter records. A typed feature scope, parameter owner or
     /// companion, sketch placement or dimension frame holds its decoded
     /// members and their offsets, and no byte form for the rest of its
@@ -213,6 +235,25 @@ impl Failure {
             error: failure.error,
             culprit: failure.culprit,
             native: None,
+        }
+    }
+
+    /// A failure of `stage` that the native records of `unwritable` cause.
+    pub(super) fn unwritable(stage: Stage, unwritable: Unwritable) -> Self {
+        Self {
+            stage,
+            error: CodecError::InvalidInput(format!(
+                "F3D native records {}: {}",
+                unwritable.reason,
+                unwritable
+                    .records
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            culprit: None,
+            native: Some(NativeCause::Records(Box::new(unwritable))),
         }
     }
 
@@ -415,6 +456,7 @@ impl<'a> Reduction<'a> {
             return Err(error);
         }
         let dropped_cause = match native {
+            Some(NativeCause::Records(unwritable)) => self.drop_unwritable(&unwritable),
             Some(NativeCause::ParameterRecords) => self.writes_design() && self.drop_design_stream(
                 "of the Design stream, which the generator writes from the design's neutral records (its feature scopes, parameter owners and companions, sketch placements and dimension frames hold no byte form that a write without the source file can store)",
             ),
@@ -1490,6 +1532,28 @@ impl<'a> Reduction<'a> {
             "of Design record families that the source-less Design stream has no form for",
             omitted,
         ));
+    }
+
+    /// W1: drop the native records `unwritable` names. Returns whether the
+    /// document held one of them.
+    fn drop_unwritable(&mut self, unwritable: &Unwritable) -> bool {
+        let Some(namespace) = self.ir.to_mut().native.0.get_mut("f3d") else {
+            return false;
+        };
+        let mut dropped = Vec::new();
+        for records in namespace.arenas_mut().values_mut() {
+            records.retain(|record| {
+                let named = unwritable.records.contains(record.id());
+                if named {
+                    dropped.push(record.id().to_owned());
+                }
+                !named
+            });
+        }
+        let progressed = !dropped.is_empty();
+        self.losses
+            .extend(native_records_omitted("F3D", &unwritable.reason, dropped));
+        progressed
     }
 
     /// A native design whose timeline is rolled back is written from its

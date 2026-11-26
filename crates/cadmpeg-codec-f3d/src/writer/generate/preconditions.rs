@@ -19,6 +19,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use super::attributes::source_less_body_key;
+use super::reduce::Unwritable;
 pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.geometry.procedural_surfaces {
@@ -236,6 +237,35 @@ fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -
         && design_type.module == expected.2
 }
 
+/// The record indices that a sketch-module entity header names.
+fn sketch_header_indices(native: &F3dNative) -> BTreeSet<u32> {
+    native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.in_sketch_module())
+        .flat_map(|header| header.reference_values().copied())
+        .collect()
+}
+
+/// The Design record headers that no sketch header or sketch relation
+/// names. The source-less Design stream writes a header as the stub of a
+/// record of the sketch graph, so no written record names these.
+pub(super) fn unreachable_record_headers(native: &F3dNative) -> Option<Unwritable> {
+    let mut reachable = sketch_header_indices(native);
+    for relation in &native.sketch_relations {
+        reachable.extend(relation.all_member_indices());
+    }
+    Unwritable::of(
+        "of Design record headers that no sketch header or sketch relation names (the source-less Design stream writes the headers of the sketch graph)",
+        native
+            .design_record_headers
+            .iter()
+            .filter(|header| !reachable.contains(&header.record_index))
+            .map(|header| header.id.clone())
+            .collect(),
+    )
+}
+
 pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
     let sketch_owners = native
         .design_entity_headers
@@ -243,12 +273,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         .filter(|header| header.in_sketch_module())
         .map(|header| header.entity_id.suffix())
         .collect::<BTreeSet<_>>();
-    let root_indices = native
-        .design_entity_headers
-        .iter()
-        .filter(|header| header.in_sketch_module())
-        .flat_map(|header| header.reference_values().copied())
-        .collect::<BTreeSet<_>>();
+    let root_indices = sketch_header_indices(native);
     let mut typed_indices = BTreeMap::<u32, &str>::new();
     let mut typed_records = Vec::new();
     for (record_index, id, class_tag) in native
@@ -484,10 +509,6 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             )));
         }
     }
-    let mut reachable_headers = root_indices;
-    for relation in &native.sketch_relations {
-        reachable_headers.extend(relation.all_member_indices());
-    }
     let mut explicit_headers = BTreeSet::new();
     for header in &native.design_record_headers {
         if !explicit_headers.insert(header.record_index) {
@@ -499,12 +520,6 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         if typed_indices.contains_key(&header.record_index) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design record header {} shadows a typed sketch record",
-                header.id
-            )));
-        }
-        if !reachable_headers.contains(&header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design record header {} is unreachable from the sketch graph",
                 header.id
             )));
         }
