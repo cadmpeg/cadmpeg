@@ -325,6 +325,47 @@ fn a_decoded_design_is_rewritten_from_its_neutral_records() {
     assert!(!kinds(&rewritten).is_empty(), "{:#?}", report.losses);
 }
 
+/// The regenerated Design stream names the result body and its faces, so
+/// the decoded names on them, which name records of the dropped Design
+/// stream, are dropped alone (cadir-v11.md §3.4, W1 and W2).
+#[test]
+fn a_rewritten_design_replaces_the_decoded_names_of_the_entities_it_names() {
+    let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
+    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let tag = native
+        .persistent_subentity_tags
+        .first()
+        .expect("a decoded face name")
+        .id
+        .clone();
+    let link = native
+        .persistent_design_links
+        .first()
+        .expect("a decoded body name")
+        .id
+        .clone();
+    decoded.source = None;
+    let (report, rewritten) = write(&decoded);
+    let omitted = loss(&report, "export/native.records-omitted");
+    assert!(
+        omitted
+            .iter()
+            .all(|message| !message.contains("cannot write the document with them")),
+        "{omitted:#?}"
+    );
+    for id in [&tag, &link] {
+        assert!(
+            omitted.iter().any(|message| message
+                .contains("on an entity that the regenerated Design stream names")
+                && message.contains(id.as_str())),
+            "{id}: {omitted:#?}"
+        );
+    }
+    let rewritten = crate::test_support::native_test::f3d_native(&rewritten);
+    assert!(!rewritten.persistent_subentity_tags.is_empty());
+    assert!(!rewritten.persistent_design_links.is_empty());
+}
+
 #[test]
 fn an_extrude_design_charges_a_hidden_body_and_every_fixed_clock_table() {
     let mut ir = sketch_and_extrude(blind(), false);

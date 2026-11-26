@@ -28,12 +28,12 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    unreachable_record_headers, unwritable_continuities, unwritable_link_records,
-    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
-    validate_source_less_design_links, validate_source_less_design_ownership,
-    validate_source_less_history_graph, validate_source_less_procedural_carriers,
-    validate_source_less_recipes, validate_source_less_sketch_graph,
-    validate_source_less_topology_tolerances,
+    replaced_by_stamp, unreachable_record_headers, unwritable_continuities,
+    unwritable_link_records, validate_source_less_auxiliary_geometry,
+    validate_source_less_design_bindings, validate_source_less_design_links,
+    validate_source_less_design_ownership, validate_source_less_history_graph,
+    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_sketch_graph, validate_source_less_topology_tolerances, StampMark,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -197,9 +197,13 @@ fn attempt<W: Write + Seek>(
     // body writes no B-rep stream.
     let body_less = timeline && !stamped;
     if let Some(neutral) = neutral.as_mut() {
+        let mark = StampMark::of(&native);
         neutral
             .stamp(&mut native)
             .map_err(Failure::neutral_design)?;
+        if let Some(unwritable) = replaced_by_stamp(&native, mark) {
+            return Err(Failure::unwritable(Stage::NeutralDesign, unwritable));
+        }
     }
     // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);

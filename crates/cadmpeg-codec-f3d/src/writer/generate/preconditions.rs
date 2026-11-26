@@ -359,6 +359,72 @@ pub(super) fn unwritable_link_records(
 
 /// The edge continuities whose token the ASM edge record does not hold
 /// (asm.md §5.2): the edge is written with `unknown`.
+/// The lengths of the arenas that the stamp of a regenerated design extends.
+#[derive(Clone, Copy)]
+pub(super) struct StampMark {
+    design_links: usize,
+    subentity_tags: usize,
+    sketch_curve_links: usize,
+}
+
+impl StampMark {
+    pub(super) fn of(native: &F3dNative) -> Self {
+        Self {
+            design_links: native.persistent_design_links.len(),
+            subentity_tags: native.persistent_subentity_tags.len(),
+            sketch_curve_links: native.sketch_curve_links.len(),
+        }
+    }
+}
+
+/// The records before `mark` on an entity that a record after `mark` names.
+/// The regenerated Design stream names these entities, and the records
+/// before the mark name records of the source Design stream (W1, W2).
+pub(super) fn replaced_by_stamp(native: &F3dNative, mark: StampMark) -> Option<Unwritable> {
+    fn replaced<T>(
+        rows: &[T],
+        mark: usize,
+        target: impl Fn(&T) -> &AttributeTarget,
+        id: impl Fn(&T) -> &str,
+        out: &mut BTreeSet<String>,
+    ) {
+        let (source, stamped) = rows.split_at(mark);
+        let named = stamped.iter().map(&target).collect::<BTreeSet<_>>();
+        out.extend(
+            source
+                .iter()
+                .filter(|row| named.contains(target(row)))
+                .map(|row| id(row).to_owned()),
+        );
+    }
+    let mut records = BTreeSet::new();
+    replaced(
+        &native.persistent_design_links,
+        mark.design_links,
+        |link| &link.target,
+        |link| &link.id,
+        &mut records,
+    );
+    replaced(
+        &native.persistent_subentity_tags,
+        mark.subentity_tags,
+        |tag| &tag.target,
+        |tag| &tag.id,
+        &mut records,
+    );
+    replaced(
+        &native.sketch_curve_links,
+        mark.sketch_curve_links,
+        |link| &link.target,
+        |link| &link.id,
+        &mut records,
+    );
+    Unwritable::of(
+        "on an entity that the regenerated Design stream names (the B-rep stream holds the regenerated name, and these records name records of the source Design stream)",
+        records,
+    )
+}
+
 pub(super) fn unwritable_continuities(native: &F3dNative) -> Option<Unwritable> {
     Unwritable::of(
         "of edge continuities other than `tangent` and `unknown`, the tokens the ASM edge record holds",
