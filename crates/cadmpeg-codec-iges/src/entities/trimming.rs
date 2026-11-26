@@ -1477,10 +1477,11 @@ fn homogeneous_pcurve_controls(nurbs: &PcurveNurbs) -> Option<Vec<[f64; 4]>> {
 
 /// The Bézier net of each knot span of a homogeneous parameter curve inside
 /// `range`, in parameter order, or `None` where the curve has no valid net
-/// or `range` does not lie in its domain. Each end of `range` and each knot
-/// between them is first inserted to multiplicity `degree`, so every span
-/// inside `range` starts and ends on `degree` equal knots, also where the
-/// stored knots are unclamped.
+/// or an end of `range` lies outside its domain. An empty or reversed
+/// `range` holds no span and gives an empty list. Each end of `range` and
+/// each knot between them with fewer than `degree` copies is first inserted
+/// up to `degree` copies, so every span inside `range` starts and ends on at
+/// least `degree` equal knots, also where the stored knots are unclamped.
 fn restricted_pcurve_spans(
     degree: usize,
     knots: &[f64],
@@ -1505,11 +1506,14 @@ fn restricted_pcurve_spans(
     }
     let domain = [knots[degree], knots[controls.len()]];
     if !(domain[0] < domain[1]
-        && domain[0] <= range[0]
-        && range[0] <= range[1]
-        && range[1] <= domain[1])
+        && range
+            .iter()
+            .all(|end| domain[0] <= *end && *end <= domain[1]))
     {
         return Ok(None);
+    }
+    if range[0] >= range[1] {
+        return Ok(Some(Vec::new()));
     }
     let mut breaks = vec![range[0]];
     for &knot in knots {
@@ -1517,9 +1521,7 @@ fn restricted_pcurve_spans(
             breaks.push(knot);
         }
     }
-    if range[0] < range[1] {
-        breaks.push(range[1]);
-    }
+    breaks.push(range[1]);
     let multiplicity = |knot: f64| {
         knots.partition_point(|candidate| *candidate <= knot)
             - knots.partition_point(|candidate| *candidate < knot)
