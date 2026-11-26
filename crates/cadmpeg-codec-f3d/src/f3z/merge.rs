@@ -430,9 +430,10 @@ impl MergeSession<'_, '_> {
                                         parent_fidelity,
                                     )?);
                             }
-                            None => parent_report
-                                .losses
-                                .extend(record_given_up(reference.relative_path.as_str(), note)),
+                            None => parent_report.losses.extend(record_given_up(
+                                crate::ids::native_scope(reference.relative_path.as_str()),
+                                note,
+                            )),
                         }
                         self.failed
                             .insert(reference.relative_path.as_str().to_owned(), text);

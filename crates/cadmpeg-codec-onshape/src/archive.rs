@@ -6,7 +6,7 @@ use cadmpeg_container::{ArchiveSnapshot, EntryRecord, ZipCompression};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -362,10 +362,18 @@ impl<'a> Bundle<'a> {
         }
         for path in omitted {
             self.json.remove(&path);
-            self.losses
-                .push(OnshapeLossCode::TopologyTooLarge.note(format!(
-                    "{path}: topology exceeds the row limit; omitted the topology table"
-                )));
+            let note = OnshapeLossCode::TopologyTooLarge.note(format!(
+                "{path}: topology exceeds the row limit; omitted the topology table"
+            ));
+            let Some((offset, length)) = self.stored_span(&path) else {
+                self.losses.extend(record_given_up(&path, note));
+                continue;
+            };
+            let note = note.with_provenance(cadmpeg_ir::SourceProvenance::root("onshape", offset));
+            let unreadable = GivenUpRecord::caused_by(&path, &note)
+                .spanning(length)
+                .loss();
+            self.losses.extend([note, unreadable]);
         }
         Ok(ctx.charge_entities(
             cadmpeg_core::decode::u64_from_index(count),
@@ -445,8 +453,14 @@ fn give_up_entry(
         part = part.digest_only();
     }
     let error = CodecError::malformed(format_args!("{}: {}", note.code, note.message));
-    given_up.push(ctx.give_up_part(part, error)?);
+    let part = ctx.give_up_part(part, error)?;
     losses.push(note);
+    // Two directory records that name one stored span are one part.
+    if given_up.iter().any(|held| held.id() == part.id()) {
+        losses.push(part.loss());
+    } else {
+        given_up.push(part);
+    }
     Ok(())
 }
 

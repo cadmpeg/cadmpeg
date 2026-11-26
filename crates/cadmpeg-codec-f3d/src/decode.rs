@@ -5739,9 +5739,14 @@ pub(crate) fn commit_entry_parts(
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let owner = file_definition(&ir.model).map(cadmpeg_ir::ids::Identity::from);
+    let mut committed = std::collections::BTreeSet::new();
     parts
         .into_iter()
         .map(|part| {
+            // Two directory records that name one stored span are one part.
+            if !committed.insert(part.id().clone()) {
+                return Ok(part.loss());
+            }
             let part = match &owner {
                 Some(owner) => part.contained_in(owner.clone()),
                 None => part,

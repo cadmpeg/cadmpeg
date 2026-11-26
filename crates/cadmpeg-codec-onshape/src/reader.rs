@@ -492,21 +492,12 @@ fn studio(
                 rollback_bar(response, features, report, &history_path),
             ),
             Err(reason) => {
-                let detail = format!("{reason}; feature history is missing");
-                if response
-                    .get("features")
-                    .and_then(Value::as_array)
-                    .is_some_and(|features| features.len() > ROWS)
-                {
-                    report.push_coded(&history_path, OnshapeLossCode::HistoryNotSupported, detail);
-                } else {
-                    report.give_up(
-                        bundle,
-                        &history_path,
-                        OnshapeLossCode::HistoryNotSupported,
-                        detail,
-                    );
-                }
+                report.give_up(
+                    bundle,
+                    &history_path,
+                    OnshapeLossCode::HistoryNotSupported,
+                    format!("{reason}; feature history is missing"),
+                );
                 (&[][..], RollbackBar::default())
             }
         },

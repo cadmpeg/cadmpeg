@@ -161,6 +161,16 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
             1,
             "{table}"
         );
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss
+                        .message
+                        .split_whitespace()
+                        .any(|token| token.ends_with("bodydetails/2.json"))
+            }),
+            "{table}"
+        );
         assert_eq!(
             named_losses(&result, "onshape/history.not-supported"),
             1,
