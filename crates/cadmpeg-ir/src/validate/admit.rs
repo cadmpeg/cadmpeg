@@ -56,10 +56,9 @@ impl Admission {
     }
 }
 
-/// The rules of ids and references, native links, topology, carriers,
-/// parameter domains, and geometric consistency on model-class records,
-/// with `$extra` after them.
-macro_rules! draft_core_rules {
+/// The rules of ids and references, native links, topology graphs, and edge
+/// ends on model-class records, with `$extra` after them.
+macro_rules! history_body_rules {
     ($($extra:literal),* $(,)?) => {
         &[
             crate::rule_name!("annotations_native.helix-axis-native-ref-does-not"),
@@ -69,25 +68,13 @@ macro_rules! draft_core_rules {
             crate::rule_name!("annotations_native.native-ref-does-not-resolve"),
             crate::rule_name!("annotations_native.operand-native-ref-does-not-resolve"),
             crate::rule_name!("annotations_native.pmi-native-ref-does-not-resolve"),
-            crate::rule_name!("carriers_parameterization.coedge-pcurve-range-outside-carrier-domain"),
-            crate::rule_name!("carriers_parameterization.coedge-use-curve-names-no-curve"),
-            crate::rule_name!("carriers_parameterization.coedge-use-curve-range-outside-carrier"),
-            crate::rule_name!("carriers_parameterization.edge-parameter-range-outside-canonical-carrier"),
-            crate::rule_name!("carriers_parameterization.edge-parameter-range-outside-local-domain"),
-            crate::rule_name!("carriers_parameterization.orphan-carrier"),
             crate::rule_name!("drawings.drawing-views-base-view-name-record"),
             crate::rule_name!("drawings.invalid-drawing-reference-order-numeric-state"),
-            crate::rule_name!("eval.model-carrier-evaluations-reached-local-work"),
             crate::rule_name!("evaluation_cycles.malformed-curve-surface-reference-cycle"),
-            crate::rule_name!("geometry_consistency.charted-tolerant-intersection-does-not-evaluate"),
-            crate::rule_name!("geometry_consistency.charted-tolerant-intersection-misses-endpoint-witnesses"),
             crate::rule_name!("geometry_consistency.coedge-use-curve-endpoints-miss-traversal"),
             crate::rule_name!("geometry_consistency.edge-curve-endpoints-miss-edge-vertex"),
             crate::rule_name!("geometry_consistency.edge-no-vertex-lies-open-carrier"),
             crate::rule_name!("geometry_consistency.edge-runs-against-curve-start-vertex"),
-            crate::rule_name!("geometry_consistency.pcurve-mapped-through-face-surface-misses"),
-            crate::rule_name!("geometry_consistency.procedural-support-side-misses-endpoint-distance"),
-            crate::rule_name!("geometry_consistency.surface-offset-solved-curve-misses-base"),
             crate::rule_name!("history_bodies.history-body-names-neither-producing-nor"),
             crate::rule_name!("history_bodies.history-body-names-no-feature"),
             crate::rule_name!("history_bodies.history-body-record-repeats-identity-another"),
@@ -166,8 +153,6 @@ macro_rules! draft_core_rules {
             crate::rule_name!("topology.bend-attached-plate-must-precede-bend"),
             crate::rule_name!("topology.binder-target-feature-does-not-precede"),
             crate::rule_name!("topology.cage-must-belong-exactly-one"),
-            crate::rule_name!("topology.catmull-clark-cage-edges-state-different"),
-            crate::rule_name!("topology.catmull-clark-face-side-holds-more"),
             crate::rule_name!("topology.child-parent-lists"),
             crate::rule_name!("topology.component-transfer-placement-contains-non-finite"),
             crate::rule_name!("topology.composite-curve-graph-contains-cycle"),
@@ -211,8 +196,6 @@ macro_rules! draft_core_rules {
             crate::rule_name!("topology.does-not-precede-consuming-feature"),
             crate::rule_name!("topology.draft-pull-plane-frame-normal-not"),
             crate::rule_name!("topology.draft-pull-states-both-datum-plane"),
-            crate::rule_name!("topology.edge-no-vertex-must-carrier-curve"),
-            crate::rule_name!("topology.face-lists-loop-more-once"),
             crate::rule_name!("topology.feature-omits-dependency"),
             crate::rule_name!("topology.feature-reference-does-not-name-datum"),
             crate::rule_name!("topology.fixed-construction-cannot-carry-resolved-values"),
@@ -226,9 +209,7 @@ macro_rules! draft_core_rules {
             crate::rule_name!("topology.generated-profile-curve-invalid"),
             crate::rule_name!("topology.generated-vertex-invalid"),
             crate::rule_name!("topology.historical-selection-uses-another-feature-input"),
-            crate::rule_name!("topology.lists-parent-another-record"),
             crate::rule_name!("topology.literal-false-flip-redundant"),
-            crate::rule_name!("topology.not-listed"),
             crate::rule_name!("topology.offset-plane-omits-reference-feature-dependencies"),
             crate::rule_name!("topology.owner-does-not-precede-profile-consumer"),
             crate::rule_name!("topology.parameter-dependency-does-not-precede-consumer"),
@@ -242,14 +223,12 @@ macro_rules! draft_core_rules {
             crate::rule_name!("topology.reference-plane-does-not-precede-offset"),
             crate::rule_name!("topology.references-missing"),
             crate::rule_name!("topology.refold-unfold-must-precede-refold-occur"),
-            crate::rule_name!("topology.region-mark-names-shell-twice-one"),
             crate::rule_name!("topology.revolution-angular-travel-must-not-exceed"),
             crate::rule_name!("topology.scale-transform-invalid"),
             crate::rule_name!("topology.seed-feature-does-not-precede-pattern"),
             crate::rule_name!("topology.selection-rule-incompatible-seed-count"),
             crate::rule_name!("topology.sheet-metal-edge-flange-height-invalid"),
             crate::rule_name!("topology.shell-faces-disconnected-through-shared-edges"),
-            crate::rule_name!("topology.shell-lists-member-more-once"),
             crate::rule_name!("topology.single-explicit-selection-term-must-use"),
             crate::rule_name!("topology.sketch-block-does-not-precede-instance"),
             crate::rule_name!("topology.sketch-block-instance-omits-block-feature"),
@@ -279,6 +258,37 @@ macro_rules! draft_core_rules {
     };
 }
 
+/// [`history_body_rules`] with the rules of child lists, closed edges,
+/// carriers, parameter domains, pcurve and procedural consistency, and
+/// subdivision schemes, with `$extra` after them.
+macro_rules! draft_core_rules {
+    ($($extra:literal),* $(,)?) => {
+        history_body_rules!(
+            "carriers_parameterization.coedge-pcurve-range-outside-carrier-domain",
+            "carriers_parameterization.coedge-use-curve-names-no-curve",
+            "carriers_parameterization.coedge-use-curve-range-outside-carrier",
+            "carriers_parameterization.edge-parameter-range-outside-canonical-carrier",
+            "carriers_parameterization.edge-parameter-range-outside-local-domain",
+            "carriers_parameterization.orphan-carrier",
+            "eval.model-carrier-evaluations-reached-local-work",
+            "geometry_consistency.charted-tolerant-intersection-does-not-evaluate",
+            "geometry_consistency.charted-tolerant-intersection-misses-endpoint-witnesses",
+            "geometry_consistency.pcurve-mapped-through-face-surface-misses",
+            "geometry_consistency.procedural-support-side-misses-endpoint-distance",
+            "geometry_consistency.surface-offset-solved-curve-misses-base",
+            "topology.catmull-clark-cage-edges-state-different",
+            "topology.catmull-clark-face-side-holds-more",
+            "topology.edge-no-vertex-must-carrier-curve",
+            "topology.face-lists-loop-more-once",
+            "topology.lists-parent-another-record",
+            "topology.not-listed",
+            "topology.region-mark-names-shell-twice-one",
+            "topology.shell-lists-member-more-once",
+            $($extra),*
+        )
+    };
+}
+
 /// The model-class rules a decoder may test a candidate against (§3.3).
 /// `arena_order` rules are not in it: a candidate is judged before
 /// [`CadIr::finalize`](crate::CadIr::finalize) orders its arenas.
@@ -305,6 +315,13 @@ pub const RHINO_INSTANCE: &Admission = DRAFT_CORE;
 /// identities are supplied through
 /// [`admit_with_additional_native_identities`].
 pub const CATIA_ADMISSION: &Admission = DRAFT_CORE;
+
+/// History-body admission: a nest is given up for its ids, references,
+/// graphs, and edge ends. The other topology rules report on the nest and
+/// give up no body.
+pub const HISTORY_BODY_ADMISSION: &Admission = &Admission::new(HISTORY_BODY_RULES, false);
+
+const HISTORY_BODY_RULES: &[RuleName] = history_body_rules!();
 
 /// Drop the findings whose rule `allowed` does not list.
 fn filter_rules(mut report: ValidationReport, allowed: &Admission) -> ValidationReport {
@@ -514,7 +531,10 @@ mod native_unknown_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::{admit, Admission, CATIA_ADMISSION, DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE};
+    use super::{
+        admit, Admission, CATIA_ADMISSION, DRAFT_CORE, HISTORY_BODY_ADMISSION, RHINO_DRAFT,
+        RHINO_INSTANCE,
+    };
     use crate::report::check::{Check, Finding, RuleName, ValidationReport};
     use crate::report::Severity;
     use crate::test_support::admissibility::{
@@ -590,7 +610,13 @@ mod tests {
             entity: None,
             related: Vec::new(),
         };
-        for allowed in [DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE, CATIA_ADMISSION] {
+        for allowed in [
+            DRAFT_CORE,
+            RHINO_DRAFT,
+            RHINO_INSTANCE,
+            CATIA_ADMISSION,
+            HISTORY_BODY_ADMISSION,
+        ] {
             let report = ValidationReport {
                 entity_counts: std::collections::BTreeMap::new(),
                 findings: vec![finding.clone()],
@@ -626,7 +652,13 @@ mod tests {
     /// process rule (§3.3) and no codec's own rule.
     #[test]
     fn routes_list_only_model_class_validator_rules() {
-        for allowed in [DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE, CATIA_ADMISSION] {
+        for allowed in [
+            DRAFT_CORE,
+            RHINO_DRAFT,
+            RHINO_INSTANCE,
+            CATIA_ADMISSION,
+            HISTORY_BODY_ADMISSION,
+        ] {
             for rule in allowed.rules() {
                 let name = rule.as_str();
                 assert!(
@@ -644,6 +676,10 @@ mod tests {
             &RHINO_DRAFT.rules()[..DRAFT_CORE.rules().len()],
             DRAFT_CORE.rules()
         );
+        assert_eq!(
+            &DRAFT_CORE.rules()[..HISTORY_BODY_ADMISSION.rules().len()],
+            HISTORY_BODY_ADMISSION.rules()
+        );
         assert!(RHINO_DRAFT.annotations() && !DRAFT_CORE.annotations());
         let mut names: Vec<&str> = RHINO_DRAFT.rules().iter().map(RuleName::as_str).collect();
         names.sort_unstable();
@@ -656,7 +692,13 @@ mod tests {
 
         let accepted = accepted_empty();
         let rejected = rejected_missing_point("test:model").expect("valid identity");
-        for allowed in [DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE, CATIA_ADMISSION] {
+        for allowed in [
+            DRAFT_CORE,
+            RHINO_DRAFT,
+            RHINO_INSTANCE,
+            CATIA_ADMISSION,
+            HISTORY_BODY_ADMISSION,
+        ] {
             assert!(admit(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 &accepted,

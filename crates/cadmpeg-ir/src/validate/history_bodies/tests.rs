@@ -8,10 +8,13 @@ use crate::features::selections::DistinctMembers;
 use crate::features::{
     Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
+use crate::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use crate::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
-use crate::ids::HistoryBodyId;
+use crate::ids::{HistoryBodyId, PcurveId};
+use crate::math::Point2;
 use crate::report::check::{Check, Finding};
 use crate::schema::rewrite::typed::IdentityMap;
+use crate::topology::PcurveUse;
 use crate::validate::{validate_neutral, Severity};
 
 /// Move an identity into the history-body scope.
@@ -151,6 +154,46 @@ fn a_nest_is_checked_at_its_documents_tolerances() {
         crate::units::Tolerances::new(0.1, crate::units::Tolerances::default().angular.get())
             .expect("positive finite tolerances");
     assert_eq!(gaps(loose), 0);
+}
+
+#[test]
+fn a_nest_pcurve_miss_is_reported_and_gives_up_no_history_body() {
+    // The line v = 5 on a face of the unit cube maps away from its edge.
+    let mut ir = crate::examples::unit_cube().expect("cube");
+    crate::examples::add_document_root(&mut ir);
+    ir.model.features.push(feature("test:model:feature#base"));
+    let mut nest = cube_nest();
+    let pcurve = PcurveId::mint("test:model:pcurve#off-face").expect("identity");
+    nest.pcurves.push(Pcurve {
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 5.0), Point2::new(1.0, 0.0)).expect("a line"),
+        ),
+        metadata: PcurveMetadata::default(),
+        native_ref: None,
+    });
+    nest.coedges[0].pcurves.push(PcurveUse {
+        pcurve,
+        isoparametric: None,
+        parameter_range: None,
+    });
+    let mut body = history_body("0", scoped(nest));
+    body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
+    ir.model.history_bodies.push(body);
+    assert!(
+        findings(&ir).iter().any(|finding| finding.rule.as_str()
+            == "geometry_consistency.pcurve-mapped-through-face-surface-misses"),
+        "{:?}",
+        findings(&ir)
+    );
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let admitted = |route| {
+        crate::admit(&ctx, &ir, route, Vec::new())
+            .expect("admission runs")
+            .is_ok()
+    };
+    assert!(admitted(crate::HISTORY_BODY_ADMISSION));
+    assert!(!admitted(crate::DRAFT_CORE));
 }
 
 #[test]
