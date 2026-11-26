@@ -195,16 +195,20 @@ fn a_board_subtype_asset_is_the_design_folder_when_no_asset_has_an_empty_subtype
     assert_eq!(folder.folder, "Design Base");
     assert_eq!(folder.asset_guid, DESIGN_GUID);
 
-    assert!(resolve_fusion_assets(&[
+    let refusal = |assets: &[(&str, &str, &str)]| match resolve_fusion_assets(assets) {
+        Err(CodecError::Malformed(message)) => message,
+        other => panic!("expected a malformed asset-folder run, found {other:?}"),
+    };
+    assert!(refusal(&[
         ("Board", DESIGN_GUID, "PCBAssetSubType"),
         ("Second Board", OTHER_GUID, "PCBAssetSubType"),
     ])
-    .is_err());
-    assert!(resolve_fusion_assets(&[
+    .contains("more than one listed folder declares the Design asset"));
+    assert!(refusal(&[
         ("Simulation", OTHER_GUID, "SimulationModelAssetSubtype"),
         ("Flat", DESIGN_GUID, "FlatPatternAssetSubType"),
     ])
-    .is_err());
+    .contains("no listed folder declares the Design asset"));
 }
 
 #[test]
