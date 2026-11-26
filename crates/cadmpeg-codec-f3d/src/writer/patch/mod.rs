@@ -6,17 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 
+use crate::decode;
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
-use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
 mod geometry;
@@ -92,9 +92,8 @@ pub(crate) fn write_semantic(
     } else {
         validate_assembly_projection(target, None)?;
     }
-    let baseline = F3dCodec
-        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
-        .map_err(|failure| match failure {
+    let baseline =
+        super::decode_retained_source(source_image).map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(
                 "the salvage decode of the source image refused: {other}"

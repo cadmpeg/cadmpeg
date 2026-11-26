@@ -17,3 +17,31 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::capacity::TextCapa
 
 #[cfg(test)]
 mod tests;
+
+use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+use cadmpeg_ir::codec::{CodecBackend, DecodeFailure, DecodeOptions, DecodeResult};
+
+/// Decode a retained source archive for a writer that reads only its IR and
+/// losses, so the decode records no content digests.
+pub(crate) fn decode_retained_source(image: &[u8]) -> Result<DecodeResult, DecodeFailure> {
+    let options = DecodeOptions::default();
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::read_root(
+        &mut std::io::Cursor::new(image),
+        &arena,
+        &options.policy,
+        options.depth,
+    )?;
+    let result = crate::decode::decode(&ctx, root)
+        .map_err(DecodeFailure::from)
+        .and_then(|decoded| {
+            DecodeResult::from_decoded_without_digests(
+                &ctx,
+                decoded,
+                <crate::F3dCodec as CodecBackend>::FORMAT,
+                &options.strictness,
+            )
+        });
+    ctx.finish_session()?;
+    result
+}
