@@ -163,11 +163,9 @@ fn only_operands_that_stay_native_keep_their_slot_refusals() {
 
 #[test]
 fn a_recipe_tool_that_is_the_model_body_of_the_target_slot_is_refused() {
-    let model_tool = |id: &str| {
-        BodySelection::Resolved {
-            bodies: DistinctMembers::try_from(vec![BodyId::mint(id).unwrap()]).unwrap(),
-            native: "f3d:test:selection#tools".to_owned(),
-        }
+    let model_tool = |id: &str| BodySelection::Resolved {
+        bodies: DistinctMembers::try_from(vec![BodyId::mint(id).unwrap()]).unwrap(),
+        native: "f3d:test:selection#tools".to_owned(),
     };
     for (tool, source) in [
         ("f3d:brep:entity#4", None),
@@ -186,9 +184,15 @@ fn a_recipe_tool_that_is_the_model_body_of_the_target_slot_is_refused() {
     assert_eq!(
         merge_operand_list_bindings(
             (historical(4), historical(5)),
-            (native("target"), model_tool("f3d:brep/other.smbh/brep:entity#4")),
+            (
+                native("target"),
+                model_tool("f3d:brep/other.smbh/brep:entity#4")
+            ),
             Some("root.smbh"),
         ),
-        (historical(4), model_tool("f3d:brep/other.smbh/brep:entity#4"))
+        (
+            historical(4),
+            model_tool("f3d:brep/other.smbh/brep:entity#4")
+        )
     );
 }

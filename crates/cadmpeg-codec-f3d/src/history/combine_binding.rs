@@ -201,9 +201,8 @@ fn model_tool_at_target_slot(
     };
     let in_source = |id: &str| {
         id.starts_with("f3d:brep:")
-            || source.is_some_and(|source| {
-                super::face_resolution::entity_in_brep_source(id, source)
-            })
+            || source
+                .is_some_and(|source| super::face_resolution::entity_in_brep_source(id, source))
     };
     selection_bodies(tools)
         .into_iter()
