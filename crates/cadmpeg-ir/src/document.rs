@@ -2875,7 +2875,36 @@ struct CadIrWriteWire<'a> {
     model: &'a Model,
     design: &'a Design,
     process: &'a Process,
-    native: &'a Native,
+    #[cfg_attr(feature = "schema", schemars(with = "Native"))]
+    native: NativeWrite<'a>,
+}
+
+/// How [`CadIr::serialize_wire`] writes the native records.
+#[derive(Clone, Copy)]
+enum NativeText<'a, 'input> {
+    /// Each record through its own `Serialize`, for any serializer.
+    Records,
+    /// Each record's stored text, for a pretty canonical JSON writer with
+    /// this depth admission.
+    Stored(crate::hash::finite_json::admission::CanonicalAdmission<'a, 'input>),
+}
+
+/// What the `native` member of [`CadIrWriteWire`] writes: the same JSON value
+/// either way.
+enum NativeWrite<'a> {
+    /// Each record through its own `Serialize`, for any serializer.
+    Records(&'a Native),
+    /// Each record's stored text, for a pretty canonical JSON writer.
+    Pretty(crate::hash::PrettyNative<'a, 'a>),
+}
+
+impl Serialize for NativeWrite<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Records(native) => native.serialize(serializer),
+            Self::Pretty(native) => native.serialize(serializer),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -2910,13 +2939,32 @@ impl CadIr {
         &self,
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        self.serialize_wire(serializer, NativeText::Records)
+    }
+
+    /// [`Self::serialize_erased`] for a pretty canonical JSON writer: each
+    /// native record writes its stored text without a parse, at the depth
+    /// `admission` admits.
+    pub(crate) fn serialize_pretty_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+        admission: crate::hash::finite_json::admission::CanonicalAdmission<'_, '_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        self.serialize_wire(serializer, NativeText::Stored(admission))
+    }
+
+    fn serialize_wire(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+        native: NativeText<'_, '_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
         if !(self.design.is_finalized()
             && self.process.is_finalized()
             && self.native.is_finalized())
         {
             let mut sorted = self.clone();
             sorted.finalize();
-            return sorted.serialize_erased(serializer);
+            return sorted.serialize_wire(serializer, native);
         }
         CadIrWriteWire {
             ir_version: IrVersion,
@@ -2930,7 +2978,13 @@ impl CadIr {
             model: &self.model,
             design: &self.design,
             process: &self.process,
-            native: &self.native,
+            native: match native {
+                NativeText::Records => NativeWrite::Records(&self.native),
+                NativeText::Stored(admission) => NativeWrite::Pretty(crate::hash::PrettyNative {
+                    ctx: admission.context().map(|(ctx, _)| ctx),
+                    native: &self.native,
+                }),
+            },
         }
         .serialize(serializer)
     }
@@ -2974,7 +3028,7 @@ impl CadIr {
             model: &self.model,
             design,
             process,
-            native: &empty_native,
+            native: NativeWrite::Records(&empty_native),
         }
         .serialize(serializer)
     }

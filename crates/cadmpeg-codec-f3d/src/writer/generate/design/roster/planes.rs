@@ -8,8 +8,9 @@ use cadmpeg_core::CodecError;
 
 use super::super::base_feature::timestamp_table;
 use super::super::frames::DesignRecords;
-use super::super::sketch::PlannedPlane;
+use super::super::sketch::{PlannedPlane, Support};
 use super::super::types;
+use super::super::{Culprit, RecordFailure};
 use super::owned::{self, Owned};
 use super::sketches::{
     genesis, item_companion, item_tail, placement_base, placement_path, placement_transform,
@@ -140,27 +141,51 @@ impl PlaneRecords {
 
 /// Every record of the `WorkPlane` items of `ctx` and the construction
 /// collection that lists their plane entities.
-pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), CodecError> {
+pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), RecordFailure> {
     if ctx.roster.planes.is_empty() {
         return Ok(());
     }
     #[cfg(test)]
     if let Some(error) = super::super::requested_plane_failure() {
-        return Err(error);
+        return Err(error.into());
     }
     let classes = Classes::of(ctx)?;
-    for (ordinal, (records, planned)) in (1u32..).zip(ctx.roster.planes.iter().zip(ctx.planes)) {
-        Item {
+    for (index, (ordinal, (records, planned))) in (1u32..)
+        .zip(ctx.roster.planes.iter().zip(ctx.planes))
+        .enumerate()
+    {
+        let item = Item {
             ctx,
             classes: &classes,
             records,
             planned,
             ordinal,
             rolled_back: planned.first >= ctx.marker,
-        }
-        .write(out)?;
+        };
+        let mut written = || {
+            #[cfg(test)]
+            if let Some(first) = ctx.sketches.get(planned.first) {
+                if let Some(error) = super::super::requested_record_failure(&format_args!(
+                    "WorkPlane {}",
+                    first.feature
+                )) {
+                    return Err(error);
+                }
+            }
+            item.write(out)
+        };
+        written().map_err(|error| RecordFailure {
+            error,
+            culprit: Some(Culprit::Plane(
+                ctx.sketches
+                    .iter()
+                    .filter(|sketch| sketch.support == Support::Construction(index))
+                    .map(|sketch| sketch.feature.clone())
+                    .collect(),
+            )),
+        })?;
     }
-    collection(ctx, out)
+    collection(ctx, out).map_err(RecordFailure::from)
 }
 
 /// The construction collection with the plane entities of the `WorkPlane`
