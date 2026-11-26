@@ -4544,7 +4544,7 @@ mod tests {
         named.extend_from_slice(&[0; 40]);
         let name_at = named.len();
         named.extend_from_slice(&17_u32.to_le_bytes());
-        for unit in MESH_COLLECTION_ENTRY_NAME.encode_utf16() {
+        for unit in crate::records::mesh::MESH_COLLECTION_ENTRY_NAME.encode_utf16() {
             named.extend_from_slice(&unit.to_le_bytes());
         }
         let reference_at = named.len();
