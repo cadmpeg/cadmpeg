@@ -1061,6 +1061,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             operands: &design.design_body_recipe_operands,
             recipes: &prereqs.construction_recipes,
         },
+        geometry.bodies,
         derived_snapshots,
         &mut losses,
     )?;

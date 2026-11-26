@@ -739,7 +739,7 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
         &changed,
         "Contents/Keywords",
         &[(
-            native.feature_histories[0].clone(),
+            &native.feature_histories[0],
             "Contents/Keywords".into(),
             history.to_vec(),
         )],
