@@ -6,9 +6,10 @@ use std::collections::BTreeSet;
 use cadmpeg_ir::ids::BodyId;
 
 use super::{
-    apply_preselected_active_body_selection, body_preselection, has_plain_beside_partition_streams,
-    plain_history_images, retain_live_annotations, state_held_body_tolerances,
+    body_preselection, has_plain_beside_partition_streams, plain_history_images,
+    retain_live_annotations, select_terminal_feature_bodies, state_held_body_tolerances,
 };
+use crate::native::segments::{SegmentBodyBinding, SegmentBodyLineageStatus};
 use crate::parasolid::StreamKind;
 
 #[test]
@@ -338,11 +339,11 @@ fn plain_images_beside_partitions_suppress_terminal_lineage_preselection() {
 
 #[test]
 fn a_body_that_terminal_lineage_prunes_does_not_set_the_part_tolerance() {
-    let body = |index: u32| BodyId::mint(format!("nx:s1:body#{index}")).expect("identity");
+    let body = |stream: u32| BodyId::mint(format!("nx:s{stream}:body#2")).expect("identity");
     let mut ir = cadmpeg_ir::CadIr::empty();
-    for index in [2, 3] {
+    for stream in [1, 2] {
         ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
-            id: body(index),
+            id: body(stream),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             transform: None,
             name: None,
@@ -352,18 +353,46 @@ fn a_body_that_terminal_lineage_prunes_does_not_set_the_part_tolerance() {
             unstated: None,
         });
     }
+    let bindings = [1, 2].map(|stream| SegmentBodyBinding {
+        id: format!("binding#{stream}"),
+        stream_link: format!("link#{stream}"),
+        stream_ordinal: stream,
+        stream_kind: StreamKind::Partition,
+        body_object_index: 10 + stream,
+        body_alias_object_index: 20 + stream,
+        stream_role: 0,
+        source_offset: u64::from(stream),
+    });
+    let statuses = bindings
+        .iter()
+        .map(|binding| SegmentBodyLineageStatus {
+            id: format!("status#{}", binding.stream_ordinal),
+            segment_body_binding: binding.id.clone(),
+            body_object_index: binding.body_object_index,
+            body_alias_object_index: binding.body_alias_object_index,
+            terminal: binding.stream_ordinal == 1,
+            source_offset: binding.source_offset,
+        })
+        .collect::<Vec<_>>();
+    // The held body stores a value off the modeller default; the pruned body
+    // stores a coarser one.
     let stored =
-        std::collections::BTreeMap::from([(body(2), Some(1.0e-8)), (body(3), Some(1.0e-6))]);
-    assert!(apply_preselected_active_body_selection(
-        &mut ir,
-        &BTreeSet::from([body(2)]),
-        "terminal_feature_body_lineage",
-        None,
+        std::collections::BTreeMap::from([(body(1), Some(1.0e-7)), (body(2), Some(1.0e-6))]);
+    assert!(select_terminal_feature_bodies(
+        &mut ir, &bindings, &statuses
     ));
+    assert_eq!(
+        ir.geometry
+            .bodies
+            .iter()
+            .map(|held| held.id.clone())
+            .collect::<Vec<_>>(),
+        [body(1)]
+    );
     let losses = state_held_body_tolerances(&mut ir, &stored);
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(
         Some(ir.tolerances.linear),
-        cadmpeg_parasolid::precision::linear_precision(1.0e-8)
+        cadmpeg_parasolid::precision::linear_precision(1.0e-7)
     );
 }

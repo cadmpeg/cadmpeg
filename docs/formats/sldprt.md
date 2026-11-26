@@ -2725,10 +2725,15 @@ the last header reference has the bytes of the high word of an f64 in
 subnormal value. When one count reads a BODY, that count is the layout. When
 more than one count reads a BODY, the layout is the one count whose
 `resolution_linear` magnitude is in `[1e-15, 1e-2]` m. A BODY with no count,
-or with several counts and no such single count, is not valid. A BODY at a
-`00 0c` tag offset that no edited schema header frames, with a
-`resolution_linear` magnitude outside `[1e-15, 1e-2]` m, is valid only when a
-SHELL or REGION names its index in the `body` field.
+or with several counts and no such single count, is not valid. A `00 0c` tag
+offset that no edited schema header frames has two readings: the node after
+an `ff` byte that follows the tag, and the node directly after the tag. A
+two-word index pointer starts with `ff`, so both readings can hold a BODY.
+The BODY of the tag is the reading whose `resolution_linear` magnitude is in
+`[1e-15, 1e-2]` m; where both or neither are in that range, it is the reading
+after `ff`. A tagged BODY with a `resolution_linear` magnitude outside
+`[1e-15, 1e-2]` m is valid only when a SHELL or REGION names its index in the
+`body` field and no BODY with a magnitude in that range holds the same index.
 
 `resolution_size` and `resolution_linear` are the BODY fields `res_size` and
 `res_linear` in metres. `resolution_linear` takes every finite nonzero value.

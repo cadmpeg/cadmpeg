@@ -116,7 +116,7 @@ fn a_withheld_plain_history_stream_does_not_set_the_part_tolerance() {
         1.0e-6,
     );
     let decoded = decode(
-        prt_with_streams(&[&primary_stopped_topology_stream(1.0e-8), &plain]),
+        prt_with_streams(&[&primary_stopped_topology_stream(1.0e-7), &plain]),
         DecodeOptions::default().depth,
     );
     let ir = decoded.ir();
@@ -127,21 +127,21 @@ fn a_withheld_plain_history_stream_does_not_set_the_part_tolerance() {
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(
         Some(ir.tolerances.linear),
-        cadmpeg_parasolid::precision::linear_precision(1.0e-8)
+        cadmpeg_parasolid::precision::linear_precision(1.0e-7)
     );
 }
 
 #[test]
 fn a_body_that_rmfastload_membership_leaves_out_does_not_set_the_part_tolerance() {
     let decoded = decode(
-        prt_with_rmfastload_over_resolutions(1.0e-8, 1.0e-6),
+        prt_with_rmfastload_over_resolutions(1.0e-7, 1.0e-6),
         DecodeOptions::default().depth,
     );
     let ir = decoded.ir();
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(
         Some(ir.tolerances.linear),
-        cadmpeg_parasolid::precision::linear_precision(1.0e-8)
+        cadmpeg_parasolid::precision::linear_precision(1.0e-7)
     );
 }
 
@@ -158,8 +158,7 @@ fn a_precision_finer_than_the_recognition_floor_keeps_the_native_attachment() {
     );
     assert!(messages(&decoded, NxLossCode::NativeAttachmentFailed).is_empty());
     assert_eq!(ir.model.configurations.len(), 2);
-    assert_eq!(
-        messages(&decoded, NxLossCode::FeatureRecognitionToleranceFloor).len(),
-        1
-    );
+    // The part holds no hole template and no BLOCK dimensions, so no
+    // recogniser compares at the floor.
+    assert!(messages(&decoded, NxLossCode::FeatureRecognitionToleranceFloor).is_empty());
 }

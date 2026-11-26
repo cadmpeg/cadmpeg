@@ -873,20 +873,12 @@ fn plausible_resolution(body: &BodyCandidate) -> bool {
         .contains(&body.linear_resolution.abs())
 }
 
-/// A BODY at a tag offset, read with a plausible `res_linear` (`sldprt.md`
-/// BODY).
-fn parse_plausible_body_layout(
-    bytes: &[u8],
-    offset: usize,
-    payload: usize,
-) -> Option<BodyCandidate> {
-    parse_body_layout(bytes, offset, payload).filter(plausible_resolution)
-}
-
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
-    tagged_candidates(bytes, offset, BODY_TAG, parse_plausible_body_layout)
-        .into_iter()
-        .min_by_key(|node| node.end)
+    tagged_candidates(bytes, offset, BODY_TAG, |bytes, offset, payload| {
+        parse_body_layout(bytes, offset, payload).filter(plausible_resolution)
+    })
+    .into_iter()
+    .min_by_key(|node| node.end)
 }
 
 fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<ShellNode> {
@@ -1062,7 +1054,8 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
     // Tag-framed BODY readings whose `res_linear` is outside the plausible
-    // range, kept only where a SHELL or REGION names them (`sldprt.md` BODY).
+    // range, kept only where a SHELL or REGION names them and no plausible
+    // BODY holds their index (`sldprt.md` BODY).
     let mut unnamed_tagged_bodies = HashSet::new();
     let mut schema_ranges = Vec::new();
     let mut offset = 0usize;
@@ -1157,18 +1150,25 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                 continue;
             }
             if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
-                for body in tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout) {
-                    if !body_offsets.contains(&body.offset) {
-                        if !plausible_resolution(&body) {
-                            unnamed_tagged_bodies.insert(body.offset);
-                        }
-                        push_record(
-                            &mut body_offsets,
-                            &mut facts.bodies,
-                            body.offset,
-                            body.into_node(),
-                        );
+                // Each reading of one tag shares the tag offset. A plausible
+                // reading takes it before an implausible one, the 0xff-prefixed
+                // reading first among equals.
+                let mut readings = tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout);
+                readings.sort_by_key(|body| !plausible_resolution(body));
+                if let Some(body) = readings
+                    .into_iter()
+                    .next()
+                    .filter(|body| !body_offsets.contains(&body.offset))
+                {
+                    if !plausible_resolution(&body) {
+                        unnamed_tagged_bodies.insert(body.offset);
                     }
+                    push_record(
+                        &mut body_offsets,
+                        &mut facts.bodies,
+                        body.offset,
+                        body.into_node(),
+                    );
                 }
             }
             for shell in tagged_candidates(bytes, offset, SHELL_TAG, parse_shell_fields) {
@@ -1234,8 +1234,15 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
         .map(|node| node.refs[1])
         .chain(facts.regions.iter().map(|node| node.refs[1]))
         .collect::<HashSet<_>>();
+    let plausible_bodies = facts
+        .bodies
+        .iter()
+        .filter(|node| !unnamed_tagged_bodies.contains(&node.offset))
+        .map(|node| node.attr)
+        .collect::<HashSet<_>>();
     facts.bodies.retain(|node| {
-        !unnamed_tagged_bodies.contains(&node.offset) || named_bodies.contains(&node.attr)
+        !unnamed_tagged_bodies.contains(&node.offset)
+            || (named_bodies.contains(&node.attr) && !plausible_bodies.contains(&node.attr))
     });
     let referenced = facts
         .bodies
@@ -1696,6 +1703,52 @@ mod tests {
         let facts = scan(&bytes);
         assert!(facts.bodies.is_empty());
         assert_eq!(facts.topology_class_masks().get(&5), Some(&2));
+    }
+
+    #[test]
+    fn an_unprefixed_tagged_body_keeps_its_reading_over_an_implausible_prefixed_one() {
+        // A two-word index pointer begins with 0xff, so the 0xff-prefixed
+        // reading of the tag also frames a BODY, one byte later, with a
+        // `res_linear` below the plausible range.
+        let mut bytes = BODY_TAG.to_vec();
+        push_ref(&mut bytes, 33_007);
+        assert_eq!(bytes[2], 0xff);
+        bytes.extend_from_slice(&784u32.to_be_bytes());
+        bytes.extend(body_fields_with_resolution(
+            [5, 6, 1, 1, 1, 64],
+            1.0e-7,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        let prefixed = super::parse_body_layout(&bytes, 0, 3).expect("prefixed reading");
+        assert!(!super::plausible_resolution(&prefixed));
+
+        let facts = scan(&bytes);
+        let [body] = facts.bodies.as_slice() else {
+            panic!("one BODY: {:?}", facts.bodies);
+        };
+        assert_eq!(body.attr, 33_007);
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-7f64.to_bits());
+    }
+
+    #[test]
+    fn a_named_implausible_body_that_shares_a_plausible_body_index_is_dropped() {
+        let mut bytes = typed_shell_with_body(9, 814, 5, 39);
+        for (node_id, res_linear) in [(1006, 1.0e-8), (1007, 0.5)] {
+            bytes.extend(typed_prefix(BODY_TAG, 5, node_id));
+            bytes.extend(body_fields_with_resolution(
+                [5, 6, 1, 1, 1, 1],
+                res_linear,
+                1,
+                [7, 8, 9, 10, 1, 12, 11],
+            ));
+        }
+        let facts = scan(&bytes);
+        let [body] = facts.bodies.as_slice() else {
+            panic!("one BODY: {:?}", facts.bodies);
+        };
+        assert_eq!(body.attr, 5);
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-8f64.to_bits());
     }
 
     #[test]

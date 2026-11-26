@@ -8,6 +8,7 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::unknown::part::{dropped_with, record_given_up};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
@@ -1263,6 +1264,21 @@ fn attach_initial_segment_bodies(
     Ok(Some(id))
 }
 
+/// The loss of a decode whose hole or block recognisers compare evaluated
+/// geometry at a recognition floor coarser than the `document` tolerances.
+fn recognition_floor_loss(document: &Tolerances, recognisers_run: bool) -> Option<LossNote> {
+    let recognition = recognition_tolerances(document);
+    (recognisers_run && recognition != *document).then(|| {
+        NxLossCode::FeatureRecognitionToleranceFloor.note(format!(
+            "feature recognition compares evaluated geometry at {} mm and {} rad, coarser than the document tolerances {} mm and {} rad",
+            recognition.linear.get(),
+            recognition.angular.get(),
+            document.linear.get(),
+            document.angular.get(),
+        ))
+    })
+}
+
 fn attach_feature_operations(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -2028,15 +2044,11 @@ fn attach_feature_operations(
     let mut hole_outputs = explicit_hole_outputs;
     let mut simple_hole_diameters = BTreeMap::new();
     let recognition = recognition_tolerances(&ir.tolerances);
-    if recognition != ir.tolerances {
-        losses.push(NxLossCode::FeatureRecognitionToleranceFloor.note(format!(
-            "feature recognition compares evaluated geometry at {} mm and {} rad, coarser than the document tolerances {} mm and {} rad",
-            recognition.linear.get(),
-            recognition.angular.get(),
-            ir.tolerances.linear.get(),
-            ir.tolerances.angular.get(),
-        )));
-    }
+    let recognisers_run = !simple_hole_templates.is_empty()
+        || labels.iter().any(|label| {
+            label.value == "BLOCK" && block_dimensions_by_operation.contains_key(label.id.as_str())
+        });
+    losses.extend(recognition_floor_loss(&ir.tolerances, recognisers_run));
     if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);

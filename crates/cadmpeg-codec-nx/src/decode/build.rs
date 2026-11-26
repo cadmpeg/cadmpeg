@@ -259,12 +259,6 @@ pub(super) fn try_decode_geometry(
         terminal_preselection,
         has_plain_beside_partition_streams(scan.streams.iter().map(crate::parasolid::Stream::kind)),
     );
-    let decoded_stream = |si: usize, stream: &crate::parasolid::Stream| {
-        stream.kind().is_parasolid()
-            && preselection
-                .as_ref()
-                .is_none_or(|(_, selected, _)| selected.contains(&si))
-    };
     // The `res_linear` each SHELL-named BODY of a decoded stream stores, read
     // when the document tolerances are stated after body selection.
     let mut stored_resolutions: BTreeMap<BodyId, Option<f64>> = BTreeMap::new();
@@ -274,7 +268,12 @@ pub(super) fn try_decode_geometry(
         .streams
         .iter()
         .enumerate()
-        .filter(|(si, stream)| decoded_stream(*si, stream))
+        .filter(|(si, stream)| {
+            stream.kind().is_parasolid()
+                && preselection
+                    .as_ref()
+                    .is_none_or(|(_, selected, _)| selected.contains(si))
+        })
         .map(|(si, _)| {
             let view = parsed.stream(si);
             (view.intersections.curves.len(), view.graph.node_count())
@@ -1545,7 +1544,11 @@ pub(super) fn try_decode_geometry(
         }
     }
     if !active_body_selection {
-        active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
+        active_body_selection = select_terminal_feature_bodies(
+            &mut ir,
+            &model.segments.body_bindings,
+            &model.segments.body_lineage_statuses,
+        );
     }
     let resolution_losses = state_held_body_tolerances(&mut ir, &stored_resolutions);
     classify_body_kinds(&mut ir)?;
@@ -2127,7 +2130,8 @@ pub(super) fn select_active_body(
 
 fn select_terminal_feature_bodies(
     ir: &mut CadIr,
-    model: &crate::native::model::NativeModel,
+    bindings: &[crate::native::segments::SegmentBodyBinding],
+    statuses: &[crate::native::segments::SegmentBodyLineageStatus],
 ) -> bool {
     if ir.geometry.bodies.len() <= 1 {
         return false;
@@ -2139,11 +2143,9 @@ fn select_terminal_feature_bodies(
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
-    let Some(selected) = crate::native::model::terminal_feature_body_ids(
-        &emitted,
-        &model.segments.body_bindings,
-        &model.segments.body_lineage_statuses,
-    ) else {
+    let Some(selected) =
+        crate::native::model::terminal_feature_body_ids(&emitted, bindings, statuses)
+    else {
         return false;
     };
     apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
