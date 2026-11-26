@@ -6,6 +6,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult};
 
+use cadmpeg_ir::unknown::part::{gives_up, record_unreadable_kind};
+
 use crate::loss::IronCadLossCode;
 use crate::test_support::corpus;
 use crate::IronCadCodec;
@@ -173,7 +175,11 @@ fn container_depth_reads_no_records() {
 #[test]
 fn acis_block_decodes_one_closed_box_in_the_part_frame() {
     let result = decode(ACIS_BLOCK);
-    assert_eq!(count(&result, IronCadLossCode::BodyUnreadable), 0);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !gives_up(&loss.code)));
     assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 1);
     assert_eq!(count(&result, IronCadLossCode::BodyExtensionsRetained), 1);
     let geometry = &result.ir().geometry;
@@ -196,4 +202,47 @@ fn acis_block_decodes_one_closed_box_in_the_part_frame() {
     {
         assert!((value - expected).abs() <= EPS_POINT_MM, "{low:?} {high:?}");
     }
+}
+
+/// `BOX` with every frame magic of its streams cleared, so that the frame of
+/// `Brep Data` does not read.
+fn box_without_frame_magic() -> Vec<u8> {
+    let mut bytes = corpus(BOX);
+    let magic = 0x3de3_de00_u32.to_le_bytes();
+    let mut cleared = 0;
+    for at in 0..bytes.len().saturating_sub(magic.len()) {
+        if bytes[at..at + magic.len()] == magic {
+            bytes[at..at + magic.len()].fill(0);
+            cleared += 1;
+        }
+    }
+    assert!(cleared > 0);
+    bytes
+}
+
+#[test]
+fn a_brep_data_frame_that_does_not_read_is_one_unreadable_give_up() {
+    let bytes = box_without_frame_magic();
+    let result = IronCadCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(count(&result, IronCadLossCode::FrameUnreadable), 0);
+    let given_up: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| gives_up(&loss.code))
+        .collect();
+    let [loss] = given_up.as_slice() else {
+        panic!("one give-up loss: {given_up:?}");
+    };
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert!(loss.message.contains("Brep Data"), "{}", loss.message);
+    assert_eq!(result.ir().native_unknowns("ironcad").unwrap().len(), 1);
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    IronCadCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses an unreadable frame");
 }

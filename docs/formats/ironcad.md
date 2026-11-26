@@ -97,3 +97,17 @@ header product string names `IronCAD`. Lengths are centimetres (`asm.md` §4).
 The `Document Data` stream names the scene units as UTF-16LE strings: a length
 unit (`Millimeters`), an angle unit (`Degrees`), and a mass unit (`Kilograms`).
 Parasolid kernel lengths are in metres.
+
+## 5. Given-up parts and strict floors
+
+The decoder gives up a part (CADIR §3.3) in these cases:
+
+| Part kind | Bytes | Cause |
+|---|---|---|
+| `stream` | The `Brep Data` stream, as its digest, when the stream does not open, its frame (§2) does not read, or its record tree (§3) does not read. | `record.unreadable` |
+| `kernel-record` | The kernel bytes of an ACIS result record whose save stream does not frame. | `record.unreadable` |
+| `kernel-record` | The kernel bytes of an ACIS result record whose header does not read, or whose framed records the ACIS decode does not read. | `record.undecoded` |
+
+`ironcad/container.noncanonical` carries strict floor Warning (CADIR §3.2):
+it records a compound-file deviation that the reader recovers from. No other
+IronCAD code carries a strict floor.

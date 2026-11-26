@@ -7,6 +7,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 use super::{classify, transfer, Bodies};
+use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind, record_unreadable_kind};
+
 use crate::loss::IronCadLossCode;
 use crate::test_support::{acis_stream, face_body, node, plane_face_body, record, Sab};
 use crate::{dialect, tree};
@@ -43,7 +45,7 @@ fn the_result_record_decodes_and_the_feature_record_is_retained() {
     let (bodies, losses) = classified(&payload);
     assert_eq!(count(&losses, IronCadLossCode::FeatureShapeRetained), 1);
     assert_eq!(count(&losses, IronCadLossCode::BodyExtensionsRetained), 1);
-    assert_eq!(count(&losses, IronCadLossCode::BodyUnreadable), 0);
+    assert!(bodies.given_up.is_empty());
     let ids: Vec<_> = bodies
         .retained
         .iter()
@@ -93,32 +95,61 @@ fn result_records_of_two_parts_keep_disjoint_identities() {
     );
 }
 
-#[test]
-fn a_result_record_that_does_not_frame_is_unreadable_and_retained() {
-    let broken = acis_stream(&[Sab::Name("body"), Sab::Ref(-1)]);
-    let payload = part(&plane_face_body(), &broken);
-    let (bodies, losses) = classified(&payload);
-    assert_eq!(count(&losses, IronCadLossCode::BodyUnreadable), 1);
-    assert!(bodies.brep.is_none());
-    assert_eq!(bodies.retained.len(), 2);
-
+/// The give-up loss of `bodies`' one given-up part, after the transfer
+/// commits it, and the bytes its stub retains.
+fn given_up(payload: &[u8], bodies: Bodies, losses: Vec<LossNote>) -> (LossNote, Vec<u8>) {
+    let [part] = bodies.given_up.as_slice() else {
+        panic!("one given-up part");
+    };
+    let stub = part.id().as_str().to_owned();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
     let decoded = transfer(
         &ctx,
         CadIr::empty(),
         bodies,
         losses,
-        Sha256Digest::digest(&payload),
+        Sha256Digest::digest(payload),
     )
     .unwrap();
     assert!(decoded.ir.geometry.bodies.is_empty());
-    let retained = decoded
-        .source_fidelity
-        .retained_record("ironcad:source:kernel-record#1")
-        .unwrap();
-    assert_eq!(retained.data(), Some(broken.as_slice()));
+    let given_up: Vec<_> = decoded
+        .body
+        .losses
+        .iter()
+        .filter(|loss| gives_up(&loss.code))
+        .cloned()
+        .collect();
+    let [loss] = given_up.as_slice() else {
+        panic!("one give-up loss: {given_up:?}");
+    };
+    let retained = decoded.source_fidelity.retained_record(&stub).unwrap();
+    (loss.clone(), retained.data().unwrap().to_vec())
+}
+
+#[test]
+fn a_result_record_that_does_not_frame_is_given_up_as_unreadable() {
+    let broken = acis_stream(&[Sab::Name("body"), Sab::Ref(-1)]);
+    let payload = part(&plane_face_body(), &broken);
+    let (bodies, losses) = classified(&payload);
+    assert!(bodies.brep.is_none());
+    assert_eq!(bodies.retained.len(), 1);
+    let (loss, retained) = given_up(&payload, bodies, losses);
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert_eq!(retained, broken);
+}
+
+#[test]
+fn a_result_record_whose_acis_prologue_does_not_read_is_given_up_as_undecoded() {
+    let unknown = b"a kernel record of another ACIS save form".to_vec();
+    let payload = part(&plane_face_body(), &unknown);
+    let (bodies, losses) = classified(&payload);
+    assert_eq!(count(&losses, IronCadLossCode::KernelPrologueUnreadable), 0);
+    assert!(bodies.brep.is_none());
+    let (loss, retained) = given_up(&payload, bodies, losses);
+    assert_eq!(loss.code, record_undecoded_kind());
+    assert_eq!(retained, unknown);
 }
 
 #[test]

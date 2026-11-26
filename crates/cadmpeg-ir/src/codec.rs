@@ -474,13 +474,13 @@ impl DecodeResult {
     /// The same walk finds each record the decoder stated past a bound of
     /// §2.5, which §2.8 states none of. Each expression past the bound of an
     /// expression is stated `Source` with no tokens, the form §3.3 gives an
-    /// expression of which nothing is read, with a `decode/record.unreadable`
-    /// Error that names its record. Each other such record is given up as a
-    /// part (§3.3), with a `decode/record.unreadable` Error that names it and
-    /// the records its give-up drops and marks, and the document is digested
+    /// expression of which nothing is read, with a `record.undecoded` Warning
+    /// that names its record. Each other such record is given up as a part
+    /// (§3.3), with a `record.undecoded` Warning that names it and the
+    /// records its give-up drops and marks, and the document is digested
     /// again without it. Each value outside every record past a bound is
-    /// stated as the value it takes when unstated, with a
-    /// `decode/record.unreadable` Error that names its field. The walk admits
+    /// stated as the value it takes when unstated, with a `record.undecoded`
+    /// Warning that names its field. The walk admits
     /// at least [`crate::bounds::DIGEST_WALK_DEPTH`] levels, whatever the policy's
     /// recursion ceiling, so that it digests a document within the bound and
     /// writes the first container past it before it is refused. A refused
@@ -515,16 +515,12 @@ impl DecodeResult {
         }
         if !measured.outside.is_empty() {
             for unstated in crate::bounds::unstate_outside(&mut self.ir, &measured.outside)? {
-                self.report.losses.push(
-                    DecodeLoss::new(
-                        crate::unknown::part::record_unreadable_kind(),
-                        format!(
-                            "the decode wrapper states {} ({})",
-                            unstated.what, unstated.field
-                        ),
-                    )
-                    .with_severity(crate::report::Severity::Error),
-                );
+                self.report
+                    .losses
+                    .push(crate::unknown::part::Cause::Undecoded.note(format!(
+                        "the decode wrapper states {} ({})",
+                        unstated.what, unstated.field
+                    )));
             }
             (digest, measured) = walk(&self.ir)?;
             while self.give_up_records_past_the_bounds(ctx, format, &measured.records)? {
@@ -537,18 +533,13 @@ impl DecodeResult {
                 .keys()
                 .map(|outside| outside.field.as_str())
                 .collect();
-            self.report.losses.push(
-                DecodeLoss::new(
-                    crate::unknown::part::record_unreadable_kind(),
-                    format!(
-                        "the document {} outside every record ({}), which the decode wrapper \
-                         keeps",
-                        bound.describe(),
-                        fields.into_iter().collect::<Vec<_>>().join(", ")
-                    ),
-                )
-                .with_severity(crate::report::Severity::Error),
-            );
+            self.report
+                .losses
+                .push(crate::unknown::part::Cause::Undecoded.note(format!(
+                    "the document {} outside every record ({}), which the decode wrapper keeps",
+                    bound.describe(),
+                    fields.into_iter().collect::<Vec<_>>().join(", ")
+                )));
         }
         self.source_fidelity.content_digest = Some(digest.map_err(CodecError::from)?);
         Ok(())
@@ -558,7 +549,7 @@ impl DecodeResult {
     /// records of `records` that pass that bound, the partial form §3.3 gives
     /// an expression, so that each such record and each record that needs it
     /// stays, and returns whether it restated one. Each restated record
-    /// charges one `decode/record.unreadable` Error that names it.
+    /// charges one `record.undecoded` Warning that names it.
     fn restate_expressions_past_the_bound(
         &mut self,
         records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
@@ -577,19 +568,15 @@ impl DecodeResult {
             .collect();
         let restated = crate::give_up::restate_past_the_bound(&mut self.ir, &seeds);
         for seed in &restated {
-            self.report.losses.push(
-                DecodeLoss::new(
-                    crate::unknown::part::record_unreadable_kind(),
-                    format!(
-                        "record {} of arena {} {}, so the decode wrapper states each such \
-                         expression Source with no tokens",
-                        seed.id,
-                        seed.arena,
-                        crate::bounds::Bound::Expression.describe()
-                    ),
-                )
-                .with_severity(crate::report::Severity::Error),
-            );
+            self.report
+                .losses
+                .push(crate::unknown::part::Cause::Undecoded.note(format!(
+                    "record {} of arena {} {}, so the decode wrapper states each such \
+                     expression Source with no tokens",
+                    seed.id,
+                    seed.arena,
+                    crate::bounds::Bound::Expression.describe()
+                )));
         }
         !restated.is_empty()
     }
@@ -622,22 +609,18 @@ impl DecodeResult {
             format.as_str(),
             bounds.keys().cloned().collect(),
             |seed, released, retained| {
-                DecodeLoss::new(
-                    crate::unknown::part::record_unreadable_kind(),
-                    format!(
-                        "part {} path={:?} length={} record={}: record {} of arena {} {}, so the \
-                         decode wrapper gave it up; {}",
-                        seed.arena.kind(),
-                        released.path,
-                        retained.length,
-                        retained.stub,
-                        seed.id,
-                        seed.arena,
-                        bounds.get(seed).map_or("", String::as_str),
-                        released.tail(&[&seed.id])
-                    ),
-                )
-                .with_severity(crate::report::Severity::Error)
+                crate::unknown::part::Cause::Undecoded.note(format!(
+                    "part {} path={:?} length={} record={}: record {} of arena {} {}, so the \
+                     decode wrapper gave it up; {}",
+                    seed.arena.kind(),
+                    released.path,
+                    retained.length,
+                    retained.stub,
+                    seed.id,
+                    seed.arena,
+                    bounds.get(seed).map_or("", String::as_str),
+                    released.tail(&[&seed.id])
+                ))
             },
         )?;
         let gave_up = !losses.is_empty();

@@ -16,6 +16,7 @@ use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::ExternalDocument;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 
 use crate::container::BREP_DATA;
@@ -32,7 +33,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .collect();
     let mut bodies = Bodies::default();
     if !ctx.container_only() {
-        if let Some(records) = records(ctx, &snapshot, &mut losses)? {
+        if let Some(records) = records(ctx, &snapshot, &mut losses, &mut bodies.given_up)? {
             bodies = classify(ctx, &records, &mut layers, &mut losses)?;
         }
         scene_streams(&snapshot, &mut losses);
@@ -44,23 +45,29 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     ));
     let digest = Sha256Digest::digest(root.window());
     if bodies.brep.is_none() && bodies.retained.is_empty() {
+        let mut source_fidelity = SourceFidelity::new(digest);
+        for part in bodies.given_up {
+            losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+        }
         return Ok(Decoded {
             ir,
             body: DecodeBody {
                 losses,
                 ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), false))
             },
-            source_fidelity: SourceFidelity::new(digest),
+            source_fidelity,
         });
     }
     transfer(ctx, ir, bodies, losses, digest)
 }
 
-/// The decoded ACIS graph and the kernel records retained beside it.
+/// The decoded ACIS graph, the kernel records retained beside it, and the
+/// parts given up.
 #[derive(Default)]
 struct Bodies {
     brep: Option<AsmBrep>,
     retained: Vec<UnknownRecord>,
+    given_up: Vec<GivenUpPart>,
 }
 
 /// Moves the decoded ACIS graph and the retained kernel records into the
@@ -72,7 +79,11 @@ fn transfer(
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
-    let Bodies { brep, retained } = bodies;
+    let Bodies {
+        brep,
+        retained,
+        given_up,
+    } = bodies;
     let AsmTransferRemainder {
         unknowns,
         stats,
@@ -134,6 +145,9 @@ fn transfer(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
+    for part in given_up {
+        losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     ir.state_root_definition(
         ctx,
         ProductDefinitionId::compose(
@@ -152,40 +166,39 @@ fn transfer(
     })
 }
 
-/// Reads the kernel records of `Brep Data`, or charges the reason they are absent.
+/// Reads the kernel records of `Brep Data`, or charges the reason they are
+/// absent: a missing stream, or a stream whose frame or record tree does not
+/// read, which is given up.
 fn records<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Option<Vec<KernelRecord<'a>>>, CodecError> {
     let Some(entry) = snapshot.stream(BREP_DATA) else {
         losses.push(IronCadLossCode::FrameUnreadable.note("`Brep Data` is not a stream"));
         return Ok(None);
     };
-    let payload = match snapshot
-        .open(ctx, entry)
-        .and_then(|stream| frame::payload(ctx, stream))
-    {
-        Ok(payload) => payload,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(error) => {
-            losses.push(
-                IronCadLossCode::FrameUnreadable
-                    .note(format!("`Brep Data` frame could not be read: {error}")),
-            );
-            return Ok(None);
-        }
+    let read = ctx.run_part(|| {
+        let stream = snapshot.open(ctx, entry)?;
+        let payload = frame::payload(ctx, stream)?;
+        tree::read(payload).map_err(CodecError::from)
+    })?;
+    let error = match read {
+        Ok(records) => return Ok(Some(records)),
+        Err(error) => error,
     };
-    match tree::read(payload) {
-        Ok(records) => Ok(Some(records)),
-        Err(error) => {
-            losses.push(IronCadLossCode::RecordTreeUnreadable.note(format!(
-                "`Brep Data` record tree could not be read: {}",
-                CodecError::from(error)
-            )));
-            Ok(None)
-        }
-    }
+    let located = match snapshot.open(ctx, entry) {
+        Ok(stream) => Some(stream),
+        Err(_) => snapshot.open_located(ctx, entry).ok().flatten(),
+    };
+    let bytes = located.as_ref().map_or(&[][..], |stream| stream.window());
+    let part = Part::at("ironcad", "stream", 0, bytes, [ArenaClass::Model])
+        .named(BREP_DATA)
+        .in_stream(cadmpeg_ir::stream_name!("ironcad:").with_suffix(BREP_DATA))
+        .digest_only();
+    given_up.push(ctx.give_up_part(part, Cause::Unreadable, error)?);
+    Ok(None)
 }
 
 /// Adds a dialect layer for every kernel record, decodes each ACIS body, and
@@ -240,10 +253,12 @@ fn classify(
                 let header = match kernel::acis_header(record.bytes) {
                     Ok(header) => header,
                     Err(error) => {
-                        losses.push(
-                            IronCadLossCode::KernelPrologueUnreadable
-                                .note(format!("{carrier}: {error}")),
-                        );
+                        let part = kernel_part(record, ordinal);
+                        bodies.given_up.push(ctx.give_up_part(
+                            part,
+                            Cause::Undecoded,
+                            CodecError::malformed(format_args!("{carrier}: {error}")),
+                        )?);
                         continue;
                     }
                 };
@@ -315,20 +330,25 @@ fn acis_body(
         return retain(ctx, record, ordinal, bodies);
     }
     let stream = format!("{BREP_DATA}/record-{ordinal}");
-    let decoded = acis::decode(ctx, record.bytes, header, &stream).and_then(|decoded| {
+    let mut cause = Cause::Undecoded;
+    let decoded = ctx.run_part(|| {
+        let decoded = acis::decode(ctx, record.bytes, header, &stream).map_err(|failure| {
+            cause = failure.cause;
+            failure.error
+        })?;
         let brep = if qualify {
             acis::qualify(ctx, decoded.brep, &format!("record-{ordinal}"))?
         } else {
             decoded.brep
         };
         Ok((brep, decoded.reduced_records, decoded.unread))
-    });
+    })?;
     let (brep, reduced, unread) = match decoded {
         Ok(decoded) => decoded,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
-            losses.push(IronCadLossCode::BodyUnreadable.note(format!("{carrier}: {error}")));
-            return retain(ctx, record, ordinal, bodies);
+            let part = kernel_part(record, ordinal);
+            bodies.given_up.push(ctx.give_up_part(part, cause, error)?);
+            return Ok(());
         }
     };
     match &mut bodies.brep {
@@ -351,6 +371,20 @@ fn acis_body(
         retain(ctx, record, ordinal, bodies)?;
     }
     Ok(())
+}
+
+/// The kernel record at `ordinal` of `Brep Data`, as a part to give up.
+fn kernel_part<'r>(record: &'r KernelRecord<'_>, ordinal: usize) -> Part<'r> {
+    Part::at(
+        "ironcad",
+        "kernel-record",
+        0,
+        record.bytes.window(),
+        [ArenaClass::Model],
+    )
+    .in_stream(
+        cadmpeg_ir::stream_name!("ironcad:").with_suffix(format!("{BREP_DATA}/record-{ordinal}")),
+    )
 }
 
 /// Retains the kernel bytes of `record` as a native record.

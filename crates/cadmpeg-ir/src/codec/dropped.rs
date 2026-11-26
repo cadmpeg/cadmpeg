@@ -7,9 +7,9 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use super::DecodeResult;
-use crate::unknown::part::{charged, name_released, needs, GivenUpRecord};
+use crate::unknown::part::{charged, name_released, needs, Cause, GivenUpRecord};
 
-/// One `record.unreadable` of the report and the records it drops.
+/// One give-up loss of the report and the records it drops.
 struct Charge {
     /// The loss's index in the report.
     at: usize,
@@ -23,15 +23,15 @@ struct Charge {
 }
 
 impl DecodeResult {
-    /// Names in each `record.unreadable` every record dropped with its
+    /// Names in each give-up loss every record dropped with its
     /// give-up, once for the whole report (§3.3): each record a decoder
     /// dropped only because it needs a given-up record, as its
     /// `record.dropped-with` note states, and each record of the document
     /// that needs a given-up record, which the wrapper drops or marks as the
     /// CADIR reader does. A record reached from two give-ups is named by the
-    /// first in the report. A record with a `record.unreadable` of its own
-    /// keeps it. A `record.dropped-with` note whose needed record no give-up
-    /// reaches becomes a `record.unreadable` of its own record. The notes
+    /// first in the report. A record with a give-up loss of its own keeps
+    /// it. A `record.dropped-with` note whose needed record no give-up
+    /// reaches becomes a `record.undecoded` of its own record. The notes
     /// leave the report.
     ///
     /// # Errors
@@ -103,6 +103,7 @@ impl DecodeResult {
                 self.report.losses.push(
                     GivenUpRecord::new(
                         id,
+                        Cause::Undecoded,
                         format_args!("it needs {needs}, which no give-up of the decode names"),
                     )
                     .loss(),
