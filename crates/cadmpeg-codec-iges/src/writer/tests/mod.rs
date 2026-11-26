@@ -89,6 +89,27 @@ fn synthesize(ir: &CadIr, version: IgesVersion) -> Result<super::Synthesis, supe
     )
 }
 
+/// The file synthesized from `ir` with its losses and native dispositions,
+/// under desktop limits.
+pub(super) fn synthesis_and_dispositions(
+    ir: &CadIr,
+    version: IgesVersion,
+) -> Result<
+    (
+        super::Synthesis,
+        cadmpeg_ir::codec::write::NativeDispositions,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+        },
+        |ctx| super::target::synthesis_and_dispositions(ctx, ir, version),
+    )
+}
+
 mod cages;
 mod closed_edge_range;
 mod covered_uses;

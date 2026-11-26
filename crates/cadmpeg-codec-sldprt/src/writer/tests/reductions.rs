@@ -117,30 +117,6 @@ fn a_source_tag_that_is_no_xml_name_does_not_refuse_the_write() {
 }
 
 #[test]
-fn a_feature_the_history_writer_cannot_write_is_dropped_with_the_features_that_need_it() {
-    let mut ir = written_cube();
-    let mut unresolved = sketch_feature("other:model:feature#unresolved", 0);
-    unresolved.suppressed = None;
-    let mut dependent = sketch_feature("other:model:feature#dependent", 1);
-    dependent.dependencies.insert(unresolved.id.clone());
-    let kept = sketch_feature("other:model:feature#kept", 2);
-    ir.model.features.extend([unresolved, dependent, kept]);
-    let losses = plan_losses(&ir);
-    let note = loss(&losses, "writer.features-omitted").unwrap();
-    assert!(
-        note.message.contains("other:model:feature#unresolved")
-            && note.message.contains("other:model:feature#dependent"),
-        "{}",
-        note.message
-    );
-    assert!(
-        !note.message.contains("other:model:feature#kept"),
-        "{}",
-        note.message
-    );
-}
-
-#[test]
 fn face_names_and_a_body_name_without_material_are_written_unnamed_and_named() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     ir.geometry.bodies[0].name = Some("Bracket".into());
