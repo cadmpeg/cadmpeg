@@ -2,7 +2,8 @@
 //! Scope (part 7): every setup machines a design scope; a record no setup
 //! holds resolves from the one scope of the setups that use it; every
 //! workpiece index, selection anchor, and occurrence path resolves from its
-//! setup's scope.
+//! setup's scope, and each pick with no context resolves in that scope's
+//! anchored state by the design rule (§5.8).
 
 use std::collections::BTreeSet;
 
@@ -12,12 +13,16 @@ use crate::design::dimension::{ParamRef, ParameterRef};
 use crate::design::selection::{Anchor, OccurrencePath, PickContext};
 use crate::report::check::Finding;
 use crate::validate::design::evaluations::{check_position, check_resulting_position};
+use crate::validate::design::index::DesignIndex;
+use crate::validate::design::matching::Matchers;
 use crate::validate::design::records::{MemberKey, PositionKey};
-use crate::validate::design::selections;
+use crate::validate::design::selections::{self, ProcessPick};
 
-pub(super) fn check_scope(
-    records: &ProcessRecords<'_>,
-    walked: &[Walked<'_>],
+pub(super) fn check_scope<'a>(
+    records: &'a ProcessRecords<'_>,
+    walked: &'a [Walked<'_>],
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
     findings: &mut Vec<Finding>,
 ) {
     for setup in &records.ir.process.setups {
@@ -34,15 +39,20 @@ pub(super) fn check_scope(
         }
     }
     let moved = selections::moved_occurrences(records.ir);
+    let mut picks = Vec::new();
     for record in walked {
-        check_record(records, record, &moved, findings);
+        check_record(records, record, &moved, &mut picks, findings);
     }
+    super::as_process(findings, |findings| {
+        selections::check_process_picks(index, matchers, &picks, findings);
+    });
 }
 
-fn check_record(
-    records: &ProcessRecords<'_>,
-    record: &Walked<'_>,
+fn check_record<'a>(
+    records: &'a ProcessRecords<'_>,
+    record: &'a Walked<'_>,
     moved: &BTreeSet<&str>,
+    picks: &mut Vec<ProcessPick<'a>>,
     findings: &mut Vec<Finding>,
 ) {
     let id = record.id;
@@ -147,6 +157,20 @@ fn check_record(
     }
     for path in through {
         check_path(records, scope, path, moved, id, findings);
+    }
+    if let Some(definition) = records.design.definitions.get(scope) {
+        picks.extend(
+            record
+                .found
+                .anchored_picks()
+                .filter(|(_, pick)| pick.context.is_none())
+                .map(|(anchor, pick)| ProcessPick {
+                    record: id,
+                    scope: &definition.id,
+                    anchor,
+                    pick,
+                }),
+        );
     }
     for (at, context) in &record.found.contexts {
         let what = format!("pick context at {at}");

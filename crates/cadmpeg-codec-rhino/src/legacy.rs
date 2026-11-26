@@ -1957,6 +1957,9 @@ fn append_legacy_brep(
         let mut face_loops = Vec::<cadmpeg_ir::ids::LoopId>::new();
         let mut outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut classified = false;
+        // A V1 loop runs counterclockwise in its surface's parameters; on a
+        // reversed face the CADIR loop runs the other way.
+        let face_reversed = face_record.reversed;
         for (loop_index, loop_record) in face_record.loops.into_iter().enumerate() {
             let loop_id = cadmpeg_ir::ids::LoopId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "loop"),
@@ -2048,7 +2051,7 @@ fn append_legacy_brep(
                     owner_loop: loop_id.clone(),
                     edge: group_edges[&root].clone(),
                     radial_next: coedge_id,
-                    sense: if trim.reversed {
+                    sense: if trim.reversed ^ face_reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward
@@ -2058,7 +2061,11 @@ fn append_legacy_brep(
                         isoparametric: None,
                         parameter_range: Some(
                             cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
-                                pcurve_domain,
+                                if face_reversed {
+                                    [pcurve_domain[1], pcurve_domain[0]]
+                                } else {
+                                    pcurve_domain
+                                },
                             )
                             .map_err(CodecError::malformed)?,
                         ),
@@ -2067,6 +2074,9 @@ fn append_legacy_brep(
                     native_ref: None,
                 });
                 global_trim += 1;
+            }
+            if face_reversed {
+                coedge_ids.reverse();
             }
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
@@ -3111,6 +3121,7 @@ mod tests {
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
     use crate::loss::RhinoLossCode;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -4366,7 +4377,7 @@ mod tests {
 
     #[test]
     fn brep_version_projection_emits_the_documented_keys_in_order() {
-        let json = serde_json::to_string(&BrepVersionField(3)).expect("brep version serialize");
+        let json = json::to_string(&BrepVersionField(3)).expect("brep version serialize");
         assert_eq!(json, "{\"wire_version\":3,\"version\":3}");
     }
 }

@@ -69,7 +69,7 @@ fn an_overlong_material_name_is_cut_before_a_surrogate_pair() {
     ir.geometry.bodies[0].color = Some(steel());
     let body = ir.geometry.bodies[0].id.as_str().to_owned();
     let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap();
     let cut = plan
         .report()

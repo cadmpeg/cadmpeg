@@ -3,11 +3,12 @@
 
 use super::super::wire::{clear_transformations, exchange_constructions, re_anchor};
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn positions_and_constructions_rewrite_in_the_wire_form() {
     let from = positions(&[after(2)]).unwrap();
-    let to = serde_json::to_value(after(1)).unwrap();
+    let to = json::to_value(after(1)).unwrap();
     let mut value = json!({"at": {"kind": "pinned", "value": {"kind": "after", "value": {"kind": "feature", "value": feature(2).as_str()}}}, "picks": {"kind": "unread"}});
     let mut anchored = value.clone();
     assert!(retarget(&mut value, &from, &to));

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::decode::DecodeReport;
 
@@ -31,8 +31,8 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
         parameters: &tokens,
     };
     assert_eq!(
-        serde_json::to_value(instance).unwrap(),
-        serde_json::json!({
+        json::to_value(instance).unwrap(),
+        cadmpeg_core::json!({
             "id": "iges:native:macro-instance#D3",
             "source_entity": "iges:entity:directory#3",
             "entity_type": 621,
@@ -62,8 +62,8 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
         b"e".to_vec(),
     );
     assert_eq!(
-        serde_json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
-        serde_json::json!({
+        json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
+        cadmpeg_core::json!({
             "parameter_line_start": 1,
             "parameter_line_end": 2,
             "parameter_bytes": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice()),
@@ -152,7 +152,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     }
 
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = DecodeMode::Strict;
+    strict.strictness.pinned = true;
     match IgesCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &strict)
         .unwrap_err()
@@ -306,11 +306,11 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         parameters: super::NativeParameterRecordSlot<'a>,
     }
     assert_eq!(
-        serde_json::to_value(Record {
+        json::to_value(Record {
             parameters: super::NativeParameterRecordSlot(None)
         })
         .unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "parameter_line_start": null,
             "parameter_line_end": null,
             "parameter_bytes": "",

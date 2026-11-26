@@ -599,8 +599,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
@@ -628,76 +627,6 @@
             "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch#348:1:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:1:0:3": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:1:0:4": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:1:0:5": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:2": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:1:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:1:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:1:0:2": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
         }
       },
       "provenance": {
@@ -840,76 +769,6 @@
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "offset": 407,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile"
-        },
-        "sldprt:model:sketch#348:1:0": {
-          "offset": 1313,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:1:0:3": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:1:0:4": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:1:0:5": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:1:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:1:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:1:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
         }
       }
     },

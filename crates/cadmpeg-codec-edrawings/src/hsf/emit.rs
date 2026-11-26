@@ -3,7 +3,9 @@
 //!
 //! Each library body that an instance references becomes one body, built from
 //! the triangles of all its shells by the mesh B-rep module. An instance
-//! references a list of bodies, its body set. A file with one instance and no
+//! references a list of bodies, its body set. A library body that several body
+//! sets list becomes one body for each set, so that each body has one owning
+//! definition. A file with one instance and no
 //! sub-assembly is a plain part: one part definition holds the bodies, and the
 //! instance matrix moves the points. Any other file is an assembly: one part
 //! definition per distinct body set, one group definition for the assembly and
@@ -12,7 +14,7 @@
 //! when it has one, with `structure.subassembly-placement-assumed`, and the
 //! identity otherwise.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -332,15 +334,28 @@ pub(super) fn emit(
     let single = instances.len() == 1 && scene.nodes.len() == 1;
     let sets = body_sets(scene, &instances);
 
-    // The library bodies in order of first use.
+    // The library bodies in order of first use, each built for the first set
+    // that lists it; every later set that lists it gets a copy of its own.
     let mut order: Vec<usize> = Vec::new();
     let mut position: BTreeMap<usize, usize> = BTreeMap::new();
-    for set in &sets.sets {
+    let mut builds: Vec<(usize, String)> = Vec::new();
+    let mut build_of: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    for (set_index, set) in sets.sets.iter().enumerate() {
         for &body in set {
             position.entry(body).or_insert_with(|| {
                 order.push(body);
+                builds.push((body, format!("body{}", order.len() - 1)));
+                build_of.insert((set_index, body), builds.len() - 1);
                 order.len() - 1
             });
+        }
+    }
+    for (set_index, set) in sets.sets.iter().enumerate() {
+        for &body in set {
+            if let (Some(&k), None) = (position.get(&body), build_of.get(&(set_index, body))) {
+                builds.push((body, format!("body{k}-{set_index}")));
+                build_of.insert((set_index, body), builds.len() - 1);
+            }
         }
     }
     let first_instance_of_set = |set: usize| {
@@ -365,8 +380,8 @@ pub(super) fn emit(
     let world = single_node
         .and_then(|node| scene.nodes.get(node))
         .and_then(|n| n.matrix);
-    for (k, &body_index) in order.iter().enumerate() {
-        let Some(library) = scene.bodies.get(body_index) else {
+    for (body_index, scope) in &builds {
+        let Some(library) = scene.bodies.get(*body_index) else {
             built.push(None);
             continue;
         };
@@ -394,12 +409,11 @@ pub(super) fn emit(
                 + u64_from_index(mesh.triangles.len()) * TRIANGLE_BYTES,
             RETAIN_MESH,
         )?;
-        let scope = format!("body{k}");
         let colour = library
             .colour
             .map(|[r, g, b]| Color::from_rgba8(r, g, b, u8::MAX));
         let input = MeshInput {
-            scope: &scope,
+            scope,
             name: Some(&name),
             color: colour,
             positions: &mesh.positions,
@@ -517,11 +531,13 @@ pub(super) fn emit(
     if let Some(message) = dropped_message(&totals) {
         losses.push(EdrawingsLossCode::GeometryDegenerateTriangles.note(message));
     }
-    let built_libraries: Vec<usize> = order
+    let built_libraries: Vec<usize> = builds
         .iter()
         .zip(&built)
         .filter(|(_, body)| body.is_some())
-        .map(|(&library, _)| library)
+        .map(|(&(library, _), _)| library)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect();
     appearance_losses(scene, &built_libraries, losses);
 
@@ -530,8 +546,8 @@ pub(super) fn emit(
     for (set_index, set) in sets.sets.iter().enumerate() {
         let bodies: Vec<BodyId> = set
             .iter()
-            .filter_map(|body| position.get(body))
-            .filter_map(|&k| built.get(k).and_then(Option::as_ref))
+            .filter_map(|&body| build_of.get(&(set_index, body)))
+            .filter_map(|&build| built.get(build).and_then(Option::as_ref))
             .map(|body| body.id.clone())
             .collect();
         if bodies.is_empty() {

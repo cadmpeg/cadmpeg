@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Part Studio history projection.
+//! Part Studio history and assembly projection.
 
 use crate::archive;
+use cadmpeg_core::serde_erase::json;
+mod assembly;
 pub(super) mod expression;
 mod features;
+mod intersection;
 mod planes;
 pub(super) mod query;
 mod regions;
@@ -12,13 +15,17 @@ mod sweep;
 mod thin;
 pub(super) mod topology;
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
 use archive::{Bundle, SCHEMA};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::codec::Decoded;
+use cadmpeg_ir::design::projection::fields::{
+    FeatureField, ModelFeatureField, ModelParameterField, ParameterField,
+};
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
@@ -83,7 +90,7 @@ pub(super) fn id(kind: &str, native: &str) -> String {
 
 fn push<T: serde::de::DeserializeOwned>(arena: &mut Vec<T>, row: Value) -> Mapping<()> {
     arena.push(
-        serde_json::from_value(row)
+        json::from_value(row)
             .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?,
     );
     Ok(())
@@ -119,6 +126,12 @@ fn mapping_loss_code(
         OnshapeLossCode::SweepNotSupported
     } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
         planes::loss_code(feature, reason)
+    } else if valid_suppression
+        && feature.get("featureType").and_then(Value::as_str) == Some("shell")
+        && features::shell_record_valid(feature)
+        && reason.starts_with(features::SHELL_REFUSAL)
+    {
+        OnshapeLossCode::ShellNotSupported
     } else {
         OnshapeLossCode::HistoryNotSupported
     }
@@ -178,11 +191,21 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
             .product_definitions
             .iter()
             .filter(|d| Some(&d.id) != owner_id.as_ref())
-            .any(|d| !placed.contains(d.id.as_str()))
+            .any(|d| {
+                // A part body is an embedded leaf definition, active, with no own
+                // occurrences, instance bodies or representations; anything else is a
+                // real insertion and keeps its occurrence.
+                !placed.contains(d.id.as_str())
+                    || !matches!(d.storage, cadmpeg_ir::products::Storage::Embedded)
+                    || !d.occurrences.is_empty()
+                    || !d.instance_bodies.is_empty()
+                    || !d.representations.is_empty()
+                    || d.active == Some(false)
+            })
     {
         return;
     }
-    let Ok(text) = serde_json::to_string(&model.ir) else {
+    let Ok(text) = json::to_string(&model.ir) else {
         return;
     };
     let named = |id: &str| text.matches(&format!("\"{id}\"")).count();
@@ -223,10 +246,8 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
         })
         .collect();
     for body in &mut model.ir.geometry.bodies {
-        if body.name.as_ref().is_none_or(|name| name.trim().is_empty()) {
-            if let Some(name) = names.get(body.id.as_str()) {
-                body.name = Some(name.clone());
-            }
+        if let Some(name) = names.get(body.id.as_str()) {
+            body.name = Some(name.clone());
         }
     }
 }
@@ -412,19 +433,46 @@ pub(super) fn read(
     report.notes.append(&mut bundle.losses);
     let manifest = bundle.json("manifest.json")?;
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
-    if elements.len() != 1
-        || elements
+    let mut model = if elements.len() == 1
+        && elements
             .first()
             .and_then(|e| e.get("type"))
             .and_then(Value::as_str)
-            != Some("PARTSTUDIO")
+            == Some("PARTSTUDIO")
     {
-        return Err(Error::Decode("Onshape bundles with assemblies or multiple elements are not supported yet; fetch one Part Studio".into()));
-    }
-    let element = elements
-        .first()
-        .ok_or_else(|| Error::Decode("Onshape bundle has no Part Studio".into()))?;
-    let eid = text(element, "id").map_err(Error::Decode)?;
+        studio(
+            ctx,
+            root,
+            step_decoder,
+            report,
+            &bundle,
+            &mid,
+            text(
+                elements
+                    .first()
+                    .ok_or_else(|| Error::Decode("element missing".into()))?,
+                "id",
+            )
+            .map_err(Error::Decode)?,
+        )?
+    } else {
+        assembly::read(ctx, root, step_decoder, report, &bundle, &mid, manifest)?
+    };
+    report
+        .notes
+        .extend(bundle.retain_assets(ctx, &mut model.ir)?);
+    Ok(model)
+}
+
+fn studio(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    step_decoder: crate::StepDecoder,
+    report: &mut Report,
+    bundle: &Bundle<'_>,
+    mid: &str,
+    eid: &str,
+) -> Result<Model, Error> {
     if !eid
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
@@ -459,7 +507,7 @@ pub(super) fn read(
             (&[][..], RollbackBar::default())
         }
     };
-    let inputs = topology::Inputs::new(&bundle, &prefix, &mid, features, report);
+    let inputs = topology::Inputs::new(bundle, &prefix, mid, features, report);
     let step_path = format!("{prefix}/export.step");
     let step = if bundle.contains(&step_path) {
         let source = bundle.view(&step_path)?;
@@ -515,9 +563,6 @@ pub(super) fn read(
         part_studio_bodies(&mut model);
     }
     if ctx.depth() == cadmpeg_core::decode::DecodeDepth::Geometry {
-        report
-            .notes
-            .extend(bundle.retain_assets(ctx, &mut model.ir)?);
         return Ok(model);
     }
     let creators: Vec<usize> = features
@@ -572,6 +617,7 @@ pub(super) fn read(
     }
     let mut seen = std::collections::BTreeSet::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
+    let mut assumed_sides = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
         let design_length = model.ir.design.features.len();
         let note_start = report.notes.len();
@@ -651,7 +697,7 @@ pub(super) fn read(
                 &unresolved_variables,
             )
             .and_then(|definition| {
-                serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
+                json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;
@@ -676,6 +722,7 @@ pub(super) fn read(
                     )?;
                     push(&mut model.ir.design.features, design)?;
                     if let Some(assumed) = assumed {
+                        assumed_sides.insert(feature_id.clone());
                         report.push_coded(name, OnshapeLossCode::ThinNotSupported, assumed);
                     }
                     report.push_coded(name, OnshapeLossCode::ThinModelNotSupported,
@@ -835,11 +882,7 @@ pub(super) fn read(
     report
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
-    annotate(&mut model, features)?;
-    report
-        .notes
-        .extend(bundle.retain_assets(ctx, &mut model.ir)?);
-    model.ir.finalize();
+    annotate(&mut model, features, &assumed_sides)?;
     Ok(model)
 }
 
@@ -921,7 +964,13 @@ impl Model {
     }
 }
 
-fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
+/// States the exactness of the decoded records. A thin design feature in
+/// `assumed_sides` takes its wall side from an unresolved convention.
+fn annotate(
+    model: &mut Model,
+    features: &[Value],
+    assumed_sides: &std::collections::BTreeSet<String>,
+) -> Result<(), Error> {
     use cadmpeg_ir::annotations::AnnotationBuilder;
     use cadmpeg_ir::Exactness;
     let mut annotations =
@@ -974,12 +1023,12 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
             continue;
         }
         let sketch_id = id("sketch", native);
-        if model
+        if let Some(sketch) = model
             .ir
             .model
             .sketches
             .iter()
-            .any(|s| s.id.as_str() == sketch_id)
+            .find(|s| s.id.as_str() == sketch_id)
         {
             let queries = features::queries(source, "sketchPlane").unwrap_or(&[]);
             let inferred = queries.iter().all(|q| {
@@ -995,7 +1044,7 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
             });
             annotations
                 .field_exactness(
-                    &sketch_id,
+                    &sketch.id,
                     "placement",
                     if inferred {
                         Exactness::Inferred
@@ -1006,13 +1055,66 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         if source.get("suppressed").is_none() && source.get("parentSuppressed").is_none() {
+            let feature = cadmpeg_ir::ids::Identity::new(id("feature", native))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             annotations
-                .field_exactness(id("feature", native), "suppressed", Exactness::Inferred)
+                .field_exactness(feature, "suppressed", Exactness::Inferred)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
+    for feature in &model.ir.design.features {
+        if assumed_sides.contains(feature.id.as_str()) {
+            annotations
+                .field_exactness(&feature.id, thin::SIDE, Exactness::Inferred)
+                .map_err(cadmpeg_core::CodecError::from)?;
+        }
+    }
+    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
     model.source_fidelity.annotations = annotations.build();
     Ok(())
+}
+
+/// The model fields the decoder reads to build each design field. A design
+/// feature's definition is read from the source feature, and takes the
+/// `definition` mark [`annotate`] states on every feature; the decoder states
+/// no design parameter.
+const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
+    cadmpeg_ir::design::projection::Restatement {
+        feature: feature_inputs,
+        parameter: parameter_inputs,
+    };
+
+#[deny(clippy::wildcard_enum_match_arm)]
+fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
+    match field {
+        FeatureField::Name => &[ModelFeatureField::Name],
+        FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
+        FeatureField::Definition
+        | FeatureField::Placement
+        | FeatureField::Component
+        | FeatureField::DrivenBy
+        | FeatureField::NativeRef => &[],
+    }
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Scope
+        | ParameterField::Owner
+        | ParameterField::Name
+        | ParameterField::Kind
+        | ParameterField::Unit
+        | ParameterField::Definition
+        | ParameterField::Value
+        | ParameterField::Display
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings
+        | ParameterField::NativeRef => &[],
+    }
 }
 
 #[cfg(test)]

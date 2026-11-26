@@ -10,8 +10,9 @@ use cadmpeg_ir::reference_walk::visit_edges;
 use std::collections::VecDeque;
 
 use anyhow::{bail, Result};
+use cadmpeg_core::json;
 use clap::Args;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::document::{CadirDocument, RecordRef, RecordSelection};
 use super::item::{emit_values, ArenaTarget};
@@ -256,7 +257,7 @@ mod tests {
     use super::super::document::{CadirDocument, RecordRef, RecordSelection};
     use super::super::item::ArenaTarget;
     use super::{walk, ADJ_EDGES_BUILT, DEFAULT_MAX_PATHS};
-    use serde_json::json;
+    use cadmpeg_core::json;
     use serde_json::Value;
 
     fn doc(v: &Value) -> CadirDocument {

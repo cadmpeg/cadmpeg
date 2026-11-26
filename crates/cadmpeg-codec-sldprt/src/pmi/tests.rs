@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -692,8 +693,8 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     reordered[start..=inspection].rotate_left(1 + "isBasic".len() + 1);
     let other = parse_payload(&reordered, &mut losses);
     assert!(losses.is_empty(), "{losses:?}");
-    let mut left = serde_json::to_value(&original[0]).unwrap();
-    let mut right = serde_json::to_value(&other[0]).unwrap();
+    let mut left = json::to_value(&original[0]).unwrap();
+    let mut right = json::to_value(&other[0]).unwrap();
     for value in [&mut left, &mut right] {
         for field in [
             "value_offset",
@@ -1421,10 +1422,7 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
     let kept = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap();
     assert_eq!(patched, payload);
     assert_eq!(kept.len(), 1, "{kept:?}");
-    assert_eq!(
-        kept[0].code,
-        crate::loss::SldprtLossCode::WriterParameterEditUnwritten.kind()
-    );
+    assert!(crate::test_support::is_edit_dropped(&kept[0].code));
     assert!(
         kept[0].message.contains("beyond exact float range"),
         "{}",
@@ -1489,7 +1487,10 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
-    if let Err(error) = crate::native::SldprtNative::load(namespace) {
+    if let Err(error) = crate::native::SldprtNative::load(
+        namespace,
+        cadmpeg_ir::units::Tolerances::default().linear,
+    ) {
         assert!(!matches!(
             cadmpeg_core::CodecError::from(error),
             cadmpeg_core::CodecError::ResourceLimit(_)
@@ -1687,7 +1688,7 @@ fn duplicate_member_identity_replays_and_names_a_semantic_edit_over_the_stored_s
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &SldprtCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())

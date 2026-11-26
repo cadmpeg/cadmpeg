@@ -12,10 +12,10 @@ use super::resolve::{
 };
 use super::scan::{scan_block, RouteScan, ScanEnvironment};
 use super::{
-    atom_opt, call_uses_deserializer, insert_symbol, insert_wire, is_atom, local_denied_types,
-    path_tail, receiver_before, source_index, token_mentions_binding, tokenize_block_text,
-    HandImplSource, HandReaderClass, InputRoute, Node, Receiver, SourceIndex, SymbolKind,
-    TypeShape,
+    atom_opt, call_uses_deserializer, direct_binding, insert_symbol, insert_wire, is_atom,
+    local_denied_types, path_tail, receiver_before, source_index, split_node_arguments,
+    token_mentions_binding, tokenize_block_text, HandImplSource, HandReaderClass, InputRoute, Node,
+    Receiver, SourceIndex, SymbolKind, TypeShape,
 };
 use crate::HAND_IMPLS;
 
@@ -137,6 +137,59 @@ pub(super) fn receiver_is_value(
         },
     };
     matches!(resolved, ResolvedPath::External(path) if external_is_value(&path))
+}
+
+pub(super) fn receiver_is_erased_reader(
+    route: &HandImplSource,
+    receiver: &Receiver,
+    index: &SourceIndex,
+) -> bool {
+    let Receiver::Path(path) = receiver else {
+        return false;
+    };
+    let ResolvedPath::Local(symbol) = resolve_receiver_path(route, path, index) else {
+        return false;
+    };
+    index
+        .erased_readers
+        .iter()
+        .any(|key| key.path == symbol.path && key.scope == symbol.scope && key.name == symbol.name)
+}
+
+fn erased_deserialize_receiver_at(
+    nodes: &[Node],
+    position: usize,
+    bindings: &BTreeSet<String>,
+    route: &HandImplSource,
+    index: &SourceIndex,
+) -> Option<Receiver> {
+    if !is_atom(nodes, position, "deserialize_with") {
+        return None;
+    }
+    let path = path_tail(nodes, position + 1)?;
+    if path.as_slice() != ["cadmpeg_core", "serde_erase", "deserialize_with"] {
+        return None;
+    }
+    let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(position + 1) else {
+        return None;
+    };
+    let mut parts = split_node_arguments(arguments);
+    if parts.last().is_some_and(Vec::is_empty) {
+        parts.pop();
+    }
+    if parts.len() != 2 || !direct_binding(&parts[0], bindings) {
+        return None;
+    }
+    let reader = &parts[1];
+    if reader.len() < 4
+        || !is_atom(reader, reader.len() - 3, ":")
+        || !is_atom(reader, reader.len() - 2, ":")
+        || !is_atom(reader, reader.len() - 1, "deserialize_erased")
+    {
+        return None;
+    }
+    let receiver = receiver_before(reader, reader.len() - 3)?;
+    receiver_is_erased_reader(route, &receiver, index).then_some(receiver)
 }
 
 fn deserialize_receiver_at(
@@ -400,7 +453,9 @@ fn collect(
                 ));
             }
         }
-        if let Some(receiver) = deserialize_receiver_at(nodes, position, bindings) {
+        if let Some(receiver) = deserialize_receiver_at(nodes, position, bindings)
+            .or_else(|| erased_deserialize_receiver_at(nodes, position, bindings, route, index))
+        {
             if blocked {
                 return Err(format!(
                     "{} {} hides an input route inside unsupported macro syntax: {}",

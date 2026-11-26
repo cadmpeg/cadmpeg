@@ -236,7 +236,13 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("iges"),
+                    cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("representation displacement is charged");
     assert!(displacement.message.contains("iges:5.3-compressed-ascii"));
     assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
@@ -476,7 +482,7 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(
         native.arenas()["entities"][0].fields().unwrap()["reserved"],
-        serde_json::json!(["202020204c454654", "2020205249474854"])
+        cadmpeg_core::json!(["202020204c454654", "2020205249474854"])
     );
 }
 

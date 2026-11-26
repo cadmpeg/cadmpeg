@@ -11,13 +11,13 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, ReadOptions};
 use cadmpeg_measure::test_support::box_pass::{agreements, Agreement};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut text = String::new();
-    std::io::stdin().read_to_string(&mut text)?;
-    let ir = CadIr::from_json(&text)?;
+    let mut bytes = Vec::new();
+    std::io::stdin().read_to_end(&mut bytes)?;
+    let ir = CadIr::read(&bytes, &ReadOptions::default())?.document;
     let bodies = agreements(&ir)?;
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for body in &bodies {
@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     println!(
         "{}",
-        serde_json::json!({
+        cadmpeg_core::json!({
             "bodies": bodies.len(),
             "counts": counts,
             "disagree": disagree,

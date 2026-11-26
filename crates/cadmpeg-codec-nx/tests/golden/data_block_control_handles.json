@@ -303,8 +303,7 @@
             "value": {
               "code": "geometry.not-transferred",
               "kind": "geometry_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
@@ -344,23 +343,6 @@
             "entity": "derived",
             "fields": {},
             "kind": "entity"
-          },
-          "nx:om-entry-0:feature#equations-72": {
-            "entity": "derived",
-            "fields": {
-              "source_content": "derived"
-            },
-            "kind": "entity"
-          },
-          "nx:om-entry-0:parameter#99": {
-            "fields": {
-              "native_ref": "derived",
-              "ordinal": "derived",
-              "owner": "derived",
-              "properties": "derived",
-              "value": "derived"
-            },
-            "kind": "fields"
           }
         },
         "provenance": {
@@ -383,16 +365,6 @@
             "offset": 169,
             "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_REFERENCE"
-          },
-          "nx:om-entry-0:feature#equations-72": {
-            "offset": 175,
-            "stream": "nx:container",
-            "tag": "hostglobalvariables"
-          },
-          "nx:om-entry-0:parameter#99": {
-            "offset": 175,
-            "stream": "nx:container",
-            "tag": "Number"
           },
           "nx:om-section-0:block#0": {
             "offset": 122,

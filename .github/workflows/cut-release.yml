@@ -60,7 +60,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # The CI wait on the bump commit is the full gate, whose macOS job alone
+    # can take 120 minutes, and a cancelled run is re-run once.
+    timeout-minutes: 360
     steps:
       - name: Mint GitHub App token
         id: app-token

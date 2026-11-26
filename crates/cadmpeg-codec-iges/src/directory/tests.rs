@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{Hierarchy, Subordinate, UseFlag};
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -221,8 +222,8 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         assert!(!parsed.is_physically_dependent());
         assert!(!parsed.is_logically_dependent());
         assert_eq!(
-            serde_json::to_value(parsed).unwrap(),
-            serde_json::json!({
+            json::to_value(parsed).unwrap(),
+            cadmpeg_core::json!({
                 "blank_status": 99,
                 "subordinate_status": 99,
                 "use_flag": 99,
@@ -239,8 +240,8 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         Some(UseFlag::Construction)
     );
     assert_eq!(
-        serde_json::to_value(early).unwrap(),
-        serde_json::to_value(later).unwrap()
+        json::to_value(early).unwrap(),
+        json::to_value(later).unwrap()
     );
 }
 

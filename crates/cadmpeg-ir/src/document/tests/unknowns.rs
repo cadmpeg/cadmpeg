@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{CadIr, NativeUnknownRecord};
+use cadmpeg_core::serde_erase::json;
 
 fn record(key: &str, links: &[&str]) -> NativeUnknownRecord {
     NativeUnknownRecord {
@@ -40,7 +41,7 @@ fn reserved_unknown_arena_accepts_owned_and_borrowed_records() {
     let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
     assert_eq!(
         value["native"]["test"]["unknowns"],
-        serde_json::json!([
+        cadmpeg_core::json!([
             {"id": "test:native:unknown#a", "links": ["test:model:body#0"]},
             {"id": "test:native:unknown#b", "links": []}
         ])
@@ -89,34 +90,34 @@ fn complete_document_keeps_raw_native_fields_but_product_reader_checks_links() {
             &[record("a", &["test:model:body#unresolved"])],
         )
         .unwrap();
-    let valid = serde_json::to_value(&document).unwrap();
+    let valid = json::to_value(&document).unwrap();
     let parsed = CadIr::from_json(&valid.to_string()).unwrap();
     assert_eq!(
         parsed.native_unknowns("test").unwrap(),
         document.native_unknowns("test").unwrap()
     );
     for links in [
-        serde_json::json!(null),
-        serde_json::json!(true),
-        serde_json::json!(1),
-        serde_json::json!("test:model:body#unresolved"),
-        serde_json::json!({}),
-        serde_json::json!([null]),
-        serde_json::json!([false]),
-        serde_json::json!([3]),
-        serde_json::json!([{}]),
-        serde_json::json!([[]]),
-        serde_json::json!([""]),
-        serde_json::json!(["test:body#missing-scope"]),
+        cadmpeg_core::json!(null),
+        cadmpeg_core::json!(true),
+        cadmpeg_core::json!(1),
+        cadmpeg_core::json!("test:model:body#unresolved"),
+        cadmpeg_core::json!({}),
+        cadmpeg_core::json!([null]),
+        cadmpeg_core::json!([false]),
+        cadmpeg_core::json!([3]),
+        cadmpeg_core::json!([{}]),
+        cadmpeg_core::json!([[]]),
+        cadmpeg_core::json!([""]),
+        cadmpeg_core::json!(["test:body#missing-scope"]),
     ] {
         let mut wire = valid.clone();
         wire["native"]["test"]["unknowns"][0]["links"] = links;
         // Generic native fields remain raw evidence through document parsing.
         for parsed in [
             CadIr::from_json(&wire.to_string()).unwrap(),
-            serde_json::from_value::<CadIr>(wire.clone()).unwrap(),
+            json::from_value::<CadIr>(wire.clone()).unwrap(),
         ] {
-            assert_eq!(serde_json::to_value(&parsed).unwrap(), wire);
+            assert_eq!(json::to_value(&parsed).unwrap(), wire);
             assert!(parsed.native_unknowns("test").is_err());
             assert!(parsed.native_unknowns_iter("test").next().unwrap().is_err());
         }

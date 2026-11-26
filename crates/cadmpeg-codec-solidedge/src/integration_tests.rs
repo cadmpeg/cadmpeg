@@ -181,6 +181,33 @@ fn primary_partition_projects_an_exact_sphere_in_millimetres() {
 }
 
 #[test]
+fn the_document_root_lists_the_bodies_of_every_partition() {
+    let bytes = test_support::with_partitions(&[
+        test_support::sphere_partition(),
+        test_support::two_solid_regions_partition(),
+    ]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one product definition");
+    };
+    assert!(root.is_root());
+    let bodies: std::collections::BTreeSet<_> =
+        ir.geometry.bodies.iter().map(|body| &body.id).collect();
+    assert_eq!(root.bodies.len(), bodies.len());
+    assert_eq!(
+        root.bodies
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        bodies
+    );
+    assert_geometry_valid(ir);
+}
+
+#[test]
 fn one_body_with_two_solid_regions_stays_one_body() {
     let bytes = test_support::with_partitions(&[test_support::two_solid_regions_partition()]);
     let result = SolidEdgeCodec
@@ -526,6 +553,33 @@ fn edge_naming_a_fin_outside_any_loop_reads_through_its_radial_fin() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::SolidEdgeLossCode::LoopUnreadable.note("").code));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn face_with_no_loop_on_a_plane_is_stated_partial() {
+    let mut partition = test_support::disc_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("loop")
+        .unwrap();
+    partition[range].copy_from_slice(&1u16.to_be_bytes());
+    let result = decode_partition(partition);
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 1);
+    let face = &ir.geometry.faces[0];
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::TopologyFaceBoundaryUnstated
+            .note("")
+            .code
+        && loss.message.contains(face.id.as_str())));
     assert_geometry_valid(ir);
 }
 

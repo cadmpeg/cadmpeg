@@ -2709,6 +2709,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     use super::super::geometry_work::GeometryWorkBudget;
@@ -3148,7 +3149,7 @@ mod tests {
             ));
         }
         ir.finalize();
-        let before = serde_json::to_value(&ir).expect("model serialization");
+        let before = json::to_value(&ir).expect("model serialization");
         crate::test_support::with_decode_context(|ctx| {
             let support_budget = cadmpeg_core::decode::WorkBudget::new(100);
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
@@ -3179,10 +3180,7 @@ mod tests {
             assert!(validation.endpoint_witnesses.is_empty());
             assert!(ctx.resource_refusal().is_none());
         });
-        assert_eq!(
-            serde_json::to_value(&ir).expect("model serialization"),
-            before
-        );
+        assert_eq!(json::to_value(&ir).expect("model serialization"), before);
     }
 
     #[test]

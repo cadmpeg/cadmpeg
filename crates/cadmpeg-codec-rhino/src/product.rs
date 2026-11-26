@@ -336,6 +336,7 @@ mod tests {
     use crate::test_support::test_dump::{
         object_record_with_payload, scan_with_objects, INSTANCE_REFERENCE_CLASS,
     };
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
 
@@ -438,8 +439,8 @@ mod tests {
                     .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
                     .expect("complete occurrence decode"),
             );
-            let ir: CadIr = serde_json::from_slice(
-                &serde_json::to_vec(decoded.ir()).expect("occurrence CADIR serialization"),
+            let ir: CadIr = json::from_slice(
+                &json::to_vec(decoded.ir()).expect("occurrence CADIR serialization"),
             )
             .expect("occurrence CADIR admission");
             let namespace = ir
@@ -448,11 +449,11 @@ mod tests {
                 .expect("Rhino native namespace");
             let occurrences = &namespace.arenas()["product_occurrences"];
             assert_eq!(occurrences.len(), 1, "unit={unit:?}");
-            let occurrence = serde_json::to_value(&occurrences[0]).expect("occurrence JSON");
+            let occurrence = json::to_value(&occurrences[0]).expect("occurrence JSON");
             assert_eq!(occurrence["transform_units"], expected_units);
             assert_eq!(
                 occurrence["transform"],
-                serde_json::json!([
+                cadmpeg_core::json!([
                     [2.0, 1.0, 0.0, expected_translation[0]],
                     [0.0, 1.0, 0.0, expected_translation[1]],
                     [0.0, 0.0, 1.0, expected_translation[2]],
@@ -461,7 +462,7 @@ mod tests {
             );
             assert_eq!(
                 occurrence["links"],
-                serde_json::json!(["rhino:object:record#000000"])
+                cadmpeg_core::json!(["rhino:object:record#000000"])
             );
             assert_eq!(
                 decoded
@@ -529,16 +530,15 @@ mod tests {
                 .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
                 .expect("later valid records recover"),
         );
-        let ir: CadIr = serde_json::from_slice(
-            &serde_json::to_vec(decoded.ir()).expect("product CADIR serialization"),
-        )
-        .expect("product CADIR admission");
+        let ir: CadIr =
+            json::from_slice(&json::to_vec(decoded.ir()).expect("product CADIR serialization"))
+                .expect("product CADIR admission");
         assert_eq!(ir.geometry.points.len(), 1);
         let records = &ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"];
         assert_eq!(records.len(), 1);
         assert_eq!(
             records[0].field("source_offset"),
-            Some(serde_json::json!(scan.objects[3].range().start))
+            Some(cadmpeg_core::json!(scan.objects[3].range().start))
         );
         let losses = decoded
             .report()

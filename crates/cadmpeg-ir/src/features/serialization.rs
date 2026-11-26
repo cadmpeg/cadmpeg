@@ -18,27 +18,27 @@ use serde::{Serialize, Serializer};
 #[derive(Serialize)]
 pub(crate) struct FeatureWriteWire<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    product_definition: &'a Option<ProductDefinitionId>,
-    id: &'a FeatureId,
-    ordinal: u64,
+    pub(crate) product_definition: &'a Option<ProductDefinitionId>,
+    pub(crate) id: &'a FeatureId,
+    pub(crate) ordinal: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    name: &'a Option<String>,
+    pub(crate) name: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    suppressed: &'a Option<bool>,
+    pub(crate) suppressed: &'a Option<bool>,
     /// Regeneration predecessor of a feature that has no tree parent.
     #[serde(skip_serializing_if = "Option::is_none")]
-    regeneration_parent: Option<&'a FeatureId>,
-    dependencies: &'a DistinctMembers<FeatureId>,
-    source_properties: &'a BTreeMap<NonBlankString, String>,
+    pub(crate) regeneration_parent: Option<&'a FeatureId>,
+    pub(crate) dependencies: &'a DistinctMembers<FeatureId>,
+    pub(crate) source_properties: &'a BTreeMap<NonBlankString, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source_tag: &'a Option<String>,
+    pub(crate) source_tag: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source_text: &'a Option<String>,
-    source_content: &'a FeatureContent,
-    outputs: &'a Vec<BodyId>,
-    definition: &'a FeatureDefinition,
+    pub(crate) source_text: &'a Option<String>,
+    pub(crate) source_content: &'a FeatureContent,
+    pub(crate) outputs: &'a Vec<BodyId>,
+    pub(crate) definition: &'a FeatureDefinition,
     #[serde(skip_serializing_if = "Option::is_none")]
-    native_ref: &'a Option<String>,
+    pub(crate) native_ref: &'a Option<String>,
 }
 
 impl<'a> FeatureWriteWire<'a> {
@@ -66,12 +66,23 @@ impl<'a> FeatureWriteWire<'a> {
     }
 }
 
+impl Feature {
+    fn serialize_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        FeatureWriteWire::standalone(self).serialize(serializer)
+    }
+}
+
 impl Serialize for Feature {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        FeatureWriteWire::standalone(self).serialize(serializer)
+        cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+            self.serialize_erased(adapter)
+        })
     }
 }
 

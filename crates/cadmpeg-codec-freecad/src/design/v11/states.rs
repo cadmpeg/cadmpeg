@@ -617,7 +617,8 @@ type Records = Vec<(String, Value)>;
 /// The records of `topology` by arena, each as its id and its wire value
 /// without the `id` field.
 fn arenas(topology: &Topology) -> Result<Vec<(&'static str, Records)>, CodecError> {
-    let Value::Object(mut wire) = serde_json::to_value(topology).map_err(CodecError::malformed)?
+    let Value::Object(mut wire) =
+        cadmpeg_core::serde_erase::to_json_value(topology).map_err(CodecError::malformed)?
     else {
         return Err(CodecError::malformed("topology is not a JSON object"));
     };
@@ -674,7 +675,7 @@ fn content(
         })
         .collect::<Vec<_>>();
     constructions.sort_unstable();
-    serde_json::json!([compared(&mapped(value, map)), constructions]).to_string()
+    cadmpeg_core::json!([compared(&mapped(value, map)), constructions]).to_string()
 }
 
 /// `value` with every string that `map` maps replaced by its image.
@@ -1034,7 +1035,7 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         for id in base_rows(arena).into_iter().flatten().map(|(id, _)| id) {
             if !state.contains_key(id) {
                 removed.push(
-                    serde_json::from_value::<RecordRef>(serde_json::json!({
+                    cadmpeg_core::serde_erase::from_json_value::<RecordRef>(&cadmpeg_core::json!({
                         "kind": kind,
                         "value": id,
                     }))
@@ -1044,7 +1045,8 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         }
     }
     Ok(Snapshot {
-        records: serde_json::from_value(Value::Object(delta)).map_err(CodecError::malformed)?,
+        records: cadmpeg_core::serde_erase::from_json_value(&Value::Object(delta))
+            .map_err(CodecError::malformed)?,
         removed,
         renamed,
         resolved,

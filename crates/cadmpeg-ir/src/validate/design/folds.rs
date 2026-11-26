@@ -27,7 +27,7 @@ use super::Held;
 pub(super) fn check<'a>(
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
-    held: &'a [Held<'a>],
+    held: &[Held<'a>],
     findings: &mut Vec<Finding>,
 ) {
     let linear = index.records.ir.tolerances.linear.get();

@@ -12,20 +12,8 @@ B-rep side entries. GUI state, thumbnails, persistent element maps, and string-h
 independently optional. Each archive entry is one part. A Geometry property needs the side entry
 that holds its payload.
 
-The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
-retained document write regenerates the ZIP container deterministically, writes `Document.xml`
-first, preserves the physical order of the retained side entries, preserves every unedited XML
-record and every named side entry, and serializes checked
-leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
-declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
-without a typed serializer is refused rather than flattening or discarding children.
-Retained-document transcoding across bands is explicitly refused: the writer regenerates no
-`Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
-by name rather than emitted. A schema-2 object-input edit that requires recomputation is refused because its `Feature`
-declaration has no persisted pending-recompute flag. Document and cosmetic label edits remain
-available. A preserving write of a source whose retained document graph is
-unusable is refused with the source's own dialect and the catalog, never silently rewritten to
-schema 4.
+Outside the XLink properties, a non-empty `file` or `File` value attribute names one side entry,
+and an empty one names none.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
 recursive typed property values, and named side entries. New object declarations carry
@@ -419,6 +407,8 @@ CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that
 uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
 face incidence and native orientation remain in the native shape record, with
 `fcstd/topology.non-boundary-incidence-retained`.
+A face with no boundary wire on a plane, cylinder, or cone states no boundary; its neutral face is
+partial (CADIR §5.6), with `fcstd/topology.face-boundary-unstated`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`

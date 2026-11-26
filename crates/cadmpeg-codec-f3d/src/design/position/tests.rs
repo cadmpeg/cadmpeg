@@ -1,6 +1,7 @@
 use super::*;
 use crate::design::decode::scopes::position::decode;
 use crate::test_support::position::{fixture, OCCURRENCE_KEY};
+use cadmpeg_core::serde_erase::json;
 
 fn scope(matrices: &[Option<[[f64; 4]; 4]>]) -> DesignParameterScope {
     let (bytes, mut scope, types) = fixture(matrices);
@@ -12,7 +13,7 @@ fn scope(matrices: &[Option<[[f64; 4]; 4]>]) -> DesignParameterScope {
 }
 
 fn feature(scope: &DesignParameterScope) -> Feature {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "synthetic:test:feature#position", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id, "definition": project(scope, &mut Vec::new()).unwrap(), "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .unwrap()

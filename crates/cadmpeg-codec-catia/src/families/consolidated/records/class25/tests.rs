@@ -3,6 +3,7 @@
 
 use super::{parse, parse_a, Class25Accuracy, Class25SamplePairs, Class25SourceRelation};
 use crate::wire::bytes::AllocationReferenceEncoding;
+use cadmpeg_core::serde_erase::json;
 
 fn payload(selector: u16, lead: u8, n: usize, decreasing: bool) -> Vec<u8> {
     let mut bytes = vec![0x82, 0x06, 0x8b, 0x0a, 0xc1, 0x01, lead];
@@ -111,24 +112,24 @@ fn class25_samples_keep_pairing_and_do_not_require_endpoint_samples() {
             let Class25SourceRelation::Sampled { samples, .. } = map.source else {
                 panic!("sampled map")
             };
-            let wire = serde_json::to_value(&samples).expect("sample arrays");
+            let wire = json::to_value(&samples).expect("sample arrays");
             assert_eq!(wire["target"].as_array().expect("target array").len(), n);
             assert_eq!(wire["target"][0], 1.0);
             assert_eq!(wire["target"][n - 1], 9.0);
             assert_eq!(wire["source"][0], if decreasing { 4.0 } else { 1.0 });
             assert_eq!(
-                serde_json::from_value::<Class25SamplePairs>(wire).expect("load paired arrays"),
+                json::from_value::<Class25SamplePairs>(wire).expect("load paired arrays"),
                 *samples
             );
         }
     }
     assert!(parse(&payload(0x1587, 0x0a, 13, false)).is_none());
     for wire in [
-        serde_json::json!({"target":[1.0,2.0],"source":[1.0]}),
-        serde_json::json!({"target":[2.0,1.0],"source":[1.0,2.0]}),
-        serde_json::json!({"target":[1.0,2.0,3.0],"source":[1.0,3.0,2.0]}),
+        cadmpeg_core::json!({"target":[1.0,2.0],"source":[1.0]}),
+        cadmpeg_core::json!({"target":[2.0,1.0],"source":[1.0,2.0]}),
+        cadmpeg_core::json!({"target":[1.0,2.0,3.0],"source":[1.0,3.0,2.0]}),
     ] {
-        assert!(serde_json::from_value::<Class25SamplePairs>(wire).is_err());
+        assert!(json::from_value::<Class25SamplePairs>(wire).is_err());
     }
 }
 
@@ -142,7 +143,7 @@ fn a_family_class25_admits_seventeen_sample_pairs() {
         panic!("sampled map");
     };
     assert_eq!(
-        serde_json::to_value(samples).expect("sample pairs")["target"]
+        json::to_value(samples).expect("sample pairs")["target"]
             .as_array()
             .expect("target array")
             .len(),
@@ -209,8 +210,8 @@ fn class25_named_sampled_witness_retains_two_arrays() {
         panic!("sampled map")
     };
     assert_eq!(
-        serde_json::to_value(samples).expect("paired sample arrays"),
-        serde_json::json!({"target":[0.0,18.232_007_915_496_25], "source":[0.0,18.232_007_915_496_25]})
+        json::to_value(samples).expect("paired sample arrays"),
+        cadmpeg_core::json!({"target":[0.0,18.232_007_915_496_25], "source":[0.0,18.232_007_915_496_25]})
     );
 }
 

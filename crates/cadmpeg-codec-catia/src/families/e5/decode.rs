@@ -1026,10 +1026,14 @@ fn attach_e5_free_vertices(
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let shell_id = ShellId::mint("catia:e5:shell#unbound-points".to_owned())
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "e5_0d_03",
             0,
             "unbound_point_owner",
@@ -2272,18 +2276,23 @@ fn emit_e5_faces_loops_coedges(
             annotations.derived(&face_id, field)?;
         }
         admission.charge()?;
+        let loops = match loop_ids.split_first() {
+            // The source states the outer boundary first.
+            Some((outer, inner)) => {
+                cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
+            }
+            None => crate::assemble::unspecified_loops_on(
+                ir,
+                &surface_for_ref[&face.surface].0,
+                Vec::new(),
+            ),
+        };
         ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
             sense: face_plan.sense,
-            loops: match loop_ids.split_first() {
-                // The source states the outer boundary first.
-                Some((outer, inner)) => {
-                    cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
-                }
-                None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            },
+            loops,
             name: None,
             color: None,
             tolerance: None,

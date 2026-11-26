@@ -3,6 +3,7 @@
 use super::layout;
 use crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation;
 use crate::test_support::write_marked_reference;
+use cadmpeg_core::serde_erase::json;
 
 fn frame() -> (Vec<u8>, Vec<u32>) {
     let mut bytes = vec![0; layout::LEN];
@@ -61,16 +62,18 @@ fn corner_flange_decodes_both_class_pairs_and_round_trips() {
         assert_eq!(edges[1].group_record_index.get(), 62);
         assert_eq!(edges[1].operand_record_index(), 65);
         assert_eq!(edges[1].aggregate_operand_record_index, 108);
-        let wire = serde_json::to_value(&operation).unwrap();
+        let wire = json::to_value(&operation).unwrap();
         let decoded: crate::records::feature::sheet_metal::DesignEdgeFlangeOperation =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+            json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(decoded).unwrap(), wire);
         let mut invalid = wire;
-        invalid["reference_side_code"] = serde_json::json!(3);
-        assert!(serde_json::from_value::<
-            crate::records::feature::sheet_metal::DesignEdgeFlangeOperation,
-        >(invalid)
-        .is_err());
+        invalid["reference_side_code"] = cadmpeg_core::json!(3);
+        assert!(
+            json::from_value::<crate::records::feature::sheet_metal::DesignEdgeFlangeOperation>(
+                invalid
+            )
+            .is_err()
+        );
     }
 }
 

@@ -447,12 +447,12 @@ fn cache_as<T: DeserializeOwned>(
         (ParameterValue::Text(text), false) => {
             let forms = [
                 Json::from(text.as_str()),
-                serde_json::json!({ "kind": text }),
-                serde_json::json!({ "kind": "native", "value": text }),
+                cadmpeg_core::json!({ "kind": text }),
+                cadmpeg_core::json!({ "kind": "native", "value": text }),
             ];
             let mut last = None;
             for form in forms {
-                match serde_json::from_value::<T>(form) {
+                match cadmpeg_core::serde_erase::from_json_value::<T>(&form) {
                     Ok(value) => return Ok(value),
                     Err(error) => last = Some(error),
                 }
@@ -467,5 +467,5 @@ fn cache_as<T: DeserializeOwned>(
             ));
         }
     };
-    serde_json::from_value(json).map_err(|error| refusal(error.to_string()))
+    cadmpeg_core::serde_erase::from_json_value(&json).map_err(|error| refusal(error.to_string()))
 }

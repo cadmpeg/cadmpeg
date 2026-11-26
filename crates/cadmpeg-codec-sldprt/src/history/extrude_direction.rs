@@ -1087,7 +1087,7 @@ struct Cap {
     normal: Vector3,
     sense: f64,
     vertices: Vec<Point3>,
-    triangles: Vec<[Point3; 3]>,
+    triangles: Vec<CapTriangle>,
     polygons: Option<Vec<Vec<Point3>>>,
     transform: Transform,
 }
@@ -1344,9 +1344,9 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
                     if [a, b, c].iter().all(|p| {
                         p.vector_from(cap.origin).dot(cap.normal).abs() <= EPS_CAP_MESH_DISTANCE
                     }) {
-                        cap.triangles.push([a, b, c].map(|p| {
+                        cap.triangles.push(CapTriangle::new([a, b, c].map(|p| {
                             p.translated(cap.normal, -p.vector_from(cap.origin).dot(cap.normal))
-                        }));
+                        })));
                     }
                 }
             }
@@ -1392,7 +1392,7 @@ impl Cap {
             return self
                 .triangles
                 .iter()
-                .any(|triangle| work.charge() && triangle_contains(p, *triangle));
+                .any(|triangle| work.charge() && triangle.contains(p));
         }
         let Some(polygons) = &self.polygons else {
             return false;
@@ -1441,23 +1441,55 @@ impl Cap {
     }
 }
 
-fn triangle_contains(point: Point3, [origin, first, second]: [Point3; 3]) -> bool {
-    let first_edge = first.vector_from(origin);
-    let second_edge = second.vector_from(origin);
-    let offset = point.vector_from(origin);
-    let first_squared = first_edge.dot(first_edge);
-    let second_squared = second_edge.dot(second_edge);
-    let mixed = first_edge.dot(second_edge);
-    let determinant = first_squared * second_squared - mixed * mixed;
-    if determinant.abs() < MIN_TRIANGLE_DETERMINANT {
-        return false;
+/// A cap triangle, with what its containment test reads of the triangle
+/// alone: a cap tests each triangle against many points.
+struct CapTriangle {
+    origin: Point3,
+    first_edge: Vector3,
+    second_edge: Vector3,
+    first_squared: f64,
+    second_squared: f64,
+    mixed: f64,
+    determinant: f64,
+    slack: f64,
+}
+
+impl CapTriangle {
+    fn new([origin, first, second]: [Point3; 3]) -> Self {
+        let first_edge = first.vector_from(origin);
+        let second_edge = second.vector_from(origin);
+        let first_squared = first_edge.dot(first_edge);
+        let second_squared = second_edge.dot(second_edge);
+        let mixed = first_edge.dot(second_edge);
+        Self {
+            origin,
+            first_edge,
+            second_edge,
+            first_squared,
+            second_squared,
+            mixed,
+            determinant: first_squared * second_squared - mixed * mixed,
+            slack: EPS_BOUNDARY_DISTANCE / first_edge.norm().max(second_edge.norm()).max(1.0),
+        }
     }
-    let first_weight =
-        (offset.dot(first_edge) * second_squared - offset.dot(second_edge) * mixed) / determinant;
-    let second_weight =
-        (offset.dot(second_edge) * first_squared - offset.dot(first_edge) * mixed) / determinant;
-    let slack = EPS_BOUNDARY_DISTANCE / first_edge.norm().max(second_edge.norm()).max(1.0);
-    first_weight >= -slack && second_weight >= -slack && first_weight + second_weight <= 1.0 + slack
+
+    /// Whether `point`, in the triangle's plane, lies in the triangle or
+    /// within its slack of an edge. A degenerate triangle holds no point.
+    fn contains(&self, point: Point3) -> bool {
+        if self.determinant.abs() < MIN_TRIANGLE_DETERMINANT {
+            return false;
+        }
+        let offset = point.vector_from(self.origin);
+        let along_first = offset.dot(self.first_edge);
+        let along_second = offset.dot(self.second_edge);
+        let first_weight =
+            (along_first * self.second_squared - along_second * self.mixed) / self.determinant;
+        let second_weight =
+            (along_second * self.first_squared - along_first * self.mixed) / self.determinant;
+        first_weight >= -self.slack
+            && second_weight >= -self.slack
+            && first_weight + second_weight <= 1.0 + self.slack
+    }
 }
 
 #[cfg(test)]

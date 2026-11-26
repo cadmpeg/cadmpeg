@@ -2832,6 +2832,9 @@ null successor, a successor on another face, or a successor chain that reaches
 an absent row. Such a side is outside every closed loop of the face and does
 not bound it.
 
+A face with no loop on a plane, cylinder, or cone is stated partial
+(`creo/topology.face-boundary-unstated`).
+
 The two half-edge sides of one curve have opposite endpoint order. Their start
 vertices therefore define the curve's oriented endpoint pair when either
 side's closed loop supplies an end vertex. If both sides supply end vertices,

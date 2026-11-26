@@ -226,15 +226,8 @@ pub(crate) fn inspect(
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched)
             .with(kernel)
-            .map_err(|rejected| match rejected {
-                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
-                    CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
-                }
-                cadmpeg_core::dialect::DialectLayerError::MissingInstance(layer) => {
-                    CodecError::malformed(format_args!(
-                        "SAT extra dialect layer in the primary format needs an instance: {layer:?}"
-                    ))
-                }
+            .map_err(|cadmpeg_core::dialect::DuplicateDialectLayer(layer)| {
+                CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
             })?,
         cadmpeg_ir::ContainerKind::Stream,
         vec![ContainerEntry {

@@ -3704,6 +3704,9 @@ fn finish_decode(
             &mut report.losses,
             |ir, losses| crate::design_v11::project(ctx, ir, losses),
         )?;
+        let mut restated = cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
+        crate::design_v11::restate_exactness(&ir, &mut restated)?;
+        annotations = restated.build();
     }
     native.store_owned(ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("catia")))?;
     decode_result(
@@ -3795,6 +3798,7 @@ fn decode_result(
     )?;
     body.losses
         .extend(crate::design_v11::state_unproduced(&mut ir));
+    crate::assemble::state_loopless_faces(&mut ir, &mut body.losses);
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {

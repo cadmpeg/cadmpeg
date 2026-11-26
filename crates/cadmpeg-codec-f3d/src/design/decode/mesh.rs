@@ -2641,6 +2641,7 @@ pub(crate) fn decode_mesh_bodies(
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_core::serde_erase::json;
 
     mod body_forms;
     mod collection;
@@ -3619,10 +3620,10 @@ mod tests {
             panic!("one mesh feature");
         };
         assert_eq!(feature.bodies()[0].placement.record().record_index(), 104);
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(
             wire["collection_body_reference_offsets"],
-            serde_json::json!([66])
+            cadmpeg_core::json!([66])
         );
         assert_eq!(wire["texture_table_reference_offset"], 31);
         assert_eq!(wire["collection_base_record"]["byte_offset"], 42);
@@ -3631,8 +3632,7 @@ mod tests {
         assert_eq!(wire["bodies"][0]["body_words"]["body_word"], 0);
         assert_eq!(wire["body_count_offsets"][0], 21);
         assert_eq!(wire["body_count_offsets"][1], 62);
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
     }
 
@@ -3715,10 +3715,9 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["bodies"][0]["body_name"], "Axle");
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(
             decoded.bodies()[0]
                 .placement
@@ -3756,15 +3755,14 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["scopes"][0]["scope_flagged_word"], 37);
         assert_eq!(wire["scopes"][0]["scope_body_count_offset"], start + 25);
         assert_eq!(
             wire["scope_body_reference_offsets"],
-            serde_json::json!([start + 29])
+            cadmpeg_core::json!([start + 29])
         );
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
         let losses: Vec<_> = super::mesh_scope_prefix_losses(&features).collect();
         assert_eq!(losses.len(), 1);
@@ -3798,7 +3796,7 @@ mod tests {
         );
         assert_eq!(body.guid.opaque_run(), Some(&MESH_GUID_BYTES_21_TO_31));
         let start = u64_from_index(start);
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         let body_wire = &wire["bodies"][0];
         assert_eq!(body_wire["body_words"]["flagged_word"], 0x1122_3344_u32);
         assert_eq!(body_wire["body_words"]["body_word"], 0x5566_7788_u32);
@@ -3806,7 +3804,7 @@ mod tests {
         assert_eq!(super::mesh_word_losses(&features).count(), 2);
         assert_eq!(
             body_wire["transform_offsets"],
-            serde_json::json!([start + 46, start + 175])
+            cadmpeg_core::json!([start + 46, start + 175])
         );
         assert_eq!(body_wire["scope_reference_offset"], start + 512);
         assert_eq!(body_wire["wrapper_reference_offset"], start + 523);
@@ -3814,14 +3812,13 @@ mod tests {
         assert_eq!(body_wire["guid_reference_offset"], start + 545);
         assert_eq!(body_wire["scene_node_reference_offset"], start + 557);
         let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire.clone()).unwrap();
+            json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, *feature);
         let mut plain_offsets = wire;
         plain_offsets["bodies"][0]["transform_offsets"] =
-            serde_json::json!([start + 42, start + 171]);
+            cadmpeg_core::json!([start + 42, start + 171]);
         assert!(
-            serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets)
-                .is_err()
+            json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets).is_err()
         );
         assert_eq!(super::mesh_guid_byte_losses(&features).count(), 1);
     }
@@ -3902,13 +3899,12 @@ mod tests {
             feature.bodies()[0].guid.opaque_run(),
             Some(&MESH_GUID_BYTES_21_TO_31)
         );
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(
             wire["bodies"][0]["guid_opaque_bytes"],
             "112233445566778899aabb"
         );
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
 
         let losses: Vec<_> = super::mesh_guid_byte_losses(&features).collect();
@@ -3938,7 +3934,7 @@ mod tests {
         )
         .expect("mesh graph");
         assert_eq!(features[0].bodies()[0].guid.opaque_run(), None);
-        let wire = serde_json::to_value(&features[0]).unwrap();
+        let wire = json::to_value(&features[0]).unwrap();
         assert!(wire["bodies"][0].get("guid_opaque_bytes").is_none());
         assert_eq!(super::mesh_guid_byte_losses(&features).count(), 0);
     }
@@ -4223,10 +4219,9 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["bodies"][0]["wrapper_opaque_tail"], "090807");
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
         let losses: Vec<_> = super::mesh_wrapper_tail_losses(&features).collect();
         assert_eq!(losses.len(), 1);
