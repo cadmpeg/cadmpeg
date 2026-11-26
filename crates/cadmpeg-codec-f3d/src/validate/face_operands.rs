@@ -586,6 +586,8 @@ pub(super) fn validate_face_operands<'a>(
                 operand.preceding_candidate_faces == expected.preceding_candidate_faces
                     && operand.changed_candidate_faces == expected.changed_candidate_faces
                     && operand.historical_support_contexts == expected.historical_support_contexts
+                    && operand.first_reference_support_contexts
+                        == expected.first_reference_support_contexts
             }))
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
