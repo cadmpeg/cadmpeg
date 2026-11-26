@@ -4258,9 +4258,7 @@
           },
           "nx:feature-history:feature#0000000000-0000000014": {
             "entity": "derived",
-            "fields": {
-              "source_content": "derived"
-            },
+            "fields": {},
             "kind": "entity"
           },
           "nx:feature-history:sketch#0000000000-0000000000": {
