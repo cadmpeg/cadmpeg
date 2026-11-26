@@ -61,6 +61,7 @@ mod move_object;
 mod operation_sources;
 mod operations_and_holes;
 mod part_attributes;
+mod recognition_floor;
 mod rollback;
 mod shell;
 mod sketches;

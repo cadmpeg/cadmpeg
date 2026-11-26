@@ -539,6 +539,30 @@ fn an_empty_partition_takes_the_bodies_of_its_imported_features() {
 }
 
 #[test]
+fn an_empty_partition_records_the_tolerance_of_its_imported_bodies_for_the_writer() {
+    let mut source = sldprt_with_partition_and_deltas(&[], &[]);
+    source.extend(local_bodies_block(
+        0,
+        &[crate::test_support::parasolid::triangle_body_with_resolution(1.0e-6)],
+    ));
+
+    let decoded = decode(source);
+
+    assert_eq!(
+        Some(decoded.ir().tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-6)
+    );
+    let digest = crate::writer::linear_tolerance_local_sha256(decoded.ir()).unwrap();
+    assert_eq!(
+        crate::codec_digests::baseline(
+            &decoded.source_fidelity().codec_digests,
+            crate::writer::LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE,
+        ),
+        Some(digest.as_str())
+    );
+}
+
+#[test]
 fn an_imported_body_whose_faces_store_a_tolerance_decodes() {
     let mut body = triangle_body();
     let sentinel = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
