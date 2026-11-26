@@ -157,6 +157,9 @@ pub(crate) fn bind_generated_body_selections(
                 live_seed_binding(&reverse_context, feature, scope, seed_state, &slots)
             })
             else {
+                if let Some(scope) = scope {
+                    bind_by_writer(&reverse_context, feature, scope, (&slots, &native), (&mut results, losses));
+                }
                 continue;
             };
             let resolved = BodySelection::Resolved { bodies, native };
@@ -205,12 +208,13 @@ pub(crate) fn bind_generated_body_selections(
                 }
             }
         } else {
-            if slots.iter().any(|slot| live.contains(slot)) {
-                continue;
-            }
             let Some(scope) = scope else {
                 continue;
             };
+            if slots.iter().any(|slot| live.contains(slot)) {
+                bind_by_writer(&reverse_context, feature, scope, (&slots, &native), (&mut results, losses));
+                continue;
+            }
             let history = scope_history(scope, scope_histories, inputs.histories);
             let stream = crate::ids::native_stream(&scope.id);
             let strict = matches!(
@@ -453,6 +457,70 @@ fn bind_combine_producers(
     if !assumed.is_empty() {
         losses.push(F3dLossCode::FeatureCombineOperandWriterAssumed.note(format!(
             "Combine {} names slots {assumed:?} by the features that insert them: the state that last updates each slot before the Combine has no unique earlier scope.",
+            feature.id
+        )));
+    }
+    for dependency in dependencies {
+        feature.dependencies.insert(dependency);
+    }
+    for (producer, state_id, inserted) in producers {
+        feature.dependencies.insert(producer.clone());
+        if !results
+            .iter()
+            .any(|(known, state, _)| *known == producer && *state == state_id)
+        {
+            results.push((producer, state_id, inserted));
+        }
+    }
+}
+
+/// Bind a historical body-pattern seed or `Move` body selection of `slots`
+/// that names a live slot by the rule of [`combine_side_binding`]. A
+/// selection that the rule leaves unbound keeps its input-state bodies.
+fn bind_by_writer(
+    context: &ReverseContext<'_>,
+    feature: &mut cadmpeg_ir::features::Feature,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    (slots, native): (&[i64], &str),
+    (results, losses): (&mut Vec<Producer>, &mut Vec<LossNote>),
+) {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let side = CombineSide {
+        slots: slots.to_vec(),
+        natives: vec![native.to_owned()],
+        single_native: true,
+    };
+    let Ok((selection, producers, dependencies, assumed)) =
+        combine_side_binding(context, feature, Some(scope), &side)
+    else {
+        return;
+    };
+    let mut edited = false;
+    feature.evaluation.edit(|definition, _| match definition {
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
+            if let [PatternSeed::Bodies(seed @ BodySelection::Historical { .. })] =
+                seeds.as_mut_slice()
+            {
+                *seed = selection;
+                edited = true;
+            }
+        }
+        FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
+            if matches!(bodies, BodySelection::Historical { .. }) {
+                *bodies = selection;
+                edited = true;
+            }
+        }
+        _ => {}
+    });
+    if !edited {
+        return;
+    }
+    if !assumed.is_empty() {
+        losses.push(F3dLossCode::FeatureBodyOperandWriterAssumed.note(format!(
+            "Feature {} names slots {assumed:?} by the features that insert them: the state that last updates each slot before the feature has no unique earlier scope.",
             feature.id
         )));
     }
