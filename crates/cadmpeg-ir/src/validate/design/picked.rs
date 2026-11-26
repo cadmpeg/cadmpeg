@@ -35,7 +35,6 @@ use crate::topology::BodyKind;
 use super::frames::{self, values_frame};
 use super::index::DesignIndex;
 use super::matching::{Matcher, Matchers, StateTopology};
-use super::records::MemberKey;
 use super::selections::{anchored_states, Site};
 use super::Holder;
 use apart::{straight_length, surface_distance};
@@ -308,29 +307,32 @@ impl<'a> Probe<'_, 'a> {
             .collect()
     }
 
-    /// The value of a point construction in a state's configuration: the
-    /// active configuration's is `resolved`.
+    /// The value of a point construction in a state's configuration, carried
+    /// into the definition's frame by the placement resolved in that
+    /// configuration (§5.2): the active configuration's is `resolved`.
     fn point_in(
         &self,
         construction: &'a Construction<kinds::Point>,
         configuration: Option<&str>,
     ) -> Option<Point3> {
+        let feature = self.feature.id.as_str();
         let active = self
             .index
-            .owner_definition(self.feature.id.as_str())
+            .owner_definition(feature)
             .and_then(|owner| self.index.records.scopes.get(owner.as_str()))
             .and_then(|scope| scope.active_configuration.as_ref())
             .map(ConfigurationId::as_str);
+        let configuration = configuration.filter(|configuration| Some(*configuration) != active);
         let value = match configuration {
             None => construction.resolved.as_ref(),
-            Some(configuration) if Some(configuration) == active => construction.resolved.as_ref(),
             Some(configuration) => construction
                 .resolved_in
                 .iter()
                 .find(|(id, _)| id.as_str() == configuration)
                 .map(|(_, value)| value),
-        };
-        value.map(|point| point.get())
+        }?;
+        let frame = values_frame(&self.index.records, feature, configuration)?;
+        frames::point(frame, value.get())
     }
 
     fn operation(&mut self, operation: &'a FeatureOperation) {
@@ -494,10 +496,7 @@ impl<'a> Probe<'_, 'a> {
             if planar(topology, face) != Some(true) {
                 continue;
             }
-            let Some(point) = self
-                .point_in(center, state.configuration)
-                .and_then(|point| self.in_definition(point))
-            else {
+            let Some(point) = self.point_in(center, state.configuration) else {
                 continue;
             };
             let tolerance = self.face_tolerance(topology, face);
@@ -528,10 +527,7 @@ impl<'a> Probe<'_, 'a> {
             let Some(face) = Self::one_face(&state, topology, bend) else {
                 continue;
             };
-            let Some(point) = self
-                .point_in(at, state.configuration)
-                .and_then(|point| self.in_definition(point))
-            else {
+            let Some(point) = self.point_in(at, state.configuration) else {
                 continue;
             };
             let tolerance = self.face_tolerance(topology, face);
@@ -546,13 +542,6 @@ impl<'a> Probe<'_, 'a> {
                 "a StiffeningRib's at does not lie on bend face {face}"
             ));
         }
-    }
-
-    /// A point the feature states, carried into its definition's frame
-    /// (§5.2).
-    fn in_definition(&self, point: Point3) -> Option<Point3> {
-        let member = MemberKey::Feature(self.feature.id.as_str());
-        frames::point(values_frame(&self.index.records, member)?, point)
     }
 
     fn face_tolerance(&self, topology: &StateTopology<'_>, face: &str) -> f64 {

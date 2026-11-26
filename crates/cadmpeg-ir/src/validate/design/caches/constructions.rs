@@ -73,21 +73,22 @@ struct Reader<'a, 'v> {
     chain: Vec<&'a DesignConfiguration>,
     /// The configuration whose value is read; `None` is `resolved`.
     configuration: Option<&'a str>,
-    /// The map from the construction's frame into its definition's frame,
-    /// where it is known and rigid.
+    /// The map from the construction's frame into its definition's frame in
+    /// the configuration read, where it is known and rigid.
     frame: Option<Placement>,
     current: &'v OnceCell<StateTopology<'a>>,
 }
 
 /// Checks `construction`'s `resolved` in the scope's active configuration and
-/// each `resolved_in` value in its configuration. `frame` maps the frame the
-/// construction states its values in into its definition's frame; `current`
-/// holds the current geometry's topology once a pick reads it.
+/// each `resolved_in` value in its configuration. `frame` gives the map from
+/// the frame the construction states its values in into its definition's
+/// frame, in a configuration (`None` is `resolved`); `current` holds the
+/// current geometry's topology once a pick reads it.
 pub(in crate::validate::design) fn check_construction<'a>(
     index: &DesignRecords<'a>,
     construction: ConstructionView<'a>,
     scope: Option<&str>,
-    frame: Option<Placement>,
+    frame: &dyn Fn(Option<&str>) -> Option<Placement>,
     current: &OnceCell<StateTopology<'a>>,
     at: &str,
     findings: &mut Vec<Finding>,
@@ -124,7 +125,7 @@ pub(in crate::validate::design) fn check_construction<'a>(
             index,
             chain: index.configuration_chain(configuration.or(active)),
             configuration,
-            frame,
+            frame: frame(configuration.filter(|configuration| Some(*configuration) != active)),
             current,
         };
         for input in inputs {

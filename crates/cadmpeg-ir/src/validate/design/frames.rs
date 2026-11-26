@@ -2,11 +2,14 @@
 //! The frames that design values and geometry are read in (§5.2, §5.6).
 //!
 //! A body's geometry lies in its definition's frame under the body's
-//! `Body.transform`. A feature states its values in the frame of the ordered
-//! containers above it: each container's `placement` maps its frame into its
-//! parent's, and the topmost into the definition's. A rule that compares a
-//! stated value with the geometry reads both in one frame, through rigid
-//! maps only.
+//! `Body.transform`. A feature states its values in the frame of the nearest
+//! ordered container that holds it. That container's `placement`, resolved
+//! in the value's configuration, maps the frame into the definition's; the
+//! frame is the definition's where the `placement` is `None`, and where an
+//! occurrence places the definition and none of its bodies states a
+//! transform (the `App::Link` case of §5.2). A rule that compares a stated
+//! value with the geometry reads both in the definition's frame, through
+//! rigid maps only.
 
 use crate::design::construction::FrameValue;
 use crate::design::container::Container;
@@ -29,9 +32,10 @@ fn body_placement(body: &Body) -> Option<Placement> {
 }
 
 /// The placement the bodies that hold an entity give it: the one every body
-/// gives, where each is rigid and all agree. Every face, edge, and vertex
-/// lies in a shell of a region of a body (§10), so an entity that no body
-/// holds has no placement.
+/// gives, where each is rigid and all agree. `Face.shell` is required
+/// (§5.6), and a wire edge or a free vertex belongs to exactly one shell
+/// (§10). An entity that no body holds, such as an edge that no coedge uses
+/// and no shell lists, has no placement.
 pub(super) fn held_by<'b>(bodies: impl IntoIterator<Item = &'b Body>) -> Option<Placement> {
     let mut bodies = bodies.into_iter();
     let first = body_placement(bodies.next()?)?;
@@ -40,64 +44,83 @@ pub(super) fn held_by<'b>(bodies: impl IntoIterator<Item = &'b Body>) -> Option<
         .then_some(first)
 }
 
-/// The map from the frame `member` states its values in into its
-/// definition's frame: the `placement` of each ordered container above it,
-/// innermost first (§5.2). `None` where a placement is unresolved or not
-/// rigid, and where a placement is stated and an occurrence places the
-/// member's scope or the definition the feature builds, so that the
-/// placement can be that occurrence's transform.
-pub(super) fn values_frame<'a>(
-    records: &DesignRecords<'a>,
-    member: MemberKey<'a>,
+/// The map from the frame that `feature` states its values in into its
+/// definition's frame (§5.2). `configuration` names the configuration whose
+/// value is read; `None` is `resolved`. `None` where the placement holds no
+/// value for the configuration, or its value is not rigid.
+pub(super) fn values_frame(
+    records: &DesignRecords<'_>,
+    feature: &str,
+    configuration: Option<&str>,
 ) -> Option<Placement> {
-    let mut frame: Placement = None;
-    let mut above = records.parents.get(&member).copied();
+    let (&feature, record) = records.features.get_key_value(feature)?;
+    let mut above = records.parents.get(&MemberKey::Feature(feature)).copied();
+    let mut placement = None;
     for _ in 0..=records.containers.len() {
         let Some(container) = above else {
-            if frame.is_some() {
-                let scope = records.scope_of(member)?;
-                let component = match member {
-                    MemberKey::Feature(feature) => records
-                        .features
-                        .get(feature)
-                        .and_then(|feature| feature.component.as_ref())
-                        .map(crate::ids::ProductDefinitionId::as_str),
-                    MemberKey::Container(_) => None,
-                };
-                let placed = |definition: &str| {
-                    records
-                        .ir
-                        .model
-                        .occurrences
-                        .iter()
-                        .any(|occurrence| occurrence.prototype.as_str() == definition)
-                };
-                if placed(scope) || component.is_some_and(placed) {
-                    return None;
-                }
-            }
-            return Some(frame);
+            return Some(None);
         };
-        if let Some(Container::Ordered {
-            placement: Some(placement),
-            ..
-        }) = records.containers.get(container).copied()
-        {
-            let outer = frame_transform(placement.resolved.as_ref()?)?;
-            if !outer.is_proper_rigid() {
-                return None;
+        match records.containers.get(container).copied()? {
+            Container::Ordered {
+                placement: held, ..
+            } => {
+                placement = Some(held.as_deref());
+                break;
             }
-            frame = Some(match frame {
-                None => outer,
-                Some(inner) => outer.compose(inner).ok()?,
-            });
+            Container::Unordered { .. } => {
+                above = records
+                    .parents
+                    .get(&MemberKey::Container(container))
+                    .copied();
+            }
         }
-        above = records
-            .parents
-            .get(&MemberKey::Container(container))
-            .copied();
     }
-    None
+    let Some(placement) = placement? else {
+        return Some(None);
+    };
+    let definition = match &record.component {
+        Some(component) => component.as_str(),
+        None => records.scope_of(MemberKey::Feature(feature))?,
+    };
+    if linked(records, definition) {
+        return Some(None);
+    }
+    let value = match configuration {
+        None => placement.resolved.as_ref(),
+        Some(configuration) => placement
+            .resolved_in
+            .iter()
+            .find(|(id, _)| id.as_str() == configuration)
+            .map(|(_, value)| value),
+    }?;
+    let transform = frame_transform(value)?;
+    transform.is_proper_rigid().then_some(Some(transform))
+}
+
+/// Whether an occurrence places `definition` and none of its bodies states
+/// a transform: the container's object is a definition of its own, and its
+/// `placement` is the occurrence's transform (§5.2).
+fn linked(records: &DesignRecords<'_>, definition: &str) -> bool {
+    let model = &records.ir.model;
+    let placed = model
+        .occurrences
+        .iter()
+        .any(|occurrence| occurrence.prototype.as_str() == definition);
+    let Some(record) = model
+        .product_definitions
+        .iter()
+        .find(|record| record.id.as_str() == definition)
+    else {
+        return false;
+    };
+    placed
+        && records
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| record.bodies.contains(&body.id))
+            .all(|body| body.transform.is_none())
 }
 
 /// `placement` read from the frame that `frame` maps into the same target:

@@ -73,6 +73,10 @@ pub(super) struct StateTopology<'a> {
     pub(super) vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The edges that each vertex ends.
     vertex_edges: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The shells that list each wire edge.
+    wire_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
+    /// The shells that list each free vertex.
+    free_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
     /// The face loops that use each edge through a coedge.
     pub(super) edge_loops: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The edges each face loop uses through its coedges.
@@ -164,6 +168,21 @@ impl<'a> Collected<'a> {
                     .insert(edge);
             }
         }
+        let mut wire_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        let mut free_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        for &shell in self.shells.values() {
+            for member in &shell.members {
+                match member {
+                    ShellMember::WireEdge { id } => {
+                        wire_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::FreeVertex { id } => {
+                        free_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::Subd { .. } => {}
+                }
+            }
+        }
         for record in self.loops.values() {
             if let LoopBoundary::Vertex { vertex, .. } = &record.boundary {
                 if self.faces.contains_key(record.face.as_str()) {
@@ -187,6 +206,8 @@ impl<'a> Collected<'a> {
             edge_faces,
             vertex_faces,
             vertex_edges,
+            wire_shells,
+            free_shells,
             edge_loops,
             loop_edges,
         }
@@ -255,13 +276,8 @@ impl<'a> StateTopology<'a> {
             .filter_map(|face| self.face_body(face))
             .map(|body| body.id.as_str())
             .collect();
-        for shell in self.shells.values() {
-            let owns = shell.members.iter().any(
-                |member| matches!(member, ShellMember::WireEdge { id } if id.as_str() == edge),
-            );
-            if owns {
-                bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
-            }
+        for &shell in self.wire_shells.get(edge).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
         }
         bodies
     }
@@ -280,13 +296,8 @@ impl<'a> StateTopology<'a> {
         for edge in self.vertex_edges.get(vertex).into_iter().flatten() {
             bodies.extend(self.edge_bodies(edge));
         }
-        for shell in self.shells.values() {
-            let owns = shell.members.iter().any(
-                |member| matches!(member, ShellMember::FreeVertex { id } if id.as_str() == vertex),
-            );
-            if owns {
-                bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
-            }
+        for &shell in self.free_shells.get(vertex).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
         }
         bodies
     }

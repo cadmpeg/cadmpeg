@@ -46,15 +46,10 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
     let current = OnceCell::new();
     for record in held {
         let at = record.holder.record();
-        let frame = match record.holder {
-            Holder::Definition(_) | Holder::Owned { .. } => record
-                .holder
-                .feature()
-                .and_then(|feature| values_frame(&index.records, MemberKey::Feature(feature))),
-            Holder::Record { record, .. } if index.records.containers.contains_key(record) => {
-                values_frame(&index.records, MemberKey::Container(record))
-            }
-            Holder::Record { .. } => Some(None),
+        let feature = record.holder.feature();
+        let frame = |configuration: Option<&str>| match feature {
+            Some(feature) => values_frame(&index.records, feature, configuration),
+            None => Some(None),
         };
         let scope = match record.holder {
             Holder::Record { scope, .. } => scope.map(crate::ids::ProductDefinitionId::as_str),
@@ -70,7 +65,7 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
                 &index.records,
                 construction,
                 scope,
-                frame,
+                &frame,
                 &current,
                 at,
                 findings,
