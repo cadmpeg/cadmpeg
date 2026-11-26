@@ -5,6 +5,7 @@
 //! "`AssetSettings`", "Lighting environment").
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::up_axis::UpAxis;
 
 use super::super::frames::{Bind, DesignRecords};
 use super::values::BodyBox;
@@ -28,6 +29,19 @@ const SCENE_SCALE: [f64; 3] = [1.8; 3];
 const FRONT: [f64; 3] = [0.0, 1.0, 0.0];
 /// The up direction of the `FRONT`, `RIGHT` and `HOME` cameras.
 const UP: [f64; 3] = [0.0, 0.0, 1.0];
+/// The front direction `AssetSettings` stores twice in a Y-up document.
+const FRONT_Y_UP: [f64; 3] = [0.0, 0.0, -1.0];
+/// The up direction `AssetSettings` stores twice in a Y-up document.
+const UP_Y_UP: [f64; 3] = [0.0, 1.0, 0.0];
+
+/// The (front, up) pair `AssetSettings` stores twice for `axis`: the Y-up
+/// form for `Y`, the Z-up form for `Z` or no stated axis.
+pub(super) fn settings_pair(axis: Option<UpAxis>) -> ([f64; 3], [f64; 3]) {
+    match axis {
+        Some(UpAxis::Y) => (FRONT_Y_UP, UP_Y_UP),
+        Some(UpAxis::Z) | None => (FRONT, UP),
+    }
+}
 /// The box a design with no measured body box is fitted to.
 const UNIT_BOX: BodyBox = BodyBox {
     min: [0.0; 3],
@@ -183,6 +197,7 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
             (block + 68, Bind::F64s(&home.up)),
         ]
     };
+    let pair = settings_pair(ctx.values.up_axis);
     let mut binds = vec![(
         layout::base_feature_asset_settings::UNIT_SYSTEM,
         Bind::Ref(ctx.values.unit_system),
@@ -196,9 +211,12 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
     binds.extend([
         (
             layout::base_feature_asset_settings::FRONT_A,
-            Bind::F64s(&FRONT),
+            Bind::F64s(&pair.0),
         ),
-        (layout::base_feature_asset_settings::UP_A, Bind::F64s(&UP)),
+        (
+            layout::base_feature_asset_settings::UP_A,
+            Bind::F64s(&pair.1),
+        ),
         (
             layout::base_feature_asset_settings::NAMED_VIEWS,
             Bind::Ref(NAMED_VIEWS),
@@ -221,9 +239,12 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         ),
         (
             layout::base_feature_asset_settings::FRONT_B,
-            Bind::F64s(&FRONT),
+            Bind::F64s(&pair.0),
         ),
-        (layout::base_feature_asset_settings::UP_B, Bind::F64s(&UP)),
+        (
+            layout::base_feature_asset_settings::UP_B,
+            Bind::F64s(&pair.1),
+        ),
         (
             layout::base_feature_asset_settings::RECORD_2,
             Bind::Ref(ZERO_RECORD),
@@ -278,4 +299,20 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         ],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::up_axis::UpAxis;
+
+    use super::settings_pair;
+
+    #[test]
+    fn the_stored_pair_follows_the_document_up_axis() {
+        let z_up = ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+        let y_up = ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0]);
+        assert_eq!(settings_pair(Some(UpAxis::Y)), y_up);
+        assert_eq!(settings_pair(Some(UpAxis::Z)), z_up);
+        assert_eq!(settings_pair(None), z_up);
+    }
 }
