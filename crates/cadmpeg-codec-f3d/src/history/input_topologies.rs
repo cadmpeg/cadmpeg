@@ -76,9 +76,7 @@ pub(crate) fn project_feature_input_topologies(
             (feature_position, previous_state_id),
         ));
     }
-    let workers = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(6);
+    let workers = cadmpeg_core::parallelism().min(6);
     let keep_materialized = histories
         .iter()
         .all(|history| history.states().len() <= super::KEEP_MATERIALIZED_MAX_STATES);
