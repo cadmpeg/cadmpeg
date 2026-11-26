@@ -139,14 +139,10 @@ pub(super) fn native_tolerant_coedge_extension(
     }
 }
 
-pub(super) fn encode_design_bulkstream(
-    target: &CadIr,
-    native: &F3dNative,
-    registry: &GeneratedDesignRegistry,
-    parameters: ParameterRecords,
-    neutral: Option<&super::design::frames::DesignRecords>,
-) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
-    if !native.design_parameter_companions.is_empty()
+/// Whether `native` holds a Design parameter record that the source-less
+/// Design stream has no form for.
+pub(super) fn holds_parameter_records(native: &F3dNative) -> bool {
+    !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_presentation_frames.is_empty()
         || !native.design_face_source_groups.is_empty()
@@ -161,7 +157,16 @@ pub(super) fn encode_design_bulkstream(
             .design_entity_headers
             .iter()
             .any(|header| header.member_values().next().is_some())
-    {
+}
+
+pub(super) fn encode_design_bulkstream(
+    target: &CadIr,
+    native: &F3dNative,
+    registry: &GeneratedDesignRegistry,
+    parameters: ParameterRecords,
+    neutral: Option<&super::design::frames::DesignRecords>,
+) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
+    if holds_parameter_records(native) {
         return Err(CodecError::NotImplemented(
             "source-less F3D Design parameter records are not writable".into(),
         ));

@@ -181,6 +181,9 @@ fn attempt<W: Write + Seek>(
     let loaded_native = f3d_native(target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let mut native = loaded_native.unwrap_or_default();
+    if write_design && records::holds_parameter_records(&native) {
+        return Err(Failure::parameter_records());
+    }
     let stamped = neutral
         .as_ref()
         .is_some_and(design::NeutralDesign::has_bodies);

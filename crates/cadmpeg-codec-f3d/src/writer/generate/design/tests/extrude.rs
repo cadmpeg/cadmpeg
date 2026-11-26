@@ -300,6 +300,31 @@ fn the_extrude_replaces_the_base_feature() {
     );
 }
 
+/// The decode of a written design holds native feature scopes, which hold
+/// no byte form without the source file: the rewrite takes the design from
+/// its neutral records and names that reason (cadir-v11.md §3.4, W2).
+#[test]
+fn a_decoded_design_is_rewritten_from_its_neutral_records() {
+    let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
+    assert!(!crate::test_support::native_test::f3d_native(&decoded)
+        .design_parameter_scopes
+        .is_empty());
+    decoded.source = None;
+    let (report, rewritten) = write(&decoded);
+    let omitted = loss(&report, "export/native.records-omitted").join("\n");
+    assert!(
+        omitted.contains(
+            "of the Design stream, which the generator writes from the design's neutral records"
+        ),
+        "{omitted}"
+    );
+    assert!(
+        !omitted.contains("cannot write them consistently"),
+        "{omitted}"
+    );
+    assert!(!kinds(&rewritten).is_empty(), "{:#?}", report.losses);
+}
+
 #[test]
 fn an_extrude_design_charges_a_hidden_body_and_every_fixed_clock_table() {
     let mut ir = sketch_and_extrude(blind(), false);
