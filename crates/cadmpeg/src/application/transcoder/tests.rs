@@ -981,7 +981,7 @@ fn an_output_extension_that_names_a_dialect_selects_it() {
 
 /// A decode report that states nothing, for a sidecar.
 fn empty_decode_report() -> cadmpeg_ir::report::decode::DecodeReport {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "identity": {"kind": "unclassified", "format": "test"},
         "transfer": {"kind": "full", "geometry_transferred": false},
         "coverage": {},
@@ -1039,7 +1039,7 @@ fn the_sidecar_of_a_document_written_after_a_give_up_names_no_removed_record() {
     let given_up = ir.geometry.points[0].id.as_str().to_owned();
     let kept = ir.geometry.points[1].id.as_str().to_owned();
     let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
-    value["geometry"]["points"][0]["position"] = serde_json::json!("not a point");
+    value["geometry"]["points"][0]["position"] = cadmpeg_core::json!("not a point");
     let text = value.to_string();
     std::fs::write(&input, &text).unwrap();
     let stream =
