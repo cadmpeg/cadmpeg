@@ -28,7 +28,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
@@ -229,8 +229,6 @@ impl ReportBuckets {
 
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 
-/// The part a framed object record is (`rhino_3dm.md` §21).
-pub(crate) const OBJECT_RECORD_PART: &str = "object-record";
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
 /// Member visits, copied entities, and the points, control points, mesh
@@ -765,7 +763,7 @@ impl<'a> DecodeContext<'a> {
         }
         let code = match self.resolve_object(id) {
             ObjectReference::Resolved(order) => {
-                return Some(format!("{}", Self::mint_unknown_id(order)));
+                return Some(format!("{}", crate::container::object_record_id(order)));
             }
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
@@ -1419,7 +1417,7 @@ impl<'a> DecodeContext<'a> {
                     parameters,
                 }),
             ),
-            native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+            native_ref: Some(crate::container::object_record_id(source_order).to_string()),
             product_definition: None,
         };
         match self
@@ -2693,42 +2691,22 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Gives up the framed object record at `source_order`, of class
-    /// `class`, that no decoder transferred. Its object record already
-    /// retains its bytes, so the part keeps only their digest and links to
-    /// that record.
+    /// `class`, that no decoder transferred.
     fn give_up_object(
         &self,
         source_order: usize,
         class: &str,
     ) -> Result<GivenUpPart, cadmpeg_core::CodecError> {
-        let range = self.scan.objects[source_order].range();
-        let record = Self::mint_unknown_id(source_order);
-        let part = Part::at(
-            "rhino",
-            OBJECT_RECORD_PART,
-            u64_from_index(range.start),
-            &self.scan.data[range],
-            [cadmpeg_core::decode::ArenaClass::Model],
-        )
-        .contained_in(cadmpeg_ir::ids::Identity::from(record.clone()))
-        .digest_only();
-        self.expand.ctx().give_up_part(
-            part,
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "{}: framed object record {record} of class {class} could not be decoded",
-                RhinoLossCode::ObjectFramingUndecodable.kind()
-            )),
-        )
-    }
-
-    /// Mints the stable unknown-record ID for source order.
-    fn mint_unknown_id(source_order: usize) -> UnknownId {
-        UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
-            cadmpeg_ir::ids::IdentityKey::zero_padded(
-                cadmpeg_core::decode::u64_from_index(source_order),
-                6,
-            ),
+        let record = crate::container::object_record_id(source_order);
+        let why = RhinoLossCode::ObjectFramingUndecodable.note(format_args!(
+            "framed object record {record} of class {class} could not be decoded"
+        ));
+        crate::container::give_up_object_record(
+            self.expand.ctx(),
+            self.scan.data,
+            source_order,
+            self.scan.objects[source_order].range(),
+            &why,
         )
     }
 
@@ -2738,11 +2716,9 @@ impl<'a> DecodeContext<'a> {
         for loss in &self.scan.metadata.losses {
             self.report.phase_losses.push(loss.clone());
         }
-        self.report.typed_losses.extend(crate::annotations::install(
-            ctx,
-            self.scan,
-            self.session.document_mut()?,
-        )?);
+        let (annotation_losses, mut given_up) =
+            crate::annotations::install(ctx, self.scan, self.session.document_mut()?)?;
+        self.report.typed_losses.extend(annotation_losses);
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(document_data.losses);
@@ -2752,17 +2728,17 @@ impl<'a> DecodeContext<'a> {
         let presentation =
             crate::presentation::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(presentation.losses);
-        let mut given_up = presentation.given_up;
+        given_up.extend(presentation.given_up);
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.report.typed_losses.extend(crate::product::install(
-            ctx,
-            self.scan,
-            self.session.document_mut()?,
-        )?);
+        let (product_losses, product_given_up) =
+            crate::product::install(ctx, self.scan, self.session.document_mut()?)?;
+        self.report.typed_losses.extend(product_losses);
+        given_up.extend(product_given_up);
         let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(views.losses);
+        given_up.extend(views.given_up);
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
@@ -2852,15 +2828,15 @@ impl<'a> DecodeContext<'a> {
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
             let loss = diagnostic.to_loss();
-            match &diagnostic.given_up {
-                Some(record) => {
-                    let unreadable = GivenUpRecord::caused_by(record, &loss)
-                        .spanning(u64_from_index(diagnostic.source_len()))
-                        .loss();
-                    losses.extend([loss, unreadable]);
-                }
-                None => losses.push(loss),
+            if let Some(record) = &diagnostic.given_up {
+                given_up.push(crate::container::give_up_table_record(
+                    ctx,
+                    self.scan.data,
+                    record,
+                    &loss,
+                )?);
             }
+            losses.push(loss);
         }
 
         losses.append(&mut self.report.typed_losses);
@@ -2988,7 +2964,7 @@ impl<'a> DecodeContext<'a> {
             let object = &self.scan.objects[source_order];
             let range = object.range();
             let degraded = object.is_degraded();
-            let id = Self::mint_unknown_id(source_order);
+            let id = crate::container::object_record_id(source_order);
             let record = self.source_record(id, range)?;
 
             records.push(record);

@@ -4,14 +4,14 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::{record_given_up, GivenUpRecord};
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::assembly::{Member, MemberTable};
@@ -70,8 +70,12 @@ pub(super) fn transfer_assembly_members(
     let mut unresolved_references = 0_usize;
     let mut transferred = 0_usize;
     for (row, member) in table.members.iter().enumerate() {
+        let id = crate::identity::compose_checked::<OccurrenceId>(
+            &crate::identity::MODEL_OCCURRENCE,
+            format_args!("member-{row}"),
+        )?;
         let Some(transform) = member_transform(&member.frame) else {
-            unresolved_placements.push(member_record(member));
+            unresolved_placements.push(id);
             continue;
         };
         let document = member_document(member);
@@ -107,10 +111,6 @@ pub(super) fn transfer_assembly_members(
         } else {
             unresolved_references += 1;
         }
-        let id = crate::identity::compose_checked::<OccurrenceId>(
-            &crate::identity::MODEL_OCCURRENCE,
-            format_args!("member-{row}"),
-        )?;
         annotate(
             annotations,
             &id,
@@ -150,9 +150,9 @@ pub(super) fn transfer_assembly_members(
             unresolved_placements.len()
         )));
         let code = CreoLossCode::AssemblyPlacementUnresolved.kind();
-        transfer_losses.extend(unresolved_placements.iter().map(|member| {
+        transfer_losses.extend(unresolved_placements.iter().map(|occurrence| {
             GivenUpRecord::new(
-                member,
+                occurrence,
                 format_args!("{code}: the row stores a frame that is not a proper rigid placement"),
             )
             .loss()
@@ -187,15 +187,54 @@ fn record_table_stop(table: &MemberTable, transfer_losses: &mut Vec<LossNote>) {
             stop.offset,
             stop.reason
         ));
-        if stop.row_unread {
-            transfer_losses.extend(record_given_up(
-                format_args!("NeuAsmSld@{}", stop.offset),
-                note,
-            ));
-        } else {
-            transfer_losses.push(note);
-        }
+        transfer_losses.push(note);
     }
+}
+
+/// Gives up the component rows from the first row the grammar does not
+/// admit to the end of its `NeuAsmSld` section, as a `component-rows` part.
+/// The decode retains no other copy of those bytes.
+pub(super) fn give_up_unread_rows(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Option<GivenUpPart>, CodecError> {
+    let Some(stop) = scan
+        .assembly
+        .as_ref()
+        .and_then(|table| table.stop.as_ref())
+        .filter(|stop| stop.row_unread)
+    else {
+        return Ok(None);
+    };
+    let Some(bytes) = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| {
+            section.name() == "NeuAsmSld"
+                && section.offset() <= stop.offset
+                && stop.offset < section.end()
+        })
+        .and_then(|section| scan.framing.data.get(stop.offset..section.end()))
+    else {
+        return Ok(None);
+    };
+    let part = Part::at(
+        "creo",
+        "component-rows",
+        u64_from_index(stop.offset),
+        bytes,
+        [ArenaClass::Model],
+    );
+    ctx.give_up_part(
+        part,
+        CodecError::malformed(format_args!(
+            "{}: {}",
+            CreoLossCode::AssemblyMemberTableIncomplete.kind(),
+            stop.reason
+        )),
+    )
+    .map(Some)
 }
 
 /// The native address of a component row.

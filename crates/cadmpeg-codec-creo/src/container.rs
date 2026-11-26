@@ -371,8 +371,6 @@ pub(crate) struct ModelName {
 pub(crate) struct SectionExpansionLoss {
     pub(crate) section_offset: usize,
     pub(crate) message: String,
-    /// The section's length in bytes from its offset.
-    pub(crate) section_length: usize,
 }
 
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
@@ -1107,7 +1105,6 @@ fn expanded_sections(
                 losses.push(SectionExpansionLoss {
                     section_offset: section.section.offset(),
                     message,
-                    section_length: section.section.length(),
                 });
                 continue;
             }

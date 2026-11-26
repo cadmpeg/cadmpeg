@@ -13,7 +13,7 @@ use crate::decode::{
     project_property_set_issue, project_protein_records, project_protein_state,
     project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
     project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
-    project_ufrx_state, property_set_name, structural_issue,
+    project_ufrx_state, property_set_name, structural_issue, Rejections,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -341,7 +341,7 @@ fn protein_asset_record_is_projected() {
     let records = project_protein_records(&ctx, protein_asset_instance()).expect("admitted asset");
     assert_eq!(records.assets.len(), 1);
     assert!(records.rejections.is_empty());
-    assert!(records.issues.is_empty());
+    assert!(records.rejected.issues.is_empty());
 }
 
 #[test]
@@ -353,7 +353,7 @@ fn protein_rejection_record_is_projected() {
         project_protein_records(&ctx, protein_rejection_instance()).expect("admitted rejection");
     assert!(records.assets.is_empty());
     assert_eq!(records.rejections.len(), 1);
-    assert!(records.issues.is_empty());
+    assert!(records.rejected.issues.is_empty());
 }
 
 #[test]
@@ -362,7 +362,7 @@ fn absent_ufrx_state_names_the_root() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
     assert!(matches!(
-        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new()).expect("admitted state"),
+        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Rejections::default()).expect("admitted state"),
         UfrxRecord::Absent { id } if id == "inventor:ufrx:state#root"
     ));
 }
@@ -389,11 +389,11 @@ fn ufrx_model_state_with_a_parameter_is_admitted() {
         }],
         suffix: source,
     };
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(project_ufrx_model_state(&setup_ctx, 0, &state, &mut issues)
         .expect("admitted model state")
         .is_some());
-    assert!(issues.is_empty());
+    assert!(issues.issues.is_empty());
 }
 
 #[test]
@@ -417,11 +417,11 @@ fn protein_conversion_failure_becomes_an_issue() {
             "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
     }))
     .expect("Protein asset wire fixture");
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
         .expect("admit the Protein asset")
         .is_none());
-    assert_eq!(issues.len(), 1);
+    assert_eq!(issues.issues.len(), 1);
 }
 
 #[test]
@@ -438,11 +438,11 @@ fn ufrx_model_state_conversion_failure_becomes_an_issue() {
         parameters: Vec::new(),
         suffix: source,
     };
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(project_ufrx_model_state(&ctx, 0, &state, &mut issues)
         .expect("project the UFRx model state")
         .is_none());
-    assert_eq!(issues.len(), 1);
+    assert_eq!(issues.issues.len(), 1);
 }
 
 fn external_reference(path: &str) -> InventorExternalReference {
@@ -471,7 +471,7 @@ fn ufrx_external_reference_with_a_state_group_is_admitted() {
         &ctx,
         0,
         &external_reference("part.ipt"),
-        &mut Vec::new()
+        &mut Rejections::default()
     )
     .expect("admitted reference")
     .is_some());
@@ -482,13 +482,21 @@ fn ufrx_external_conversion_failure_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(
         project_ufrx_external_reference(&ctx, 0, &external_reference(""), &mut issues)
             .expect("project the UFRx external reference")
             .is_none()
     );
-    assert_eq!(issues.len(), 1);
+    assert_eq!(issues.issues.len(), 1);
+    assert_eq!(
+        issues
+            .records
+            .iter()
+            .map(|(record, _)| record.as_str())
+            .collect::<Vec<_>>(),
+        ["inventor:ufrx:external-reference#0"]
+    );
 }
 
 #[test]
@@ -512,7 +520,7 @@ fn ufrx_embedded_reference_is_admitted() {
         source,
     };
     assert!(
-        project_ufrx_embedded_reference(&ctx, 0, &reference, &mut Vec::new())
+        project_ufrx_embedded_reference(&ctx, 0, &reference, &mut Rejections::default())
             .expect("admitted embedded reference")
             .is_some()
     );
@@ -536,7 +544,7 @@ fn ufrx_occurrence_is_admitted() {
         source,
     };
     assert!(
-        project_ufrx_occurrence(&ctx, 0, &occurrence, &mut Vec::new())
+        project_ufrx_occurrence(&ctx, 0, &occurrence, &mut Rejections::default())
             .expect("admitted occurrence")
             .is_some()
     );
@@ -555,7 +563,7 @@ fn ufrx_representation_is_admitted() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
     assert!(
-        project_ufrx_representation(&ctx, &representation, &mut Vec::new())
+        project_ufrx_representation(&ctx, &representation, &mut Rejections::default())
             .expect("admitted representation")
             .is_some()
     );
@@ -964,7 +972,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     let assets = ["bad.bin", "assets/InstanceProperties.bin"]
         .into_iter()
         .filter_map(|entry_name| {
@@ -979,9 +987,9 @@ fn protein_admission_keeps_later_assets_and_rejections() {
         })
         .collect::<Vec<_>>();
     assert_eq!(assets.len(), 1);
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].scope, "asset");
-    assert!(issues[0].detail.contains("entry_name"));
+    assert_eq!(issues.issues.len(), 1);
+    assert_eq!(issues.issues[0].scope, "asset");
+    assert!(issues.issues[0].detail.contains("entry_name"));
     let rejections = ["bad.bin", "assets/InstanceProperties.bin"]
         .into_iter()
         .filter_map(|entry_name| {
@@ -999,9 +1007,17 @@ fn protein_admission_keeps_later_assets_and_rejections() {
         })
         .collect::<Vec<_>>();
     assert_eq!(rejections.len(), 1);
-    assert_eq!(issues.len(), 2);
-    assert_eq!(issues[1].scope, "rejection");
-    assert!(issues[1].detail.contains("entry_name"));
+    assert_eq!(issues.issues.len(), 2);
+    assert_eq!(
+        issues
+            .records
+            .iter()
+            .map(|(record, _)| record.as_str())
+            .collect::<Vec<_>>(),
+        ["asset", "rejection"]
+    );
+    assert_eq!(issues.issues[1].scope, "rejection");
+    assert!(issues.issues[1].detail.contains("entry_name"));
 }
 
 #[test]

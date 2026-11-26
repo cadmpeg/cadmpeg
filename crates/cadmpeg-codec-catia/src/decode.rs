@@ -18,6 +18,7 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 use std::collections::BTreeSet;
@@ -89,6 +90,7 @@ fn decode_over_routes(
             ir,
             report,
             (annotations, unknowns, untyped),
+            Vec::new(),
         );
     }
 
@@ -110,6 +112,7 @@ fn decode_over_routes(
                     report: out.report,
                     annotations: out.annotations,
                     unknowns: out.unknowns,
+                    given_up: out.given_up,
                     untyped: BTreeSet::new(),
                     admitted_model_entities: out.admitted_model_entities,
                     standard_face_population: route.standard_face_population,
@@ -131,17 +134,10 @@ fn decode_over_routes(
         }
     }
 
+    // The fallback keeps the payload whole as a retained record, so a route
+    // that fell through gives up only the records it refused, each charged
+    // where the route refused it.
     let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
-    // A route that refused records and fell through to the fallback leaves
-    // the payload it read undecoded.
-    if let Some(payload) = unknowns.first() {
-        if let Some(last) = fell_through.pop() {
-            fell_through.extend(cadmpeg_ir::unknown::part::record_given_up(
-                payload.id().as_str(),
-                last,
-            ));
-        }
-    }
     let report = build_container_report(&scan);
     finish_decode(
         ctx,
@@ -152,6 +148,7 @@ fn decode_over_routes(
             report,
             annotations,
             unknowns,
+            given_up: Vec::new(),
             untyped,
             admitted_model_entities: 0,
             standard_face_population: false,
@@ -217,6 +214,8 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     report: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    /// Parts the route gave up.
+    given_up: Vec<GivenUpPart>,
     /// Classes every retained unknown holds undecoded; empty when a route
     /// decoded their bytes.
     untyped: BTreeSet<ArenaClass>,
@@ -237,6 +236,7 @@ fn finish_decode(
         mut report,
         mut annotations,
         unknowns,
+        given_up,
         untyped,
         mut admitted_model_entities,
         standard_face_population,
@@ -3717,6 +3717,7 @@ fn finish_decode(
         ir,
         report,
         (annotations, unknowns, untyped),
+        given_up,
     )
 }
 
@@ -3787,6 +3788,7 @@ fn decode_result(
     mut ir: CadIr,
     mut body: DecodeBody,
     retained: (Annotations, Vec<UnknownRecord>, BTreeSet<ArenaClass>),
+    given_up: Vec<GivenUpPart>,
 ) -> Result<Decoded, CodecError> {
     let (annotations, unknowns, untyped) = retained;
     ir.state_root_definition(
@@ -3816,6 +3818,10 @@ fn decode_result(
         for id in &ids {
             source_fidelity.mark_untyped(id.as_str(), untyped.iter().copied())?;
         }
+    }
+    for part in given_up {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
     Ok(Decoded {
         ir,

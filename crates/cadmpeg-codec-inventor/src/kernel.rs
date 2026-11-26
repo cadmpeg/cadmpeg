@@ -62,10 +62,14 @@ pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
     Selected(ActiveCarrier<'a>),
     Unavailable(String),
-    /// The one typed kernel-carrier record, whose envelope does not parse.
-    /// `record` is its `RSe` record id.
+    /// The one typed kernel-carrier record, whose envelope does not parse:
+    /// the record `record_ordinal` of the segment `segment_token`, whose
+    /// `payload` starts at `payload_offset` in the expanded bulk stream.
     Unreadable {
-        record: String,
+        segment_token: String,
+        record_ordinal: u32,
+        payload_offset: u64,
+        payload: View<'a>,
         detail: String,
     },
 }
@@ -204,11 +208,10 @@ pub(crate) fn select_active_carrier<'a>(
     ) {
         Ok(carrier) => ActiveCarrierState::Selected(carrier),
         Err(error) => ActiveCarrierState::Unreadable {
-            record: format!(
-                "inventor:rse:record#{}-{}",
-                segment.pair.token.as_str(),
-                record.ordinal
-            ),
+            segment_token: segment.pair.token.as_str().to_owned(),
+            record_ordinal: record.ordinal,
+            payload_offset: record.payload_offset,
+            payload: record.payload,
             detail: error.to_string(),
         },
     }

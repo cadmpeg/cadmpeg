@@ -324,6 +324,11 @@ impl Node {
         self.end
     }
 
+    /// The record's bytes, from its position to its end.
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// Decode the common-header sense and the following payload offset.
     pub(crate) fn common_header(&self) -> Option<(Sense, usize)> {
         let mut at = 8 + self.shift;

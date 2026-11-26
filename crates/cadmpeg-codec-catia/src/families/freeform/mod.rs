@@ -875,6 +875,7 @@ pub(super) fn try_decode_freeform_surfaces(
             }
         };
         let mut losses = Vec::new();
+        let mut given_up = Vec::new();
         if !wire_topology_transferred {
             if topology_transferred {
                 losses.push((CatiaLossCode::TopologyB5GaugeSubstituted).note(format!(
@@ -891,13 +892,14 @@ pub(super) fn try_decode_freeform_surfaces(
                      {payload_id}."
                 ));
                 if ir.geometry.faces.is_empty() {
-                    losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-                        "catia:b5:object-stream",
-                        why,
-                    ));
-                } else {
-                    losses.push(why);
+                    given_up.push(admitted!(give_up_object_stream(
+                        ctx,
+                        scan,
+                        &payload_id,
+                        &why
+                    )));
                 }
+                losses.push(why);
             } else {
                 losses.push((CatiaLossCode::TopologyB5GraphUnclosed).note(format!(
                     "Object-stream and consolidated NURBS carriers were decoded, but the \
@@ -1147,11 +1149,46 @@ pub(super) fn try_decode_freeform_surfaces(
             },
             annotations,
             unknowns,
+            given_up,
             admitted_model_entities: admission.admitted(),
         }))
     })()
     .transpose()
 }
+
+/// Gives up the object stream whose graph passed its work slice, for the
+/// codec loss `why`. The object runs lie in the payload that the retained
+/// record `payload` keeps whole, so the part keeps only the digest of the
+/// payload bytes and links to that record.
+fn give_up_object_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    payload: &UnknownId,
+    why: &cadmpeg_ir::report::loss::LossNote,
+) -> Result<cadmpeg_ir::unknown::part::GivenUpPart, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+    let (bytes, stream) = match scan.brep.as_ref() {
+        Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
+        None => (scan.data.as_ref(), "CATPart"),
+    };
+    let part = Part::at(
+        "catia",
+        OBJECT_STREAM_PART,
+        0,
+        bytes,
+        [cadmpeg_core::decode::ArenaClass::Model],
+    )
+    .in_stream(cadmpeg_ir::stream_name!("catia:").with_suffix(stream))
+    .contained_in(cadmpeg_ir::ids::Identity::from(payload.clone()))
+    .digest_only();
+    ctx.give_up_part(
+        part,
+        cadmpeg_core::CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+    )
+}
+
+/// The part an object stream is (`catia.md`, Partial decode).
+const OBJECT_STREAM_PART: &str = "object-stream";
 
 fn attach_standalone_wires(
     ir: &mut CadIr,
@@ -5553,5 +5590,62 @@ mod tests {
             service[0].curve.id.as_str(),
             "catia:consolidated:line-profile-curve#0"
         );
+    }
+
+    /// A work-bounded object stream is a given-up part: its stub, not a
+    /// token that no record carries, is the record the charge names, and the
+    /// part keeps only the digest of the payload that the retained payload
+    /// record keeps whole.
+    #[test]
+    fn an_exhausted_object_stream_is_given_up_as_a_part_of_the_retained_payload() {
+        let bytes = crate::test_support::test_container::standard_catpart();
+        crate::test_support::with_service_context(|ctx| {
+            let scan =
+                crate::container::scan_bytes(ctx, bytes.clone()).expect("complete container");
+            let payload =
+                cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#freeform".to_owned())
+                    .expect("payload identity");
+            let why = crate::loss::CatiaLossCode::TopologyObjectStreamWorkSliceExhausted
+                .note("the object-stream graph exceeds its work slice".to_owned());
+            let part = super::give_up_object_stream(ctx, &scan, &payload, &why)
+                .expect("the part is given up");
+            let stub = part.id().as_str().to_owned();
+            assert!(stub.starts_with("catia:source:part#"), "{stub}");
+            let mut ir = CadIr::empty();
+            let mut fidelity = cadmpeg_ir::SourceFidelity::new(
+                cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes),
+            );
+            let loss = part
+                .commit(ctx, &mut ir, &mut fidelity)
+                .expect("the part commits");
+            assert_eq!(
+                loss.code,
+                cadmpeg_ir::unknown::part::record_unreadable_kind()
+            );
+            assert!(
+                loss.message.contains(&format!(" record={stub}: ")),
+                "{}",
+                loss.message
+            );
+            assert!(
+                !loss.message.contains("catia:b5:object-stream"),
+                "{}",
+                loss.message
+            );
+            let stubs = ir.native_unknowns("catia").expect("native unknowns");
+            let [stub_record] = stubs.as_slice() else {
+                panic!("one stub: {stubs:?}");
+            };
+            assert_eq!(stub_record.id.as_str(), stub);
+            assert_eq!(
+                stub_record.links,
+                [cadmpeg_ir::ids::Identity::from(payload)]
+            );
+            let retained = fidelity
+                .retained_record(&stub)
+                .expect("the part is retained");
+            assert!(retained.data().is_none(), "the part keeps only a digest");
+            assert!(retained.byte_len() > 0);
+        });
     }
 }

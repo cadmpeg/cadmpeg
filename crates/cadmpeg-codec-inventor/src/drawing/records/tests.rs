@@ -398,3 +398,57 @@ fn short_prefix_error_keeps_the_input_space_and_offset() -> TestResult {
     assert_eq!(location, expected);
     Ok(())
 }
+
+#[test]
+fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResult {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let sheet = record(Family::Sheet, SHEET, sheet(6))?;
+    let Fields::Sheet { views, .. } = &sheet.fields else {
+        return Err("sheet fields".into());
+    };
+    let ordinal = views.references()[0]
+        .record_ordinal()
+        .ok_or("sheet view ordinal")?;
+    let given_up = "inventor:drawing:record#generated-given-up";
+    let mut inventory = crate::drawing::Inventory::default();
+    inventory
+        .refused
+        .insert(("generated".to_owned(), ordinal), given_up.to_owned());
+    inventory.refuse_references(&ctx, &sheet, true)?;
+    let losses = inventory.losses();
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    assert!(losses.iter().all(|loss| loss.code != unreadable));
+    assert!(losses.contains(&cadmpeg_ir::unknown::part::dropped_with(
+        &sheet.id, given_up
+    )));
+    Ok(())
+}
+
+#[test]
+fn a_record_refused_for_its_own_references_is_given_up_by_its_own_id() -> TestResult {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let sheet = record(Family::Sheet, SHEET, sheet(6))?;
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    for links in [false, true] {
+        let mut inventory = crate::drawing::Inventory::default();
+        inventory.refuse_references(&ctx, &sheet, links)?;
+        let charges = inventory
+            .losses()
+            .into_iter()
+            .filter(|loss| loss.code == unreadable)
+            .collect::<Vec<_>>();
+        assert_eq!(charges.len(), 1);
+        assert!(charges[0]
+            .message
+            .split_whitespace()
+            .any(|token| token == sheet.id));
+        assert!(!charges[0].message.contains("record-issue#"));
+        assert_eq!(
+            inventory
+                .refused
+                .get(&("generated".to_owned(), sheet.ordinal)),
+            (!links).then_some(&sheet.id)
+        );
+    }
+    Ok(())
+}

@@ -15,6 +15,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
@@ -189,6 +190,91 @@ pub(crate) fn opaque_record_id(table_typecode: u32, record: &Record) -> UnknownI
     UnknownId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "opaque", "record"),
         key,
+    )
+}
+
+/// The id of the retained source record of the object record at
+/// `source_order`.
+pub(crate) fn object_record_id(source_order: usize) -> UnknownId {
+    UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
+        IdentityKey::zero_padded(cadmpeg_core::decode::u64_from_index(source_order), 6),
+    )
+}
+
+/// The part a framed object record is (`rhino_3dm.md` §21).
+const OBJECT_RECORD_PART: &str = "object-record";
+/// The part a framed table record is (`rhino_3dm.md` §21).
+pub(crate) const TABLE_RECORD_PART: &str = "table-record";
+/// The part a view record of a counted view list is (`rhino_3dm.md` §21).
+pub(crate) const VIEW_RECORD_PART: &str = "view-record";
+/// The part a record of the V1 flat stream is (`rhino_3dm.md` §21).
+pub(crate) const V1_RECORD_PART: &str = "v1-record";
+
+/// Gives up the framed record of `kind` at `range` of `data` for the codec
+/// loss `why`. A retained source record keeps the same bytes, so the part
+/// keeps only their digest. The part links to `holder`, the document record
+/// that contains it, when there is one.
+pub(crate) fn give_up_retained(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    kind: &'static str,
+    range: std::ops::Range<usize>,
+    holder: Option<UnknownId>,
+    why: &LossNote,
+) -> Result<GivenUpPart, CodecError> {
+    let mut part = Part::at(
+        "rhino",
+        kind,
+        cadmpeg_core::decode::u64_from_index(range.start),
+        &data[range],
+        [cadmpeg_core::decode::ArenaClass::Model],
+    )
+    .digest_only();
+    if let Some(holder) = holder {
+        part = part.contained_in(cadmpeg_ir::ids::Identity::from(holder));
+    }
+    ctx.give_up_part(
+        part,
+        CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+    )
+}
+
+/// Gives up the framed object record at `source_order`, spanning `range`,
+/// for the codec loss `why`. Its object record in the document keeps its
+/// bytes and contains the part.
+pub(crate) fn give_up_object_record(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    source_order: usize,
+    range: std::ops::Range<usize>,
+    why: &LossNote,
+) -> Result<GivenUpPart, CodecError> {
+    give_up_retained(
+        ctx,
+        data,
+        OBJECT_RECORD_PART,
+        range,
+        Some(object_record_id(source_order)),
+        why,
+    )
+}
+
+/// Gives up the framed table record `record` for the codec loss `why`. Its
+/// opaque record in the source fidelity keeps its bytes.
+pub(crate) fn give_up_table_record(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+    why: &LossNote,
+) -> Result<GivenUpPart, CodecError> {
+    give_up_retained(
+        ctx,
+        data,
+        TABLE_RECORD_PART,
+        record.range.clone(),
+        None,
+        why,
     )
 }
 

@@ -32,7 +32,31 @@ fn empty_solved_partition_retains_the_carrier_and_reports_the_blocking_loss() {
     );
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Blocking);
     assert!(!fidelity.retained_records().is_empty());
-    assert!(fidelity.unrepresented().is_empty());
+    // The history chain of the carrier does not close: it is given up as a
+    // part whose digest stands beside the retained carrier.
+    assert_eq!(
+        fidelity.unrepresented(),
+        std::collections::BTreeSet::from([cadmpeg_core::decode::ArenaClass::Design])
+    );
+    let charges = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert!(
+        charges[0]
+            .message
+            .starts_with("part history-chain stream=\"RSeStorage/Bseg:expanded\" offset="),
+        "{}",
+        charges[0].message
+    );
+    assert!(charges[0].message.contains(
+        InventorLossCode::KernelHistoryUnclosed
+            .kind()
+            .to_string()
+            .as_str()
+    ));
     let native = ir.native.namespace("inventor").expect("native carrier");
     let carriers = native
         .arena_as::<crate::native::ActiveCarrierRecord>("active_carrier")
@@ -51,17 +75,19 @@ fn empty_solved_partition_retains_the_carrier_and_reports_the_blocking_loss() {
 }
 
 /// A pinned decode refuses a part whose kernel carrier it gave up, through
-/// `record.unreadable` naming that carrier; a default decode admits the part
-/// and reports the codec loss beside it.
+/// the `record.unreadable` of the carrier part; a default decode admits the
+/// part and reports the codec loss beside it. The part's stub links to the
+/// `RSe` record that frames the carrier, which the document keeps.
 #[test]
 fn strict_decode_refuses_a_given_up_kernel_carrier() {
     let mut undeclared_width = b"ASM BinaryFile9".to_vec();
     undeclared_width.extend_from_slice(&[0_u8; 16]);
     let mut unsigned = b"NOT A KERNEL STREAM".to_vec();
     unsigned.extend_from_slice(&[0_u8; 16]);
-    for (kernel, record) in [
-        (undeclared_width, "inventor:kernel:carrier#seg-0"),
-        (unsigned, "inventor:rse:record#seg-0"),
+    let frame = "inventor:rse:record#seg-0";
+    for (kernel, kind) in [
+        (undeclared_width, "kernel-carrier"),
+        (unsigned, "rse-record"),
     ] {
         let bytes = primary_envelope_fixture_with_kernel(EnvelopeDeclarations::default(), &kernel);
         let decoded = InventorCodec
@@ -84,43 +110,40 @@ fn strict_decode_refuses_a_given_up_kernel_carrier() {
             .collect::<Vec<_>>();
         assert_eq!(unreadable.len(), 1, "{losses:#?}");
         assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+        let message = &unreadable[0].message;
         assert!(
-            unreadable[0]
-                .message
-                .split_whitespace()
-                .any(|token| token == record),
-            "{}",
-            unreadable[0].message
+            message.starts_with(&format!(
+                "part {kind} stream=\"RSeStorage/Bseg:expanded\" offset="
+            )),
+            "{message}"
         );
-        if record.starts_with("inventor:kernel:carrier#") {
-            assert!(
-                unreadable[0]
-                    .message
-                    .contains(" stream=\"RSeStorage/Bseg:expanded\" offset="),
-                "{}",
-                unreadable[0].message
-            );
-        }
+        let unknowns = decoded
+            .ir()
+            .native_unknowns("inventor")
+            .expect("native unknowns");
+        let stub = unknowns
+            .iter()
+            .find(|record| message.contains(&format!(" record={}: ", record.id)))
+            .expect("the charge names its part stub");
+        assert_eq!(
+            stub.links,
+            [cadmpeg_ir::ids::Identity::try_from(frame.to_owned()).expect("frame id")]
+        );
+        assert!(!message
+            .split_whitespace()
+            .any(|token| token == frame || token.starts_with("inventor:kernel:carrier#")));
 
         let mut pinned = DecodeOptions::default();
         pinned.strictness.pinned = true;
         let Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) =
             InventorCodec.decode(&mut std::io::Cursor::new(bytes), &pinned)
         else {
-            panic!("a pinned decode refuses the given-up carrier {record}");
+            panic!("a pinned decode refuses the given-up carrier part {kind}");
         };
         assert_eq!(
             rejection.loss().code,
             cadmpeg_ir::unknown::part::record_unreadable_kind()
         );
-        assert!(
-            rejection
-                .loss()
-                .message
-                .split_whitespace()
-                .any(|token| token == record),
-            "{}",
-            rejection.loss().message
-        );
+        assert_eq!(&rejection.loss().message, message);
     }
 }

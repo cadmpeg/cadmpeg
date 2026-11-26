@@ -176,9 +176,9 @@ pub(crate) struct AssemblyProjection {
     /// Hidden occurrences below a root occurrence; they stay in native records.
     pub(crate) nested_hidden: usize,
     pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
-    /// The native occurrence records whose occurrences are dropped, each
-    /// with the cause that drops it. A repeated occurrence id drops no
-    /// record of its own.
+    /// The ids of the occurrences the projection drops, each with the
+    /// first cause that drops it. An id that another `UFRx` record builds
+    /// is not dropped.
     pub(crate) unbuilt_placements: Vec<(String, UnresolvedCause)>,
 }
 
@@ -244,7 +244,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
             )?;
-            unbuilt_placements.push((source.id.clone(), UnresolvedCause::ExternalReference));
+            unbuilt_placements.push((source.occurrence_id, UnresolvedCause::ExternalReference));
             continue;
         };
         let Some(occurrence_record) = occurrence_records
@@ -255,7 +255,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
             )?;
-            unbuilt_placements.push((source.id.clone(), UnresolvedCause::OccurrenceRecord));
+            unbuilt_placements.push((source.occurrence_id, UnresolvedCause::OccurrenceRecord));
             continue;
         };
         if emitted_ids.contains(&source.occurrence_id) {
@@ -270,7 +270,7 @@ pub(crate) fn project_occurrences(
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let hidden = hidden_keys.contains(&source.occurrence_key);
         let invisible = suppressed || hidden;
-        let native_id = &source.id;
+        let occurrence_id = source.occurrence_id;
         let (transform, visible) = match placements
             .get(&source.occurrence_id)
             .and_then(Option::as_ref)
@@ -293,7 +293,7 @@ pub(crate) fn project_occurrences(
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
                     )?;
-                    unbuilt_placements.push((native_id.clone(), UnresolvedCause::InvalidTransform));
+                    unbuilt_placements.push((occurrence_id, UnresolvedCause::InvalidTransform));
                     continue;
                 };
                 (transform, invisible.then_some(false))
@@ -301,7 +301,7 @@ pub(crate) fn project_occurrences(
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
                 count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement)?;
-                unbuilt_placements.push((native_id.clone(), UnresolvedCause::Placement));
+                unbuilt_placements.push((occurrence_id, UnresolvedCause::Placement));
                 continue;
             }
         };
@@ -354,6 +354,22 @@ pub(crate) fn project_occurrences(
         }
     }
 
+    let built = occurrences
+        .iter()
+        .map(|occurrence| occurrence.id.clone())
+        .collect::<HashSet<_>>();
+    let mut dropped = HashSet::new();
+    let unbuilt_placements = unbuilt_placements
+        .into_iter()
+        .filter_map(|(occurrence_id, cause)| {
+            let id = OccurrenceId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
+                occurrence_id,
+            );
+            (!built.contains(&id) && dropped.insert(occurrence_id))
+                .then(|| (id.as_str().to_owned(), cause))
+        })
+        .collect();
     Ok(AssemblyProjection {
         definitions: definitions.into_values().collect(),
         occurrences,
@@ -957,6 +973,29 @@ mod tests {
             .occurrences
             .len(),
             1
+        );
+    }
+
+    #[test]
+    fn an_unbuilt_occurrence_names_its_own_instance_once_and_never_a_built_one() {
+        let projection = project_under_service(
+            &[
+                ufrx_occurrence(4, 7, 0),
+                ufrx_occurrence(5, 7, 1),
+                ufrx_occurrence(5, 8, 2),
+                ufrx_occurrence(4, 8, 3),
+            ],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        );
+        assert_eq!(projection.occurrences.len(), 1);
+        assert_eq!(
+            projection.unbuilt_placements,
+            [(
+                "inventor:assembly:instance#8".to_owned(),
+                super::UnresolvedCause::ExternalReference
+            )]
         );
     }
 

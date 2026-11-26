@@ -198,10 +198,14 @@ fn a_frame_that_is_not_rigid_drops_its_occurrence() {
           those occurrences did not transfer"
         ]
     );
-    assert_eq!(
-        unreadable_records(&result),
-        ["NeuAsmSld:members:2575".to_owned()]
-    );
+    let dropped = "creo:model:occurrence#member-1";
+    assert_eq!(unreadable_records(&result), [dropped.to_owned()]);
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.id.as_str() != dropped));
 }
 
 #[test]
@@ -221,7 +225,66 @@ fn a_pinned_decode_refuses_a_frame_that_is_not_rigid() {
         .loss()
         .message
         .split_whitespace()
-        .any(|token| token == "NeuAsmSld:members:2575"));
+        .any(|token| token == "creo:model:occurrence#member-1"));
+}
+
+#[test]
+fn an_unread_component_row_is_given_up_with_the_rows_after_it() {
+    let mut table = members_table();
+    replace_once(
+        &mut table,
+        b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe1",
+        b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe2",
+    );
+    let bytes = build_asm_with(table);
+    let row = bytes
+        .windows(3)
+        .position(|window| window == b"\x8a\x0f\x02")
+        .expect("the unread row");
+    let end = crate::container::scan_bytes_ok(bytes.clone())
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "NeuAsmSld")
+        .expect("the component section")
+        .end();
+    let result = decode(bytes.clone());
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).len(),
+        1
+    );
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert!(
+        charges[0].starts_with(&format!(
+            "part component-rows stream=\"\" offset={row} length={} record=creo:source:part#",
+            end - row
+        )),
+        "{}",
+        charges[0]
+    );
+    let stub = result
+        .ir()
+        .native_unknowns("creo")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| charges[0].contains(&format!(" record={}: ", record.id)))
+        .expect("the charge names its part stub");
+    assert!(stub.links.is_empty());
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .and_then(|record| record.data()),
+        Some(&bytes[row..end])
+    );
 }
 
 #[test]

@@ -58,23 +58,12 @@ fn refused_typed_drawing_records_emit_the_pinned_malformed_loss() {
         ..Inventory::default()
     };
     let losses = inventory.losses();
-    assert_eq!(losses.len(), 2);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::InventorLossCode::DrawingRecordMalformed
-            .note("")
-            .code
-    );
+    assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.to_string(),
         "inventor/drawing.record-malformed"
     );
-    assert_eq!(
-        losses[1].code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind()
-    );
-    assert_eq!(losses[1].severity, cadmpeg_ir::report::Severity::Error);
-    assert!(losses[1]
+    assert!(!losses[0]
         .message
         .split_whitespace()
         .any(|token| token == "inventor:drawing:record-issue#generated-0"));

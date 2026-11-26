@@ -21,8 +21,8 @@ use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, GivenUpRecord, Part};
-use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, SourceProvenance, StreamName, UnknownRecord};
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
@@ -104,11 +104,7 @@ fn decode_container<'a>(
                     &descriptor.path,
                     detail,
                 );
-                unreadable_property_sets.push((
-                    descriptor.stream,
-                    issue.id.clone(),
-                    detail.clone(),
-                ));
+                unreadable_property_sets.push((descriptor.stream, detail.clone()));
                 property_set_issues.push(issue);
             }
             PropertySetState::Parsed(property_set) => {
@@ -239,23 +235,17 @@ fn decode_container<'a>(
     let ProteinNativeRecords {
         assets: protein_assets,
         rejections: protein_rejections,
-        issues: protein_issues,
+        rejected: protein_rejected,
     } = project_protein_records(ctx, protein_instances)?;
-    let mut ufrx_issues = Vec::new();
+    let mut ufrx_rejected = Rejections::default();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
-    let ufrx = project_ufrx_state(ctx, &container.ufrx, &mut ufrx_issues)?;
-    // The scope of a Protein issue is the id of the record it rejects.
-    let protein_issue_records = protein_issues
-        .iter()
-        .map(|issue| (issue.scope.clone(), issue.detail.clone()))
-        .collect::<Vec<_>>();
-    let ufrx_issue_records = ufrx_issues
-        .iter()
-        .map(|issue| (issue.id.clone(), issue.detail.clone()))
-        .collect::<Vec<_>>();
-    let mut structural_issues = protein_issues;
-    structural_issues.extend(ufrx_issues);
+    let ufrx = project_ufrx_state(ctx, &container.ufrx, &mut ufrx_rejected)?;
+    let protein_issue_records = protein_rejected.records;
+    let ufrx_issue_records = ufrx_rejected.records;
+    let ufrx_issue_count = ufrx_rejected.issues.len();
+    let mut structural_issues = protein_rejected.issues;
+    structural_issues.extend(ufrx_rejected.issues);
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
@@ -378,7 +368,7 @@ fn decode_container<'a>(
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
     let mut given_up = Vec::new();
-    let mut unreadable_tables = Vec::new();
+    let mut issue_records = std::collections::BTreeSet::new();
     if !ctx.container_only() {
         for descriptor in &container.rse.databases {
             let Some(detail) = descriptor.issue_detail() else {
@@ -389,9 +379,8 @@ fn decode_container<'a>(
                 &container.snapshot,
                 container.snapshot.stream_by_id(descriptor.stream),
                 ("rse-database", &[ArenaClass::Model]),
-                &format!("inventor:rse:database#v{}", descriptor.band.value()),
                 &detail,
-                (&mut given_up, &mut unreadable_tables),
+                &mut given_up,
             )?;
         }
     }
@@ -425,9 +414,8 @@ fn decode_container<'a>(
                 &container.snapshot,
                 container.snapshot.stream(path),
                 ("rse-table", &[ArenaClass::Model, ArenaClass::Design]),
-                &issue.id,
                 detail,
-                (&mut given_up, &mut unreadable_tables),
+                &mut given_up,
             )?;
         }
         structural_issues.push(issue);
@@ -440,7 +428,8 @@ fn decode_container<'a>(
     let meta_types = projection.meta_types;
     let segment_meta_issues = projection.segment_meta_issues;
     let rse_records = projection.rse_records;
-    let drawing_inventory = crate::drawing::inventory(ctx, container, &rse_records)?;
+    let mut drawing_inventory = crate::drawing::inventory(ctx, container, &rse_records)?;
+    given_up.append(&mut drawing_inventory.given_up);
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
     let unpaired_segments = projection.unpaired_segments;
@@ -679,6 +668,8 @@ fn decode_container<'a>(
     losses.extend(drawing_inventory.losses());
     let mut geometry_failure = None;
     let mut given_up_carrier = None;
+    let mut carrier_given_up = false;
+    let mut history_chain = None;
     let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
@@ -696,19 +687,34 @@ fn decode_container<'a>(
                     }
                     Err(error) => {
                         geometry_failure = Some(format!("{error}"));
-                        given_up_carrier = Some(carrier_given_up(carrier)?);
+                        given_up_carrier = Some(carrier_part(carrier)?);
                         None
                     }
                 }
             }
             Err(detail) => {
                 geometry_failure = Some(detail.to_owned());
-                given_up_carrier = Some(carrier_given_up(carrier)?);
+                given_up_carrier = Some(carrier_part(carrier)?);
                 None
             }
         },
-        ActiveCarrierState::Unreadable { record, .. } => {
-            given_up_carrier = Some((record.clone(), None));
+        ActiveCarrierState::Unreadable {
+            segment_token,
+            record_ordinal,
+            payload_offset,
+            payload,
+            ..
+        } => {
+            given_up_carrier = Some((
+                crate::rse::bulk_record_part(
+                    "rse-record",
+                    (segment_token, *record_ordinal),
+                    *payload_offset,
+                    payload.window(),
+                    ArenaClass::Model,
+                )?,
+                (segment_token.clone(), *record_ordinal),
+            ));
             None
         }
         ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
@@ -898,18 +904,10 @@ fn decode_container<'a>(
                     None => None,
                 };
                 if let (Some((code, why)), None) = (unread, &given_up_carrier) {
-                    losses.push(
-                        GivenUpRecord::new(
-                            format!(
-                                "inventor:rse:record#{}-{}",
-                                carrier.segment_token, carrier.record_ordinal
-                            ),
-                            format_args!("{}: {why}", code.kind()),
-                        )
-                        .at(carrier_provenance(carrier)?)
-                        .spanning(carrier.carrier_len.get())
-                        .loss(),
-                    );
+                    history_chain = Some((
+                        history_chain_part(carrier)?,
+                        CodecError::malformed(format_args!("{}: {why}", code.kind())),
+                    ));
                 }
                 ir.model.history_bodies = history.bodies.bodies;
             }
@@ -982,6 +980,15 @@ fn decode_container<'a>(
     }
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
+    if let Some((part, error)) = history_chain {
+        // The decode retains the whole carrier it read no geometry out of.
+        let part = if carrier_read_no_geometry {
+            part.digest_only()
+        } else {
+            part
+        };
+        given_up.push(ctx.give_up_part(part, error)?);
+    }
     if !protein_issue_records.is_empty() {
         let code = InventorLossCode::ProteinAssetRejected;
         losses.push(code.note(format!(
@@ -1025,16 +1032,16 @@ fn decode_container<'a>(
             },
         };
         let note = InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail);
-        let carrier_loss = given_up_carrier.map(|(record, located)| {
-            let record = GivenUpRecord::caused_by(record, &note);
-            match located {
-                Some((at, length)) => record.at(at).spanning(length),
-                None => record,
+        if let Some((part, record)) = given_up_carrier {
+            if issue_records.insert(record) {
+                given_up.push(ctx.give_up_part(
+                    part,
+                    CodecError::malformed(format_args!("{}: {}", note.code, note.message)),
+                )?);
+                carrier_given_up = true;
             }
-            .loss()
-        });
+        }
         losses.push(note);
-        losses.extend(carrier_loss);
     }
     if !ctx.container_only() {
         if kernel_stats.unknown_surface_faces() != 0 {
@@ -1059,7 +1066,6 @@ fn decode_container<'a>(
                 segment_pairs.len()
             )));
         }
-        losses.extend(unreadable_tables);
         if !segment_meta_issues.is_empty() {
             losses.push(InventorLossCode::RseMetadataStreamMalformed.note(format!(
                 "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
@@ -1071,9 +1077,8 @@ fn decode_container<'a>(
                     &container.snapshot,
                     segment_stream(container, &issue.token, |pair| pair.metadata),
                     ("rse-metadata", &[ArenaClass::Model, ArenaClass::Design]),
-                    &issue.id,
                     &issue.detail,
-                    (&mut given_up, &mut losses),
+                    &mut given_up,
                 )?;
             }
         }
@@ -1088,9 +1093,8 @@ fn decode_container<'a>(
                     &container.snapshot,
                     segment_stream(container, &issue.token, |pair| pair.bulk),
                     ("rse-bulk", &[ArenaClass::Model, ArenaClass::Design]),
-                    &issue.id,
                     &issue.detail,
-                    (&mut given_up, &mut losses),
+                    &mut given_up,
                 )?;
             }
         }
@@ -1099,40 +1103,55 @@ fn decode_container<'a>(
                 "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
                 assembly_inventory.issues.len()
             )));
-            losses.extend(given_up_records(
+            give_up_issue_records(
+                ctx,
+                container,
                 &assembly_inventory.issues,
-                InventorLossCode::AssemblyRecordMalformed,
-            ));
+                (InventorLossCode::AssemblyRecordMalformed, ArenaClass::Model),
+                (&mut issue_records, &mut given_up),
+            )?;
         }
         if !presentation_inventory.issues.is_empty() {
             losses.push(InventorLossCode::PresentationRecordMalformed.note(format!(
                 "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
                 presentation_inventory.issues.len()
             )));
-            losses.extend(given_up_records(
+            give_up_issue_records(
+                ctx,
+                container,
                 &presentation_inventory.issues,
-                InventorLossCode::PresentationRecordMalformed,
-            ));
+                (
+                    InventorLossCode::PresentationRecordMalformed,
+                    ArenaClass::Model,
+                ),
+                (&mut issue_records, &mut given_up),
+            )?;
         }
         if !design_inventory.issues.is_empty() {
             losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
                 "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
                 design_inventory.issues.len()
             )));
-            losses.extend(given_up_records(
+            give_up_issue_records(
+                ctx,
+                container,
                 &design_inventory.issues,
-                InventorLossCode::DesignRecordMalformed,
-            ));
+                (InventorLossCode::DesignRecordMalformed, ArenaClass::Design),
+                (&mut issue_records, &mut given_up),
+            )?;
         }
         if !sketch_inventory.issues.is_empty() {
             losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
                 "{} typed Inventor sketch record(s) could not be parsed exactly.",
                 sketch_inventory.issues.len()
             )));
-            losses.extend(given_up_records(
+            give_up_issue_records(
+                ctx,
+                container,
                 &sketch_inventory.issues,
-                InventorLossCode::SketchRecordMalformed,
-            ));
+                (InventorLossCode::SketchRecordMalformed, ArenaClass::Design),
+                (&mut issue_records, &mut given_up),
+            )?;
         }
         let unnamed_labels = feature_inventory
             .labels
@@ -1160,15 +1179,18 @@ fn decode_container<'a>(
                 feature_inventory.issues.len()
             )));
             // A pattern whose suppression operand fails its check is kept.
-            losses.extend(given_up_records(
+            give_up_issue_records(
+                ctx,
+                container,
                 feature_inventory.issues.iter().filter(|issue| {
                     !feature_inventory.pattern_features.iter().any(|pattern| {
                         pattern.identity.segment_token == issue.segment_token
                             && pattern.identity.record_ordinal == issue.record_ordinal
                     })
                 }),
-                InventorLossCode::FeatureRecordMalformed,
-            ));
+                (InventorLossCode::FeatureRecordMalformed, ArenaClass::Design),
+                (&mut issue_records, &mut given_up),
+            )?;
         }
         if unresolved.features != 0 {
             losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
@@ -1364,15 +1386,14 @@ fn decode_container<'a>(
                 "{} OLE property-set stream(s) are malformed.",
                 property_set_issues.len()
             )));
-            for (stream, record, detail) in &unreadable_property_sets {
+            for (stream, detail) in &unreadable_property_sets {
                 give_up_stream(
                     ctx,
                     &container.snapshot,
                     container.snapshot.stream_by_id(*stream),
                     ("property-set", &[ArenaClass::Model]),
-                    record,
                     detail,
-                    (&mut given_up, &mut losses),
+                    &mut given_up,
                 )?;
             }
         }
@@ -1383,14 +1404,20 @@ fn decode_container<'a>(
             )));
         }
         match &container.protein {
-            ProteinState::Package(_) => {
+            ProteinState::Package(package) => {
                 if let Some(detail) = &protein_semantic_issue {
-                    losses.extend(record_given_up(
-                        "inventor:protein:state#root",
-                        InventorLossCode::ProteinCatalogUndecodable.note(format!(
-                            "The Protein asset catalog could not be decoded: {detail}"
-                        )),
-                    ));
+                    let code = InventorLossCode::ProteinCatalogUndecodable;
+                    losses.push(code.note(format!(
+                        "The Protein asset catalog could not be decoded: {detail}"
+                    )));
+                    give_up_stream(
+                        ctx,
+                        &container.snapshot,
+                        container.snapshot.stream_by_id(package.stream),
+                        ("protein-stream", &[ArenaClass::Model]),
+                        &format!("{}: {detail}", code.kind()),
+                        &mut given_up,
+                    )?;
                 } else {
                     if !protein_rejections.is_empty() {
                         losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
@@ -1443,9 +1470,8 @@ fn decode_container<'a>(
                     &container.snapshot,
                     container.snapshot.stream_by_id(*stream),
                     ("protein-stream", &[ArenaClass::Model]),
-                    "inventor:protein:state#root",
                     detail,
-                    (&mut given_up, &mut losses),
+                    &mut given_up,
                 )?;
             }
             ProteinState::Absent | ProteinState::Empty { .. } => {}
@@ -1458,11 +1484,10 @@ fn decode_container<'a>(
                 )),
             );
         }
-        if !ufrx_issue_records.is_empty() {
+        if ufrx_issue_count != 0 {
             let code = InventorLossCode::UfrxTableMalformed;
             losses.push(code.note(format!(
-                "Skipped {} invalid UFRxDoc native record(s).",
-                ufrx_issue_records.len()
+                "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
             )));
             losses.extend(ufrx_issue_records.iter().map(|(record, detail)| {
                 GivenUpRecord::new(record, format_args!("{}: {detail}", code.kind())).loss()
@@ -1479,9 +1504,8 @@ fn decode_container<'a>(
                     &container.snapshot,
                     container.snapshot.stream_by_id(*stream),
                     ("ufrx-stream", &[ArenaClass::Model]),
-                    "inventor:ufrx:state#root",
                     detail,
-                    (&mut given_up, &mut losses),
+                    &mut given_up,
                 )?;
             }
             UfrxState::Unsupported {
@@ -1503,9 +1527,8 @@ fn decode_container<'a>(
                     &container.snapshot,
                     container.snapshot.stream_by_id(*stream),
                     ("ufrx-stream", &[ArenaClass::Model]),
-                    "inventor:ufrx:state#root",
                     &format!("{}: schema {schema}: {detail}", code.kind()),
-                    (&mut given_up, &mut losses),
+                    &mut given_up,
                 )?;
             }
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
@@ -1546,7 +1569,7 @@ fn decode_container<'a>(
         // Retention is keyed on the outcome, not on a version band: a carrier
         // this decode read no geometry out of keeps its bytes verbatim, whatever
         // its save format declared.
-        if carrier_read_no_geometry {
+        if carrier_read_no_geometry && !carrier_given_up {
             ctx.retain_bytes(
                 cadmpeg_core::decode::u64_from_index(carrier.bytes.window().len()),
                 "retain Inventor kernel carrier that read no geometry",
@@ -2035,54 +2058,91 @@ fn project_root_product(
     Ok(definition)
 }
 
-/// One `record.unreadable` per record the issues give up, naming the issue
-/// record the document holds in its place, with the detail of its first
-/// issue.
-fn given_up_records<'a>(
+/// Gives up, as an `rse-record` part for `code`, the framed record of each
+/// issue that no earlier issue in `named` names, with the detail of its first
+/// issue. The part holds content of the class `holds`, its bytes are the
+/// record's payload in the expanded bulk stream of its segment, and its stub
+/// links to the `RSe` record that frames it.
+fn give_up_issue_records<'a>(
+    ctx: &DecodeContext<'_>,
+    container: &InventorContainer<'_>,
     issues: impl IntoIterator<Item = &'a RecordIssue>,
-    code: InventorLossCode,
-) -> Vec<LossNote> {
-    let mut named = std::collections::BTreeSet::new();
-    issues
-        .into_iter()
-        .filter(|issue| named.insert(issue.id()))
-        .map(|issue| {
-            GivenUpRecord::new(
-                issue.id(),
-                format_args!("{}: {}", code.kind(), issue.detail),
-            )
-            .loss()
-        })
-        .collect()
+    (code, holds): (InventorLossCode, ArenaClass),
+    (named, parts): (
+        &mut std::collections::BTreeSet<(String, u32)>,
+        &mut Vec<GivenUpPart>,
+    ),
+) -> Result<(), CodecError> {
+    for issue in issues {
+        let token = issue.segment_token.as_str();
+        if !named.insert((token.to_owned(), issue.record_ordinal)) {
+            continue;
+        }
+        let frame = rse_record_frame(container, token, issue.record_ordinal).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "Inventor record issue {} names no framed RSe record",
+                issue.id()
+            ))
+        })?;
+        let part = crate::rse::bulk_record_part(
+            "rse-record",
+            (token, issue.record_ordinal),
+            frame.payload_offset,
+            frame.payload.window(),
+            holds,
+        )?;
+        parts.push(ctx.give_up_part(
+            part,
+            CodecError::malformed(format_args!("{}: {}", code.kind(), issue.detail)),
+        )?);
+    }
+    Ok(())
+}
+
+/// The framed `RSe` record `ordinal` of the segment whose token is `token`.
+fn rse_record_frame<'s, 'a>(
+    container: &'s InventorContainer<'a>,
+    token: &str,
+    ordinal: u32,
+) -> Option<&'s crate::records::RseRecordFrame<'a>> {
+    let segment = container
+        .rse
+        .segments
+        .iter()
+        .find(|segment| segment.pair.token.as_str() == token)?;
+    let crate::rse::SegmentBulkState::Framed(bulk) = &segment.bulk else {
+        return None;
+    };
+    let crate::rse::RecordFrameState::Framed(table) = &bulk.records else {
+        return None;
+    };
+    table
+        .records
+        .iter()
+        .find(|record| record.ordinal == ordinal)
 }
 
 /// Gives up the compound stream `entry` as a part of `kind` holding
 /// content of the classes `holds`, for `error`. A stream that is absent or
-/// does not open is given up as the record `record`.
+/// does not open has no bytes to give up: the record that names the stream
+/// keeps its issue, and no record is dropped.
 fn give_up_stream<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
     entry: Option<&CompoundStreamEntry>,
     (kind, holds): (&'static str, &[ArenaClass]),
-    record: &str,
     error: &str,
-    (parts, losses): (&mut Vec<GivenUpPart>, &mut Vec<LossNote>),
+    parts: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
-    let opened = match entry {
-        Some(entry) => ctx
-            .run_part(|| snapshot.open(ctx, entry))?
-            .ok()
-            .map(|opened| (entry, opened)),
-        None => None,
+    let Some(entry) = entry else {
+        return Ok(());
     };
-    match opened {
-        Some((entry, opened)) => {
-            let part = Part::at("inventor", kind, 0, opened.window(), holds.iter().copied())
-                .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
-            parts.push(ctx.give_up_part(part, CodecError::Malformed(error.to_owned()))?);
-        }
-        None => losses.push(GivenUpRecord::new(record, error).loss()),
-    }
+    let Ok(opened) = ctx.run_part(|| snapshot.open(ctx, entry))? else {
+        return Ok(());
+    };
+    let part = Part::at("inventor", kind, 0, opened.window(), holds.iter().copied())
+        .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
+    parts.push(ctx.give_up_part(part, CodecError::Malformed(error.to_owned()))?);
     Ok(())
 }
 
@@ -2101,33 +2161,50 @@ fn segment_stream<'s>(
     container.snapshot.stream_by_id(select(&segment.pair))
 }
 
-/// The kernel carrier's position in the expanded bulk stream of its segment.
-fn carrier_provenance(
-    carrier: &crate::kernel::ActiveCarrier<'_>,
-) -> Result<SourceProvenance, CodecError> {
-    let stream = StreamName::try_from(format!("RSeStorage/B{}:expanded", carrier.segment_token))
-        .map_err(CodecError::malformed)?;
-    Ok(SourceProvenance::in_stream(
-        "inventor",
-        stream,
+/// The active kernel carrier as a `kernel-carrier` part of its `RSe` record, and
+/// the segment token and ordinal of that record.
+fn carrier_part<'a>(
+    carrier: &crate::kernel::ActiveCarrier<'a>,
+) -> Result<(Part<'a>, (String, u32)), CodecError> {
+    let record = (carrier.segment_token.as_str(), carrier.record_ordinal);
+    let part = crate::rse::bulk_record_part(
+        "kernel-carrier",
+        record,
         carrier.carrier_offset,
-    ))
+        carrier.bytes.window(),
+        ArenaClass::Model,
+    )?;
+    Ok((part, (record.0.to_owned(), record.1)))
 }
 
-/// The record id, position, and length of a kernel carrier the decode
-/// read no geometry out of, whose bytes the decode retains.
-fn carrier_given_up(
-    carrier: &crate::kernel::ActiveCarrier<'_>,
-) -> Result<CarrierGivenUp, CodecError> {
-    Ok((
-        carrier_unknown_id(carrier).to_string(),
-        Some((carrier_provenance(carrier)?, carrier.carrier_len.get())),
-    ))
+/// The `delta_state` chain of the active carrier as a `history-chain` part:
+/// the carrier bytes from its first `delta_state` record.
+fn history_chain_part<'a>(
+    carrier: &crate::kernel::ActiveCarrier<'a>,
+) -> Result<Part<'a>, CodecError> {
+    let bytes = carrier.bytes.window();
+    let start = cadmpeg_asm::history::delta_state_offsets(bytes)
+        .first()
+        .copied()
+        .ok_or_else(|| {
+            CodecError::malformed("an unread Inventor history chain has no delta_state record")
+        })?;
+    let chain = bytes
+        .get(start..)
+        .ok_or_else(|| CodecError::malformed("Inventor history chain start is out of bounds"))?;
+    let offset = carrier
+        .carrier_offset
+        .checked_add(cadmpeg_core::decode::u64_from_index(start))
+        .ok_or_else(|| CodecError::malformed("Inventor history chain offset overflows"))?;
+    Ok(crate::rse::bulk_record_part(
+        "history-chain",
+        (carrier.segment_token.as_str(), carrier.record_ordinal),
+        offset,
+        chain,
+        ArenaClass::Design,
+    )?
+    .costing("the features have no history states"))
 }
-
-/// A given-up kernel carrier: its record id, and its position and length
-/// where the decode retains its bytes.
-type CarrierGivenUp = (String, Option<(SourceProvenance, u64)>);
 
 fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {
     UnknownId::compose(
@@ -2253,7 +2330,7 @@ fn project_protein_state(
 struct ProteinNativeRecords {
     assets: Vec<ProteinAssetRecord>,
     rejections: Vec<ProteinRejectionRecord>,
-    issues: Vec<StructuralIssueRecord>,
+    rejected: Rejections,
 }
 
 fn project_protein_records(
@@ -2262,7 +2339,7 @@ fn project_protein_records(
 ) -> Result<ProteinNativeRecords, CodecError> {
     let mut assets = Vec::new();
     let mut rejections = Vec::new();
-    let mut issues = Vec::new();
+    let mut rejected = Rejections::default();
     for instance in instances {
         if instance.records.is_empty() && instance.rejected.is_empty() {
             continue;
@@ -2277,23 +2354,23 @@ fn project_protein_records(
                 ordinal: asset.ordinal,
                 asset,
             };
-            if let Some(record) = admit_protein_asset(ctx, wire, &mut issues)? {
+            if let Some(record) = admit_protein_asset(ctx, wire, &mut rejected)? {
                 assets.push(record);
             }
         }
-        for rejected in instance.rejected {
+        for rejection in instance.rejected {
             let id = format!(
                 "inventor:protein:rejection#{}-{}",
-                entry_digest, rejected.ordinal
+                entry_digest, rejection.ordinal
             );
             let entry_name = instance.entry_name.clone();
             let wire = ProteinRejectionRecordWire {
                 id,
                 entry_name,
-                ordinal: rejected.ordinal,
-                detail: rejected.detail,
+                ordinal: rejection.ordinal,
+                detail: rejection.detail,
             };
-            if let Some(record) = admit_protein_rejection(ctx, wire, &mut issues)? {
+            if let Some(record) = admit_protein_rejection(ctx, wire, &mut rejected)? {
                 rejections.push(record);
             }
         }
@@ -2301,7 +2378,7 @@ fn project_protein_records(
     Ok(ProteinNativeRecords {
         assets,
         rejections,
-        issues,
+        rejected,
     })
 }
 
@@ -2318,7 +2395,7 @@ pub(crate) fn nested_visibility_loss(nested_hidden: usize) -> Option<LossNote> {
 fn project_ufrx_state(
     ctx: &DecodeContext<'_>,
     state: &UfrxState<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<UfrxRecord, CodecError> {
     admit_native_items(ctx, 1)?;
     Ok(match state {
@@ -2348,14 +2425,14 @@ fn project_ufrx_state(
         UfrxState::Parsed(document) => {
             let mut model_states = Vec::new();
             for (ordinal, state) in document.model_states.iter().enumerate() {
-                if let Some(record) = project_ufrx_model_state(ctx, ordinal, state, issues)? {
+                if let Some(record) = project_ufrx_model_state(ctx, ordinal, state, rejected)? {
                     model_states.push(record);
                 }
             }
             let mut references = Vec::new();
             for (ordinal, reference) in document.references.iter().enumerate() {
                 if let Some(record) =
-                    project_ufrx_external_reference(ctx, ordinal, reference, issues)?
+                    project_ufrx_external_reference(ctx, ordinal, reference, rejected)?
                 {
                     references.push(record);
                 }
@@ -2363,21 +2440,21 @@ fn project_ufrx_state(
             let mut embedded = Vec::new();
             for (ordinal, reference) in document.embedded_references.iter().enumerate() {
                 if let Some(record) =
-                    project_ufrx_embedded_reference(ctx, ordinal, reference, issues)?
+                    project_ufrx_embedded_reference(ctx, ordinal, reference, rejected)?
                 {
                     embedded.push(record);
                 }
             }
             let mut occurrences = Vec::new();
             for (ordinal, occurrence) in document.occurrences.iter().enumerate() {
-                if let Some(record) = project_ufrx_occurrence(ctx, ordinal, occurrence, issues)? {
+                if let Some(record) = project_ufrx_occurrence(ctx, ordinal, occurrence, rejected)? {
                     occurrences.push(record);
                 }
             }
             let representation = document
                 .representation
                 .as_ref()
-                .map(|state| project_ufrx_representation(ctx, state, issues))
+                .map(|state| project_ufrx_representation(ctx, state, rejected))
                 .transpose()?
                 .flatten();
             UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
@@ -2442,7 +2519,7 @@ fn project_ufrx_model_state(
     ctx: &DecodeContext<'_>,
     ordinal: usize,
     state: &crate::external_reference::UfrxModelState<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<Option<UfrxModelStateRecord>, CodecError> {
     let parameters = state
         .parameters
@@ -2473,14 +2550,15 @@ fn project_ufrx_model_state(
         )),
     });
     let scope = format!("ufrx-model-state-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    let record = format!("inventor:ufrx:model-state#{ordinal}");
+    admit_ufrx_record(ctx, admitted, (&scope, Some(&record)), rejected)
 }
 
 fn project_ufrx_external_reference(
     ctx: &DecodeContext<'_>,
     ordinal: usize,
     reference: &crate::external_reference::InventorExternalReference,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<Option<ExternalReferenceRecord>, CodecError> {
     let admitted = ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
         id: format!("inventor:ufrx:external-reference#{ordinal}"),
@@ -2499,14 +2577,15 @@ fn project_ufrx_external_reference(
         flags: reference.flags,
     });
     let scope = format!("ufrx-external-reference-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    let record = format!("inventor:ufrx:external-reference#{ordinal}");
+    admit_ufrx_record(ctx, admitted, (&scope, Some(&record)), rejected)
 }
 
 fn project_ufrx_embedded_reference(
     ctx: &DecodeContext<'_>,
     ordinal: usize,
     reference: &crate::external_reference::InventorEmbeddedReference<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<Option<EmbeddedReferenceRecord>, CodecError> {
     let admitted = EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
         id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
@@ -2528,14 +2607,15 @@ fn project_ufrx_embedded_reference(
         )),
     });
     let scope = format!("ufrx-embedded-reference-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    let record = format!("inventor:ufrx:embedded-reference#{ordinal}");
+    admit_ufrx_record(ctx, admitted, (&scope, Some(&record)), rejected)
 }
 
 fn project_ufrx_occurrence(
     ctx: &DecodeContext<'_>,
     ordinal: usize,
     occurrence: &crate::external_reference::UfrxOccurrence<'_>,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<Option<UfrxOccurrenceRecord>, CodecError> {
     let admitted = UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
         id: format!("inventor:ufrx:occurrence#{ordinal}"),
@@ -2556,13 +2636,14 @@ fn project_ufrx_occurrence(
         )),
     });
     let scope = format!("ufrx-occurrence-{ordinal}");
-    admit_ufrx_record(ctx, admitted, &scope, issues)
+    let record = format!("inventor:ufrx:occurrence#{ordinal}");
+    admit_ufrx_record(ctx, admitted, (&scope, Some(&record)), rejected)
 }
 
 fn project_ufrx_representation(
     ctx: &DecodeContext<'_>,
     state: &crate::external_reference::UfrxRepresentationState,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
     let design_views = state.design_views.as_ref().map(|views| {
         views
@@ -2583,8 +2664,8 @@ fn project_ufrx_representation(
     admit_ufrx_record(
         ctx,
         UfrxRepresentationRecord::try_from(wire),
-        "ufrx-representation",
-        issues,
+        ("ufrx-representation", None),
+        rejected,
     )
 }
 
@@ -2669,8 +2750,8 @@ fn apply_kernel_header(
 fn admit_ufrx_record<T>(
     ctx: &DecodeContext<'_>,
     admitted: Result<T, String>,
-    scope: &str,
-    issues: &mut Vec<StructuralIssueRecord>,
+    (scope, record): (&str, Option<&str>),
+    rejected: &mut Rejections,
 ) -> Result<Option<T>, CodecError> {
     match admitted {
         Ok(record) => {
@@ -2678,28 +2759,51 @@ fn admit_ufrx_record<T>(
             Ok(Some(record))
         }
         Err(detail) => {
-            issues.push(structural_issue(ctx, scope, &detail)?);
+            if let Some(record) = record {
+                rejected.records.push((record.to_owned(), detail.clone()));
+            }
+            rejected.issues.push(structural_issue(ctx, scope, &detail)?);
             Ok(None)
         }
     }
 }
 
+/// The structural issues of the records a projection rejects, and the id
+/// and detail of each rejected record that the document would hold under
+/// its own id. A rejected part of a record the document keeps has an issue
+/// and no id.
+#[derive(Default)]
+struct Rejections {
+    issues: Vec<StructuralIssueRecord>,
+    records: Vec<(String, String)>,
+}
+
 fn admit_protein_asset(
     ctx: &DecodeContext<'_>,
     wire: ProteinAssetRecordWire,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<Option<ProteinAssetRecord>, CodecError> {
     let scope = wire.id.clone();
-    admit_ufrx_record(ctx, ProteinAssetRecord::try_from(wire), &scope, issues)
+    admit_ufrx_record(
+        ctx,
+        ProteinAssetRecord::try_from(wire),
+        (&scope, Some(&scope)),
+        rejected,
+    )
 }
 
 fn admit_protein_rejection(
     ctx: &DecodeContext<'_>,
     wire: ProteinRejectionRecordWire,
-    issues: &mut Vec<StructuralIssueRecord>,
+    rejected: &mut Rejections,
 ) -> Result<Option<ProteinRejectionRecord>, CodecError> {
     let scope = wire.id.clone();
-    admit_ufrx_record(ctx, ProteinRejectionRecord::try_from(wire), &scope, issues)
+    admit_ufrx_record(
+        ctx,
+        ProteinRejectionRecord::try_from(wire),
+        (&scope, Some(&scope)),
+        rejected,
+    )
 }
 
 fn admit_assembly_placement(

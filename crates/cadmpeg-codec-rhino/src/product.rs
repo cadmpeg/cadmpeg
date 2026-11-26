@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -171,13 +171,15 @@ fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalR
     })
 }
 
-/// Installs the source product graph without requiring occurrence expansion.
+/// Installs the source product graph without requiring occurrence expansion,
+/// and returns the losses and the given-up occurrence objects.
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<(Vec<LossNote>, Vec<GivenUpPart>), CodecError> {
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     let mut object_records = HashMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = object.identity() {
@@ -281,13 +283,14 @@ pub(crate) fn install(
                     )
                     .with_tag(tag),
                 );
-                let unreadable = GivenUpRecord::caused_by(
-                    format_args!("rhino:object:record#{source_order:06}"),
+                given_up.push(crate::container::give_up_object_record(
+                    ctx,
+                    scan.data,
+                    source_order,
+                    object.range.clone(),
                     &loss,
-                )
-                .spanning(cadmpeg_core::decode::u64_from_index(object.range.len()))
-                .loss();
-                losses.extend([loss, unreadable]);
+                )?);
+                losses.push(loss);
                 continue;
             }
         };
@@ -333,7 +336,7 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "product_definitions", &definitions)?;
     namespace.set_arena(ctx, "product_occurrences", &occurrences)?;
     namespace.set_arena(ctx, "external_references", &external)?;
-    Ok(losses)
+    Ok((losses, given_up))
 }
 
 #[cfg(test)]
@@ -361,19 +364,18 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
-        let losses = install(
+        let (losses, given_up) = install(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
         .expect("other product records remain transferable");
-        assert_eq!(losses.len(), 2);
-        assert_eq!(
-            losses[1].code,
-            cadmpeg_ir::unknown::part::record_unreadable_kind()
-        );
-        assert!(losses[1].message.starts_with(&format!(
-            "record rhino:object:record#000000 stream=\"\" offset={source_offset} length="
+        assert_eq!(losses.len(), 1);
+        assert_eq!(given_up.len(), 1);
+        assert!(given_up[0].loss().message.starts_with(&format!(
+            "part object-record stream=\"\" offset={source_offset} length={} record={}: ",
+            scan.objects[0].range().len(),
+            given_up[0].id()
         )));
         let message = &losses[0].message;
         assert!(message.contains(&source_id));
@@ -582,10 +584,15 @@ mod tests {
                 )
             );
             let record = format!("rhino:object:record#{index:06}");
-            assert!(decoded.report().losses.iter().any(|loss| {
-                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                    && loss.message.split_whitespace().any(|token| token == record)
-            }));
+            crate::container::tests::assert_part_given_up(
+                decoded.ir(),
+                decoded.source_fidelity(),
+                &decoded.report().losses,
+                "object-record",
+                source.range.start,
+                Some(&record),
+                &record,
+            );
             assert_eq!(
                 decoded
                     .source_fidelity()

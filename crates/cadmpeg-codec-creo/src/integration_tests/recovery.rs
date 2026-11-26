@@ -58,23 +58,38 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("undefined code"));
         let section = format!("creo:compressed:section#{section_offset}");
-        assert_eq!(
-            decoded
-                .report()
-                .losses
-                .iter()
-                .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
-                .map(|loss| loss.message.split_whitespace().nth(1))
-                .collect::<Vec<_>>(),
-            [Some(section.as_str())]
-        );
-        assert!(decoded
+        let charges = decoded
             .report()
             .losses
             .iter()
-            .any(|loss| loss.message.starts_with(&format!(
-                "record {section} stream=\"\" offset={section_offset} length="
-            ))));
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .collect::<Vec<_>>();
+        assert_eq!(charges.len(), 1, "{charges:#?}");
+        let message = &charges[0].message;
+        assert!(
+            message.starts_with(&format!(
+                "part compressed-section stream=\"\" offset={section_offset} length={} record=creo:source:part#",
+                damaged.len()
+            )),
+            "{message}"
+        );
+        assert!(!message.split_whitespace().any(|token| token == section));
+        let unknowns = decoded
+            .ir()
+            .native_unknowns("creo")
+            .expect("native unknowns");
+        let stub = unknowns
+            .iter()
+            .find(|record| message.contains(&format!(" record={}: ", record.id)))
+            .expect("the charge names its part stub");
+        assert_eq!(
+            stub.links,
+            [cadmpeg_ir::ids::Identity::try_from(section.clone()).expect("section id")]
+        );
+        assert!(decoded
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .is_some_and(|record| record.data().is_none()));
         assert!(decoded
             .source_fidelity()
             .retained_records()
@@ -110,12 +125,13 @@ fn a_pinned_decode_refuses_an_unexpanded_compressed_section() {
         rejection.loss().code,
         cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
-    let section = format!("creo:compressed:section#{section_offset}");
-    assert!(rejection
-        .loss()
-        .message
-        .split_whitespace()
-        .any(|token| token == section));
+    assert!(
+        rejection.loss().message.starts_with(&format!(
+            "part compressed-section stream=\"\" offset={section_offset} "
+        )),
+        "{}",
+        rejection.loss().message
+    );
 }
 
 #[test]

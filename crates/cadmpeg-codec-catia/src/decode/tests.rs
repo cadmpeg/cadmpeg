@@ -289,8 +289,9 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
 
 /// The router states a fall-through by name. A route that refuses records and
 /// then transfers no model leaves both its refusal notes and one fall-through
-/// note in the report of whatever route or fallback finishes the decode; the
-/// metadata fallback gives up the payload the route read.
+/// note in the report of whatever route or fallback finishes the decode. The
+/// metadata fallback keeps the payload whole, so it charges no
+/// `record.unreadable` beyond those of the records the route refused.
 #[test]
 fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {
@@ -319,6 +320,7 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 ),
                 annotations: cadmpeg_ir::Annotations::default(),
                 unknowns: Vec::new(),
+                given_up: Vec::new(),
                 admitted_model_entities: 0,
             }))
         },
@@ -353,22 +355,26 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         }),
         "the fall-through statement: {messages:?}"
     );
-    let given_up = decoded
-        .body
-        .losses
-        .iter()
-        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let payloads = decoded
+        .ir
+        .native_unknowns("catia")
+        .expect("the native unknowns deserialize")
+        .into_iter()
+        .map(|record| record.id.as_str().to_owned())
         .collect::<Vec<_>>();
-    let [given_up] = given_up.as_slice() else {
-        panic!("the fallback gives up the one payload the route read: {messages:?}");
-    };
+    assert!(!payloads.is_empty(), "the fallback keeps the payload");
     assert!(
-        given_up
-            .message
-            .split_whitespace()
-            .any(|token| token.starts_with("catia:payload:unknown#")),
-        "record.unreadable names the retained payload: {}",
-        given_up.message
+        decoded
+            .body
+            .losses
+            .iter()
+            .filter(|note| note.code == unreadable)
+            .all(|note| payloads.iter().all(|payload| !note
+                .message
+                .split_whitespace()
+                .any(|token| token == payload))),
+        "no record.unreadable names the kept payload: {messages:?}"
     );
     assert!(
         refusal.take_notes().is_empty(),

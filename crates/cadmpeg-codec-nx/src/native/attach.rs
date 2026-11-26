@@ -8,7 +8,7 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::unknown::part::{dropped_with, record_given_up};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
@@ -277,6 +277,7 @@ pub(super) fn attach(
         Ok(()) => Ok(()),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
+            let attached = snapshot.attached_records(ir, unknowns);
             snapshot.restore(ir, annotations, unknowns, losses);
             losses.extend(record_given_up(
                 "nx:container",
@@ -287,6 +288,11 @@ pub(super) fn attach(
                      tessellations, native records, or container passthrough records are kept."
                 )),
             ));
+            losses.extend(
+                attached
+                    .iter()
+                    .map(|record| dropped_with(record, "nx:container")),
+            );
             Ok(())
         }
     }
@@ -380,6 +386,27 @@ impl AttachSnapshot {
             unknowns: unknowns.len(),
             losses: losses.len(),
         }
+    }
+
+    /// The ids of the native and retained records that the attachment added
+    /// since the capture.
+    fn attached_records(&self, ir: &CadIr, unknowns: &[UnknownRecord]) -> BTreeSet<String> {
+        fn native_ids(ir: &CadIr) -> impl Iterator<Item = &str> {
+            ir.native
+                .namespace("nx")
+                .into_iter()
+                .flat_map(|namespace| namespace.arenas().values().flatten())
+                .map(cadmpeg_ir::native::NativeRecord::id)
+        }
+        let (kept, added) = unknowns.split_at(self.unknowns.min(unknowns.len()));
+        let held = native_ids(&self.document)
+            .chain(kept.iter().map(|unknown| unknown.id().as_str()))
+            .collect::<BTreeSet<_>>();
+        native_ids(ir)
+            .chain(added.iter().map(|unknown| unknown.id().as_str()))
+            .filter(|id| !held.contains(id))
+            .map(ToOwned::to_owned)
+            .collect()
     }
 
     fn restore(

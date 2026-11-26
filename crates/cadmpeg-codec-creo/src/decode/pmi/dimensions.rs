@@ -188,6 +188,7 @@ pub(super) struct AnnotationIndex<'a> {
     pub(super) dimension_targets: &'a BTreeMap<(&'a str, u32), super::targets::DimensionTarget>,
 }
 
+/// Returns the byte ranges of the dimension attribute rows that name no owner.
 pub(super) fn transfer(
     ctx: &DecodeContext<'_>,
     attributes: &[Option<Attribute<'_>>],
@@ -196,17 +197,18 @@ pub(super) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<(usize, usize)>, CodecError> {
+    let mut ownerless = Vec::new();
     let mut fields_by_owner = BTreeMap::<(u32, u32), DimensionFields<'_>>::new();
     let mut unresolved = 0usize;
-    let mut given_up = Vec::new();
+    let mut unformed = Vec::new();
     for attribute in attributes.iter().flatten() {
         if !dimension_field(attribute.name) {
             continue;
         }
         let (Some(owner), Some(owner_type)) = (attribute.owner, attribute.owner_type) else {
             unresolved += 1;
-            given_up.push(super::attribute_row(attribute.offset));
+            ownerless.push((attribute.offset, attribute.end));
             continue;
         };
         add_attribute(
@@ -241,18 +243,18 @@ pub(super) fn transfer(
         let record = super::pmi_record(format_args!("{}:{}", owner.1, owner.0));
         let Some(kind) = fields.kind else {
             unresolved += 1;
-            given_up.push(record);
+            unformed.push(record);
             continue;
         };
         let Some(candidates) = elements_by_owner.get(&owner) else {
             unresolved += 1;
-            given_up.push(record);
+            unformed.push(record);
             continue;
         };
         // More than one annotation element claims the owner.
         if candidates.len() != 1 {
             unresolved += 1;
-            given_up.push(record);
+            unformed.push(record);
             continue;
         }
         if fields.duplicate {
@@ -267,7 +269,7 @@ pub(super) fn transfer(
             .filter(|text| !text.is_empty())
         else {
             unresolved += 1;
-            given_up.push(record);
+            unformed.push(record);
             continue;
         };
         let is_linear_kind_inference = kind_text == "Linear";
@@ -292,7 +294,7 @@ pub(super) fn transfer(
                 Some(value) => Some(value),
                 None => {
                     unresolved += 1;
-                    given_up.push(record);
+                    unformed.push(record);
                     continue;
                 }
             },
@@ -327,7 +329,7 @@ pub(super) fn transfer(
             Err(_) => {
                 unresolved += 1;
                 let Ok(definition) = admit(&dimension_kind, nominal, None, fields.mode) else {
-                    given_up.push(record);
+                    unformed.push(record);
                     continue;
                 };
                 definition
@@ -338,7 +340,7 @@ pub(super) fn transfer(
         }
         let Some(offset) = fields.offset else {
             unresolved += 1;
-            given_up.push(record);
+            unformed.push(record);
             continue;
         };
         let target = element
@@ -399,7 +401,7 @@ pub(super) fn transfer(
         )));
     }
     let code = CreoLossCode::PmiRecordUnresolved.kind();
-    losses.extend(given_up.iter().map(|record| {
+    losses.extend(unformed.iter().map(|record| {
         GivenUpRecord::new(
             record,
             format_args!("{code}: the dimensional attributes form no PMI record"),
@@ -466,7 +468,7 @@ pub(super) fn transfer(
                 .note("Dimensional lengths use the default millimetre unit."),
         );
     }
-    Ok(())
+    Ok(ownerless)
 }
 
 pub(super) fn dimension_field(name: &[u8]) -> bool {
@@ -872,6 +874,7 @@ mod tests {
             owner_type: Some(3),
             unit: b"",
             offset: 1,
+            end: 2,
         };
         let conflicting = Attribute {
             value: Value::Real(Some(0.02)),
@@ -902,6 +905,7 @@ mod tests {
             owner_type: Some(3),
             unit: b"",
             offset,
+            end: offset + 1,
         };
         let attributes = [
             Some(attribute(b"PTC_DIM_TYPE", Value::Text(b"Radius"), 40)),
@@ -999,6 +1003,7 @@ mod tests {
             owner_type: Some(3),
             unit: b"",
             offset,
+            end: offset + 1,
         };
         let mut attributes = vec![
             Some(attribute(b"PTC_DIM_TYPE", Value::Text(b"Diameter"), 10)),

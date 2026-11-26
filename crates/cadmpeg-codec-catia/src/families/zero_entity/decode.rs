@@ -1125,6 +1125,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         },
         annotations: annotations.build(),
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()

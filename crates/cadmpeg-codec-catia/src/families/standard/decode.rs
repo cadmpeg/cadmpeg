@@ -3041,6 +3041,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report,
         annotations,
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()

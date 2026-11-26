@@ -211,10 +211,6 @@ impl FaceAdmissionDetail {
     }
 }
 
-fn face_admission_rejection_id(face_id: u32) -> String {
-    format!("creo:brep:face_admission_rejection#{face_id}")
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) rejected_extrusion_bodies: Vec<(BodyId, String)>,
@@ -265,10 +261,11 @@ impl BrepTransferDiagnostics {
         )
     }
 
-    /// The native rejection record of each rejected face, once per face.
-    pub(in super::super) fn rejected_face_records(
+    /// The id each rejected face would hold as a face, once per face, with
+    /// the reason of its first rejection.
+    pub(in super::super) fn rejected_faces(
         &self,
-    ) -> impl Iterator<Item = (String, &'static str)> {
+    ) -> Result<Vec<(FaceId, &'static str)>, cadmpeg_core::CodecError> {
         let mut faces = BTreeMap::new();
         for diagnostic in &self.face_rejection_diagnostics {
             faces
@@ -277,7 +274,11 @@ impl BrepTransferDiagnostics {
         }
         faces
             .into_iter()
-            .map(|(face, reason)| (face_admission_rejection_id(face), reason))
+            .map(|(face, reason)| {
+                crate::identity::compose_checked(&crate::identity::VISIBGEOM_FACE, face)
+                    .map(|face| (face, reason))
+            })
+            .collect()
     }
 
     pub(in super::super) fn face_admission_rejection_records(
@@ -286,7 +287,7 @@ impl BrepTransferDiagnostics {
         let mut records = Vec::new();
         for diagnostic in &self.face_rejection_diagnostics {
             let detail = &diagnostic.detail;
-            let id = face_admission_rejection_id(detail.face_id);
+            let id = format!("creo:brep:face_admission_rejection#{}", detail.face_id);
             let mut boundary_half_edges = Vec::new();
             boundary_half_edges.extend(
                 detail

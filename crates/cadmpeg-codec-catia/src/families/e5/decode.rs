@@ -357,6 +357,7 @@ refusal,
             },
             annotations,
             unknowns,
+            given_up: Vec::new(),
             admitted_model_entities: admission.admitted(),
         }))
     })()

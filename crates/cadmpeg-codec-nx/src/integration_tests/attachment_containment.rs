@@ -122,14 +122,50 @@ fn attachment_failure_keeps_geometry_and_gives_up_the_attachment() {
     assert_valid(&contained);
 }
 
+/// The ids that the charge on the container names as dropped with it.
+fn dropped_with_the_container(loss: &LossNote) -> Vec<&str> {
+    loss.message
+        .split_once("dropped=[")
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(ids, _)| ids.split(", ").filter(|id| !id.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// A failure after every write keeps the document of a failure before any
+/// write. The charge on the container names each record the attachment wrote
+/// before it failed, and only those.
 #[test]
 fn attachment_failure_after_every_write_equals_failure_before_any_write() {
     for fixture in [prt_with_arrangements, composed_feature_history_prt] {
         let before = decode_failing_at(fixture(), Point::Entry);
         let after = decode_failing_at(fixture(), Point::Exit);
         assert_eq!(after.ir(), before.ir());
-        assert_eq!(after.report(), before.report());
         assert_eq!(after.source_fidelity(), before.source_fidelity());
+        let (mut after_report, mut before_report) =
+            (after.report().clone(), before.report().clone());
+        let take_charge = |report: &mut cadmpeg_ir::report::decode::DecodeReport| {
+            let index = report
+                .losses
+                .iter()
+                .position(charges_the_container)
+                .expect("the container is charged");
+            report.losses.remove(index)
+        };
+        let (after_charge, before_charge) = (
+            take_charge(&mut after_report),
+            take_charge(&mut before_report),
+        );
+        assert_eq!(after_report, before_report);
+        assert!(dropped_with_the_container(&before_charge).is_empty());
+        let dropped = dropped_with_the_container(&after_charge);
+        assert!(!dropped.is_empty(), "{after_charge:#?}");
+        let unknowns = after.ir().native_unknowns("nx").expect("unknowns read");
+        for id in dropped {
+            assert!(
+                unknowns.iter().all(|unknown| unknown.id.as_str() != id),
+                "{id} is held"
+            );
+        }
     }
 }
 

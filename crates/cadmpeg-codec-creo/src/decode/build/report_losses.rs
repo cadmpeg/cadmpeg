@@ -532,7 +532,7 @@ pub(super) fn push_brep_transfer_note(
     losses: &mut Vec<LossNote>,
     diagnostics: &BrepTransferDiagnostics,
     geometry_section_count: usize,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (body_id, reason) in &diagnostics.rejected_extrusion_bodies {
         push_report_loss(
             losses,
@@ -620,13 +620,19 @@ pub(super) fn push_brep_transfer_note(
         rejected_face_count,
     ));
     let code = CreoLossCode::BrepTransferIncomplete.kind();
-    losses.extend(diagnostics.rejected_face_records().map(|(face, reason)| {
-        GivenUpRecord::new(
-            face,
-            format_args!("{code}: face admission rejected the face for {reason}"),
-        )
-        .loss()
-    }));
+    losses.extend(
+        diagnostics
+            .rejected_faces()?
+            .into_iter()
+            .map(|(face, reason)| {
+                GivenUpRecord::new(
+                    face,
+                    format_args!("{code}: face admission rejected the face for {reason}"),
+                )
+                .loss()
+            }),
+    );
+    Ok(())
 }
 
 pub(super) fn push_carrier_transfer_notes(
@@ -1066,7 +1072,8 @@ mod tests {
         diagnostics.selected_body_count = Some(2);
         let losses = {
             let mut losses = Vec::new();
-            push_brep_transfer_note(&mut losses, &diagnostics, 4);
+            push_brep_transfer_note(&mut losses, &diagnostics, 4)
+                .expect("a rejected face id composes");
             losses
         };
         let message = &losses[0].message;
