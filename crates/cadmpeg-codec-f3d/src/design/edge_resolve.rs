@@ -1045,9 +1045,7 @@ fn resolved_edge_group_with_transition_chain(
         identity_matches.as_deref(),
     ) {
         (true, Some(radius), Some(identities))
-            if exact_slots.is_none()
-                && transition_state_id.is_some()
-                && !transition_shared =>
+            if exact_slots.is_none() && transition_state_id.is_some() && !transition_shared =>
         {
             transition_complete_edge_group_candidates(&matched_operands, identities, radius)
         }
@@ -1805,9 +1803,7 @@ pub(crate) fn partition_leftover_treatment_groups(
         {
             return;
         }
-        if group.members().is_empty()
-            || group.lost_edge_references.len() == group.members().len()
-        {
+        if group.members().is_empty() || group.lost_edge_references.len() == group.members().len() {
             continue;
         }
         let EdgeSelection::Historical {

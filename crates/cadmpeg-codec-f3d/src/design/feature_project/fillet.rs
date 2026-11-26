@@ -122,16 +122,17 @@ pub(super) fn project<'a>(
             return project_partial(ctx, inputs, scope, parameters, native_scope, losses);
         };
         let feature_id = crate::ids::neutral_feature_id(scope);
-        let treatment_inputs = |treatment_radius| crate::design::edge_resolve::EdgeTreatmentInputs {
-            groups: inputs.construction_groups,
-            operands: inputs.edge_operands,
-            identity_operands: inputs.edge_identity_operands,
-            vertex_operands: inputs.edge_treatment_vertex_operands,
-            histories: inputs.histories,
-            previous_state_id: scope.previous_history_state_id(),
-            feature_id: &feature_id,
-            treatment_radius,
-        };
+        let treatment_inputs =
+            |treatment_radius| crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups: inputs.construction_groups,
+                operands: inputs.edge_operands,
+                identity_operands: inputs.edge_identity_operands,
+                vertex_operands: inputs.edge_treatment_vertex_operands,
+                histories: inputs.histories,
+                previous_state_id: scope.previous_history_state_id(),
+                feature_id: &feature_id,
+                treatment_radius,
+            };
         let mut scope_groups = Vec::new();
         let mut selections = Vec::new();
         for resolved in &assignments {

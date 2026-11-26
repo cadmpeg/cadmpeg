@@ -213,7 +213,9 @@ fn leftover_partition_refuses_resolved_or_recipe_backed_target_members() {
         .operands
         .push(recipe_edge_operand(20, &[], &TRANSITION));
     let mut other_transition = scope();
-    other_transition.identities[2].transition_edge_candidates.pop();
+    other_transition.identities[2]
+        .transition_edge_candidates
+        .pop();
     for scope in [resolved, with_recipe, other_transition] {
         let mut selections = [historical(&scope.groups[0].id, &[101]), native(&scope)];
         let losses = partition(&scope, [Some(RADIUS), Some(RADIUS)], &mut selections);

@@ -2941,7 +2941,9 @@ impl F3dLossCode {
             Self::HistoricalEdgeSelectionDeletedSetAssumed => {
                 "history.edge-selection-deleted-set-assumed"
             }
-            Self::HistoricalEdgeSelectionLeftoverAssumed => "history.edge-selection-leftover-assumed",
+            Self::HistoricalEdgeSelectionLeftoverAssumed => {
+                "history.edge-selection-leftover-assumed"
+            }
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalEdgeRecipeHistoryInferred => "history.edge-recipe-history-inferred",
