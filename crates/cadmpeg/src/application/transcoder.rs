@@ -624,12 +624,11 @@ pub(crate) struct ExportEmission {
 
 /// Destination-specific facts needed by the presentation layer.
 pub(crate) enum EmittedArtifact {
-    /// A file and its CADIR sidecar disposition.
+    /// The files written, in the plan's output order, and the CADIR sidecar
+    /// disposition.
     File {
-        path: PathBuf,
+        written: Vec<artifact_store::WrittenFile>,
         sidecar: SidecarPersistOutcome,
-        /// The other files of an encode that writes one per definition.
-        others: Vec<PathBuf>,
     },
     /// Standard output with no sidecar requirement.
     Stdout,
@@ -682,19 +681,16 @@ pub(crate) fn emit_export_plan(
         );
     if let ResolvedDestination::File(path) = destination {
         let annotations = plan.annotations().cloned();
-        let (report, cadir_sha256, others) = artifact_store::write_plan_atomic(path, plan)?;
-        let sidecar = if format == Format::Cadir {
-            artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin, ir, annotations)?
-        } else {
-            SidecarPersistOutcome::Absent
+        let (report, written) = artifact_store::write_plan_atomic(path, plan)?;
+        let sidecar = match written.iter().find(|file| &file.path == path) {
+            Some(file) if format == Format::Cadir => {
+                artifact_store::persist_decode_sidecar(path, &file.sha256, origin, ir, annotations)?
+            }
+            Some(_) | None => SidecarPersistOutcome::Absent,
         };
         Ok(ExportEmission {
             report,
-            artifact: EmittedArtifact::File {
-                path: path.to_owned(),
-                sidecar,
-                others,
-            },
+            artifact: EmittedArtifact::File { written, sidecar },
         })
     } else {
         let stdout = io::stdout().lock();

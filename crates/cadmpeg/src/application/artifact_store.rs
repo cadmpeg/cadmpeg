@@ -17,7 +17,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportPlan, PlannedOutput};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::report::export::{EntityCensus, ExportReport};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::source_fidelity::sidecar_stale_kind;
@@ -325,34 +325,52 @@ fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Stage an export plan and hash the emitted bytes. Each output is written
-/// to its path ([`output_paths`]); the digest is that of the output at
-/// `output`, and the other paths are returned. The files are not written as
-/// one transaction.
+/// One file an export wrote: its path, the census of the output it holds,
+/// and the SHA-256 of its bytes.
+pub(crate) struct WrittenFile {
+    pub(crate) path: PathBuf,
+    pub(crate) entities: usize,
+    pub(crate) sha256: Sha256Digest,
+}
+
+/// Stage each output of an export plan at its path ([`output_paths`]) and
+/// return the report with each file written, in the plan's output order.
+/// The files are not written as one transaction: where a write fails, the
+/// error names the files written before it.
 pub(super) fn write_plan_atomic(
     output: &Path,
     plan: ExportPlan,
-) -> Result<(ExportReport, Sha256Digest, Vec<PathBuf>)> {
+) -> Result<(ExportReport, Vec<WrittenFile>)> {
+    let entities: Vec<usize> = plan.censuses().iter().map(EntityCensus::total).collect();
+    if output_paths(output, plan.outputs()) != [output] {
+        let mut written = Vec::new();
+        let result = plan.write_each(|planned, bytes| {
+            let path = output_path(output, planned);
+            write_bytes_atomic(&path, bytes).map_err(io::Error::other)?;
+            written.push(WrittenFile {
+                path,
+                entities: entities.get(written.len()).copied().unwrap_or_default(),
+                sha256: Sha256Digest::from_bytes(Sha256::digest(bytes).into()),
+            });
+            Ok(())
+        });
+        let report = result.with_context(|| {
+            let paths: Vec<String> = written
+                .iter()
+                .map(|file| file.path.display().to_string())
+                .collect();
+            format!(
+                "writing the outputs of {}; written before the failure: [{}]",
+                output.display(),
+                paths.join(", ")
+            )
+        })?;
+        return Ok((report, written));
+    }
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    if output_paths(output, plan.outputs()) != [output] {
-        let mut written = Vec::new();
-        let mut digest = None;
-        let report = plan.write_each(|planned, bytes| {
-            let path = output_path(output, planned);
-            write_bytes_atomic(&path, bytes).map_err(io::Error::other)?;
-            if path == output {
-                digest = Some(Sha256Digest::from_bytes(Sha256::digest(bytes).into()));
-            } else {
-                written.push(path);
-            }
-            Ok(())
-        })?;
-        let digest = digest.unwrap_or_else(|| Sha256Digest::from_bytes(Sha256::digest(b"").into()));
-        return Ok((report, digest, written));
-    }
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("creating temporary output in {}", parent.display()))?;
     let mut sink = TempFileWriter {
@@ -367,12 +385,17 @@ pub(super) fn write_plan_atomic(
         .flush()
         .with_context(|| format!("flushing temporary output for {}", output.display()))?;
     drop(writer);
-    let digest = sink.finish();
+    let sha256 = sink.finish();
     temporary
         .persist(output)
         .map_err(|error| error.error)
         .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok((report, digest, Vec::new()))
+    let written = WrittenFile {
+        path: output.to_owned(),
+        entities: entities.first().copied().unwrap_or_default(),
+        sha256,
+    };
+    Ok((report, vec![written]))
 }
 
 /// Persist or remove the decode-fidelity sidecar beside a CADIR file.
