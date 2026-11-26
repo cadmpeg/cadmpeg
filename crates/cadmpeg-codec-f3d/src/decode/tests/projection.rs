@@ -351,7 +351,6 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         source_tag: Some("Base Mesh Feature".into()),
         source_text: None,
         source_content: Default::default(),
-
         evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Base Mesh Feature".into(),
