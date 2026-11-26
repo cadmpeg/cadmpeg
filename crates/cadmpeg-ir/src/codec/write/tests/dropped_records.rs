@@ -596,3 +596,48 @@ fn the_cadir_writer_writes_the_empty_document_for_records_the_wire_omits() {
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_document_fields_without_records(&ir, &written);
 }
+
+/// A native record that names a record the scope excludes leaves the file
+/// with it, and the write declares it dropped, so the report names it as an
+/// omitted native record (Rule W3).
+#[test]
+fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
+    const NEEDS: &str = "test:native:needs#1";
+    let mut ir = crate::examples::unit_cube().expect("valid unit cube fixture");
+    ir.design.parameters.push(negated_parameter("kept", 1));
+    let target = ir.design.parameters[0].id.to_string();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records(
+            "needs",
+            vec![crate::NativeRecord::new(
+                crate::ids::Identity::new(NEEDS).unwrap(),
+                [("target".to_owned(), serde_json::Value::String(target))]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap()],
+        )
+        .unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
+    let read = CadIr::read(
+        value.to_string().as_bytes(),
+        &crate::document::read::ReadOptions::default(),
+    )
+    .expect("the read keeps the scope as written");
+
+    let (omitted, written) = written_with_losses(&read.document, "native.records-omitted");
+    assert!(written
+        .native
+        .namespace("test")
+        .is_none_or(|namespace| namespace.arenas().values().all(Vec::is_empty)));
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(
+        omitted,
+        [format!(
+            "the CADIR write omits 1 native record(s) of `test` arena `needs` that the CADIR \
+             write drops with a record it does not write: {NEEDS}"
+        )]
+    );
+}

@@ -772,6 +772,7 @@ impl EncoderBackend for CadirEncoder {
             ir
         };
         bytes.push(b'\n');
+        declare_absent_native_records(input.ir, ir, &mut native);
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it.
         let mut body = ExportBody::synthesized(
@@ -854,6 +855,41 @@ fn without_unwritable_records(
         })
         .collect();
     Ok((ir, losses))
+}
+
+/// Declares dropped each native record of `source`, outside the `unknowns`
+/// arenas, that `written` does not hold and that no drop of the write
+/// declared: a record dropped with a record the write does not write, or
+/// left out of the empty document.
+fn declare_absent_native_records(source: &CadIr, written: &CadIr, native: &mut NativeDispositions) {
+    let kept: std::collections::HashSet<&str> = written
+        .native
+        .0
+        .values()
+        .flat_map(|namespace| namespace.arenas().values().flatten())
+        .map(crate::NativeRecord::id)
+        .collect();
+    for (codec, namespace) in &source.native.0 {
+        for (arena, records) in namespace.arenas() {
+            if arena.as_str() == native::UNKNOWNS_ARENA {
+                continue;
+            }
+            let absent: Vec<&str> = records
+                .iter()
+                .map(crate::NativeRecord::id)
+                .filter(|id| {
+                    !kept.contains(id)
+                        && native.disposition(codec.as_str(), arena.as_str(), id)
+                            != NativeDisposition::Dropped
+                })
+                .collect();
+            native.drop_records(
+                codec.as_str(),
+                "that the CADIR write drops with a record it does not write",
+                absent,
+            );
+        }
+    }
 }
 
 /// The codec of each native record of `ir` outside the `unknowns` arenas,
