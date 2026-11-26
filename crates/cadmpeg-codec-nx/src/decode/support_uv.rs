@@ -90,8 +90,10 @@ pub(super) fn support_uv_budget_exhausted(budget: &WorkBudget) -> bool {
 /// The geometry work one lane attempt asks for; the lane ceiling bounds it.
 fn support_uv_lane_geometry_work_limit(sample_count: usize) -> usize {
     sample_count
-        .saturating_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
-        .max(MIN_SUPPORT_UV_LANE_GEOMETRY_WORK)
+        .checked_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
+        .map_or(MAX_SUPPORT_UV_LANE_GEOMETRY_WORK, |work| {
+            work.max(MIN_SUPPORT_UV_LANE_GEOMETRY_WORK)
+        })
 }
 
 pub(super) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
