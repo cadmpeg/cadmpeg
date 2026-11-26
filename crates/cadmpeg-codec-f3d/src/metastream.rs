@@ -662,18 +662,25 @@ mod tests {
         assert!(parse(&bytes[..bytes.len() - 1], "truncated-version-context").is_err());
     }
 
-    fn empty_urn_contexts(revision_guids: [&str; 2]) -> Vec<u8> {
+    fn empty_urn_contexts(urn_to_guid: &[u8]) -> Vec<u8> {
         let mut bytes = stream_prefix();
         bytes.extend_from_slice(&15u64.to_le_bytes());
         bytes.extend_from_slice(&2u32.to_le_bytes());
-        for (token, revision_guid) in [0x1122_3344_5566_7788u64, 0x8877_6655_4433_2211]
-            .into_iter()
-            .zip(revision_guids)
-        {
+        for (token, revision_guid) in [
+            (
+                0x1122_3344_5566_7788u64,
+                "00000000-0000-0000-0000-000000000000",
+            ),
+            (
+                0x8877_6655_4433_2211,
+                "66666666-7777-8888-9999-aaaaaaaaaaaa",
+            ),
+        ] {
             bytes.extend_from_slice(&token.to_le_bytes());
             lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
             lp_utf16(&mut bytes, revision_guid);
             bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(urn_to_guid);
             lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
             bytes.extend_from_slice(&0u32.to_le_bytes());
         }
@@ -682,10 +689,7 @@ mod tests {
 
     #[test]
     fn parses_a_full_version_context_with_an_empty_version_urn() {
-        let mut bytes = empty_urn_contexts([
-            "00000000-0000-0000-0000-000000000000",
-            "66666666-7777-8888-9999-aaaaaaaaaaaa",
-        ]);
+        let mut bytes = empty_urn_contexts(&[]);
         parse(&bytes, "empty-urn-contexts").expect("contexts close the stream");
 
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -695,17 +699,12 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_version_urn_requires_its_asset_revision_guid_and_revision() {
-        let bytes = empty_urn_contexts([
-            "00000000-0000-0000-0000-000000000000",
-            "66666666-7777-8888-9999-aaaaaaaaaaaa",
-        ]);
-        assert!(parse(&bytes[..bytes.len() - 4], "empty-urn-without-revision").is_err());
+    fn an_empty_version_urn_is_directly_followed_by_its_asset_revision_guid() {
+        let zero_prefixed = empty_urn_contexts(&[0; 4]);
+        assert!(parse(&zero_prefixed, "empty-urn-zero-prefixed-guid").is_err());
 
-        let mut unhyphenated = bytes.clone();
-        let last_guid_at = bytes.len() - 4 - 72;
-        unhyphenated[last_guid_at + 16] = b'0';
-        assert!(parse(&unhyphenated, "empty-urn-invalid-guid").is_err());
+        let bytes = empty_urn_contexts(&[]);
+        assert!(parse(&bytes[..bytes.len() - 4], "empty-urn-without-revision").is_err());
     }
 
     #[test]
