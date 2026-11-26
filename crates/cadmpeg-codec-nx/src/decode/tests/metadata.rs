@@ -102,25 +102,19 @@ fn bounded_indexed_section_search_gives_up_its_entry_as_a_part() {
     .expect("the bounded entry is given up");
 
     let body = &decoded.body;
-    let bounded = body
-        .losses
-        .iter()
-        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(bounded.len(), 1);
-    assert!(bounded[0].message.contains("/Root/UG_PART/UG_PART"));
-    assert!(bounded[0]
-        .message
-        .contains(&crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK.to_string()));
+    assert_eq!(body.losses.len(), 1, "{:#?}", body.losses);
     let (offset, length) = scan.container.entries[0]
         .file_span()
         .expect("the bounded entry is a file");
     let given_up = body
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(given_up.len(), 1);
+    assert!(given_up[0]
+        .message
+        .contains(&crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK.to_string()));
     let prefix = format!(
         "part om-entry \"/Root/UG_PART/UG_PART\" stream=\"nx:container\" \
          offset={offset} length={length} record=nx:source:part#"

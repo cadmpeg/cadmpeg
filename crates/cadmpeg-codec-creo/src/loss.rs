@@ -54,18 +54,8 @@ pub(crate) enum CreoLossCode {
     /// No persistence-layout discriminant matched, so no layout-specific
     /// decode strategy was applied.
     SourceDialectUnverified,
-    /// Legacy type-2 real row did not form a complete finite scalar or array.
-    LegacyRealValueUnresolved,
-    /// Legacy type-1 integer row did not form a signed 32-bit scalar or array.
-    LegacyIntegerValueUnresolved,
-    /// Legacy type-3 or type-4 value row uses an undefined continuation form.
-    LegacyContinuationFormUndefined,
     /// Legacy type-3 or type-4 byte-string retains non-UTF-8 source bytes.
     LegacyByteStringEncodingRetained,
-    /// Legacy type-5/7/9/11 row did not form an unsigned 32-bit scalar or array.
-    LegacyUnsignedValueUnresolved,
-    /// Legacy type-6 compact-real row did not form a complete finite scalar or array.
-    LegacyCompactRealUnresolved,
     /// Legacy type-0 object array element count differs from declared extents.
     LegacyObjectArrayIncomplete,
     /// Legacy type-0 value row uses an undefined object payload form.
@@ -78,8 +68,6 @@ pub(crate) enum CreoLossCode {
     LegacyStringEncodingRetained,
     /// PMI datum or target associations remain unresolved.
     PmiAssociationsUnresolved,
-    /// The neutral PMI attribute or annotation-element table is incomplete.
-    PmiTableIncomplete,
     /// A PMI type, value, or owner join is unresolved.
     PmiRecordUnresolved,
     /// PMI modifiers or geometric-tolerance zone constraints remain unresolved.
@@ -317,8 +305,6 @@ pub(crate) enum CreoLossCode {
     AssemblyComponentsExternal,
     /// The component table is missing or ends before its declared rows.
     AssemblyMemberTableIncomplete,
-    /// A component frame is not a proper rigid placement.
-    AssemblyPlacementUnresolved,
     /// A component row names no model file the row grammar resolves.
     AssemblyMemberReferenceUnresolved,
     /// Component placement constraints are not decoded.
@@ -337,19 +323,13 @@ impl CreoLossCode {
             Self::SurfaceRowRepeated => "container.surface-row-repeated",
             Self::ReferenceConicPrefixUnresolved => "reference.conic-prefix-unresolved",
             Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
-            Self::LegacyIntegerValueUnresolved => "legacy.integer-value-unresolved",
-            Self::LegacyContinuationFormUndefined => "legacy.continuation-form-undefined",
             Self::LegacyByteStringEncodingRetained => "legacy.byte-string-encoding-retained",
-            Self::LegacyUnsignedValueUnresolved => "legacy.unsigned-value-unresolved",
-            Self::LegacyCompactRealUnresolved => "legacy.compact-real-unresolved",
             Self::LegacyObjectArrayIncomplete => "legacy.object-array-incomplete",
             Self::LegacyObjectPayloadUndefined => "legacy.object-payload-undefined",
             Self::LegacyStringArrayIncomplete => "legacy.string-array-incomplete",
             Self::LegacyStringContinuationUndefined => "legacy.string-continuation-undefined",
             Self::LegacyStringEncodingRetained => "legacy.string-encoding-retained",
             Self::PmiAssociationsUnresolved => "pmi.associations-unresolved",
-            Self::PmiTableIncomplete => "pmi.table-incomplete",
             Self::PmiRecordUnresolved => "pmi.record-unresolved",
             Self::PmiModifiersUnresolved => "pmi.modifiers-unresolved",
             Self::PmiLengthUnitAssumed => "pmi.length-unit-assumed",
@@ -491,7 +471,6 @@ impl CreoLossCode {
             Self::TocScanCapped => "container.toc-scan-capped",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::AssemblyMemberTableIncomplete => "assembly.member-table-incomplete",
-            Self::AssemblyPlacementUnresolved => "assembly.placement-unresolved",
             Self::AssemblyMemberReferenceUnresolved => "assembly.member-reference-unresolved",
             Self::AssemblyConstraintsNotTransferred => "assembly.constraints-not-transferred",
         }
@@ -539,7 +518,6 @@ impl CreoLossCode {
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::PmiAssociationsUnresolved
-            | Self::PmiTableIncomplete
             | Self::PmiRecordUnresolved
             | Self::PmiModifiersUnresolved
             | Self::PmiLengthUnitAssumed
@@ -575,12 +553,7 @@ impl CreoLossCode {
             | Self::RevolutionCarrierUnresolved
             | Self::RevolutionBoundaryIntervalUnresolved
             | Self::SourceDialectUnverified
-            | Self::LegacyRealValueUnresolved
-            | Self::LegacyIntegerValueUnresolved
-            | Self::LegacyContinuationFormUndefined
             | Self::LegacyByteStringEncodingRetained
-            | Self::LegacyUnsignedValueUnresolved
-            | Self::LegacyCompactRealUnresolved
             | Self::LegacyObjectArrayIncomplete
             | Self::LegacyObjectPayloadUndefined
             | Self::LegacyStringArrayIncomplete
@@ -638,7 +611,6 @@ impl CreoLossCode {
             | Self::CurveExpressionTextCapped
             | Self::TocScanCapped
             | Self::AssemblyMemberTableIncomplete
-            | Self::AssemblyPlacementUnresolved
             | Self::AssemblyMemberReferenceUnresolved
             | Self::AssemblyConstraintsNotTransferred
             | Self::DesignParameterReferenceAsText
@@ -674,7 +646,6 @@ impl CreoLossCode {
             | Self::CarrierSharedExtrusionGenerators
             | Self::CarrierTorusParameterRetention => LossTaxonomy::CarrierSummary,
             Self::PmiAssociationsUnresolved
-            | Self::PmiTableIncomplete
             | Self::PmiRecordUnresolved
             | Self::PmiModifiersUnresolved
             | Self::PmiDatumLabelUnresolved
@@ -695,16 +666,11 @@ impl CreoLossCode {
             | Self::PmiAngularUnitAssumed
             | Self::SurfaceRowPackedReading
             | Self::SurfaceRowCompactReading => LossTaxonomy::DecodeDiagnostic,
-            Self::LegacyRealValueUnresolved
-            | Self::CompressedSectionUnexpanded
+            Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
             | Self::SurfaceRowRepeated
             | Self::ReferenceConicPrefixUnresolved
             | Self::TocScanCapped
-            | Self::LegacyIntegerValueUnresolved
-            | Self::LegacyContinuationFormUndefined
-            | Self::LegacyUnsignedValueUnresolved
-            | Self::LegacyCompactRealUnresolved
             | Self::LegacyObjectArrayIncomplete
             | Self::LegacyObjectPayloadUndefined
             | Self::LegacyStringArrayIncomplete
@@ -791,9 +757,7 @@ impl CreoLossCode {
             }
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::NonVisibleCarrierVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
-            Self::AssemblyMemberTableIncomplete
-            | Self::AssemblyPlacementUnresolved
-            | Self::AssemblyConstraintsNotTransferred => {
+            Self::AssemblyMemberTableIncomplete | Self::AssemblyConstraintsNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
         }
@@ -845,19 +809,13 @@ mod tests {
                 "container.surface-row-repeated",
                 "reference.conic-prefix-unresolved",
                 "source.dialect-unverified",
-                "legacy.real-value-unresolved",
-                "legacy.integer-value-unresolved",
-                "legacy.continuation-form-undefined",
                 "legacy.byte-string-encoding-retained",
-                "legacy.unsigned-value-unresolved",
-                "legacy.compact-real-unresolved",
                 "legacy.object-array-incomplete",
                 "legacy.object-payload-undefined",
                 "legacy.string-array-incomplete",
                 "legacy.string-continuation-undefined",
                 "legacy.string-encoding-retained",
                 "pmi.associations-unresolved",
-                "pmi.table-incomplete",
                 "pmi.record-unresolved",
                 "pmi.modifiers-unresolved",
                 "pmi.length-unit-assumed",
@@ -979,7 +937,6 @@ mod tests {
                 "container.toc-scan-capped",
                 "assembly.components-external",
                 "assembly.member-table-incomplete",
-                "assembly.placement-unresolved",
                 "assembly.member-reference-unresolved",
                 "assembly.constraints-not-transferred",
             ]

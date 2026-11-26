@@ -4,6 +4,7 @@ use super::{key, optional_rows, text, Error, Report};
 use crate::archive::Bundle;
 use crate::loss::OnshapeLossCode;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -101,7 +102,7 @@ impl<'a> Index<'a> {
                         report.give_up_as(
                             &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
                             &key(entry.key()),
-                            OnshapeLossCode::AssemblyRecordRepeated,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                             "occurrence path repeats with a different placement; retained the first placement",
                         );
                     }
@@ -124,7 +125,10 @@ impl<'a> Index<'a> {
                 Err(reason) => report.give_up_as(
                     &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
                     "occurrence",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                    ),
                     reason,
                 ),
             }
@@ -142,7 +146,10 @@ impl<'a> Index<'a> {
                 report.give_up_as(
                     &format!("{definition_path}#/subAssemblies/{position}"),
                     "subassembly",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                    ),
                     "subassembly element id has an invalid folder character",
                 );
                 continue;
@@ -161,7 +168,7 @@ impl<'a> Index<'a> {
                         report.give_up_as(
                             &format!("{definition_path}#/subAssemblies/{position}"),
                             "subassembly",
-                            OnshapeLossCode::AssemblyRecordRepeated,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                             format!(
                                 "subassembly definition repeats with different content; retained the first record: {:?}",
                                 entry.key()
@@ -184,7 +191,7 @@ impl<'a> Index<'a> {
                         report.give_up_as(
                             &format!("{definition_path}#/parts/{position}"),
                             "part",
-                            OnshapeLossCode::AssemblyRecordRepeated,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                             format!(
                                 "part identity repeats with different content; retained the first record: {:?}",
                                 entry.key()

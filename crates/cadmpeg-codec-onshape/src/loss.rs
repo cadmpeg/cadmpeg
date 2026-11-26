@@ -18,9 +18,7 @@ pub(super) enum OnshapeLossCode {
     EmptyMember,
     SketchGeometryNotSupported,
     RecordMalformed,
-    MemberTooLarge,
     MemberUnreadable,
-    TopologyTooLarge,
     EdgeGeometryUnsampled,
     StepUnreadable,
     RollbackUnread,
@@ -54,8 +52,6 @@ impl OnshapeLossCode {
             Self::SketchGeometryNotSupported => "sketch.geometry-not-supported",
             Self::RecordMalformed => "record.malformed",
             Self::MemberUnreadable => "member.unreadable",
-            Self::MemberTooLarge => "member.too-large",
-            Self::TopologyTooLarge => "topology.too-large",
             Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
             Self::RollbackUnread => "history.rollback-unread",
@@ -75,6 +71,13 @@ impl OnshapeLossCode {
     pub(super) fn matches(self, note: &LossNote) -> bool {
         note.code.namespace() == "onshape" && note.code.local_code() == self.code()
     }
+    /// Whether `note` is a note of this code, or a give-up whose text
+    /// carries this code.
+    pub(super) fn states(self, note: &LossNote) -> bool {
+        self.matches(note)
+            || (cadmpeg_ir::unknown::part::gives_up(&note.code)
+                && note.message.contains(&format!("onshape/{}: ", self.code())))
+    }
     pub(super) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(
             LossKind::namespaced(
@@ -89,7 +92,7 @@ impl OnshapeLossCode {
                     Self::AssemblyRecordUnsupported => {
                         LossTaxonomy::AssemblyPlacementsNotTransferred
                     }
-                    Self::EmptyMember | Self::MemberTooLarge | Self::MemberUnreadable => {
+                    Self::EmptyMember | Self::MemberUnreadable => {
                         LossTaxonomy::MetadataNotTransferred
                     }
                     _ => LossTaxonomy::FeatureHistoryRetained,

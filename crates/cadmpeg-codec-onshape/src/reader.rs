@@ -27,7 +27,7 @@ use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::design::projection::fields::{
     FeatureField, ModelFeatureField, ModelParameterField, ParameterField,
 };
-use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
+use cadmpeg_ir::unknown::part::{record_given_up, Cause, GivenUpPart};
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
@@ -616,11 +616,16 @@ fn studio_in(
                 rollback_bar(response, features, report, &history_path),
             ),
             Err(reason) => {
+                let cause = if response.get("features").and_then(Value::as_array).is_some() {
+                    Cause::Undecoded
+                } else {
+                    Cause::Unreadable
+                };
                 report.give_up(
                     ctx,
                     bundle,
                     &history_path,
-                    OnshapeLossCode::HistoryNotSupported,
+                    (cause, OnshapeLossCode::HistoryNotSupported),
                     format!("{reason}; feature history is missing"),
                 )?;
                 (&[][..], RollbackBar::default())
@@ -657,7 +662,7 @@ fn studio_in(
                     ctx,
                     bundle,
                     &step_path,
-                    OnshapeLossCode::StepUnreadable,
+                    (archive::cause_of(&error), OnshapeLossCode::StepUnreadable),
                     format!("{error}; final geometry is missing"),
                 )?;
                 None
@@ -678,7 +683,11 @@ fn studio_in(
         }) && !report
             .notes
             .iter()
-            .any(|note| OnshapeLossCode::StepUnreadable.matches(note))
+            .any(|note| OnshapeLossCode::StepUnreadable.states(note))
+            && !report
+                .parts
+                .iter()
+                .any(|part| OnshapeLossCode::StepUnreadable.states(&part.loss()))
         {
             report.push_coded(
                 &step_path,
@@ -777,7 +786,7 @@ fn studio_in(
                     report.give_up_as(
                         &format!("{history_path}#/features/{ordinal}"),
                         native,
-                        OnshapeLossCode::RecordMalformed,
+                        (Cause::Unreadable, OnshapeLossCode::RecordMalformed),
                         "a feature repeats an earlier feature id with different content; omitted the feature",
                     );
                     continue;
@@ -787,7 +796,7 @@ fn studio_in(
                 report.give_up_as(
                     &format!("{history_path}#/features/{ordinal}"),
                     &format!("feature #{ordinal}"),
-                    OnshapeLossCode::RecordMalformed,
+                    (Cause::Unreadable, OnshapeLossCode::RecordMalformed),
                     format!("{reason}; omitted the feature"),
                 );
                 continue;
@@ -1138,7 +1147,7 @@ fn studio_in(
             report.give_up_as(
                 &format!("{history_path}#/features/{ordinal}"),
                 name,
-                OnshapeLossCode::RecordMalformed,
+                (Cause::Unreadable, OnshapeLossCode::RecordMalformed),
                 format!("{reason}; omitted the feature"),
             );
         }
@@ -1206,22 +1215,30 @@ impl Report {
         self.notes
             .push(code.note(format!("{}; subject: {subject}", detail.into())));
     }
-    /// Pushes the coded note for `record`, a member path of `bundle`, and
-    /// gives the member up as a part over its stored bytes. The member
-    /// stays an asset.
+    /// Gives up `record`, a member path of `bundle`, for `cause` as the
+    /// coded note states, as a part over its stored bytes. The member stays
+    /// an asset.
     fn give_up(
         &mut self,
         ctx: &DecodeContext<'_>,
         bundle: &Bundle<'_>,
         record: &str,
-        code: OnshapeLossCode,
+        (cause, code): (Cause, OnshapeLossCode),
         detail: impl Into<String>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let note = code.note(format!("{}; subject: {record}", detail.into()));
-        bundle.give_up_member(ctx, record, note, &mut self.notes, &mut self.parts)
+        let why = format!("{}: {}", note.code, note.message);
+        bundle.give_up_member(
+            ctx,
+            record,
+            (cause, why),
+            true,
+            &mut self.notes,
+            &mut self.parts,
+        )
     }
     /// Commits the given-up members to `ir` and `fidelity`, and pushes
-    /// their `record.unreadable` losses.
+    /// their give-up losses.
     fn commit_parts(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -1233,18 +1250,21 @@ impl Report {
         }
         Ok(())
     }
-    /// Pushes the coded note for `subject` and the `record.unreadable` of
-    /// `record`, its source address.
+    /// Gives up `record`, the source address of `subject`, for `cause` as
+    /// the coded note states.
     fn give_up_as(
         &mut self,
         record: &str,
         subject: &str,
-        code: OnshapeLossCode,
+        (cause, code): (Cause, OnshapeLossCode),
         detail: impl Into<String>,
     ) {
         let note = code.note(format!("{}; subject: {subject}", detail.into()));
-        self.notes
-            .extend(record_given_up(archive::source_record(record), note));
+        self.notes.push(record_given_up(
+            archive::source_record(record),
+            cause,
+            &note,
+        ));
     }
 }
 fn empty(ctx: &DecodeContext<'_>, root: View<'_>) -> Decoded {

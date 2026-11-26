@@ -383,10 +383,24 @@ impl FreecadLossCode {
         }
     }
 
+    /// The strict floor `freecad_fcstd.md` (Strict floors) states: a
+    /// persistence count or a root version attribute that breaks the
+    /// `Document.xml` grammar, which the decoder reads past, pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::PersistenceCountNoncanonical
+            | Self::ProgramVersionNoncanonical
+            | Self::FileVersionNoncanonical => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     fn kind(self) -> LossKind {
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy()).into()
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -497,10 +511,22 @@ mod tests {
         }
     }
 
+    /// The floor codes `freecad_fcstd.md` (Strict floors) lists pin
+    /// Warning, and no other code pins a floor.
     #[test]
-    fn no_code_pins_a_strict_floor() {
-        for code in FreecadLossCode::ALL {
-            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
-        }
+    fn strict_floors_are_the_listed_codes() {
+        use cadmpeg_ir::report::Severity;
+        let floored: Vec<_> = FreecadLossCode::ALL
+            .iter()
+            .filter_map(|code| code.kind().strict_floor().map(|floor| (code.code(), floor)))
+            .collect();
+        assert_eq!(
+            floored,
+            [
+                ("metadata.persistence-count-noncanonical", Severity::Warning),
+                ("metadata.program-version-noncanonical", Severity::Warning),
+                ("metadata.file-version-noncanonical", Severity::Warning),
+            ]
+        );
     }
 }

@@ -16,7 +16,7 @@ use cadmpeg_ir::pmi::{
     PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::loss::CreoLossCode;
@@ -405,6 +405,7 @@ pub(super) fn transfer(
         losses.push(
             GivenUpRecord::new(
                 cadmpeg_ir::ids::Identity::new(record)?,
+                Cause::Undecoded,
                 format_args!("{code}: the dimensional attributes form no PMI record"),
             )
             .loss(),

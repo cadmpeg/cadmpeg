@@ -186,13 +186,12 @@ fn a_record_one_studio_drops_leaves_the_records_of_another_studio() {
     let result = crate::test_support::codec()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
     assert!(
         result
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == unreadable),
+            .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)),
         "{:#?}",
         result.report().losses
     );

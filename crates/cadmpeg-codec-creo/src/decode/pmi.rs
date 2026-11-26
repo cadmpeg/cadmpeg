@@ -20,7 +20,7 @@ use cadmpeg_ir::pmi::{
     PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
@@ -76,16 +76,13 @@ pub(super) fn transfer(
         return Ok(BTreeMap::new());
     }
     let Some(attributes) = attributes::attributes(ctx, neutral)? else {
-        let note = CreoLossCode::PmiTableIncomplete
-            .note("The neutral attribute table containing PMI did not parse completely.");
         given_up.push(give_up_neutral(
             ctx,
             scan,
             neutral,
             ("neutral-section", neutral),
-            format!("{}: {}", note.code, note.message),
+            "the neutral attribute table containing PMI does not parse completely".to_owned(),
         )?);
-        losses.push(note);
         return Ok(BTreeMap::new());
     };
     let mut tolerances = BTreeMap::<(u32, u32), Tolerance<'_>>::new();
@@ -352,6 +349,7 @@ pub(super) fn transfer(
         losses.push(
             GivenUpRecord::new(
                 cadmpeg_ir::ids::Identity::new(record)?,
+                Cause::Undecoded,
                 format_args!("{code}: the geometric-tolerance attributes form no PMI record"),
             )
             .loss(),
@@ -429,6 +427,8 @@ fn pmi_record(key: impl std::fmt::Display) -> String {
 /// Gives up `part`, an extent of the `neutral` section, as a part of `kind`.
 /// The passthrough record of the section retains its bytes, so the part
 /// keeps only their length and digest and its stub links to that record.
+/// Each such part breaks the attribute-table grammar or names no owner, so
+/// it is unreadable.
 fn give_up_neutral(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -454,6 +454,7 @@ fn give_up_neutral(
         Part::new("creo", kind, part, [ArenaClass::Model])
             .contained_in(cadmpeg_ir::ids::Identity::from(section))
             .digest_only(),
+        Cause::Unreadable,
         CodecError::Malformed(why),
     )
 }

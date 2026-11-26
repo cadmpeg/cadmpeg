@@ -3351,4 +3351,16 @@ A Parasolid record is a part (CADIR §3.3): the bytes of the complete record, fr
 
 An indexed object-model entry is a part. When the section search of an entry stops at its work bound, the decoder gives up the entry as an `om-entry` part in the stream `nx:container`, at the file offset of the entry, with the entry path as its name. The part keeps the entry's bytes when they fit the retained-byte allowance, and their length and digest otherwise.
 
-When the native object model does not attach, the decoder gives up every record of the attachment and keeps the decoded geometry and topology. It charges `nx/native.attachment-failed` and one `record.unreadable` that names `nx:container` (CADIR §3.3). Each native record and each retained record that the attachment wrote before it failed is dropped with `nx:container`.
+When the native object model does not attach, the decoder gives up every record of the attachment and keeps the decoded geometry and topology. It charges one give-up that names `nx:container` (CADIR §3.3) and holds the error text. The cause is `record.unreadable` when the attachment stops at a record that is malformed or truncated, and `record.undecoded` otherwise. Each native record and each retained record that the attachment wrote before it failed is dropped with `nx:container`.
+
+Each given-up part is one entry. Its cause is:
+
+| Part kind | Bytes | Cause |
+|---|---|---|
+| `parasolid-record` | A NURBS carrier that stores a control-point weight that is zero or negative, or a dimension, count, or multiplicity that contradicts its fields or arrays. | `record.unreadable` |
+| `parasolid-record` | A CONE whose half-angle sine and cosine have a squared sum that differs from one by more than 1e-9. | `record.unreadable` |
+| `parasolid-record` | A NURBS carrier whose lanes state no IR carrier, a carrier whose control values do not resolve, a CONE with a negative half-angle sine or cosine, or a TORUS with a negative major radius. | `record.undecoded` |
+| `parasolid-record` | A SHELL that has no admitted FACE, and a BODY that has no emitted SHELL. | `record.undecoded` |
+| `om-entry` | An indexed object-model entry whose section search stops at its work bound. | `record.undecoded` |
+
+No NX code carries a strict floor (CADIR §3.2).

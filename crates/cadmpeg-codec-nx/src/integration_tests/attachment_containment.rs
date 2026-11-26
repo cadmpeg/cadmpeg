@@ -55,24 +55,34 @@ fn try_decode_failing_at(
     NxCodec.decode(&mut Cursor::new(bytes), &options)
 }
 
-fn attachment_failures(result: &EditableDecodeResult) -> Vec<&LossNote> {
-    result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.local_code() == "native.attachment-failed")
-        .collect()
-}
-
+/// The one charge that gives up the object-model container after a failed
+/// attachment.
 fn charges_the_object_model(loss: &LossNote) -> bool {
     loss.code == record_unreadable_kind()
         && loss.severity == Severity::Error
+        && loss
+            .message
+            .contains("Native object-model attachment failed")
         && loss
             .message
             .split_whitespace()
             .any(|token| token == "nx:container:object-model#0")
 }
 
+fn attachment_failures(result: &EditableDecodeResult) -> Vec<&LossNote> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .contains("Native object-model attachment failed")
+        })
+        .collect()
+}
+
+/// The failed attachment is one entry: the give-up of the container, which
+/// carries the error text.
 fn assert_attachment_given_up(result: &EditableDecodeResult) {
     let errors = result
         .report()
@@ -80,16 +90,14 @@ fn assert_attachment_given_up(result: &EditableDecodeResult) {
         .iter()
         .filter(|loss| loss.severity == Severity::Error)
         .collect::<Vec<_>>();
-    assert_eq!(errors.len(), 2, "{errors:#?}");
+    assert_eq!(errors.len(), 1, "{errors:#?}");
     assert_eq!(attachment_failures(result).len(), 1);
-    assert_eq!(errors[0].code.namespace(), "nx");
-    assert_eq!(errors[0].code.local_code(), "native.attachment-failed");
+    assert!(charges_the_object_model(errors[0]), "{:#?}", errors[0]);
     assert!(
         errors[0].message.contains(INJECTED_MESSAGE),
         "{}",
         errors[0].message
     );
-    assert!(charges_the_object_model(errors[1]), "{:#?}", errors[1]);
 }
 
 #[test]
@@ -202,9 +210,14 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
     let salvaged = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, false)
         .expect("salvage decode keeps the geometry");
     let salvaged = &salvaged.report().losses;
-    assert!(salvaged
-        .iter()
-        .any(|loss| loss.code.local_code() == "native.attachment-failed"));
+    assert_eq!(
+        salvaged
+            .iter()
+            .filter(|loss| loss.message.contains(INJECTED_MESSAGE))
+            .count(),
+        1,
+        "{salvaged:#?}"
+    );
     assert!(salvaged.iter().any(charges_the_object_model));
     let error = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, true)
         .expect_err("strict decode refuses the attachment failure");
@@ -215,12 +228,6 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
                 "{:#?}",
                 rejection.loss()
             );
-            assert!(rejection
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code.local_code() == "native.attachment-failed"
-                    && loss.code.strict_floor().is_none()));
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

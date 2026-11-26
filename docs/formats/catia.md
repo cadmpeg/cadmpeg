@@ -2049,7 +2049,7 @@ For an FBB-bearing nested body, a complete standard edge/vertex walk selects the
 
 The delimiter high nibble identifies a consistent table-delimiter family. Geometry route selection uses the complete structural relations above and the independently bounded E5 witness from §3.3.
 
-When a route refuses records and states no model, the decode continues with the next route, and after the last route with the metadata fallback. Each refused record has one `record.unreadable`. The metadata fallback keeps the payload as one retained record and gives up no other record.
+When a route refuses records and states no model, the decode continues with the next route, and after the last route with the metadata fallback. Each refused record has one give-up (§13). The metadata fallback keeps the payload as one retained record and gives up no other record.
 
 ### 10.2 Subordinate E5 topology populations
 
@@ -2095,5 +2095,22 @@ A nested-`V5_CFV2` file without a standard FBB spine uses the object-stream `b5 
 
 - **On-carrier incidence tolerance is 1e-3 mm.** Endpoint-by-surface-intersection binding uses `on(P,surf)` := signed distance ≤ 1e-3 mm (§5.6); circle/arc vertex matching uses `|dist(v,c) − r| ≤ 1e-3` (§5.6); per-coordinate cylinder rim/axis identity gates and the plane/cylinder/torus/cone/sphere on-carrier gates (§5.7) run at the same order.
 - **Normalized-relation checks are exact (f64 bit-equality)** where the source is f64: the surface-of-revolution angular relations (`angular_lo/scale == 0.5`, `(angular_hi−angular_lo)/scale == 2π`; §5.15) and the `SurfacicReps` bounding-sphere containment `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` (§3.5) hold to bit-equality, not within a tolerance band.
+
+---
+
+## 13. Given-up records and strict floors
+
+The decoder gives up a record (CADIR §3.3) in these cases. Each give-up is one entry.
+
+| Record | Case | Cause |
+|---|---|---|
+| A NURBS carrier record | The record states lanes that the IR carrier refuses. | `record.undecoded` |
+| The `object-stream` part (§6.8) | The selection of the object-stream graph passes its work bound and the route states no face. | `record.undecoded` |
+| A `b5 03 5f` face record | The face/loop/pcurve/edge graph does not close and the route states no face. | `record.undecoded` |
+| An E5 face record | The E5 reference graph does not close. | `record.undecoded` |
+| A zero-entity face record | The face has no complete allocation graph or face geometry. | `record.undecoded` |
+| A standard face | The standard boundary graph is not emitted. | `record.undecoded` |
+
+No CATIA code carries a strict floor (CADIR §3.2).
 
 ---

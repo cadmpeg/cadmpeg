@@ -26,7 +26,7 @@ fn count(report: &Report, code: &str, detail: &str) -> usize {
     report
         .losses()
         .iter()
-        .filter(|loss| loss.code.as_deref() == Some(code) && loss.detail.contains(detail))
+        .filter(|loss| loss.states(code) && loss.detail.contains(detail))
         .count()
 }
 fn parts(model: &crate::reader::Model) -> usize {

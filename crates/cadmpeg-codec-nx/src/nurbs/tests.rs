@@ -943,10 +943,9 @@ fn a_curve_with_a_negative_weight_is_omitted_with_one_loss() {
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal, got {refusals:?}");
     };
-    assert_eq!(
-        refusal.loss(0).code,
-        crate::loss::NxLossCode::CarrierSplineWeightNonpositive.kind()
-    );
+    let (cause, why) = refusal.give_up(0);
+    assert_eq!(cause, cadmpeg_ir::unknown::part::Cause::Unreadable);
+    assert!(why.contains("weight that is zero or negative"), "{why}");
 }
 
 #[test]

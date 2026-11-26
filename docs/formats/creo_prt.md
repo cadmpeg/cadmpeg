@@ -274,9 +274,10 @@ directly with its PSB named record. `THMB_IMG_MAIN` is an auxiliary exception:
 its expanded payload contains the JPEG payload and is identified by the
 `FF D8 FF` marker.
 
-The reader gives up a section whose expansion is not valid as a
-`compressed-section` part over the stored section. The section record retains
-the bytes, so the part keeps only their length and digest.
+The reader gives up a section whose expansion is not valid, or whose declared
+expanded length is over a decode bound, as a `compressed-section` part over the
+stored section (§10). The section record retains the bytes, so the part keeps
+only their length and digest.
 
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
@@ -6789,7 +6790,7 @@ value class that later rows reference with `f7`. `ref_id` and `ref_type`
 identify the attribute owner.
 
 When the `attributes` field does not read, the reader gives up the
-`NeuPrtSld` section as a `neutral-section` part. A geometric-tolerance type
+`NeuPrtSld` section as a `neutral-section` part (§10). A geometric-tolerance type
 row or a dimensional row with a null `ref_id` or `ref_type` is a
 `pmi-attribute-row` part. The section record retains the bytes of both parts,
 so each part keeps only their length and digest.
@@ -6970,7 +6971,7 @@ constraints.
 A row whose frame is not a proper rigid placement is given up by the id of
 the occurrence that it places. When a row does not match the row grammar, the
 reader gives up the bytes from that row to the end of the section as a
-`component-rows` part.
+`component-rows` part (§10).
 
 ### 9.1 Frame slots
 
@@ -7027,3 +7028,23 @@ tail bytes follow the prefix.
 | `de..df` | `bf32 + p`  |
 
 Every frame slot is finite.
+
+## 10. Given-up records and strict floors
+
+The decoder gives up a part or a record (CADIR §3.3) in these cases. Each
+give-up is one entry.
+
+| Part or record | Case | Cause |
+|---|---|---|
+| `compressed-section` part | The LZW code stream is not valid, or the output length differs from the TOC expanded-length field. | `record.unreadable` |
+| `compressed-section` part | The declared expanded length is over 256 MiB or over the per-expansion allowance of the decode. | `record.undecoded` |
+| `neutral-section` part | The `attributes` field of `NeuPrtSld` does not read (§8.9). | `record.unreadable` |
+| `pmi-attribute-row` part | A geometric-tolerance type row or a dimensional row has a null `ref_id` or `ref_type` (§8.9). | `record.unreadable` |
+| `component-rows` part | A row does not match the row grammar (§9). | `record.unreadable` |
+| Placed occurrence | The row frame is not a proper rigid placement (§9). | `record.unreadable` |
+| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | The row does not form a complete scalar or a dimension-complete array of its type. | `record.unreadable` |
+| Legacy type-3, type-4, or type-10 scalar value row | The row uses an undefined continuation form. | `record.undecoded` |
+| PMI record of geometric-tolerance or dimensional attributes | The attributes form no PMI record. | `record.undecoded` |
+| Face | Face admission rejects the face. | `record.undecoded` |
+
+No Creo code carries a strict floor (CADIR §3.2).

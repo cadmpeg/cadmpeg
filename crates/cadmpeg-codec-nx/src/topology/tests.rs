@@ -1643,17 +1643,17 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
         .iter()
         .any(|region| region.id.as_str() == "nx:s0:region#12"));
     let losses = &result.report().losses;
-    assert!(losses.iter().any(|loss| {
-        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
-    }));
-    assert!(losses.iter().any(|loss| {
-        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("BODY 2")
-    }));
     // The shell is a part of its stream; the body, dropped only because its
     // one shell is given up, is named in that charge and has none of its own.
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code == NxLossCode::TopologyShellWithheld.kind()),
+        "{losses:#?}"
+    );
     let charges = losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     let shell_charge = charges
         .iter()
@@ -1667,6 +1667,10 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
                 ))
         })
         .unwrap_or_else(|| panic!("the shell is given up as a part: {losses:#?}"));
+    assert!(
+        shell_charge.message.contains("SHELL 3"),
+        "{shell_charge:#?}"
+    );
     assert!(
         shell_charge.message.contains("nx:s0:body#2"),
         "{shell_charge:#?}"
@@ -1701,7 +1705,8 @@ fn a_withheld_face_leaves_no_loss_that_states_it_partial() {
     assert!(result.ir().geometry.faces.is_empty());
     let losses = &result.report().losses;
     assert!(losses.iter().any(|loss| {
-        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains("SHELL 3")
     }));
     assert!(
         losses

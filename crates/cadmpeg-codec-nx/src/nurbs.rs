@@ -24,6 +24,7 @@ use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
 };
+use cadmpeg_ir::unknown::part::Cause;
 use curve_references::CurveDescriptorReferences;
 
 /// A decoded NURBS surface and its source descriptor offset.
@@ -380,26 +381,32 @@ pub(crate) struct CarrierRefusal {
 }
 
 impl CarrierRefusal {
-    /// The loss of this record in Parasolid stream `si`.
-    pub(crate) fn loss(&self, si: usize) -> cadmpeg_ir::report::loss::LossNote {
-        use crate::loss::NxLossCode;
+    /// Why the decoder gives up this record of Parasolid stream `si`: a
+    /// weight or field that breaks the record's rules is unreadable, and
+    /// lanes the IR carrier refuses are undecoded.
+    pub(crate) fn give_up(&self, si: usize) -> (Cause, String) {
         use cadmpeg_parasolid::geometry::nurbs::Refusal;
         let record = format!("parasolid#{si} {} at byte {}", self.family, self.pos);
-        let (code, cause) = match &self.refusal {
+        let (cause, why) = match &self.refusal {
             Refusal::Lanes(error) => {
-                return NxLossCode::CarrierLanesUnpaired
-                    .note(format!("{record} states no carrier: {error}"))
+                return (
+                    Cause::Undecoded,
+                    format!("{record} states no carrier: {error}"),
+                )
             }
             Refusal::NonpositiveWeight => (
-                NxLossCode::CarrierSplineWeightNonpositive,
+                Cause::Unreadable,
                 "stores a control-point weight that is zero or negative",
             ),
             Refusal::Fields => (
-                NxLossCode::CarrierSplineFieldsInconsistent,
+                Cause::Unreadable,
                 "stores a dimension, count, or multiplicity that contradicts its fields or arrays",
             ),
         };
-        code.note(format!("{record} {cause}; the carrier is not emitted."))
+        (
+            cause,
+            format!("{record} {why}; the carrier is not emitted."),
+        )
     }
 }
 

@@ -325,11 +325,11 @@ fn consistency_flag_reports_mixed_snapshots_and_preserves_legacy_v1() {
     assert!(report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/history.not-supported")));
+        .any(|loss| loss.states("onshape/history.not-supported")));
     assert!(report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/record.malformed")));
+        .any(|loss| loss.states("onshape/record.malformed")));
     for flag in [Value::Null, json!("false"), json!(0)] {
         let malformed = changed(&legacy, |path, value| {
             if path == "manifest.json" {

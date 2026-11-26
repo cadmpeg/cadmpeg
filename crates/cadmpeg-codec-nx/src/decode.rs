@@ -19,7 +19,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::cell::RefCell;
@@ -273,42 +273,42 @@ fn give_up_bounded_om_entries(
     decoded: &mut Decoded,
 ) -> Result<(), CodecError> {
     for entry in scan.container.bounded_indexed_om_entries() {
-        let why = NxLossCode::SourceScanBounded.note(format!(
+        let why = format!(
             "The indexed object-model section search in {} reached its work bound of {}; \
              its remaining sections were skipped.",
             entry.name,
             crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
-        ));
+        );
         let payload = entry.file_span().and_then(|(offset, length)| {
             let start = usize::try_from(offset).ok()?;
             let end = start.checked_add(usize::try_from(length).ok()?)?;
             Some((offset, scan.container.data.get(start..end)?))
         });
-        if let Some((offset, bytes)) = payload {
-            let part = Part::at(
-                "nx",
-                "om-entry",
-                offset,
-                bytes,
-                [ArenaClass::Model, ArenaClass::Design],
-            )
-            .named(entry.name.clone())
-            .in_stream(cadmpeg_ir::stream_name!("nx:container"));
-            let part = if cadmpeg_core::decode::u64_from_index(bytes.len())
-                > ctx.retained_bytes_available()
-            {
+        let Some((offset, bytes)) = payload else {
+            decoded
+                .body
+                .losses
+                .push(NxLossCode::SourceScanBounded.note(why));
+            continue;
+        };
+        let part = Part::at(
+            "nx",
+            "om-entry",
+            offset,
+            bytes,
+            [ArenaClass::Model, ArenaClass::Design],
+        )
+        .named(entry.name.clone())
+        .in_stream(cadmpeg_ir::stream_name!("nx:container"));
+        let part =
+            if cadmpeg_core::decode::u64_from_index(bytes.len()) > ctx.retained_bytes_available() {
                 part.digest_only()
             } else {
                 part
             };
-            let part = ctx.give_up_part(
-                part,
-                CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
-            )?;
-            let loss = part.commit(ctx, &mut decoded.ir, &mut decoded.source_fidelity)?;
-            decoded.body.losses.push(loss);
-        }
-        decoded.body.losses.push(why);
+        let part = ctx.give_up_part(part, Cause::Undecoded, CodecError::NotImplemented(why))?;
+        let loss = part.commit(ctx, &mut decoded.ir, &mut decoded.source_fidelity)?;
+        decoded.body.losses.push(loss);
     }
     Ok(())
 }

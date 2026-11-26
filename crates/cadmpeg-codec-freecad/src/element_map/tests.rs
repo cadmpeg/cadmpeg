@@ -862,29 +862,29 @@ fn unreadable_child_map_archive() -> Vec<u8> {
     archive_entries(&references)
 }
 
-/// Whether `losses` hold a `record.unreadable` that names the element map the
-/// decode gave up, by the id of the map of the property the codec's own loss
-/// names, at the property's position in `Document.xml`.
+/// Whether `losses` state the element map the decode gave up, at its
+/// property's position in `Document.xml`, with one `record.unreadable` that
+/// carries the cause and no codec note beside it.
 fn element_map_given_up(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
-    let Some(property) = losses
+    let given_up = losses
         .iter()
-        .find(|loss| {
-            loss.code.local_code() == "element-map.metadata-unresolved"
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.severity == cadmpeg_ir::report::Severity::Error
+                && loss
+                    .message
+                    .starts_with("part property-element stream=\"Document.xml\" offset=")
                 && loss.message.contains("mapIndex")
+                && loss
+                    .message
+                    .contains("; dropped=[fcstd:native:element-map#")
         })
-        .and_then(|loss| loss.message.split_whitespace().next())
-    else {
-        return false;
-    };
-    let map = crate::native::native_child_id("element-map", property, "map");
-    losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss
-                .message
-                .starts_with("part property-element stream=\"Document.xml\" offset=")
-            && loss.message.ends_with(&format!("; dropped=[{map}]"))
-    })
+        .count();
+    let noted = losses.iter().any(|loss| {
+        loss.code.local_code() == "element-map.metadata-unresolved"
+            && loss.message.contains("mapIndex")
+    });
+    given_up == 1 && !noted
 }
 
 #[test]

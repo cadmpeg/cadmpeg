@@ -62,10 +62,28 @@ pub(crate) fn fixture(name: &str) -> Vec<u8> {
     }
     zip.finish().unwrap().into_inner()
 }
+/// Whether a loss of kind `kind` and text `message` states the code `code`:
+/// a note of `code`, or a give-up whose text carries it.
+pub(crate) fn states(code: &str, kind: &str, message: &str) -> bool {
+    use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind};
+    kind == code
+        || ([record_unreadable_kind(), record_undecoded_kind()]
+            .iter()
+            .any(|given_up| given_up.to_string() == kind)
+            && message.contains(&format!("{code}: ")))
+}
 #[derive(Debug)]
 pub(crate) struct Loss {
     pub(crate) code: Option<String>,
     pub(crate) detail: String,
+}
+impl Loss {
+    /// Whether the loss states `code`, as [`states`] reads it.
+    pub(crate) fn states(&self, code: &str) -> bool {
+        self.code
+            .as_deref()
+            .is_some_and(|kind| states(code, kind, &self.detail))
+    }
 }
 #[derive(Debug, Default)]
 pub(crate) struct Report {

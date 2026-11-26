@@ -379,9 +379,11 @@ fn unreadable_and_stale_sketch_responses_are_given_up_and_duplicates_kept() {
         } else {
             assert!(asset.is_none());
             assert_eq!(given_up, 1);
-            assert!(report.losses().iter().any(|loss| loss.code.as_deref()
-                == Some("onshape/member.unreadable")
-                && loss.detail.contains("omitted the member")));
+            assert!(report
+                .losses()
+                .iter()
+                .any(|loss| loss.detail.contains("onshape/member.unreadable: ")
+                    && loss.detail.contains("omitted the member")));
         }
         assert!(report
             .losses()
@@ -406,11 +408,13 @@ fn assert_support_frame_kept(model: &Model, case: &str) {
     );
 }
 
+/// Whether `report` states `code` with `detail`: in a note of `code`, or in a
+/// give-up whose text carries it.
 fn has_loss(report: &Report, code: &str, detail: &str) -> bool {
     report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some(code) && loss.detail.contains(detail))
+        .any(|loss| loss.states(code) && loss.detail.contains(detail))
 }
 
 #[test]

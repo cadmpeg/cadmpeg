@@ -898,8 +898,9 @@ pub(super) fn try_decode_freeform_surfaces(
                         &payload_id,
                         &why
                     )));
+                } else {
+                    losses.push(why);
                 }
-                losses.push(why);
             } else {
                 losses.push((CatiaLossCode::TopologyB5GraphUnclosed).note(format!(
                     "Object-stream and consolidated NURBS carriers were decoded, but the \
@@ -922,6 +923,7 @@ pub(super) fn try_decode_freeform_surfaces(
                                 &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
                                 object_id,
                             ),
+                            cadmpeg_ir::unknown::part::Cause::Undecoded,
                             format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
                         )
                         .loss()
@@ -1186,7 +1188,8 @@ fn give_up_object_stream(
     .digest_only();
     ctx.give_up_part(
         part,
-        cadmpeg_core::CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        cadmpeg_core::CodecError::NotImplemented(format!("{}: {}", why.code, why.message)),
     )
 }
 
@@ -5624,7 +5627,13 @@ mod tests {
                 .expect("the part commits");
             assert_eq!(
                 loss.code,
-                cadmpeg_ir::unknown::part::record_unreadable_kind()
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
+            );
+            assert!(
+                loss.message
+                    .contains("catia/topology.object-stream-work-slice-exhausted: "),
+                "{}",
+                loss.message
             );
             assert!(
                 loss.message.contains(&format!(" record={stub}: ")),

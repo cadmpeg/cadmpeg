@@ -191,15 +191,16 @@ fn a_frame_that_is_not_rigid_drops_its_occurrence() {
     let result = decode(build_asm_with(table));
     // The root definition owns the two component rows that stay.
     assert_eq!(result.ir().model.occurrences.len(), 2);
-    assert_eq!(
-        loss_messages(&result, CreoLossCode::AssemblyPlacementUnresolved),
-        [
-            "1 component row(s) store a frame that is not a proper rigid placement; \
-          those occurrences did not transfer"
-        ]
-    );
     let dropped = "creo:model:occurrence#member-1";
     assert_eq!(unreadable_records(&result), [dropped.to_owned()]);
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("proper rigid placement"))
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "one entry states the drop: {charges:#?}");
+    assert_eq!(charges[0].code, record_unreadable_kind());
     assert!(result
         .ir()
         .model
@@ -250,10 +251,7 @@ fn an_unread_component_row_is_given_up_with_the_rows_after_it() {
         .end();
     let result = decode(bytes.clone());
     assert_eq!(result.ir().model.occurrences.len(), 1);
-    assert_eq!(
-        loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).len(),
-        1
-    );
+    assert!(loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).is_empty());
     let charges = result
         .report()
         .losses
@@ -262,6 +260,11 @@ fn an_unread_component_row_is_given_up_with_the_rows_after_it() {
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
     assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert!(
+        charges[0].contains("does not match the component row grammar"),
+        "{}",
+        charges[0]
+    );
     assert!(
         charges[0].starts_with(&format!(
             "part component-rows stream=\"\" offset={row} length={} record=creo:source:part#",

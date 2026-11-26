@@ -374,9 +374,11 @@ fn derived_studios_validate_their_own_pin_and_continue_after_a_bad_reference_rec
         );
         assert!(!has_unsupported(&report), "{:?}", report.losses());
         assert_eq!(
-            report.losses().iter().any(|loss| loss.code.as_deref()
-                == Some("onshape/record.malformed")
-                && loss.detail.contains("featureId is missing")),
+            report
+                .losses()
+                .iter()
+                .any(|loss| loss.states("onshape/record.malformed")
+                    && loss.detail.contains("featureId is missing")),
             bad_record,
             "{:?}",
             report.losses()

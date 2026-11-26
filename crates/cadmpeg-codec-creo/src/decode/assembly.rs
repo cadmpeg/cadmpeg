@@ -11,10 +11,10 @@ use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use crate::assembly::{Member, MemberTable};
+use crate::assembly::{Member, MemberTable, MemberTableStop};
 use crate::container::ContainerScan;
 use crate::loss::CreoLossCode;
 
@@ -45,7 +45,7 @@ pub(super) fn transfer_assembly_members(
         }
         return Ok(());
     };
-    record_table_stop(table, transfer_losses);
+    record_table_stop(scan, table, transfer_losses);
     let root = crate::identity::compose_checked::<ProductDefinitionId>(
         &crate::identity::MODEL_PRODUCT_DEFINITION,
         "root",
@@ -143,21 +143,15 @@ pub(super) fn transfer_assembly_members(
             external_documents.len()
         )));
     }
-    if !unresolved_placements.is_empty() {
-        transfer_losses.push(CreoLossCode::AssemblyPlacementUnresolved.note(format!(
-            "{} component row(s) store a frame that is not a proper rigid \
-             placement; those occurrences did not transfer",
-            unresolved_placements.len()
-        )));
-        let code = CreoLossCode::AssemblyPlacementUnresolved.kind();
-        transfer_losses.extend(unresolved_placements.iter().map(|occurrence| {
-            GivenUpRecord::new(
-                occurrence,
-                format_args!("{code}: the row stores a frame that is not a proper rigid placement"),
-            )
-            .loss()
-        }));
-    }
+    transfer_losses.extend(unresolved_placements.iter().map(|occurrence| {
+        GivenUpRecord::new(
+            occurrence,
+            Cause::Unreadable,
+            "the component row stores a frame that is not a proper rigid placement; the \
+             occurrence does not transfer",
+        )
+        .loss()
+    }));
     if unresolved_references > 0 {
         transfer_losses.push(
             CreoLossCode::AssemblyMemberReferenceUnresolved.note(format!(
@@ -177,36 +171,40 @@ pub(super) fn transfer_assembly_members(
     Ok(())
 }
 
-fn record_table_stop(table: &MemberTable, transfer_losses: &mut Vec<LossNote>) {
+/// Charges a table stop that [`give_up_unread_rows`] does not give up.
+fn record_table_stop(
+    scan: &ContainerScan,
+    table: &MemberTable,
+    transfer_losses: &mut Vec<LossNote>,
+) {
     if let Some(stop) = &table.stop {
-        let note = CreoLossCode::AssemblyMemberTableIncomplete.note(format!(
-            "component table at offset {} declares {} row(s); {} row(s) decoded before offset {}: {}",
-            table.offset,
-            table.declared,
-            table.members.len(),
-            stop.offset,
-            stop.reason
-        ));
-        transfer_losses.push(note);
+        if unread_rows(scan).is_none() {
+            transfer_losses
+                .push(CreoLossCode::AssemblyMemberTableIncomplete.note(table_stop(table, stop)));
+        }
     }
 }
 
-/// Gives up the component rows from the first row the grammar does not
-/// admit to the end of its `NeuAsmSld` section, as a `component-rows` part.
-/// The decode retains no other copy of those bytes.
-pub(super) fn give_up_unread_rows(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Option<GivenUpPart>, CodecError> {
-    let Some(stop) = scan
-        .assembly
-        .as_ref()
-        .and_then(|table| table.stop.as_ref())
-        .filter(|stop| stop.row_unread)
-    else {
-        return Ok(None);
-    };
-    let Some(bytes) = scan
+/// The statement of a component table that ends at `stop`.
+fn table_stop(table: &MemberTable, stop: &MemberTableStop) -> String {
+    format!(
+        "component table at offset {} declares {} row(s); {} row(s) decoded before offset {}: {}",
+        table.offset,
+        table.declared,
+        table.members.len(),
+        stop.offset,
+        stop.reason
+    )
+}
+
+/// The component table, its stop at a row the grammar does not admit, and
+/// the bytes from that row to the end of its `NeuAsmSld` section.
+fn unread_rows<'a>(
+    scan: &'a ContainerScan,
+) -> Option<(&'a MemberTable, &'a MemberTableStop, &'a [u8])> {
+    let table = scan.assembly.as_ref()?;
+    let stop = table.stop.as_ref().filter(|stop| stop.row_unread)?;
+    let bytes = scan
         .framing
         .sections
         .iter()
@@ -215,8 +213,18 @@ pub(super) fn give_up_unread_rows(
                 && section.offset() <= stop.offset
                 && stop.offset < section.end()
         })
-        .and_then(|section| scan.framing.data.get(stop.offset..section.end()))
-    else {
+        .and_then(|section| scan.framing.data.get(stop.offset..section.end()))?;
+    Some((table, stop, bytes))
+}
+
+/// Gives up the component rows from the first row the grammar does not
+/// admit to the end of its `NeuAsmSld` section, as an unreadable
+/// `component-rows` part. The decode retains no other copy of those bytes.
+pub(super) fn give_up_unread_rows(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Option<GivenUpPart>, CodecError> {
+    let Some((table, stop, bytes)) = unread_rows(scan) else {
         return Ok(None);
     };
     let part = Part::at(
@@ -228,11 +236,8 @@ pub(super) fn give_up_unread_rows(
     );
     ctx.give_up_part(
         part,
-        CodecError::malformed(format_args!(
-            "{}: {}",
-            CreoLossCode::AssemblyMemberTableIncomplete.kind(),
-            stop.reason
-        )),
+        Cause::Unreadable,
+        CodecError::Malformed(table_stop(table, stop)),
     )
     .map(Some)
 }

@@ -48,7 +48,7 @@ fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
 #[derive(Debug, Default)]
 pub(crate) struct LaneRefusals {
     notes: Vec<cadmpeg_ir::report::loss::LossNote>,
-    /// Source records already charged `record.unreadable`, so a record two
+    /// Source records already given up, so a record two
     /// routes read and refuse is given up once.
     given_up: std::collections::BTreeSet<cadmpeg_ir::ids::Identity>,
 }
@@ -65,21 +65,18 @@ impl LaneRefusals {
         std::mem::take(&mut self.notes)
     }
 
-    /// How many refusals the sink holds, not counting the `record.unreadable`
-    /// that accompanies a given-up record.
+    /// How many refusals the sink holds.
     ///
     /// The router reads this before and after a route, so it can state how
     /// many records a route refused before it transferred no model.
     pub(crate) fn note_count(&self) -> usize {
-        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
-        self.notes
-            .iter()
-            .filter(|note| note.code != unreadable)
-            .count()
+        self.notes.len()
     }
 
-    /// Record `why` and give up the source record `source`, whose carrier
-    /// the document then holds nowhere.
+    /// Give up the source record `source`, whose carrier the document then
+    /// holds nowhere, as undecoded for `why`: the IR carrier refuses lanes
+    /// that the record states. A further refusal of a given-up record is
+    /// recorded as `why`.
     fn give_up(
         &mut self,
         source: cadmpeg_ir::ids::Identity,
@@ -88,11 +85,11 @@ impl LaneRefusals {
         if self.given_up.contains(&source) {
             self.notes.push(why);
         } else {
-            self.notes
-                .extend(cadmpeg_ir::unknown::part::record_given_up(
-                    source.clone(),
-                    why,
-                ));
+            self.notes.push(cadmpeg_ir::unknown::part::record_given_up(
+                source.clone(),
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
+                &why,
+            ));
             self.given_up.insert(source);
         }
     }
@@ -1805,15 +1802,16 @@ mod tests {
         }
         assert_eq!(refusal.note_count(), 2, "two refusals of one record");
         let notes = refusal.take_notes();
-        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        let undecoded = cadmpeg_ir::unknown::part::record_undecoded_kind();
         let codes = notes.iter().map(|note| &note.code).collect::<Vec<_>>();
         let refused = crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.kind();
-        assert_eq!(codes, [&refused, &unreadable, &refused]);
-        assert!(notes[1]
+        assert_eq!(codes, [&undecoded, &refused]);
+        assert!(notes[0]
             .message
             .split_whitespace()
             .any(|token| token == "catia:cgm:a5-surface-frame#64"));
-        assert_eq!(notes[1].severity, cadmpeg_ir::report::Severity::Error);
+        assert!(notes[0].message.contains("lanes the IR carrier refuses"));
+        assert_eq!(notes[0].severity, cadmpeg_ir::report::Severity::Warning);
     }
 
     #[test]

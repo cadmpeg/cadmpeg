@@ -17,7 +17,7 @@ use cadmpeg_ir::presentation::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
@@ -193,18 +193,20 @@ pub(crate) fn transfer(
 ) -> Result<Graph, CodecError> {
     match transfer_xml(ctx, ir, bytes, sources) {
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            source_only_graph(ctx, bytes, None, error)
+            source_only_graph(ctx, bytes, None, Cause::Unreadable, error)
         }
         result => result,
     }
 }
 
 /// The graph of a `GuiDocument.xml` the decoder could not read: one
-/// document record with no state, and the entry given up as a part.
+/// document record with no state, and the entry given up as a part for
+/// `cause`.
 fn source_only_graph(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     schema_declaration: Option<&str>,
+    cause: Cause,
     error: CodecError,
 ) -> Result<Graph, CodecError> {
     let mut graph = Graph::default();
@@ -214,11 +216,6 @@ fn source_only_graph(
         attributes: BTreeMap::new(),
         states: Vec::new(),
     });
-    graph
-        .losses
-        .push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
-        "GuiDocument.xml remains source-only: {error}; independently decoded geometry is retained"
-    )));
     let part = Part::at(
         crate::dialect::FORMAT,
         "archive-entry",
@@ -231,7 +228,7 @@ fn source_only_graph(
     .contained_in(
         Identity::new(crate::native::native_id("document", "0")).map_err(CodecError::malformed)?,
     );
-    graph.given_up = Some(ctx.give_up_part(part, error)?);
+    graph.given_up = Some(ctx.give_up_part(part, cause, error)?);
     Ok(graph)
 }
 
@@ -269,8 +266,18 @@ fn transfer_xml(
             plan.apply(ir);
             graph
         }
-        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            source_only_graph(ctx, bytes, schema_declaration.as_deref(), error)?
+        Err(
+            error @ (CodecError::Malformed(_)
+            | CodecError::Truncated { .. }
+            | CodecError::NotImplemented(_)),
+        ) => {
+            let cause = match (&error, &admission) {
+                (CodecError::NotImplemented(_), _) | (_, GuiSchemaAdmission::Unverified { .. }) => {
+                    Cause::Undecoded
+                }
+                _ => Cause::Unreadable,
+            };
+            source_only_graph(ctx, bytes, schema_declaration.as_deref(), cause, error)?
         }
         Err(error) => return Err(error),
     };
@@ -2545,12 +2552,7 @@ fn validate_gui_center_line_record(
         property_name,
         "GeometryType",
     )?)
-    .map_err(|()| {
-        gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has an unsupported GeometryType",
-        )
-    })?;
+    .map_err(|()| unsupported_geometry_type(property_name))?;
     validate_gui_techdraw_geometry_branch(
         &fields,
         prefix.len(),
@@ -2642,12 +2644,7 @@ fn validate_gui_cosmetic_edge_record(
                 gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
             })?,
     )
-    .map_err(|()| {
-        gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has an unsupported GeometryType",
-        )
-    })?;
+    .map_err(|()| unsupported_geometry_type(property_name))?;
 
     validate_gui_techdraw_geometry_branch(
         &fields,
@@ -3158,6 +3155,13 @@ fn parse_gui_techdraw_integer(
         .parse::<i64>()
         .map(|_| ())
         .map_err(|_| gui_techdraw_error(property_name, "GeomFormat has an invalid integer"))
+}
+
+/// A `TechDraw` `GeomType` this decoder has no reading for.
+fn unsupported_geometry_type(property_name: &str) -> CodecError {
+    CodecError::NotImplemented(format!(
+        "GUI property {property_name} TechDraw geometry has an unsupported GeometryType"
+    ))
 }
 
 fn gui_techdraw_error(property_name: &str, detail: &str) -> CodecError {

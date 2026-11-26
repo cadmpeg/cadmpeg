@@ -343,27 +343,23 @@ fn an_unclosed_b5_graph_gives_up_its_face_records() {
         .iter()
         .any(|loss| loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()));
     for face in ["catia:b5:face#500", "catia:b5:face#902"] {
-        assert!(
-            losses.iter().any(|loss| {
-                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                    && loss.severity == cadmpeg_ir::report::Severity::Error
-                    && names_face(&loss.message, face)
-            }),
-            "record.unreadable names {face}: {losses:?}"
+        let charges = losses
+            .iter()
+            .filter(|loss| {
+                cadmpeg_ir::unknown::part::gives_up(&loss.code) && names_face(&loss.message, face)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(charges.len(), 1, "one give-up names {face}: {losses:?}");
+        assert_eq!(
+            charges[0].code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
         );
+        assert_eq!(charges[0].severity, cadmpeg_ir::report::Severity::Warning);
     }
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = CatiaCodec
+    CatiaCodec
         .decode(&mut Cursor::new(bytes), &options)
-        .expect_err("a pinned decode refuses a given-up face record");
-    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    assert_eq!(
-        rejection.loss().code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind()
-    );
-    assert!(names_face(&rejection.loss().message, "catia:b5:face#500"));
+        .expect("a pinned decode admits a graph that the decoder does not close");
 }

@@ -33,10 +33,7 @@ fn occurrence<'a>(model: &'a crate::reader::Model, name: &str) -> &'a Occurrence
         .unwrap()
 }
 fn loss(report: &Report, code: &str) -> bool {
-    report
-        .losses()
-        .iter()
-        .any(|loss| loss.code.as_deref() == Some(code))
+    report.losses().iter().any(|loss| loss.states(code))
 }
 #[test]
 fn rotated_parent_produces_child_local_translation_and_rotation() {

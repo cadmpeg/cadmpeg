@@ -1933,9 +1933,8 @@ fn try_decode_standard_populations(
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
         }
-        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
         for mut loss in output.report.losses {
-            if loss.code == unreadable {
+            if cadmpeg_ir::unknown::part::gives_up(&loss.code) {
                 cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
                     Ok(rescope_standard_id(id, &scope))
                 })?;
@@ -2861,6 +2860,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.extend(given_up_faces.into_iter().map(|face| {
             cadmpeg_ir::unknown::part::GivenUpRecord::new(
                 face,
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
                 format_args!("{code}: {}", failure.message()),
             )
             .loss()

@@ -41,6 +41,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -269,16 +270,16 @@ pub(super) fn emit_topology(
         if admitted_shell_faces.contains_key(&shell.xmt()) {
             admitted_shells.push(shell);
         } else {
-            let withheld = crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
-                "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is \
-                 admitted",
-                shell.xmt()
-            ));
             let part = super::build::give_up_record(
                 ctx,
                 (stream_index, source_stream.name()),
                 shell,
-                &withheld,
+                Cause::Undecoded,
+                format!(
+                    "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is \
+                     admitted",
+                    shell.xmt()
+                ),
             )?;
             if let Some(body) = body {
                 given_up_shells
@@ -286,7 +287,6 @@ pub(super) fn emit_topology(
                     .or_insert_with(|| part.id().clone());
             }
             given_up.push(part);
-            topology_losses.push(withheld);
         }
     }
     let mut first_body_shells = BTreeMap::new();
@@ -414,9 +414,9 @@ pub(super) fn emit_topology(
     for body_xmt in shape_bodies {
         let body = bodies.get(&body_xmt);
         if body.is_none_or(|body| !shell_owners.contains(body)) {
-            let withheld = crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+            let withheld = format!(
                 "parasolid#{stream_index} BODY {body_xmt} is withheld: no SHELL of the body is emitted"
-            ));
+            );
             if let Some(shell) = given_up_shells.get(&body_xmt) {
                 let body: BodyId = match body {
                     Some(body) => body.clone(),
@@ -430,10 +430,12 @@ pub(super) fn emit_topology(
                     ctx,
                     (stream_index, source_stream.name()),
                     node,
-                    &withheld,
+                    Cause::Undecoded,
+                    withheld,
                 )?);
+            } else {
+                topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(withheld));
             }
-            topology_losses.push(withheld);
             withheld_bodies.extend(body.cloned());
         }
     }

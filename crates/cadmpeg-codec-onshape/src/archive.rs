@@ -7,7 +7,9 @@ use cadmpeg_container::{ArchiveSnapshot, EntryRecord, ZipCompression};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{
+    dropped_with, Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -112,7 +114,21 @@ impl<'a> Bundle<'a> {
                 if repeated == Some(true) {
                     losses.push(note);
                 } else {
-                    give_up_entry(ctx, root, entry, note, false, &mut losses, &mut given_up)?;
+                    let cause = if invalid_name || repeated.is_some() {
+                        Cause::Unreadable
+                    } else {
+                        Cause::Undecoded
+                    };
+                    let why = coded(&note);
+                    give_up_entry(
+                        ctx,
+                        root,
+                        entry,
+                        (cause, why),
+                        false,
+                        &mut losses,
+                        &mut given_up,
+                    )?;
                 }
                 continue;
             }
@@ -128,10 +144,18 @@ impl<'a> Bundle<'a> {
             };
             let member_limit = member_limit.min(remaining);
             if entry.uncompressed_size > member_limit {
-                let note = OnshapeLossCode::MemberTooLarge.note(format!(
+                let why = format!(
                     "{name}: expanded member exceeds {member_limit} bytes; omitted the member"
-                ));
-                give_up_entry(ctx, root, entry, note, true, &mut losses, &mut given_up)?;
+                );
+                give_up_entry(
+                    ctx,
+                    root,
+                    entry,
+                    (Cause::Undecoded, why),
+                    true,
+                    &mut losses,
+                    &mut given_up,
+                )?;
                 continue;
             }
             remaining -= entry.uncompressed_size;
@@ -143,9 +167,16 @@ impl<'a> Bundle<'a> {
                     Err(CodecError::ResourceLimit(limit))
                         if limit.scope == cadmpeg_core::decode::LimitScope::Part =>
                     {
-                        let note = OnshapeLossCode::MemberTooLarge
-                            .note(format!("{name}: {limit:?}; omitted the member"));
-                        give_up_entry(ctx, root, entry, note, true, &mut losses, &mut given_up)?;
+                        let why = format!("{name}: {limit:?}; omitted the member");
+                        give_up_entry(
+                            ctx,
+                            root,
+                            entry,
+                            (Cause::Undecoded, why),
+                            true,
+                            &mut losses,
+                            &mut given_up,
+                        )?;
                         continue;
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
@@ -154,25 +185,55 @@ impl<'a> Bundle<'a> {
                             .iter()
                             .any(|prefix| name.strip_prefix(prefix) == Some("export.step")) =>
                     {
-                        let note = OnshapeLossCode::StepUnreadable
-                            .note(format!("{name}: {error}; final geometry is missing"));
-                        give_up_entry(ctx, root, entry, note, false, &mut losses, &mut given_up)?;
+                        let cause = cause_of(&error);
+                        let why = coded(
+                            &OnshapeLossCode::StepUnreadable
+                                .note(format!("{name}: {error}; final geometry is missing")),
+                        );
+                        give_up_entry(
+                            ctx,
+                            root,
+                            entry,
+                            (cause, why),
+                            false,
+                            &mut losses,
+                            &mut given_up,
+                        )?;
                         continue;
                     }
                     Err(error) => {
-                        let note = OnshapeLossCode::MemberUnreadable
-                            .note(format!("{name}: {error}; omitted the member"));
-                        give_up_entry(ctx, root, entry, note, false, &mut losses, &mut given_up)?;
+                        let cause = cause_of(&error);
+                        let why = coded(
+                            &OnshapeLossCode::MemberUnreadable
+                                .note(format!("{name}: {error}; omitted the member")),
+                        );
+                        give_up_entry(
+                            ctx,
+                            root,
+                            entry,
+                            (cause, why),
+                            false,
+                            &mut losses,
+                            &mut given_up,
+                        )?;
                         continue;
                     }
                 }
             };
             let length = cadmpeg_core::decode::u64_from_index(data.window().len());
             if has_extension(name, "json") && length > JSON_BYTES {
-                let note = OnshapeLossCode::MemberTooLarge.note(format!(
+                let why = format!(
                     "{name}: expanded member exceeds {JSON_BYTES} bytes; omitted the member"
-                ));
-                give_up_entry(ctx, root, entry, note, true, &mut losses, &mut given_up)?;
+                );
+                give_up_entry(
+                    ctx,
+                    root,
+                    entry,
+                    (Cause::Undecoded, why),
+                    true,
+                    &mut losses,
+                    &mut given_up,
+                )?;
                 continue;
             }
             let captured = reference_manifest(name);
@@ -208,9 +269,24 @@ impl<'a> Bundle<'a> {
                         json.insert(name.clone(), value);
                     }
                     Err((error, bound)) => {
-                        let note = OnshapeLossCode::MemberUnreadable
-                            .note(format!("{name}: {error}; omitted the member"));
-                        give_up_entry(ctx, root, entry, note, bound, &mut losses, &mut given_up)?;
+                        let cause = if bound {
+                            Cause::Undecoded
+                        } else {
+                            Cause::Unreadable
+                        };
+                        let why = coded(
+                            &OnshapeLossCode::MemberUnreadable
+                                .note(format!("{name}: {error}; omitted the member")),
+                        );
+                        give_up_entry(
+                            ctx,
+                            root,
+                            entry,
+                            (cause, why),
+                            bound,
+                            &mut losses,
+                            &mut given_up,
+                        )?;
                         continue;
                     }
                 }
@@ -283,24 +359,17 @@ impl<'a> Bundle<'a> {
                 Some(folder) => match pins.get(folder) {
                     Some(mid) => mid.as_str(),
                     None => {
-                        let note = OnshapeLossCode::MemberUnreadable.note(format!(
+                        let why = coded(&OnshapeLossCode::MemberUnreadable.note(format!(
                             "{path}: the referenced studio microversion is missing; omitted the member"
-                        ));
-                        if let Some(entry) = self.snapshot.entry(path) {
-                            give_up_entry(
-                                ctx,
-                                self.root,
-                                entry,
-                                note,
-                                false,
-                                &mut report.notes,
-                                &mut report.parts,
-                            )?;
-                        } else {
-                            report
-                                .notes
-                                .extend(record_given_up(source_record(path), note));
-                        }
+                        )));
+                        self.give_up_member(
+                            ctx,
+                            path,
+                            (Cause::Unreadable, why),
+                            false,
+                            &mut report.notes,
+                            &mut report.parts,
+                        )?;
                         omitted.push(path.clone());
                         continue;
                     }
@@ -308,23 +377,18 @@ impl<'a> Bundle<'a> {
             };
             for key in ["sourceMicroversion", "microversionId"] {
                 if let Err(reason) = super::reader::microversion(value, key, expected) {
-                    let note = OnshapeLossCode::MemberUnreadable
-                        .note(format!("{path}: {reason}; omitted the member"));
-                    if let Some(entry) = self.snapshot.entry(path) {
-                        give_up_entry(
-                            ctx,
-                            self.root,
-                            entry,
-                            note,
-                            false,
-                            &mut report.notes,
-                            &mut report.parts,
-                        )?;
-                    } else {
-                        report
-                            .notes
-                            .extend(record_given_up(source_record(path), note));
-                    }
+                    let why = coded(
+                        &OnshapeLossCode::MemberUnreadable
+                            .note(format!("{path}: {reason}; omitted the member")),
+                    );
+                    self.give_up_member(
+                        ctx,
+                        path,
+                        (Cause::Unreadable, why),
+                        false,
+                        &mut report.notes,
+                        &mut report.parts,
+                    )?;
                     omitted.push(path.clone());
                     break;
                 }
@@ -336,24 +400,33 @@ impl<'a> Bundle<'a> {
         }
         Ok(())
     }
-    /// Gives up member `path`, which stays an asset, for the codec loss
-    /// `note`, as a part over its stored bytes. The part keeps only the
-    /// digest when the member is stored uncompressed, because the asset
-    /// holds the same bytes.
+    /// Gives up member `path` for `cause` as `why` states, as a part over
+    /// its stored bytes. With `kept`, the member stays an asset, and the part
+    /// keeps only the digest when the member is stored uncompressed, because
+    /// the asset holds the same bytes.
     pub(super) fn give_up_member(
         &self,
         ctx: &DecodeContext<'_>,
         path: &str,
-        note: LossNote,
+        (cause, why): (Cause, String),
+        kept: bool,
         losses: &mut Vec<LossNote>,
         given_up: &mut Vec<GivenUpPart>,
     ) -> Result<(), CodecError> {
         let Some(entry) = self.snapshot.entry(path) else {
-            losses.extend(record_given_up(source_record(path), note));
+            losses.push(GivenUpRecord::new(source_record(path), cause, why).loss());
             return Ok(());
         };
-        let digest_only = entry.compression == ZipCompression::Stored;
-        give_up_entry(ctx, self.root, entry, note, digest_only, losses, given_up)
+        let digest_only = kept && entry.compression == ZipCompression::Stored;
+        give_up_entry(
+            ctx,
+            self.root,
+            entry,
+            (cause, why),
+            digest_only,
+            losses,
+            given_up,
+        )
     }
     pub(super) fn admit_topology(
         &mut self,
@@ -412,10 +485,15 @@ impl<'a> Bundle<'a> {
         }
         for path in omitted {
             self.json.remove(&path);
-            let note = OnshapeLossCode::TopologyTooLarge.note(format!(
-                "{path}: topology exceeds the row limit; omitted the topology table"
-            ));
-            self.give_up_member(ctx, &path, note, &mut report.notes, &mut report.parts)?;
+            let why = format!("{path}: topology exceeds the row limit; omitted the topology table");
+            self.give_up_member(
+                ctx,
+                &path,
+                (Cause::Undecoded, why),
+                true,
+                &mut report.notes,
+                &mut report.parts,
+            )?;
         }
         Ok(ctx.charge_entities(
             cadmpeg_core::decode::u64_from_index(count),
@@ -475,22 +553,39 @@ pub(crate) fn source_record(address: &str) -> cadmpeg_ir::ids::Identity {
     )
 }
 
-/// Gives up `entry`, which the bundle omits for the codec loss `note`, as a
-/// part over its stored bytes, or over its directory record where its stored
-/// bytes have no bounded span. `digest_only` keeps only the digest of the
-/// bytes, for an entry omitted because it exceeds a bound. The codec loss
-/// goes to `losses` and the part to `given_up`.
+/// The text of a give-up for the codec loss `note`: its code and message.
+fn coded(note: &LossNote) -> String {
+    format!("{}: {}", note.code, note.message)
+}
+
+/// The cause of a member or nested decode that fails with `error`: bytes
+/// that break their format, or that hold another format, are unreadable, and
+/// another failure leaves the member undecoded.
+pub(crate) fn cause_of(error: &CodecError) -> Cause {
+    match error {
+        CodecError::Malformed(_) | CodecError::Truncated { .. } | CodecError::WrongFormat(_) => {
+            Cause::Unreadable
+        }
+        _ => Cause::Undecoded,
+    }
+}
+
+/// Gives up `entry`, which the bundle omits for `cause` as `why` states, as
+/// a part over its stored bytes, or over its directory record where its
+/// stored bytes have no bounded span. `digest_only` keeps only the digest of
+/// the bytes. The part goes to `given_up`. A second directory record of a
+/// stored span that a part already holds is dropped with that part.
 fn give_up_entry(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     entry: &EntryRecord,
-    note: LossNote,
+    (cause, why): (Cause, String),
     digest_only: bool,
     losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
     let Some(view) = entry_view(root, entry) else {
-        losses.extend(record_given_up(source_record(&entry.name), note));
+        losses.push(GivenUpRecord::new(source_record(&entry.name), cause, why).loss());
         return Ok(());
     };
     let mut part = Part::new(
@@ -505,11 +600,18 @@ fn give_up_entry(
     }
     // Two directory records that name one stored span are one part.
     let id = part.id()?;
-    if !given_up.iter().any(|held| *held.id() == id) {
-        let error = CodecError::malformed(format_args!("{}: {}", note.code, note.message));
-        given_up.push(ctx.give_up_part(part, error)?);
+    if given_up.iter().any(|held| *held.id() == id) {
+        losses.push(dropped_with(
+            source_record(&entry.name),
+            cadmpeg_ir::ids::Identity::from(id),
+        ));
+    } else {
+        let error = match cause {
+            Cause::Unreadable => CodecError::Malformed(why),
+            Cause::Undecoded => CodecError::NotImplemented(why),
+        };
+        given_up.push(ctx.give_up_part(part, cause, error)?);
     }
-    losses.push(note);
     Ok(())
 }
 

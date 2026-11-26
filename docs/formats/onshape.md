@@ -348,7 +348,7 @@ not parse, or a microversion that differs from the document microversion. The
 part keeps the stored bytes of the member. When the member is over a size bound,
 or the parse of its JSON stops at a resource bound, the part keeps only the
 digest of the stored bytes. Two directory records that name one stored span are
-one part with one `record.unreadable`. A later member with the name of an
+one part with one give-up. A later member with the name of an
 earlier member adds no record when its method and stored bytes are equal to
 those of the earlier member. The decoder gives up each other later member with
 a repeated name.
@@ -362,6 +362,32 @@ reads no feature history, topology table, or final geometry from the member.
 When the member is stored without compression, the part keeps only the digest
 of the stored bytes, because the asset holds the same bytes. When a part studio
 has no feature history and its `export.step` fails, the part studio fails.
+
+The decoder also gives up a record of a JSON response, such as a feature with a
+repeated identity or an assembly record that breaks the response form, by the
+record identity, and a part studio that an assembly instance names and that
+does not decode. Each give-up has one cause (CADIR §3.3):
+
+| Record | Case | Cause |
+|---|---|---|
+| `archive-entry` | Invalid name, or a repeated name with another method or other stored bytes | `record.unreadable` |
+| `archive-entry` | Encryption or an unsupported method | `record.undecoded` |
+| `archive-entry` | Over a size bound or a part resource bound | `record.undecoded` |
+| `archive-entry` | Open stops at malformed or truncated stored data | `record.unreadable` |
+| `archive-entry` | Open fails for another reason | `record.undecoded` |
+| `archive-entry` | JSON that does not parse | `record.unreadable` |
+| `archive-entry` | JSON parse that stops at a resource bound | `record.undecoded` |
+| `archive-entry` | Microversion that differs from the document microversion | `record.unreadable` |
+| `archive-entry` | `features` absent or not an array | `record.unreadable` |
+| `archive-entry` | `features` longer than its bound | `record.undecoded` |
+| `archive-entry` | Topology rows over their bound | `record.undecoded` |
+| `archive-entry` | Nested `export.step` decode finds no STEP text, or stops at malformed or truncated text | `record.unreadable` |
+| `archive-entry` | Nested `export.step` decode fails for another reason | `record.undecoded` |
+| Response record | Fields that break the response form | `record.unreadable` |
+| Instanced part studio | Decode finds data of another format, or stops at malformed or truncated data | `record.unreadable` |
+| Instanced part studio | Decode fails for another reason | `record.undecoded` |
+
+No Onshape code carries a strict floor (CADIR §3.2).
 
 ## Assembly definitions
 

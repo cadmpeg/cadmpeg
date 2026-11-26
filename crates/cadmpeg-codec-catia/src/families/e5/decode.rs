@@ -339,6 +339,7 @@ refusal,
                         &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
                         record_id,
                     ),
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
                     format_args!("{code}: the reference graph of the face did not close"),
                 )
                 .loss()

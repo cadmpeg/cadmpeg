@@ -10,6 +10,7 @@ use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::unknown::part::Cause::{self, Undecoded, Unreadable};
 
 use crate::container::{self, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
@@ -1064,8 +1065,23 @@ fn incomplete_legacy_values_are_reported() {
                 loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
             })
             .count(),
-        7
+        3
     );
+    let given_up = |cause: Cause, text: &str| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cause.kind() && loss.message.contains(text))
+            .count()
+    };
+    assert_eq!(given_up(Unreadable, "the legacy type-2 value row"), 1);
+    assert_eq!(given_up(Unreadable, "the legacy type-1 value row"), 1);
+    assert_eq!(
+        given_up(Undecoded, "the legacy type-3 or type-4 value row"),
+        1
+    );
+    assert_eq!(given_up(Undecoded, "the legacy type-10 scalar row"), 1);
     assert_eq!(
         result
             .report()

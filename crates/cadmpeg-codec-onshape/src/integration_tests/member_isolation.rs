@@ -14,11 +14,11 @@ fn has(result: &cadmpeg_ir::codec::DecodeResult, code: OnshapeLossCode) -> usize
         .report()
         .losses
         .iter()
-        .filter(|note| code.matches(note))
+        .filter(|note| code.states(note))
         .count()
 }
 
-/// The `record.unreadable` losses of the archive entry `name` given up as a part.
+/// The give-ups of the archive entry `name` as a part.
 fn given_up_entries(result: &cadmpeg_ir::codec::DecodeResult, name: &str) -> usize {
     let head = format!("part archive-entry {name:?} stream=\"\" offset=");
     result
@@ -26,8 +26,7 @@ fn given_up_entries(result: &cadmpeg_ir::codec::DecodeResult, name: &str) -> usi
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.starts_with(&head)
+            cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&head)
         })
         .count()
 }
@@ -186,13 +185,25 @@ fn unsupported_method_omits_one_member() {
     retained(&bytes);
 }
 
+/// An encrypted member is a valid member that the decoder does not read: one
+/// `record.undecoded` gives it up, and a pinned decode admits it.
 #[test]
-fn encrypted_member_is_given_up_and_a_pinned_decode_refuses() {
+fn encrypted_member_is_given_up_as_undecoded_and_a_pinned_decode_admits_it() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = fixture("plate-fillet");
     patch(&mut bytes, TABLE, 8, 6, &1u16.to_le_bytes());
     retained(&bytes);
-    assert_eq!(given_up_entries(&decode(&bytes), TABLE), 1);
-    assert_pinned_refusal(bytes, TABLE);
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = crate::test_support::codec()
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect("a pinned decode admits an undecoded member");
+    assert_eq!(given_up_entries(&result, TABLE), 1);
+    let head = format!("part archive-entry {TABLE:?} stream=\"\" offset=");
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.starts_with(&head)
+    }));
 }
 
 #[test]
@@ -243,9 +254,20 @@ fn two_directory_records_of_one_stored_span_are_one_part() {
     patch(&mut bytes, "notes/a.bin", 16, 14, &0u32.to_le_bytes());
     patch(&mut bytes, "notes/b.bin", 16, 14, &0u32.to_le_bytes());
     let result = decode(&bytes);
-    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 2);
+    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
     assert_eq!(given_up_entries(&result, "notes/a.bin"), 1);
     assert_eq!(given_up_entries(&result, "notes/b.bin"), 0);
+    let second = crate::archive::source_record("notes/b.bin");
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                && loss
+                    .message
+                    .split(|c: char| c.is_whitespace() || matches!(c, '[' | ']' | ','))
+                    .any(|token| token == second.as_str())
+        }),
+        "the second directory record is dropped with the part"
+    );
     let stubs = result
         .ir()
         .native
@@ -301,7 +323,12 @@ fn oversized_step_is_omitted_before_or_after_history() {
             write_step(&mut output);
         }
         let result = decode(&output.finish().unwrap().into_inner());
-        assert_eq!(has(&result, OnshapeLossCode::MemberTooLarge), 1);
+        let step = "partstudios/studio/export.step";
+        assert_eq!(given_up_entries(&result, step), 1);
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.contains("expanded member exceeds")
+        }));
         assert_eq!(has(&result, OnshapeLossCode::StepUnreadable), 1);
         assert_eq!(result.ir().model.features.len(), 3);
         assert!(result.ir().geometry.bodies.is_empty());
@@ -473,13 +500,11 @@ fn remaining_capacity_omits_the_later_member_in_both_orders() {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
         assert!(ctx.per_expand_allowance() >= (200 << 20));
         let bundle = crate::archive::Bundle::open(&ctx, root).unwrap();
+        assert!(bundle.losses.is_empty());
+        assert_eq!(bundle.given_up.len(), 1);
         assert_eq!(
-            bundle
-                .losses
-                .iter()
-                .filter(|note| OnshapeLossCode::MemberTooLarge.matches(note))
-                .count(),
-            1
+            bundle.given_up[0].loss().code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
         );
         assert!(bundle.contains(order[0].0));
         assert!(!bundle.contains(order[1].0));
@@ -535,7 +560,7 @@ fn invalid_optional_timestamp_omits_one_member_and_keeps_history_and_step() {
     let result = decode(&bytes);
     assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
     assert!(result.report().losses.iter().any(|note| {
-        OnshapeLossCode::MemberUnreadable.matches(note) && note.message.contains("notes/time.txt")
+        OnshapeLossCode::MemberUnreadable.states(note) && note.message.contains("notes/time.txt")
     }));
     assert!(result.ir().model.assets.iter().all(|asset| {
         asset

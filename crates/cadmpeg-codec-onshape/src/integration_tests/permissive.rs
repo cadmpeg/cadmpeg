@@ -9,12 +9,7 @@ fn feature_count(wire: &Value) -> usize {
 }
 
 fn malformed_losses(result: &cadmpeg_ir::codec::DecodeResult) -> usize {
-    result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.to_string() == "onshape/record.malformed")
-        .count()
+    named_losses(result, "onshape/record.malformed")
 }
 
 #[test]
@@ -80,12 +75,27 @@ fn a_missing_rollback_index_keeps_the_features_with_one_named_loss() {
     assert_eq!(feature_count(&wire(&result)), total);
 }
 
+/// The losses that state `code`: notes of `code`, and give-ups whose text
+/// carries it.
 fn named_losses(result: &cadmpeg_ir::codec::DecodeResult, code: &str) -> usize {
     result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.to_string() == code)
+        .filter(|loss| crate::test_support::states(code, &loss.code.to_string(), &loss.message))
+        .count()
+}
+
+/// The `record.undecoded` give-ups whose text contains `text`.
+fn undecoded(result: &cadmpeg_ir::codec::DecodeResult, text: &str) -> usize {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.contains(text)
+        })
         .count()
 }
 
@@ -98,7 +108,7 @@ fn an_oversized_member_is_dropped_while_history_and_geometry_decode() {
         );
     });
     let result = decode(&bytes);
-    assert_eq!(named_losses(&result, "onshape/member.too-large"), 1);
+    assert_eq!(undecoded(&result, "extra.json: expanded member exceeds"), 1);
     assert_eq!(feature_count(&wire(&result)), 3);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!(result.ir().model.assets.iter().all(|asset| asset
@@ -131,7 +141,7 @@ fn a_member_expansion_limit_drops_the_member_and_keeps_the_bundle() {
     let result = crate::test_support::codec()
         .decode(&mut Cursor::new(bytes), &options)
         .unwrap();
-    assert_eq!(named_losses(&result, "onshape/member.too-large"), 1);
+    assert_eq!(undecoded(&result, "extra.bin: "), 1);
     assert_eq!(feature_count(&wire(&result)), 3);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     crate::test_support::review::validate(result);
@@ -162,13 +172,13 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
         });
         let result = decode(&bytes);
         assert_eq!(
-            named_losses(&result, "onshape/topology.too-large"),
+            undecoded(&result, "topology exceeds the row limit"),
             1,
             "{table}"
         );
         assert!(
             result.report().losses.iter().any(|loss| {
-                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                     && loss.message.starts_with(
                         "part archive-entry \"partstudios/studio/bodydetails/2.json\" ",
                     )
@@ -206,7 +216,12 @@ fn unreadable_step_keeps_readable_history_and_reports_missing_geometry() {
             members.insert("partstudios/studio/export.step".into(), step);
         });
         let result = decode(&bytes);
-        assert_eq!(named_losses(&result, "onshape/step.unreadable"), 1);
+        assert_eq!(
+            named_losses(&result, "onshape/step.unreadable"),
+            1,
+            "{:#?}",
+            result.report().losses
+        );
         assert_eq!(
             result
                 .report()
@@ -284,7 +299,13 @@ fn an_oversized_history_member_retains_readable_geometry() {
         );
     });
     let result = decode(&bytes);
-    assert_eq!(named_losses(&result, "onshape/member.too-large"), 1);
+    assert_eq!(
+        undecoded(
+            &result,
+            "partstudios/studio/features.json: expanded member exceeds"
+        ),
+        1
+    );
     assert_eq!(named_losses(&result, "onshape/history.not-supported"), 1);
     assert_eq!(feature_count(&wire(&result)), 0);
     assert_eq!(result.ir().geometry.bodies.len(), 1);

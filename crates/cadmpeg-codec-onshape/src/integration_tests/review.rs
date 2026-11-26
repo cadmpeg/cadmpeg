@@ -15,7 +15,7 @@ fn loss(result: &cadmpeg_ir::codec::DecodeResult, code: &str) -> bool {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code.to_string() == code)
+        .any(|loss| crate::test_support::states(code, &loss.code.to_string(), &loss.message))
 }
 fn kind(wire: &Value, ordinal: usize) -> &Value {
     &wire["model"]["features"][ordinal]["definition"]["value"]["kind"]
@@ -70,7 +70,7 @@ fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
                 .body
                 .losses
                 .iter()
-                .filter(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note))
+                .filter(|note| crate::loss::OnshapeLossCode::MemberUnreadable.states(note))
                 .collect();
             assert_eq!(notes.len(), 1);
             if resource == "storage" {
@@ -535,7 +535,7 @@ fn stale_unused_and_optional_responses_are_omitted_at_geometry_and_design_depth(
                 .report()
                 .losses
                 .iter()
-                .any(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note)));
+                .any(|note| crate::loss::OnshapeLossCode::MemberUnreadable.states(note)));
             assert!(result
                 .ir()
                 .model

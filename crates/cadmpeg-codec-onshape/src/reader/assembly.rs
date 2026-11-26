@@ -13,6 +13,7 @@ use cadmpeg_ir::products::{
     ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -62,7 +63,7 @@ pub(super) fn read<'a>(
                     report.give_up_as(
                         &format!("manifest.json#/elements/{position}"),
                         eid,
-                        OnshapeLossCode::AssemblyRecordRepeated,
+                        (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                         "element id repeats with different content; retained the first declaration",
                     );
                 }
@@ -90,7 +91,10 @@ pub(super) fn read<'a>(
                 report.give_up_as(
                     &format!("manifest.json#/elements/{position}"),
                     "element",
-                    OnshapeLossCode::AssemblyReferenceUnresolved,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyReferenceUnresolved,
+                    ),
                     reason,
                 );
                 continue;
@@ -100,7 +104,10 @@ pub(super) fn read<'a>(
             report.give_up_as(
                 &format!("manifest.json#/elements/{position}"),
                 eid,
-                OnshapeLossCode::AssemblyRecordUnsupported,
+                (
+                    Cause::Unreadable,
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                ),
                 "element id has an invalid folder character",
             );
             continue;
@@ -120,7 +127,10 @@ pub(super) fn read<'a>(
                     report.give_up_as(
                         &format!("partstudios/{eid}"),
                         eid,
-                        OnshapeLossCode::AssemblyReferenceUnresolved,
+                        (
+                            crate::archive::cause_of(&error),
+                            OnshapeLossCode::AssemblyReferenceUnresolved,
+                        ),
                         error.to_string(),
                     );
                     continue;
@@ -209,7 +219,10 @@ pub(super) fn read<'a>(
         report.give_up_as(
             "manifest.json#/root_element",
             "root_element",
-            OnshapeLossCode::AssemblyRecordUnsupported,
+            (
+                Cause::Unreadable,
+                OnshapeLossCode::AssemblyRecordUnsupported,
+            ),
             "root_element requires a string or an object with a string id",
         );
     }
@@ -227,7 +240,10 @@ pub(super) fn read<'a>(
         report.give_up_as(
             &root_record,
             root_id,
-            OnshapeLossCode::AssemblyRecordUnsupported,
+            (
+                Cause::Unreadable,
+                OnshapeLossCode::AssemblyRecordUnsupported,
+            ),
             "assembly root id has an invalid folder character",
         );
         return Ok(model);
@@ -315,7 +331,10 @@ pub(super) fn read<'a>(
         structure.report.give_up_as(
             &definition_path,
             root_id,
-            OnshapeLossCode::AssemblyRecordUnsupported,
+            (
+                Cause::Unreadable,
+                OnshapeLossCode::AssemblyRecordUnsupported,
+            ),
             "rootAssembly is missing or malformed",
         );
     }
