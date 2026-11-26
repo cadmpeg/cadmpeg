@@ -461,10 +461,87 @@ fn two_populated_tables_and_a_root_record_are_written_as_the_decoder_states_them
     }
 }
 
+fn key(text: &str) -> cadmpeg_core::text::NonBlankString {
+    cadmpeg_core::text::NonBlankString::new(text.to_owned()).unwrap()
+}
+
 #[test]
-fn an_edited_configuration_is_written_from_the_document_with_a_charge() {
+fn an_edited_configuration_reads_back_as_the_neutral_record() {
     let mut ir = source_less(configured());
     set_active_row(&mut ir, "large");
+    let id = |row| crate::ids::neutral_configuration_id(ENTRY, row);
+    let configurations = &mut ir.model.configurations;
+    configurations.retain(|configuration| configuration.id != id("small"));
+    let medium = configurations
+        .iter_mut()
+        .find(|configuration| configuration.id == id("medium"))
+        .unwrap();
+    medium.name = Some("Mid".into());
+    medium.ordinal = 0;
+    medium
+        .properties
+        .insert(key("property:Part Number"), "M-2".into());
+    medium
+        .properties
+        .insert(key("suppressed:S"), "false".into());
+    medium.material = Some("Steel".into());
+    let large = configurations
+        .iter_mut()
+        .find(|configuration| configuration.id == id("large"))
+        .unwrap();
+    large.ordinal = 1;
+    let mut extra = large.clone();
+    extra.id = id("extra");
+    extra.name = Some("Extra".into());
+    extra.ordinal = 2;
+    extra.active = false;
+    extra.properties.remove("parameter:W");
+    extra
+        .properties
+        .insert(key("property:Part Number"), "X-1".into());
+    configurations.push(extra);
+
+    let (report, round_trip) = write_and_decode(&ir);
+    assert_design_stream_written(&report);
+    let charged = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            ["export/edit.dropped", "export/value.unwritable"]
+                .contains(&loss.code.to_string().as_str())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charged.len(), 1, "{:#?}", report.losses);
+    assert_eq!(charged[0].code.to_string(), "export/edit.dropped");
+    assert!(charged[0]
+        .message
+        .contains(&format!("{}: material", id("medium"))));
+    let mut expected = ir.model.configurations.clone();
+    expected.sort_by(|left, right| left.id.cmp(&right.id));
+    for configuration in &mut expected {
+        configuration.material = None;
+    }
+    assert_eq!(round_trip.ir().model.configurations, expected);
+    let documents = f3d_native(round_trip.ir()).design_configurations;
+    let rows = documents[0].tables()[0]
+        .rows
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(rows, ["medium", "large", "extra"]);
+}
+
+#[test]
+fn a_renamed_configuration_keeps_its_rule() {
+    const RULE: &str = "FusionAssetName[Active]/DesignConfigurationRule.123.dsgcfgrule";
+    let table = serde_json::to_vec(&generated_configuration_document()).unwrap();
+    let rule = serde_json::to_vec(&serde_json::json!({"when": "Width > 1", "activate": "Medium"}))
+        .unwrap();
+    let mut ir = source_less(f3d_with_configurations(
+        &synthetic_geometry_smbh(),
+        &[(ENTRY, &table), (RULE, &rule)],
+    ));
+    let rule_key = format!("activation_rule:{RULE}");
     let medium = crate::ids::neutral_configuration_id(ENTRY, "medium");
     let configuration = ir
         .model
@@ -472,35 +549,66 @@ fn an_edited_configuration_is_written_from_the_document_with_a_charge() {
         .iter_mut()
         .find(|configuration| configuration.id == medium)
         .unwrap();
+    assert_eq!(configuration.properties[rule_key.as_str()], "Width > 1");
     configuration.name = Some("Mid".into());
-    configuration.material = Some("Steel".into());
+
     let (report, round_trip) = write_and_decode(&ir);
     assert_design_stream_written(&report);
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code.to_string() == "export/value.unwritable"
-                && loss.message.contains("the writer restates a row's name")
-                && loss.message.contains(medium.as_str())
-        }),
+        report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains(medium.as_str())),
         "{:#?}",
         report.losses
     );
-    let configurations = &round_trip.ir().model.configurations;
-    let written = configurations
+    let written = round_trip
+        .ir()
+        .model
+        .configurations
         .iter()
         .find(|configuration| configuration.id == medium)
-        .expect("the edited configuration reads back");
+        .expect("the renamed configuration reads back");
     assert_eq!(written.name.as_deref(), Some("Mid"));
-    assert_eq!(written.material, None);
-    let large = crate::ids::neutral_configuration_id(ENTRY, "large");
-    assert_eq!(
-        configurations
-            .iter()
-            .filter(|configuration| configuration.active)
-            .map(|configuration| &configuration.id)
-            .collect::<Vec<_>>(),
-        [&large]
+    assert_eq!(written.properties[rule_key.as_str()], "Width > 1");
+    let rules = f3d_native(round_trip.ir()).design_configurations;
+    let rule = rules
+        .iter()
+        .find_map(crate::records::configuration::DesignConfiguration::rule)
+        .unwrap();
+    assert_eq!(rule["activate"], "Mid");
+}
+
+#[test]
+fn a_patch_of_a_document_read_from_cadir_is_not_declined_over_its_configurations() {
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(configured()), &DecodeOptions::default())
+            .expect("configuration decode"),
     );
+    let mut read = decoded.ir().clone();
+    read.model.drop_omitted_arenas();
+    assert!(read.model.configurations.is_empty());
+    crate::test_support::native_test::update_f3d_native(&mut read, |native| {
+        let configuration = &mut native.design_configurations[0];
+        let mut payload = configuration.payload().clone();
+        payload["tables"][0]["rows"][2]["asset"]["attributes"]["pim:configuration:rowName"] =
+            "Huge".into();
+        *configuration = configuration.with_payload(payload).unwrap();
+    });
+    let expected = f3d_native(&read).design_configurations;
+    let mut bytes = Vec::new();
+    let path =
+        crate::test_support::plan_inherited_write(&read, decoded.source_fidelity(), &mut bytes)
+            .expect("patch of a CADIR read");
+    assert!(
+        matches!(path, cadmpeg_ir::report::export::WritePath::Patched { .. }),
+        "{path:?}"
+    );
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("patched round trip");
+    assert_eq!(f3d_native(round_trip.ir()).design_configurations, expected);
 }
 
 #[test]

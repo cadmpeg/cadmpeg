@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The `DesignConfigurationRoot` record of a generated Design stream, which
 //! names the row of the document's active configuration (cadir-v11.md
-//! §5.11, f3d.md §1.2), and the configuration table documents written beside
-//! it.
+//! §5.11, f3d.md §1.2), and the ids it renames in the configuration table
+//! documents written beside it.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
@@ -14,10 +14,11 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::DesignConfiguration as Configuration;
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::configuration_table::Written;
 use super::presentation::{GeneratedDesignRegistry, TypeRow};
 use super::records::{encode_configuration_root, EncodedDesignBulkStream};
-use crate::design::configurations::{projected_table, root_document};
-use crate::records::configuration::table::{rename_ids, set_row_name, ConfigurationTable};
+use crate::design::configurations::root_document;
+use crate::records::configuration::table::{rename_ids, ConfigurationTable};
 use crate::records::configuration::{encode_configuration_payload, DesignConfiguration, ID_WIDTH};
 
 /// The type the record is registered under when the source registers none
@@ -48,26 +49,13 @@ pub(in crate::writer) const ROW_ID: TextCapacity = TextCapacity::new(
     ID_WIDTH,
 );
 
-/// The root record to write, the source's root record it replaces, the row
-/// names the configurations restate, and the losses of what the write
-/// states otherwise than the configurations.
+/// The root record to write, the source's root record it replaces, and the
+/// losses of what the write states otherwise than the configurations.
 pub(super) struct Plan {
     root: Option<ConfigurationRoot>,
     /// The record index of the source's root record.
     source: Option<u32>,
-    names: Vec<RowName>,
     losses: Vec<LossNote>,
-}
-
-/// A row whose name the written table document restates.
-struct RowName {
-    /// The position of the row's document.
-    document: usize,
-    /// The position of the row's table in the document's `tables` array.
-    table: usize,
-    /// The row id as the document states it.
-    row_id: String,
-    name: String,
 }
 
 /// The row the written root record names.
@@ -101,32 +89,25 @@ struct Candidate<'a> {
     row: &'a str,
 }
 
-/// Plan the root record of the configuration that `target` states active,
-/// among the rows of the one populated table of `documents`, the table whose
-/// rows the neutral configurations project. With no such configuration, the
-/// record is the one a table document states, when that record names a row
-/// of a table that the configurations do not project (f3d.md §1.2) and reads
-/// back as the document's row.
-///
-/// `decoded` holds the configurations the decoder states for `documents`.
-/// They stand for the configurations of a `target` read from CADIR, which
-/// does not carry them. Where the configurations differ from `decoded`, the
-/// neutral record wins (cadir-v11.md §3.4, W2): the write restates a row's
-/// name and the active row, and charges every other difference.
+/// Plan the root record of the configuration of `configurations` that
+/// `target` states active, among the rows of the table whose rows the
+/// written documents project. With no such configuration, the record is the
+/// one a `source` table document states, when that record names a row of a
+/// table that the configurations do not project (f3d.md §1.2) and reads back
+/// as the document's row. `projected` is the position of the document and of
+/// the table whose rows `source` projects.
 ///
 /// A design scope's active configuration takes precedence over the row that
 /// the earlier arena states active. A Design stream holds one root record, so
 /// a second active row is written inactive.
 pub(super) fn plan(
     target: &CadIr,
-    documents: &[DesignConfiguration],
-    decoded: &[Configuration],
+    source: &[DesignConfiguration],
+    projected: Option<(usize, usize)>,
+    written: &Written<'_>,
+    configurations: &[Configuration],
 ) -> Plan {
-    let configurations = if target.model.omitted_arenas_held() {
-        target.model.configurations.as_slice()
-    } else {
-        decoded
-    };
+    let documents = written.documents.as_ref();
     let scoped = target
         .design
         .scopes
@@ -139,26 +120,30 @@ pub(super) fn plan(
         .filter(|configuration| configuration.active)
         .map(|configuration| configuration.id.to_string())
         .collect::<BTreeSet<_>>();
-    let projected = projected_table(documents).ok().flatten();
-    let rows = projected
-        .map(|(index, table)| {
-            table
-                .rows
+    let rows = written
+        .projection
+        .table
+        .and_then(|(index, position)| {
+            let table = documents[index]
+                .tables()
                 .iter()
-                .map(|row| Candidate {
-                    configuration: crate::ids::neutral_configuration_id(
-                        documents[index].entry_name(),
-                        &row.id,
-                    )
-                    .to_string(),
+                .find(|table| table.position == position)?;
+            Some(table.rows.iter().map(move |row| {
+                let id =
+                    crate::ids::neutral_configuration_id(documents[index].entry_name(), &row.id)
+                        .to_string();
+                Candidate {
+                    configuration: written.generated.get(&id).cloned().unwrap_or(id),
                     document: index,
                     table,
                     row: &row.id,
-                })
-                .collect::<Vec<_>>()
+                }
+            }))
         })
-        .unwrap_or_default();
-    let (names, mut losses) = restated_rows(configurations, decoded, &rows);
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let mut losses = Vec::new();
     let matched = rows
         .iter()
         .map(|row| row.configuration.clone())
@@ -203,85 +188,15 @@ pub(super) fn plan(
         inactive,
     ));
     let root = first.and_then(|row| root(row, documents, &mut losses));
-    let projected = projected.map(|(index, table)| (index, table.position));
-    let root = stated_root(documents, projected, root, &mut losses);
+    let root = stated_root(source, projected, root, &mut losses);
     Plan {
         root,
-        source: documents
+        source: source
             .iter()
             .find_map(DesignConfiguration::active_row)
             .map(|row| row.record_index),
-        names,
         losses,
     }
-}
-
-/// The names of the projected rows that `configurations` restate, and the
-/// losses of what the written table documents state otherwise than
-/// `configurations`. `decoded` holds what the tables project; the root
-/// record writes the active row.
-fn restated_rows(
-    configurations: &[Configuration],
-    decoded: &[Configuration],
-    rows: &[Candidate<'_>],
-) -> (Vec<RowName>, Vec<LossNote>) {
-    let decoded = decoded
-        .iter()
-        .map(|configuration| (configuration.id.as_str(), configuration))
-        .collect::<BTreeMap<_, _>>();
-    let stated = configurations
-        .iter()
-        .map(|configuration| configuration.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut names = Vec::new();
-    let mut changed = Vec::new();
-    let mut added = Vec::new();
-    for configuration in configurations {
-        let Some(&projected) = decoded.get(configuration.id.as_str()) else {
-            added.push(configuration.id.to_string());
-            continue;
-        };
-        let mut written = projected.clone();
-        written.active = configuration.active;
-        let row = rows
-            .iter()
-            .find(|row| row.configuration == configuration.id.as_str());
-        if let (Some(name), Some(row)) = (&configuration.name, row) {
-            if written.name.as_ref() != Some(name) {
-                names.push(RowName {
-                    document: row.document,
-                    table: row.table.position,
-                    row_id: row.row.to_owned(),
-                    name: name.clone(),
-                });
-                written.name = Some(name.clone());
-            }
-        }
-        if written != *configuration {
-            changed.push(configuration.id.to_string());
-        }
-    }
-    let removed = decoded
-        .keys()
-        .filter(|id| !stated.contains(*id))
-        .map(|id| (*id).to_owned());
-    let mut losses = Vec::new();
-    losses.extend(value_unwritable(
-        "F3D",
-        "writes these configurations with the cells their configuration table rows state: the writer restates a row's name and the active row, and writes the other cells of a row as its table states them",
-        changed,
-    ));
-    losses.extend(value_unwritable(
-        "F3D",
-        "writes no row for these configurations: the writer adds no row to a configuration table",
-        added,
-    ));
-    losses.extend(value_unwritable(
-        "F3D",
-        "writes the rows of these configurations, which the document removes: the writer removes no row from a configuration table",
-        removed,
-    ));
-    (names, losses)
 }
 
 /// `root`, else the root record that a table document states, when that
@@ -493,9 +408,9 @@ fn unique(stated: &str, taken: &BTreeSet<&str>) -> String {
 }
 
 impl Plan {
-    /// The bytes of `configuration`, the document at `index`, with the row
-    /// names the configurations restate, and the ids the root record cuts or
-    /// renames written as the record writes them.
+    /// The bytes of `configuration`, the written document at `index`, with
+    /// the ids the root record cuts or renames written as the record writes
+    /// them.
     pub(super) fn payload(
         &self,
         index: usize,
@@ -507,9 +422,6 @@ impl Plan {
             .and_then(|root| Some((root, root.renamed.as_ref()?)))
             .filter(|(_, renamed)| renamed.document == index);
         let mut payload = Cow::Borrowed(configuration.payload());
-        for name in self.names.iter().filter(|name| name.document == index) {
-            set_row_name(payload.to_mut(), name.table, &name.row_id, &name.name);
-        }
         if let Some((root, renamed)) = renamed {
             rename_ids(
                 payload.to_mut(),

@@ -147,7 +147,7 @@ fn unique<T: PartialEq>(mut values: impl Iterator<Item = T>) -> Option<T> {
 impl ConfigurationTargets<'_> {
     /// The neutral parameter of parameter record `record_index`, limited to
     /// `stream` when it is stated.
-    fn parameter(
+    pub(crate) fn parameter(
         &self,
         record_index: u32,
         stream: Option<&str>,
@@ -169,7 +169,7 @@ impl ConfigurationTargets<'_> {
             .then_some(id)
     }
 
-    fn owned_parameter(
+    pub(crate) fn owned_parameter(
         &self,
         owner_record_index: u32,
     ) -> Option<cadmpeg_ir::features::ParameterId> {
@@ -187,7 +187,10 @@ impl ConfigurationTargets<'_> {
         self.parameter(parameter, Some(stream?))
     }
 
-    fn feature(&self, scope_record_index: u32) -> Option<&cadmpeg_ir::features::Feature> {
+    pub(crate) fn feature(
+        &self,
+        scope_record_index: u32,
+    ) -> Option<&cadmpeg_ir::features::Feature> {
         let id = unique(
             self.scopes
                 .iter()
@@ -201,7 +204,7 @@ impl ConfigurationTargets<'_> {
 
     /// The value of neutral parameter `id` whose evaluation in database
     /// units is `evaluated`, typed as the parameter's own value.
-    fn parameter_value(
+    pub(crate) fn parameter_value(
         &self,
         id: &cadmpeg_ir::features::ParameterId,
         evaluated: FiniteReal,
@@ -229,7 +232,7 @@ impl ConfigurationTargets<'_> {
 
 /// The one table whose rows the neutral configurations project, the only
 /// table of `native` that holds rows, with the position of its document.
-pub(crate) fn projected_table(
+fn projected_table(
     native: &[DesignConfiguration],
 ) -> Result<Option<(usize, &ConfigurationTable)>, CodecError> {
     let mut populated = native.iter().enumerate().flat_map(|(index, document)| {
@@ -248,6 +251,16 @@ pub(crate) fn projected_table(
     Ok(first)
 }
 
+/// The neutral configurations of configuration documents, and the table
+/// whose rows they project.
+#[derive(Debug, Default)]
+pub(crate) struct Projection {
+    /// The position of the table's document, and of the table in the
+    /// document's `tables` array.
+    pub(crate) table: Option<(usize, usize)>,
+    pub(crate) configurations: Vec<cadmpeg_ir::features::parameters::DesignConfiguration>,
+}
+
 /// Project the rows of the one populated table into the neutral configuration
 /// arena. Rule documents remain native because a rule is a selector, not a
 /// model variant.
@@ -255,8 +268,17 @@ pub(crate) fn project_configurations(
     native: &[DesignConfiguration],
     targets: &ConfigurationTargets<'_>,
 ) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
+    project(native, targets).map(|projection| projection.configurations)
+}
+
+/// [`project_configurations`], with the table whose rows it projects.
+pub(crate) fn project(
+    native: &[DesignConfiguration],
+    targets: &ConfigurationTargets<'_>,
+) -> Result<Projection, CodecError> {
     let mut projected = Vec::new();
-    if let Some((index, table)) = projected_table(native)? {
+    let table = projected_table(native)?;
+    if let Some((index, table)) = table {
         let document = &native[index];
         let active_row = document
             .active_row()
@@ -290,7 +312,10 @@ pub(crate) fn project_configurations(
         configuration.properties.insert(key, condition.to_owned());
     }
     projected.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(projected)
+    Ok(Projection {
+        table: table.map(|(index, table)| (index, table.position)),
+        configurations: projected,
+    })
 }
 
 fn project_row(

@@ -65,19 +65,51 @@ fn id(row: &str) -> cadmpeg_ir::features::ConfigurationId {
     crate::ids::neutral_configuration_id(TABLE, row)
 }
 
+/// Configured objects that name no record.
+const TARGETS: crate::design::configurations::ConfigurationTargets<'static> =
+    crate::design::configurations::ConfigurationTargets {
+        parameters: &[],
+        owners: &[],
+        scopes: &[],
+        neutral_parameters: &[],
+        neutral_features: &[],
+    };
+
+/// The configurations the decoder states for `documents`, and their table.
+fn projection(documents: &[DesignConfiguration]) -> crate::design::configurations::Projection {
+    crate::design::configurations::project(documents, &TARGETS).unwrap_or_default()
+}
+
 /// The configurations the decoder states for `documents`.
 fn decoded(documents: &[DesignConfiguration]) -> Vec<Configuration> {
-    crate::design::configurations::project_configurations(
+    projection(documents).configurations
+}
+
+/// The plan of the root record of `ir` over `documents`, with the losses of
+/// the written configuration documents before its own, and the documents
+/// it writes.
+fn planning(
+    ir: &CadIr,
+    documents: &[DesignConfiguration],
+) -> (super::Plan, Vec<DesignConfiguration>) {
+    let decoded = projection(documents);
+    let (written, mut losses) = super::super::configuration_table::regenerate(
         documents,
-        &crate::design::configurations::ConfigurationTargets {
-            parameters: &[],
-            owners: &[],
-            scopes: &[],
-            neutral_parameters: &[],
-            neutral_features: &[],
-        },
+        &decoded,
+        &ir.model.configurations,
+        &TARGETS,
     )
-    .unwrap_or_default()
+    .unwrap();
+    let mut plan = plan(
+        ir,
+        documents,
+        decoded.table,
+        &written,
+        &ir.model.configurations,
+    );
+    losses.append(&mut plan.losses);
+    plan.losses = losses;
+    (plan, written.documents.into_owned())
 }
 
 /// A document over `documents` whose earlier arena states `flagged` active
@@ -113,7 +145,7 @@ type Pair = (String, String);
 /// The table id and row id the root record of `ir` names, and the code and
 /// message of each loss.
 fn planned(ir: &CadIr, documents: &[DesignConfiguration]) -> (Option<Pair>, Vec<Pair>) {
-    let plan = plan(ir, documents, &decoded(documents));
+    let (plan, _) = planning(ir, documents);
     let losses = plan
         .losses
         .iter()
@@ -209,9 +241,8 @@ fn a_row_id_cut_that_names_another_row_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains("names another row"));
     assert!(losses[0].1.contains(id(&long).as_str()));
 
-    let written = plan(&ir, &documents, &decoded(&documents))
-        .payload(0, &documents[0])
-        .unwrap();
+    let (plan, documents) = planning(&ir, &documents);
+    let written = plan.payload(0, &documents[0]).unwrap();
     let written = DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
@@ -249,7 +280,7 @@ fn the_generated_type_guid_is_derived_from_the_record_key() {
 }
 
 /// The document `configuration` at `index` as `plan` writes it.
-fn written(
+fn written_by(
     plan: &super::Plan,
     index: usize,
     configuration: &DesignConfiguration,
@@ -285,9 +316,9 @@ fn a_table_id_another_document_holds_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains(id("large").as_str()));
     assert!(losses[0].1.contains(&documents[1].id()));
 
-    let plan = plan(&ir, &documents, &decoded(&documents));
-    assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1"]);
-    assert_eq!(table_ids(&written(&plan, 1, &documents[1])), ["1"]);
+    let (plan, documents) = planning(&ir, &documents);
+    assert_eq!(table_ids(&written_by(&plan, 0, &documents[0])), ["1-1"]);
+    assert_eq!(table_ids(&written_by(&plan, 1, &documents[1])), ["1"]);
 }
 
 #[test]
@@ -306,8 +337,11 @@ fn a_same_document_twin_of_the_table_id_is_not_renamed() {
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert!(losses[0].1.contains(&documents[1].id()));
     assert!(!losses[0].1.contains(&documents[0].id()));
-    let plan = plan(&ir, &documents, &decoded(&documents));
-    assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1", "1"]);
+    let (plan, documents) = planning(&ir, &documents);
+    assert_eq!(
+        table_ids(&written_by(&plan, 0, &documents[0])),
+        ["1-1", "1"]
+    );
 }
 
 #[test]
@@ -515,7 +549,7 @@ fn a_stated_row_of_the_projected_table_is_written_by_its_configuration() {
 }
 
 #[test]
-fn an_edited_configuration_restates_its_row_name_and_charges_the_rest() {
+fn an_edited_configuration_is_written_from_the_neutral_record() {
     let documents = documents();
     let mut ir = document(&documents, &[id("large")], &[]);
     let configurations = &mut ir.model.configurations;
@@ -525,13 +559,16 @@ fn an_edited_configuration_restates_its_row_name_and_charges_the_rest() {
         .unwrap();
     large.name = Some("Huge".into());
     large.material = Some("Steel".into());
+    large.ordinal = 0;
     let mut added = large.clone();
     added.id = id("added");
+    added.name = Some("Added".into());
+    added.ordinal = 1;
     added.active = false;
     configurations.retain(|configuration| configuration.id != id("small"));
     configurations.push(added);
 
-    let plan = plan(&ir, &documents, &decoded(&documents));
+    let (plan, written) = planning(&ir, &documents);
     let root = plan
         .root
         .as_ref()
@@ -542,29 +579,22 @@ fn an_edited_configuration_restates_its_row_name_and_charges_the_rest() {
         .iter()
         .map(|loss| (loss.code.to_string(), loss.message.as_str()))
         .collect::<Vec<_>>();
-    assert_eq!(losses.len(), 3, "{losses:#?}");
-    assert!(losses
-        .iter()
-        .all(|(code, _)| code == "export/value.unwritable"));
-    for (loss, (charged, reason)) in losses.iter().zip([
-        (
-            id("large"),
-            "the writer restates a row's name and the active row",
-        ),
-        (id("added"), "the writer adds no row"),
-        (id("small"), "the writer removes no row"),
-    ]) {
-        assert!(loss.1.contains(charged.as_str()), "{loss:#?}");
-        assert!(loss.1.contains(reason), "{loss:#?}");
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].0, "export/edit.dropped");
+    for charged in [id("large"), id("added")] {
+        assert!(
+            losses[0].1.contains(&format!("{charged}: material")),
+            "{losses:#?}"
+        );
     }
 
-    let written = written(&plan, 0, &documents[0]);
+    let written = written_by(&plan, 0, &written[0]);
     let names = written.tables()[0]
         .rows
         .iter()
         .map(|row| (row.id.as_str(), row.name.as_str()))
         .collect::<Vec<_>>();
-    assert_eq!(names, [("small", "Row small"), ("large", "Huge")]);
+    assert_eq!(names, [("large", "Huge"), ("added", "Added")]);
 }
 
 #[test]
