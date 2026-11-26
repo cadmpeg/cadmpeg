@@ -670,7 +670,7 @@ struct OneSided<'a> {
 /// that adds material against the profile normal, whatever its
 /// termination: the travel that the whole solid can contradict.
 fn reversed_join(feature: &Feature) -> Option<&PlanarProfileRef> {
-    if feature.suppressed != Some(false) {
+    if feature.suppressed == Some(true) {
         return None;
     }
     match feature.evaluation.definition().operation() {
@@ -687,7 +687,7 @@ fn reversed_join(feature: &Feature) -> Option<&PlanarProfileRef> {
 }
 
 fn candidate(feature: &Feature) -> Option<OneSided<'_>> {
-    if feature.suppressed != Some(false) {
+    if feature.suppressed == Some(true) {
         return None;
     }
     match feature.evaluation.definition().operation() {
@@ -735,7 +735,7 @@ struct TwoSided<'a> {
 }
 
 fn two_sided(feature: &Feature) -> Option<TwoSided<'_>> {
-    if feature.suppressed != Some(false)
+    if feature.suppressed == Some(true)
         || !reversal_flag(&feature.source_properties)
         || !reversal_unread(&feature.source_properties)
     {

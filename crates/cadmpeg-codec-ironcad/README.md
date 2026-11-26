@@ -2,7 +2,8 @@
 
 Detects IronCAD `.ics` scene files, lists their streams, inflates the framed
 streams, and enumerates the ACIS and Parasolid kernel records of `Brep Data`.
-Body decoding is pending.
+ACIS part bodies decode into B-rep topology and geometry. Parasolid body
+decoding is pending.
 
 <!-- generated: capability ironcad -->
 
