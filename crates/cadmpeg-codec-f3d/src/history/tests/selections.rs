@@ -1801,7 +1801,12 @@ mod operand_list_combine {
         Vec<cadmpeg_ir::report::loss::LossNote>,
         Option<bool>,
     ) {
-        bind_with_scope_histories(operation, history, scopes, &std::collections::HashMap::new())
+        bind_with_scope_histories(
+            operation,
+            history,
+            scopes,
+            &std::collections::HashMap::new(),
+        )
     }
 
     fn bind_with_scope_histories(
@@ -1963,13 +1968,13 @@ mod operand_list_combine {
         );
         assert_target_only(&selections, 2);
         assert_eq!(operand_refusals(&losses), 1);
-        assert!(losses[0].message.contains("reads another history"), "{losses:?}");
-        assert_ne!(shared_body, Some(true));
-        let (selections, _, shared_body) = bind_with_outcome(
-            operation(node(200), &[node(250)]),
-            &history,
-            &scopes,
+        assert!(
+            losses[0].message.contains("reads another history"),
+            "{losses:?}"
         );
+        assert_ne!(shared_body, Some(true));
+        let (selections, _, shared_body) =
+            bind_with_outcome(operation(node(200), &[node(250)]), &history, &scopes);
         assert_native(&selections);
         assert_eq!(shared_body, Some(true));
     }
