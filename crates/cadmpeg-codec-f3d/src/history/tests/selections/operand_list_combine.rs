@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::records::feature::combine::{
-    DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineForm,
-    DesignCombineOperation, DesignCombineTools,
+    DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
+    DesignCombineTools,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_ir::features::selections::BodySelection;

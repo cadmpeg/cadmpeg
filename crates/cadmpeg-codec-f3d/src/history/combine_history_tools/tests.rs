@@ -528,7 +528,10 @@ fn a_live_tool_of_another_history_selects_its_model_body() {
         panic!("model-body tools: {:?}", tools_of(&features[1]));
     };
     assert_eq!(
-        bodies.iter().map(cadmpeg_ir::ids::BodyId::as_str).collect::<Vec<_>>(),
+        bodies
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect::<Vec<_>>(),
         ["f3d:brep:body#7"]
     );
     assert_eq!(native.as_str(), scope_id(400));
