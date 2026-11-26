@@ -77,6 +77,9 @@ pub(crate) struct StoredStates<'a> {
     pub(crate) scan: &'a ContainerScan<'a>,
     /// The ASM history of each parameter scope that binds one, by scope id.
     pub(crate) scope_histories: &'a HashMap<String, String>,
+    /// The live bodies that the component-ownership rule places with each
+    /// history-only body-map pair, by pair id.
+    pub(crate) history_peers: &'a HashMap<String, BTreeSet<BodyId>>,
     /// The retained source records of the document.
     pub(crate) fidelity: &'a SourceFidelity,
 }

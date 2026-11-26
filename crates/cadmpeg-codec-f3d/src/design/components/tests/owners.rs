@@ -220,3 +220,49 @@ fn an_unbound_fallback_body_has_a_stored_frame_definition() {
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::ComponentBodyOwnerFallback.kind()));
 }
+
+#[test]
+fn a_history_only_pair_has_the_live_bodies_its_ownership_rule_places_with_it() {
+    let components = std::collections::BTreeMap::from([(
+        super::STREAM.to_owned(),
+        crate::design::decode::components::StreamComponents::default(),
+    )]);
+    let fallback = cadmpeg_ir::ids::BodyId::mint(super::COMPONENT_BODY).unwrap();
+    let owned = cadmpeg_ir::ids::BodyId::mint(super::ROOT_BODY).unwrap();
+    let mut live_fallback = super::binding(1000, 900, super::COMPONENT_BODY);
+    live_fallback.component_owner = None;
+    let live_owned = super::binding(2000, 901, super::ROOT_BODY);
+    let history_only = |offset, suffix| {
+        let mut binding = super::binding(offset, suffix, "f3d:brep/root.smbh/brep:entity#2");
+        binding.history_only = true;
+        binding
+    };
+    let mut consumed_fallback = history_only(3000, 902);
+    consumed_fallback.component_owner = None;
+    let consumed_owned = history_only(4000, 901);
+    let mut consumed_unresolved = history_only(5000, 903);
+    consumed_unresolved.component_owner = None;
+    consumed_unresolved.component_owner_unresolved = true;
+    let bindings = [
+        live_fallback,
+        live_owned,
+        consumed_fallback,
+        consumed_owned,
+        consumed_unresolved,
+    ];
+    let bodies = BTreeSet::from([fallback.clone(), owned.clone()]);
+    let peers = super::super::history_body_peers(&bindings, &components, Some(&bodies));
+    assert_eq!(
+        peers,
+        std::collections::HashMap::from([
+            (
+                format!("{}:design-body-binding#3000", super::STREAM),
+                BTreeSet::from([fallback])
+            ),
+            (
+                format!("{}:design-body-binding#4000", super::STREAM),
+                BTreeSet::from([owned])
+            ),
+        ])
+    );
+}

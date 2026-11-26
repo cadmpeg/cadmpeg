@@ -1865,6 +1865,61 @@ impl<'a> Projector<'a> {
 
 /// A Fusion component, which holds bodies and occurrences alike and has no
 /// kind, stored in its design.
+/// How the component-ownership rule places the body of one body-map pair in
+/// its Design stream.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Placement {
+    /// By the component record that its owner names.
+    Component(Option<u64>),
+    /// By the root entity of its entity cluster.
+    Cluster(Option<u64>),
+    /// In the stored-frame group of its stream.
+    Unresolved,
+}
+
+/// The bodies of the live pairs of `bindings` that the component-ownership
+/// rule places with each history-only pair, by pair id: the pairs of its
+/// Design stream with the same component owner, or, without one, in the same
+/// entity cluster. `bodies` holds the current bodies.
+pub(crate) fn history_body_peers<'a>(
+    bindings: &'a [DesignBodyBinding],
+    components: &BTreeMap<String, StreamComponents>,
+    bodies: Option<&BTreeSet<BodyId>>,
+) -> std::collections::HashMap<String, BTreeSet<BodyId>> {
+    let place = |binding: &'a DesignBodyBinding| {
+        let stream = crate::ids::native_stream(binding.id())?;
+        let placement = match &binding.component_owner {
+            Some(owner) => Placement::Component(owner.component_for(binding.entity_suffix)),
+            None if binding.component_owner_unresolved => Placement::Unresolved,
+            None => Placement::Cluster(
+                components
+                    .get(stream)
+                    .and_then(|components| components.cluster_owner(binding.entity_suffix))
+                    .map(|definition| definition.root_entity),
+            ),
+        };
+        Some((stream, placement))
+    };
+    let mut live = std::collections::HashMap::<_, BTreeSet<BodyId>>::new();
+    for binding in bindings.iter().filter(|binding| !binding.history_only) {
+        let Some(body) = binding
+            .body
+            .as_ref()
+            .filter(|body| bodies.is_none_or(|bodies| bodies.contains(*body)))
+        else {
+            continue;
+        };
+        if let Some(placement) = place(binding) {
+            live.entry(placement).or_default().insert(body.clone());
+        }
+    }
+    bindings
+        .iter()
+        .filter(|binding| binding.history_only)
+        .filter_map(|binding| Some((binding.id().clone(), live.get(&place(binding)?)?.clone())))
+        .collect()
+}
+
 fn component_definition(id: ProductDefinitionId, bodies: Vec<BodyId>) -> ProductDefinition {
     let mut definition = ProductDefinition::new(id, Storage::Embedded);
     definition.bodies = bodies;

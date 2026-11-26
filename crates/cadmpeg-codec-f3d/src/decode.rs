@@ -3351,6 +3351,10 @@ struct F3dDecodeSession<'a> {
         std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
     /// The ASM history of each parameter scope that binds one, by scope id.
     scope_histories: std::collections::HashMap<String, String>,
+    /// The live bodies that the component-ownership rule places with each
+    /// history-only body-map pair, by pair id.
+    history_peers:
+        std::collections::HashMap<String, std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -3467,6 +3471,7 @@ impl<'a> F3dDecodeSession<'a> {
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
                 scope_histories: std::collections::HashMap::new(),
+                history_peers: std::collections::HashMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -3524,6 +3529,7 @@ impl<'a> F3dDecodeSession<'a> {
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
                 scope_histories: std::collections::HashMap::new(),
+                history_peers: std::collections::HashMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -3942,6 +3948,11 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_types,
         )?;
         self.component_definitions_by_record = local.component_definitions_by_record.clone();
+        self.history_peers = crate::design::components::history_body_peers(
+            &prereqs.design_body_bindings,
+            &local_components,
+            bodies.as_ref(),
+        );
         let external = match prereqs.xref_table() {
             Some(table) => Some(crate::xref::project_occurrences(
                 table,
@@ -4211,6 +4222,7 @@ impl<'a> F3dDecodeSession<'a> {
                         untyped: self.untyped,
                         source_attributes: self.source_attributes,
                         scope_histories: self.scope_histories,
+                        history_peers: self.history_peers,
                     },
                     &mut admitted_entities,
                 );
@@ -4269,6 +4281,7 @@ impl<'a> F3dDecodeSession<'a> {
                 untyped: self.untyped,
                 source_attributes: self.source_attributes,
                 scope_histories: self.scope_histories,
+                history_peers: self.history_peers,
             },
             &mut admitted_entities,
         )
@@ -4353,6 +4366,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             let sources = crate::design_v11::StoredStates {
                 scan: &scan,
                 scope_histories: &decoded.scope_histories,
+                history_peers: &decoded.history_peers,
                 fidelity: &decoded.source_fidelity,
             };
             cadmpeg_ir::design::projection::project_layer(
@@ -4452,6 +4466,7 @@ fn decode_scanned_document<'a>(
                 untyped,
                 source_attributes,
                 scope_histories: std::collections::HashMap::new(),
+                history_peers: std::collections::HashMap::new(),
             },
             &mut admitted_entities,
         );
@@ -5526,6 +5541,10 @@ pub(crate) struct AuthoredDecoded {
     pub(crate) source_fidelity: cadmpeg_ir::SourceFidelity,
     /// The ASM history of each parameter scope that binds one, by scope id.
     pub(crate) scope_histories: std::collections::HashMap<String, String>,
+    /// The live bodies that the component-ownership rule places with each
+    /// history-only body-map pair, by pair id.
+    pub(crate) history_peers:
+        std::collections::HashMap<String, std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>>,
 }
 
 impl AuthoredDecoded {
@@ -5549,6 +5568,10 @@ struct RetainedArtifacts {
     source_attributes: std::collections::BTreeMap<String, String>,
     /// The ASM history of each parameter scope that binds one, by scope id.
     scope_histories: std::collections::HashMap<String, String>,
+    /// The live bodies that the component-ownership rule places with each
+    /// history-only body-map pair, by pair id.
+    history_peers:
+        std::collections::HashMap<String, std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>>,
 }
 
 fn decode_result(
@@ -5604,6 +5627,7 @@ fn decode_result(
         body: report,
         source_fidelity,
         scope_histories: retained.scope_histories,
+        history_peers: retained.history_peers,
     })
 }
 

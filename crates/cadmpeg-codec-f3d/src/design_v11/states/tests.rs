@@ -22,6 +22,7 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{BodyId, PointId, ProductDefinitionId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -33,8 +34,8 @@ use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::test_support::zip_test::f3d_with_smbh;
 
 use super::{
-    bind, omitted, plan, project, step, stopped, wants, Chain, Consumed, Entry, History, Kind,
-    Plan, Planned, Reader, Scope, Tail, Tails,
+    bind, history_owners, omitted, plan, project, step, stopped, wants, Chain, Consumed, Entry,
+    History, Kind, Plan, Planned, Reader, Scope, Tail, Tails,
 };
 
 fn point(name: &str, x: f64) -> Point {
@@ -194,9 +195,11 @@ fn project_without_blobs(design: &mut Design, tails: &Tails<'_>) -> Vec<LossNote
     let scan = crate::container::scan(&ctx, root).expect("the archive scans");
     let fidelity = SourceFidelity::new(Sha256Digest::digest(b""));
     let scope_histories = std::collections::HashMap::new();
+    let history_peers = std::collections::HashMap::new();
     let sources = super::super::StoredStates {
         scan: &scan,
         scope_histories: &scope_histories,
+        history_peers: &history_peers,
         fidelity: &fidelity,
     };
     let mut losses = Vec::new();
@@ -393,6 +396,7 @@ fn run(
         .resolved_current_state(&design.scope.definition, &design.scope.at)
         .expect("the current state");
     let held = vec![design.scope.bodies.clone(); histories.len()];
+    let owners = history_owners(&held, &current);
     let chain = Chain {
         entries: &entries,
         planned: &planned,
@@ -401,9 +405,12 @@ fn run(
         heads: &heads,
         reads,
         held: &held,
+        owners: &owners,
+        consumed,
         current: &current,
     };
     let tails = Tails::new();
+    let peers = std::collections::HashMap::new();
     let mut evaluations = Vec::new();
     let mut carried = Vec::new();
     let mut stops = Vec::new();
@@ -413,6 +420,7 @@ fn run(
         fidelity,
         scope: &design.scope,
         tails: &tails,
+        peers: &peers,
         losses: &mut losses,
     };
     stops.extend(
@@ -507,7 +515,7 @@ fn the_state_before_a_combine_holds_its_tool_body() {
     };
     let consumed = Consumed {
         placed: BTreeMap::from([(77, 1)]),
-        unplaced: BTreeSet::new(),
+        ..Consumed::default()
     };
     let outcome = run(
         &design,
@@ -564,6 +572,7 @@ fn only_the_states_before_the_first_consumer_of_a_body_want_it() {
     let consumed = Consumed {
         placed: BTreeMap::from([(5, 1), (6, 2)]),
         unplaced: BTreeSet::from([7]),
+        ..Consumed::default()
     };
     assert_eq!(
         wants(&entries, &planned, &[consumed]),
@@ -582,11 +591,14 @@ fn a_body_of_the_head_that_no_item_consumes_charges_a_loss() {
     let consumed = Consumed {
         placed: BTreeMap::from([(5, 1)]),
         unplaced: BTreeSet::from([7, 8]),
+        ..Consumed::default()
     };
     let mut head = read(3, Topology::default(), Vec::new());
     head.head_consumed =
         BTreeMap::from([(5, body("consumed", None).id), (7, body("hidden", None).id)]);
-    let loss = omitted(&definition, "BREP.x", &consumed, &head).expect("a loss");
+    let [loss] = omitted(&definition, "BREP.x", &consumed, &head)
+        .try_into()
+        .expect("one loss");
     assert_eq!(loss.code, F3dLossCode::HistoryStateBodyOmitted.kind());
     assert!(
         loss.message.contains("f3d:brep:entity#hidden")
@@ -595,7 +607,7 @@ fn a_body_of_the_head_that_no_item_consumes_charges_a_loss() {
         loss.message
     );
     head.head_consumed.remove(&7);
-    assert!(omitted(&definition, "BREP.x", &consumed, &head).is_none());
+    assert!(omitted(&definition, "BREP.x", &consumed, &head).is_empty());
 }
 
 #[test]
@@ -968,5 +980,202 @@ fn a_state_whose_native_record_differs_from_the_documents_ends_the_states() {
         loss.message.contains(unknown.id().as_str()),
         "{}",
         loss.message
+    );
+}
+
+#[test]
+fn the_walk_of_a_history_starts_at_the_state_after_its_last_item() {
+    let design = design(&["a", "b", "c", "d", "e"], "e", Vec::new());
+    let at = |x| points(vec![point("p", x)]);
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 3, Some(2)),
+            bound(0, 4, Some(3)),
+            bound(0, 5, Some(4)),
+            bound(0, 6, Some(5)),
+            Kind::NoState,
+        ],
+        &[Stored {
+            name: "BREP.x",
+            states: &[2, 3, 4, 5, 6, 7],
+        }],
+        &[Ok(read(
+            7,
+            at(7.0),
+            vec![
+                (want(6, &[]), Ok(records(at(6.0)))),
+                (want(5, &[]), Ok(records(at(5.0)))),
+                (want(4, &[]), Ok(records(at(4.0)))),
+                (want(3, &[]), Ok(records(at(3.0)))),
+            ],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [d, c, b, a] = outcome.evaluations.as_slice() else {
+        panic!("four evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(
+        [&d.of, &c.of, &b.of, &a.of],
+        [&after("d"), &after("c"), &after("b"), &after("a")]
+    );
+    assert_eq!(d.native_ref.as_deref(), Some("f3d:asm:state#6"));
+    let (base, delta) = content(d);
+    assert_eq!(*base, StateBase::Current(design.scope.at.clone()));
+    assert_eq!(delta.records.points, [point("p", 6.0)]);
+    assert_eq!(content(c).1.records.points, [point("p", 5.0)]);
+    assert_eq!(content(a).1.records.points, [point("p", 3.0)]);
+}
+
+#[test]
+fn the_walk_of_each_history_starts_at_the_state_after_its_last_item() {
+    let design = design(&["a", "b", "c", "d"], "d", Vec::new());
+    let in_x = |at| points(vec![point("x", at)]);
+    let in_y = |at| points(vec![point("y", at)]);
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 3, Some(2)),
+            bound(1, 2, None),
+            bound(0, 4, Some(3)),
+            bound(1, 3, Some(2)),
+        ],
+        &[
+            Stored {
+                name: "BREP.x",
+                states: &[2, 3, 4, 5],
+            },
+            Stored {
+                name: "BREP.y",
+                states: &[2, 3, 4],
+            },
+        ],
+        &[
+            Ok(read(
+                5,
+                in_x(5.0),
+                vec![
+                    (want(4, &[]), Ok(records(in_x(4.0)))),
+                    (want(3, &[]), Ok(records(in_x(3.0)))),
+                ],
+            )),
+            Ok(read(
+                4,
+                in_y(4.0),
+                vec![(want(2, &[]), Ok(records(in_y(2.0))))],
+            )),
+        ],
+        &[Consumed::default(), Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [c, b, a] = outcome.evaluations.as_slice() else {
+        panic!("three evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(
+        [&c.of, &b.of, &a.of],
+        [&after("c"), &after("b"), &after("a")]
+    );
+    assert_eq!(
+        content(c).1.records.points,
+        [point("x", 4.0), point("y", 2.0)]
+    );
+    assert_eq!(content(b).1.records.points, [point("x", 3.0)]);
+    assert!(content(a).1.records.points.is_empty());
+    assert_eq!(content(a).1.removed, [RecordRef::Point(point("y", 0.0).id)]);
+}
+
+#[test]
+fn a_consumed_body_takes_the_owner_of_its_peers_and_one_with_no_known_owner_is_omitted() {
+    let mut design = design(
+        &["a", "combine", "c"],
+        "c",
+        vec![body("1", None), body("2", None)],
+    );
+    let part = ProductDefinitionId::mint("test:design:definition#part").expect("identity grammar");
+    let mut definition = ProductDefinition::new(part.clone(), Storage::Embedded);
+    definition.bodies = vec![body("2", None).id];
+    design.ir.model.product_definitions.push(definition);
+    let current = design
+        .ir
+        .resolved_current_state(&design.scope.definition, &design.scope.at)
+        .expect("the current state");
+    let [history] = history_owners(&[design.scope.bodies.clone()], &current)
+        .try_into()
+        .expect("one history");
+    assert_eq!(history, None);
+    let mut consumed = Consumed {
+        placed: BTreeMap::from([(77, 1), (78, 1)]),
+        ..Consumed::default()
+    };
+    consumed.own(
+        &BTreeMap::from([
+            (77, BTreeSet::from([body("2", None).id])),
+            (78, BTreeSet::from([body("1", None).id, body("2", None).id])),
+        ]),
+        history.as_ref(),
+        &current,
+    );
+    assert_eq!(consumed.placed, BTreeMap::from([(77, 1)]));
+    assert_eq!(consumed.owners, BTreeMap::from([(77, part.clone())]));
+    assert_eq!(consumed.unowned, BTreeSet::from([78]));
+    let head = Topology {
+        bodies: vec![body("1", None), body("2", None)],
+        ..Topology::default()
+    };
+    let mut stored = read(
+        3,
+        head.clone(),
+        vec![
+            (want(2, &[]), Ok(records(head.clone()))),
+            (
+                want(1, &[77]),
+                Ok(records(Topology {
+                    bodies: vec![body("1", None), body("2", None), body("tool", None)],
+                    ..Topology::default()
+                })),
+            ),
+        ],
+    );
+    stored.head_consumed =
+        BTreeMap::from([(77, body("tool", None).id), (78, body("other", None).id)]);
+    let [loss] = omitted(&design.scope.definition, "BREP.x", &consumed, &stored)
+        .try_into()
+        .expect("one loss");
+    assert_eq!(loss.code, F3dLossCode::HistoryStateBodyOmitted.kind());
+    assert!(
+        loss.message.contains("f3d:brep:entity#other")
+            && !loss.message.contains("f3d:brep:entity#tool"),
+        "{}",
+        loss.message
+    );
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            bound(0, 3, Some(2)),
+        ],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3],
+        }],
+        &[Ok(stored)],
+        &[consumed],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [combine, a] = outcome.evaluations.as_slice() else {
+        panic!("two evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(combine.of, after("combine"));
+    assert_eq!(a.of, after("a"));
+    let delta = content(a).1;
+    assert_eq!(delta.records.bodies, [body("tool", None)]);
+    assert_eq!(
+        delta.owners,
+        BTreeMap::from([(body("tool", None).id, Some(part))])
     );
 }

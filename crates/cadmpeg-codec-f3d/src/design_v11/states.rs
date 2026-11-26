@@ -8,11 +8,15 @@
 //! its own. The state of an item lies in the one history that stores its id,
 //! or, where several histories store it, in the history that the item's
 //! parameter scope binds. The states of the items of one history tile its
-//! chain, which the walk follows back from the head: the state after each
-//! item is the state before the next later item of that history. The state after an item holds, of
-//! each history, the state that this walk reaches at the item, with the
-//! consumed bodies of the head whose consumer is later in the timeline
-//! (§5.5).
+//! chain, which the walk follows back from the state after the last item of
+//! that history: the state after each item is the state before the next
+//! later item of that history. A stored state after that of the last item
+//! is the result of no item, and the current geometry holds it. The state
+//! after an item holds, of each history, the state that this walk reaches at
+//! the item, with the consumed bodies of the head whose consumer is later in
+//! the timeline (§5.5). A consumed body has the owner of the live bodies
+//! that the component-ownership rule places with its body-map pair, and a
+//! state omits a consumed body whose owner is not known.
 //!
 //! An item that builds the current geometry and that is not stateless has an
 //! evaluation of the state after it, whose base is the state after the next
@@ -117,6 +121,7 @@ pub(super) fn project(
         fidelity: sources.fidelity,
         scope,
         tails,
+        peers: sources.history_peers,
         losses,
     };
     if let Err(reason) = reader.read(sources.scan, &mut evaluations, &mut carried)? {
@@ -191,10 +196,16 @@ struct Plan {
     stop: Option<Stop>,
 }
 
-/// The states after `entries`, walking back from the `heads` of the
-/// histories named `names`.
+/// The states after `entries`, walking back through the histories named
+/// `names` from the state after the last item of each, or from its head in
+/// `heads` where no item stores one of its states.
 fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
     let mut at = heads.to_vec();
+    for entry in entries {
+        if let Kind::Bound { history, state, .. } = entry.kind {
+            at[history] = Some(state);
+        }
+    }
     let mut set = vec![0_usize; heads.len()];
     let mut planned = Vec::<Planned>::new();
     for (index, entry) in entries.iter().enumerate().rev() {
@@ -268,6 +279,66 @@ struct Consumed {
     placed: BTreeMap<u64, usize>,
     /// The keys of the bodies that no timeline item consumes.
     unplaced: BTreeSet<u64>,
+    /// The owner of each placed body, by key.
+    owners: BTreeMap<u64, ProductDefinitionId>,
+    /// The keys of the consumed bodies whose owner is not known.
+    unowned: BTreeSet<u64>,
+}
+
+/// The one owner of the current bodies of each history in `held`, if any.
+fn history_owners(
+    held: &[BTreeSet<BodyId>],
+    current: &ResolvedState,
+) -> Vec<Option<ProductDefinitionId>> {
+    held.iter()
+        .map(|bodies| {
+            let mut found = bodies
+                .iter()
+                .filter_map(|body| current.owners().get(body))
+                .collect::<BTreeSet<_>>()
+                .into_iter();
+            let owner = found.next();
+            owner.filter(|_| found.next().is_none()).cloned()
+        })
+        .collect()
+}
+
+impl Consumed {
+    /// Gives each placed body the one owner in `current` of the live bodies
+    /// that `peers` places with it, by key, or, where `current` holds none
+    /// of them, the owner `history` of the current bodies of its history.
+    /// A placed body with no such owner becomes unowned.
+    fn own(
+        &mut self,
+        peers: &BTreeMap<u64, BTreeSet<BodyId>>,
+        history: Option<&ProductDefinitionId>,
+        current: &ResolvedState,
+    ) {
+        for key in self.placed.keys() {
+            let mut found = peers
+                .get(key)
+                .into_iter()
+                .flatten()
+                .filter_map(|body| current.owners().get(body))
+                .collect::<BTreeSet<_>>()
+                .into_iter();
+            let owner = match (found.next(), found.next()) {
+                (Some(owner), None) => Some(owner),
+                (None, _) => history,
+                (Some(_), Some(_)) => None,
+            };
+            match owner {
+                Some(owner) => {
+                    self.owners.insert(*key, owner.clone());
+                }
+                None => {
+                    self.unowned.insert(*key);
+                }
+            }
+        }
+        let unowned = &self.unowned;
+        self.placed.retain(|key, _| !unowned.contains(key));
+    }
 }
 
 /// The state of each history after each item of `planned`, with the
@@ -319,26 +390,40 @@ fn stopped(definition: &ProductDefinitionId, stop: &Stop) -> Option<LossNote> {
     })
 }
 
-/// The loss of the bodies of the head of the history `stream` that no
-/// timeline item consumes, if any.
+/// The losses of the consumed bodies of the head of the history `stream`
+/// that the states omit: those that no timeline item consumes, and those
+/// whose owner is not known.
 fn omitted(
     definition: &ProductDefinitionId,
     stream: &str,
     consumed: &Consumed,
     read: &Read,
-) -> Option<LossNote> {
-    let bodies = consumed
-        .unplaced
-        .iter()
-        .filter_map(|key| read.head_consumed.get(key))
-        .map(BodyId::as_str)
-        .collect::<BTreeSet<_>>();
-    (!bodies.is_empty()).then(|| {
-        F3dLossCode::HistoryStateBodyOmitted.note(format!(
-            "scope {definition}: the states after its timeline items omit the bodies {} of the head of {stream}: the current geometry omits them, and no timeline item consumes them.",
-            bodies.into_iter().collect::<Vec<_>>().join(", ")
-        ))
+) -> Vec<LossNote> {
+    [
+        (
+            &consumed.unplaced,
+            "the current geometry omits them, and no timeline item consumes them",
+        ),
+        (
+            &consumed.unowned,
+            "the owner of their body-map pairs is not known",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(keys, reason)| {
+        let bodies = keys
+            .iter()
+            .filter_map(|key| read.head_consumed.get(key))
+            .map(BodyId::as_str)
+            .collect::<BTreeSet<_>>();
+        (!bodies.is_empty()).then(|| {
+            F3dLossCode::HistoryStateBodyOmitted.note(format!(
+                "scope {definition}: the states after its timeline items omit the bodies {} of the head of {stream}: {reason}.",
+                bodies.into_iter().collect::<Vec<_>>().join(", ")
+            ))
+        })
     })
+    .collect()
 }
 
 /// One model blob with a history partition.
@@ -362,6 +447,9 @@ struct Chain<'c, 'e> {
     reads: &'c [Result<Read, String>],
     /// The current bodies of each history.
     held: &'c [BTreeSet<BodyId>],
+    /// The one owner of the current bodies of each history, if any.
+    owners: &'c [Option<ProductDefinitionId>],
+    consumed: &'c [Consumed],
     current: &'c ResolvedState,
 }
 
@@ -388,6 +476,9 @@ struct Reader<'r, 'c> {
     fidelity: &'r SourceFidelity,
     scope: &'r Scope,
     tails: &'r Tails<'r>,
+    /// The live bodies that the component-ownership rule places with each
+    /// history-only body-map pair, by pair id.
+    peers: &'r HashMap<String, BTreeSet<BodyId>>,
     losses: &'r mut Vec<LossNote>,
 }
 
@@ -486,7 +577,8 @@ impl<'r> Reader<'r, '_> {
         if planned.is_empty() {
             return Ok(Ok(()));
         }
-        let consumed = self.consumed(&histories)?;
+        let owners = history_owners(&held, &current);
+        let consumed = self.consumed(&histories, &owners, &current)?;
         let wants = wants(&entries, &planned, &consumed);
         let reads = self.reads(&histories, &held, &heads, &consumed, &wants, &current)?;
         for ((history, consumed), read) in histories.iter().zip(&consumed).zip(&reads) {
@@ -507,6 +599,8 @@ impl<'r> Reader<'r, '_> {
             heads: &heads,
             reads: &reads,
             held: &held,
+            owners: &owners,
+            consumed: &consumed,
             current: &current,
         };
         if let Some(stop) = self.emit(&chain, configuration.as_ref(), out, carried)? {
@@ -564,12 +658,19 @@ impl<'r> Reader<'r, '_> {
 
     /// The consumed bodies of the head of each of `histories`: the
     /// history-only bodies of the root document's body maps that name its
-    /// blob.
-    fn consumed(&self, histories: &[History<'_>]) -> Result<Vec<Consumed>, CodecError> {
+    /// blob, with their owners in `current`, where `owners` holds the one
+    /// owner of the current bodies of each history.
+    fn consumed(
+        &self,
+        histories: &[History<'_>],
+        owners: &[Option<ProductDefinitionId>],
+        current: &ResolvedState,
+    ) -> Result<Vec<Consumed>, CodecError> {
         let mut out = histories
             .iter()
             .map(|_| Consumed::default())
             .collect::<Vec<_>>();
+        let mut peers = vec![BTreeMap::<u64, BTreeSet<BodyId>>::new(); histories.len()];
         let Some(namespace) = self.ir.native.namespace("f3d") else {
             return Ok(out);
         };
@@ -600,6 +701,10 @@ impl<'r> Reader<'r, '_> {
             else {
                 continue;
             };
+            peers[at]
+                .entry(binding.asm_body_key)
+                .or_default()
+                .extend(self.peers.get(binding.id()).into_iter().flatten().cloned());
             let consumer = binding
                 .consumers
                 .iter()
@@ -618,9 +723,10 @@ impl<'r> Reader<'r, '_> {
                 }
             }
         }
-        for consumed in &mut out {
+        for ((consumed, peers), history) in out.iter_mut().zip(&peers).zip(owners) {
             let placed = &consumed.placed;
             consumed.unplaced.retain(|key| !placed.contains_key(key));
+            consumed.own(peers, history.as_ref(), current);
         }
         Ok(out)
     }
@@ -665,6 +771,7 @@ impl<'r> Reader<'r, '_> {
                 .placed
                 .keys()
                 .chain(&consumed[index].unplaced)
+                .chain(&consumed[index].unowned)
                 .copied()
                 .collect();
             let read = match stored_states::read(
@@ -713,17 +820,20 @@ impl<'r> Reader<'r, '_> {
         let scope = self.scope;
         let current = chain.current;
         let empty = Topology::default();
-        let owners = chain
-            .held
+        let consumed = chain
+            .reads
             .iter()
-            .map(|bodies| {
-                let mut found = bodies
-                    .iter()
-                    .filter_map(|body| current.owners().get(body))
-                    .collect::<BTreeSet<_>>()
-                    .into_iter();
-                let owner = found.next();
-                owner.filter(|_| found.next().is_none()).cloned()
+            .zip(chain.consumed)
+            .map(|(read, consumed)| {
+                read.as_ref()
+                    .map(|read| {
+                        consumed
+                            .owners
+                            .iter()
+                            .filter_map(|(key, owner)| Some((read.head_consumed.get(key)?, owner)))
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .unwrap_or_default()
             })
             .collect::<Vec<_>>();
         let unstepped = ids(current.records(), None)
@@ -874,7 +984,10 @@ impl<'r> Reader<'r, '_> {
                     let owner = if chain.held[at].contains(&body.id) {
                         current.owners().get(&body.id)
                     } else {
-                        owners[at].as_ref()
+                        consumed[at]
+                            .get(&body.id)
+                            .copied()
+                            .or(chain.owners[at].as_ref())
                     };
                     let Some(owner) = owner else {
                         return Ok(Some(chain.stop(
