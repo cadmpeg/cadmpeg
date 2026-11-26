@@ -420,6 +420,7 @@ impl<'a> Reduction<'a> {
         self.omit_partial_bodies()?;
         self.drop_unwritten_native();
         self.drop_rolled_back_native_design();
+        self.drop_unmatched_asm_histories();
         if !self.writes_design() {
             self.drop_design_only_arenas();
         }
@@ -1537,6 +1538,28 @@ impl<'a> Reduction<'a> {
             "F3D",
             "of Design record families that the source-less Design stream has no form for",
             omitted,
+        ));
+    }
+
+    /// The generator writes every body in one B-rep stream, whose history
+    /// tail holds one ASM history. Where the document holds more than one,
+    /// the records do not state which the written stream continues, so
+    /// every ASM history record is dropped (W1).
+    fn drop_unmatched_asm_histories(&mut self) {
+        let histories = self
+            .ir
+            .native
+            .namespace("f3d")
+            .and_then(|namespace| namespace.arenas().get("asm_histories"))
+            .map_or(0, Vec::len);
+        if histories < 2 {
+            return;
+        }
+        let dropped = self.remove_native_arenas(|arena| arena.starts_with("asm_"));
+        self.losses.extend(native_records_omitted(
+            "F3D",
+            &format!("of {histories} ASM history streams (the generator writes the bodies in one B-rep stream, whose history tail holds one history, and the records do not state which history that stream continues)"),
+            dropped,
         ));
     }
 

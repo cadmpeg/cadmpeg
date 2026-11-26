@@ -197,3 +197,45 @@ fn a_record_header_outside_the_sketch_graph_is_dropped_alone() {
         .collect::<Vec<_>>();
     assert_eq!(indices, [33]);
 }
+
+#[test]
+fn several_asm_histories_are_dropped_and_the_design_stream_is_written() {
+    use crate::history_records::AsmHistory;
+
+    let source = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh(),
+    );
+    let decoded = cadmpeg_ir::codec::Codec::decode(
+        &crate::F3dCodec,
+        &mut std::io::Cursor::new(source),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+    )
+    .expect("the history fixture decodes");
+    let (mut ir, _, _) = decoded.into_parts();
+    ir.source = None;
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .expect("the unknown records clear");
+    let first = f3d_native(&ir).asm_histories[0].id.clone();
+    let second = "f3d:generated:asm-history#1".to_owned();
+    f3d_native_mut(&mut ir).asm_histories.push(AsmHistory::new(
+        second.clone(),
+        0,
+        None,
+        false,
+        Vec::new(),
+    ));
+
+    let report = assert_written_with_loss(&ir, None, OMITTED, "of 2 ASM history streams");
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report).join("\n");
+    assert!(
+        messages.contains(&first) && messages.contains(&second),
+        "{messages}"
+    );
+    let decoded = write_and_decode(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), ir.geometry.bodies.len());
+}
