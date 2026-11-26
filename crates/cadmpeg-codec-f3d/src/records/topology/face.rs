@@ -79,6 +79,10 @@ pub(crate) struct DesignFaceOperand {
     /// Active candidates mapped through an invariant surface carrier to face
     /// owners in the immediately preceding historical topology.
     pub(crate) historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
+    /// Faces of the first recipe reference mapped through an invariant
+    /// surface carrier to face owners in the immediately preceding historical
+    /// topology.
+    pub(crate) first_reference_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
     /// Ordered stable historical face slots proven by the preceding topology
     /// or exact feature transition.
     pub(crate) resolved_face_slots: Vec<i64>,
@@ -124,6 +128,7 @@ impl Clone for DesignFaceOperand {
             preceding_candidate_faces: self.preceding_candidate_faces.clone(),
             changed_candidate_faces: self.changed_candidate_faces.clone(),
             historical_support_contexts: self.historical_support_contexts.clone(),
+            first_reference_support_contexts: self.first_reference_support_contexts.clone(),
             resolved_face_slots: self.resolved_face_slots.clone(),
             resolved_active_face: self.resolved_active_face.clone(),
             next_record_index: self.next_record_index,
@@ -172,6 +177,8 @@ impl Serialize for DesignFaceOperand {
             #[serde(skip_serializing_if = "Vec::is_empty")]
             historical_support_contexts: &'a Vec<DesignHistoricalFaceSupportContext>,
             #[serde(skip_serializing_if = "Vec::is_empty")]
+            first_reference_support_contexts: &'a Vec<DesignHistoricalFaceSupportContext>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
             resolved_face_slots: &'a Vec<i64>,
             #[serde(skip_serializing_if = "Option::is_none")]
             resolved_active_face: Option<&'a FaceId>,
@@ -208,6 +215,7 @@ impl Serialize for DesignFaceOperand {
             preceding_candidate_faces: &self.preceding_candidate_faces,
             changed_candidate_faces: &self.changed_candidate_faces,
             historical_support_contexts: &self.historical_support_contexts,
+            first_reference_support_contexts: &self.first_reference_support_contexts,
             resolved_face_slots: &self.resolved_face_slots,
             resolved_active_face: self.resolved_active_face.as_ref(),
             next_record_index: self.next_record_index,
@@ -263,6 +271,7 @@ impl DesignFaceOperand {
             preceding_candidate_faces: draft.preceding_candidate_faces,
             changed_candidate_faces: draft.changed_candidate_faces,
             historical_support_contexts: draft.historical_support_contexts,
+            first_reference_support_contexts: Vec::new(),
             resolved_face_slots: draft.resolved_face_slots,
             resolved_active_face: draft.resolved_active_face,
             next_record_index: draft.next_record_index,
@@ -507,6 +516,11 @@ struct DesignFaceOperandWire {
     /// owners in the immediately preceding historical topology.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
+    /// Faces of the first recipe reference mapped through an invariant
+    /// surface carrier to face owners in the immediately preceding historical
+    /// topology.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    first_reference_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
     /// Ordered stable historical face slots proven by the preceding topology
     /// or exact feature transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -555,7 +569,8 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
             }
         };
         let proof = wire.registered_recipe_frame;
-        Self::try_new(DesignFaceOperandDraft {
+        let first_reference_support_contexts = wire.first_reference_support_contexts;
+        let mut operand = Self::try_new(DesignFaceOperandDraft {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             scope_reference_ordinal: wire.scope_reference_ordinal,
@@ -586,14 +601,18 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
             next_record_index: wire.next_record_index,
             next_byte_offset: wire.next_byte_offset,
         })?
-        .with_registered_recipe_frame(proof)
+        .with_registered_recipe_frame(proof)?;
+        operand.first_reference_support_contexts = first_reference_support_contexts;
+        Ok(operand)
     }
 }
 
 #[cfg(test)]
 impl From<DesignFaceOperand> for DesignFaceOperandWire {
-    fn from(operand: DesignFaceOperand) -> Self {
+    fn from(mut operand: DesignFaceOperand) -> Self {
         let registered_recipe_frame = operand.registered_recipe_frame;
+        let first_reference_support_contexts =
+            std::mem::take(&mut operand.first_reference_support_contexts);
         let operand = operand.into_draft();
         let recipe_node_offsets = operand
             .recipe_nodes
@@ -628,6 +647,7 @@ impl From<DesignFaceOperand> for DesignFaceOperandWire {
             preceding_candidate_faces: operand.preceding_candidate_faces,
             changed_candidate_faces: operand.changed_candidate_faces,
             historical_support_contexts: operand.historical_support_contexts,
+            first_reference_support_contexts,
             resolved_face_slots: operand.resolved_face_slots,
             resolved_active_face: operand.resolved_active_face,
             next_record_index: operand.next_record_index,
