@@ -16,6 +16,7 @@ use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
 mod attributes;
+pub(in crate::writer) mod configuration_root;
 mod design;
 mod index;
 mod native_bytes;
@@ -329,30 +330,31 @@ fn attempt<W: Write + Seek>(
         return Ok((coverage, losses));
     }
     let mut neutral_records = None;
-    let parameter_bytes = match (neutral.as_mut(), &native_parameters) {
+    let parameter_records = match (neutral.as_mut(), &native_parameters) {
         (Some(neutral), _) => {
-            let (parameter_bytes, records) = neutral
+            let (parameter_records, records) = neutral
                 .records(&mut design_registry)
                 .map_err(Failure::neutral_design)?;
             neutral_records = Some(records);
-            parameter_bytes
+            parameter_records
         }
         (None, Some(source)) => design::parameters::encode(source, &native, &mut design_registry)
             .map_err(Failure::design)?,
-        (None, None) => Vec::new(),
+        (None, None) => records::ParameterRecords::default(),
     };
     let mut configurations = Vec::new();
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
-    let mut inactive = Vec::new();
+    let mut root = None;
     if write_design {
+        let plan = configuration_root::plan(target, &native.design_configurations)
+            .map_err(Failure::design)?;
         let names = configuration_entry_names(&native.design_configurations);
-        for (configuration, (name, fault)) in native.design_configurations.iter().zip(names) {
-            if configuration.active_row().is_some() {
-                inactive.push(configuration.id());
-            }
-            let payload =
-                crate::records::configuration::encode_configuration_payload(configuration)
-                    .map_err(Failure::design)?;
+        for (index, (configuration, (name, fault))) in
+            native.design_configurations.iter().zip(names).enumerate()
+        {
+            let payload = plan
+                .payload(index, configuration)
+                .map_err(Failure::design)?;
             if let Some(fault) = fault {
                 renamed.entry(fault).or_default().push(format!(
                     "{} from {} to {name}",
@@ -362,32 +364,30 @@ fn attempt<W: Write + Seek>(
             }
             configurations.push((name, payload));
         }
+        root = Some(plan);
     }
-    let configuration_losses = renamed
+    let mut configuration_losses = renamed
         .into_iter()
         .filter_map(|(fault, entries)| {
             cadmpeg_ir::codec::write::value_unwritable("F3D", &fault.reason(), entries)
         })
-        .chain(cadmpeg_ir::codec::write::native_records_omitted(
-            "F3D",
-            "writes no DesignConfigurationRoot record, so no row of these configuration tables \
-             is active",
-            inactive,
-        ))
         .collect::<Vec<_>>();
-    let design_bulk = encode_design_bulkstream(
+    let mut design_bulk = encode_design_bulkstream(
         target,
         &native,
         &design_registry,
-        parameter_bytes,
+        parameter_records,
         neutral_records.as_ref(),
     )
     .map_err(design_failure)?;
-    let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
-        bulk_stream.primary_records.as_slice()
-    });
+    if let Some(root) = root {
+        configuration_losses.extend(
+            root.write(&mut design_registry, &mut design_bulk)
+                .map_err(design_failure)?,
+        );
+    }
     let meta_stream =
-        encode_design_metastream(&design_registry, primary_records).map_err(design_failure)?;
+        encode_design_metastream(&design_registry, design_bulk.as_ref()).map_err(design_failure)?;
     let proteins = target
         .model
         .appearances

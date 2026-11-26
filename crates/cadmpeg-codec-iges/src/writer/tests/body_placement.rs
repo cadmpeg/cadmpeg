@@ -3,12 +3,9 @@
 //! and topology that bodies under different transforms share, and a copied
 //! record that has no placed image.
 
-use cadmpeg_core::serde_erase::json;
-use std::io::Cursor;
-
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
 use cadmpeg_ir::examples::{add_document_root, unit_cube};
@@ -25,6 +22,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::covered_uses::cube_with_pcurves;
+use crate::test_support::decoded_with;
 use crate::writer::placement::separated_bodies;
 use crate::{IgesCodec, IgesVersion};
 
@@ -40,6 +38,8 @@ const FACE_KINDS: [&str; 6] = ["body", "region", "shell", "face", "loop", "coedg
 /// Bound on the distance between a read-back point and its expected place.
 const PLACED: f64 = 1.0e-9;
 
+/// `ir` written, with the losses of the write and the document that reads
+/// back with no loss.
 fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let plan = IgesCodec
         .plan(
@@ -51,12 +51,7 @@ fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    let read = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone();
-    (losses, read)
+    (losses, decoded_with(&bytes, &[]))
 }
 
 fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
@@ -527,8 +522,9 @@ fn coedge_support<'a>(geometry: &'a Topology, coedge: &Coedge) -> &'a SurfaceId 
         .expect("the coedge face")
 }
 
-#[test]
-fn a_copied_parameter_curve_names_the_copy_of_its_support() {
+/// The cube with a parameter curve on each coedge that names the support of
+/// the face of the coedge.
+fn cube_with_supported_pcurves() -> CadIr {
     let mut ir = cube_with_pcurves(false);
     let supports = ir
         .geometry
@@ -548,24 +544,14 @@ fn a_copied_parameter_curve_names_the_copy_of_its_support() {
         };
         form.support_surface = Some(supports[&pcurve.id].clone());
     }
-    let ir = shared_cubes(
-        ir,
-        None,
-        Transform::affine([
-            [2.0, 0.0, 0.0, 1.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 3.0, -1.0],
-        ]),
-        &TOPOLOGY_KINDS,
-    );
-    let Ok(separated) = separated_bodies(&ir) else {
-        panic!("the bodies separate");
-    };
-    let geometry = &separated.geometry;
-    let mut bodies = [BTreeSet::new(), BTreeSet::new()];
+    ir
+}
+
+/// Asserts that each parameter curve of `geometry` names the support of the
+/// face of each coedge that uses it.
+fn assert_pcurves_name_their_face_supports(geometry: &Topology) {
     for coedge in &geometry.coedges {
         let support = coedge_support(geometry, coedge);
-        bodies[usize::from(coedge.id.as_str().ends_with("-instance"))].insert(support.clone());
         for pcurve_use in &coedge.pcurves {
             let pcurve = geometry
                 .pcurves
@@ -584,6 +570,30 @@ fn a_copied_parameter_curve_names_the_copy_of_its_support() {
             );
         }
     }
+}
+
+#[test]
+fn a_copied_parameter_curve_names_the_copy_of_its_support() {
+    let ir = shared_cubes(
+        cube_with_supported_pcurves(),
+        None,
+        Transform::affine([
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, -1.0],
+        ]),
+        &TOPOLOGY_KINDS,
+    );
+    let Ok(separated) = separated_bodies(&ir) else {
+        panic!("the bodies separate");
+    };
+    let geometry = &separated.geometry;
+    assert_pcurves_name_their_face_supports(geometry);
+    let mut bodies = [BTreeSet::new(), BTreeSet::new()];
+    for coedge in &geometry.coedges {
+        let support = coedge_support(geometry, coedge);
+        bodies[usize::from(coedge.id.as_str().ends_with("-instance"))].insert(support.clone());
+    }
     assert_eq!(bodies[0].len(), 6);
     assert!(bodies[0].is_disjoint(&bodies[1]), "{bodies:#?}");
     let (losses, _) = written(&ir);
@@ -593,6 +603,102 @@ fn a_copied_parameter_curve_names_the_copy_of_its_support() {
         "iges/writer.pcurve-omitted",
     ] {
         assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+    }
+}
+
+#[test]
+fn a_parameter_curve_on_a_support_that_a_body_under_another_transform_owns_first_is_copied_with_it()
+{
+    let mut ir = cube_with_supported_pcurves();
+    let source = ir.geometry.clone();
+    for suffix in ["-instance", "-placed"] {
+        let geometry = &mut ir.geometry;
+        let mut bodies = copied(&source.bodies, &TOPOLOGY_KINDS, suffix);
+        bodies[0].transform = Transform::affine([
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, -1.0],
+        ]);
+        geometry.bodies.extend(bodies);
+        geometry
+            .regions
+            .extend(copied(&source.regions, &TOPOLOGY_KINDS, suffix));
+        geometry
+            .shells
+            .extend(copied(&source.shells, &TOPOLOGY_KINDS, suffix));
+        geometry
+            .faces
+            .extend(copied(&source.faces, &TOPOLOGY_KINDS, suffix));
+        geometry
+            .loops
+            .extend(copied(&source.loops, &TOPOLOGY_KINDS, suffix));
+        geometry
+            .coedges
+            .extend(copied(&source.coedges, &TOPOLOGY_KINDS, suffix));
+        geometry
+            .edges
+            .extend(copied(&source.edges, &TOPOLOGY_KINDS, suffix));
+        geometry
+            .vertices
+            .extend(copied(&source.vertices, &TOPOLOGY_KINDS, suffix));
+    }
+    for coedge in &mut ir.geometry.coedges[..source.coedges.len()] {
+        coedge.pcurves.clear();
+    }
+    ir.finalize();
+    let order = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.transform.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(order, [false, true, true], "{:#?}", ir.geometry.bodies);
+    let Ok(separated) = separated_bodies(&ir) else {
+        panic!("the bodies separate");
+    };
+    let geometry = &separated.geometry;
+    assert_pcurves_name_their_face_supports(geometry);
+    let used = |suffix: &str| {
+        geometry
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.id.as_str().ends_with(suffix))
+            .flat_map(|coedge| coedge.pcurves.iter().map(|pcurve_use| &pcurve_use.pcurve))
+            .collect::<BTreeSet<_>>()
+    };
+    let sources = ir
+        .geometry
+        .pcurves
+        .iter()
+        .map(|pcurve| &pcurve.id)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(used("-instance"), sources);
+    let copies = used("-placed");
+    assert_eq!(copies.len(), sources.len());
+    assert!(copies.is_disjoint(&sources), "{copies:#?}");
+    let (losses, read) = written(&ir);
+    for code in [
+        "iges/writer.body-omitted",
+        "iges/writer.face-omitted",
+        "iges/writer.pcurve-omitted",
+    ] {
+        assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+    }
+    assert_eq!(read.geometry.bodies.len(), 3);
+    let placed = cube_corners()
+        .into_iter()
+        .map(stretched)
+        .collect::<Vec<_>>();
+    let bodies = body_pcurve_ends(&read)
+        .into_iter()
+        .filter(|body| !body.is_empty())
+        .collect::<Vec<_>>();
+    assert_eq!(bodies.len(), 2, "{bodies:?}");
+    for body in &bodies {
+        assert!(
+            holds(body, &placed),
+            "a stretched body's parameter curves end off the placed corners: {body:?}"
+        );
     }
 }
 

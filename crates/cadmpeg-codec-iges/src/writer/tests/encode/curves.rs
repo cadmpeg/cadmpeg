@@ -91,3 +91,47 @@ fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
     assert!(error.to_string().contains("non-finite"));
     assert_eq!(geometry, before);
 }
+
+/// The Type 126 closed flag (PROP2) states whether the curve starts and ends
+/// at one point over the parameter range that the entity states.
+#[test]
+fn the_type_126_closed_flag_follows_the_stated_parameter_range() {
+    let radius = cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("a radius");
+    let circle = crate::entities::curve_conversion::elliptical_arc_nurbs(
+        Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        radius,
+        radius,
+        [0.0, std::f64::consts::TAU],
+    )
+    .expect("a rational circle")
+    .expect("a rational circle over one turn");
+    let degree = usize::try_from(circle.degree()).expect("a degree");
+    let knots = circle
+        .knots()
+        .finite_knots()
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+        .collect::<Vec<_>>();
+    let domain = [knots[degree], knots[circle.control_points().len()]];
+    for (range, closed) in [
+        (domain, "1"),
+        ([domain[0], domain[0].midpoint(domain[1])], "0"),
+        ([domain[0].midpoint(domain[1]), domain[1]], "0"),
+    ] {
+        let entity = crate::writer::encode_nurbs(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &circle,
+            cadmpeg_ir::units::FiniteVector::new(range).expect("a finite range"),
+            "circle",
+        )
+        .expect("the curve is written");
+        let parameters = String::from_utf8(entity.parameter_body).expect("ASCII parameters");
+        assert_eq!(entity.type_code, 126);
+        assert_eq!(
+            parameters.split(',').nth(3),
+            Some(closed),
+            "range {range:?}: {parameters}"
+        );
+    }
+}

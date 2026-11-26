@@ -17,12 +17,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Applies `visit` to each parameter curve use of the pole uses of `loop_`.
 pub(super) fn visit_pole_uses(loop_: &mut Loop, mut visit: impl FnMut(&mut PcurveUse)) {
+    visit_pole_use_lists(loop_, |uses| uses.iter_mut().for_each(&mut visit));
+}
+
+/// Applies `visit` to the parameter curve uses of each pole use of `loop_`.
+pub(super) fn visit_pole_use_lists(loop_: &mut Loop, mut visit: impl FnMut(&mut Vec<PcurveUse>)) {
     match &mut loop_.boundary {
-        LoopBoundary::Vertex { pcurves, .. } => pcurves.iter_mut().for_each(visit),
+        LoopBoundary::Vertex { pcurves, .. } => visit(pcurves),
         LoopBoundary::Ring(ring) => {
             let mut vertex_uses = ring.vertex_uses().to_vec();
             for vertex_use in &mut vertex_uses {
-                vertex_use.pcurves.iter_mut().for_each(&mut visit);
+                visit(&mut vertex_use.pcurves);
             }
             if let Ok(replaced) = LoopRing::new(ring.coedges().to_vec(), vertex_uses) {
                 *ring = replaced;
@@ -32,7 +37,7 @@ pub(super) fn visit_pole_uses(loop_: &mut Loop, mut visit: impl FnMut(&mut Pcurv
 }
 
 /// `pcurve` over `range`, or none where its metadata states no range.
-fn over(pcurve: &Pcurve, id: PcurveId, range: FiniteVector<2>) -> Option<Pcurve> {
+pub(super) fn over(pcurve: &Pcurve, id: PcurveId, range: FiniteVector<2>) -> Option<Pcurve> {
     let PcurveMetadata::General { form } = &pcurve.metadata else {
         return None;
     };
@@ -144,7 +149,7 @@ pub(super) fn covered_pcurve_uses(ir: &CadIr) -> Cow<'_, CadIr> {
 }
 
 /// The parameter curves that a use or a curve-bounded surface references.
-fn referenced_pcurves(geometry: &Topology) -> BTreeSet<String> {
+pub(super) fn referenced_pcurves(geometry: &Topology) -> BTreeSet<String> {
     let uses = geometry
         .coedges
         .iter()
