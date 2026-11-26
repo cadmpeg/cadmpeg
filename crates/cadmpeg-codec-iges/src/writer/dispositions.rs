@@ -6,16 +6,20 @@
 //! it was decoded from, and [`Held`] maps each source sequence to the emitted
 //! entities that state it. A native entity is Regenerated when the map holds
 //! it and Dropped otherwise; every other native record follows the entity it
-//! belongs to.
+//! belongs to. The Directory display fields of a held entity are Regenerated
+//! when every emitted entity that states it writes them with the source
+//! values.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::native::{NativeNamespace, NativeRecord};
+use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
-use super::Entity;
+use super::{DirectoryColor, Entity, Presentation, Synthesis};
 use crate::entities::geometry::SourceObjectId;
 
 /// Native arenas whose records the semantic writer states from the neutral
@@ -23,8 +27,10 @@ use crate::entities::geometry::SourceObjectId;
 const REGENERATED_NATIVE_ARENAS: &[&str] = &[
     "boundary_vertex_sewing",
     "cards",
+    "colors",
     "copious_data",
     "directions",
+    "display_attributes",
     "entities",
     "manifold_solids",
     "product_properties",
@@ -36,6 +42,7 @@ const REGENERATED_NATIVE_ARENAS: &[&str] = &[
 /// `source_entity`.
 const ENTITY_VIEW_ARENAS: &[&str] = &[
     "boundary_vertex_sewing",
+    "colors",
     "copious_data",
     "directions",
     "manifold_solids",
@@ -46,26 +53,10 @@ const ENTITY_VIEW_ARENAS: &[&str] = &[
 
 /// Native arenas the semantic writer does not regenerate, with the reason the
 /// loss gives.
-const DROPPED_NATIVE_ARENAS: &[(&str, &str)] = &[
-    (
-        "display_attributes",
-        "which the bounded semantic writer does not regenerate",
-    ),
-    (
-        "product_occurrence_expansion",
-        "which the bounded semantic writer does not regenerate",
-    ),
-    (
-        "quarantined_directory_records",
-        "which the bounded semantic writer does not regenerate, because a record that failed \
-         typing has no fields to write",
-    ),
-    (
-        "quarantined_parameter_records",
-        "which the bounded semantic writer does not regenerate, because a record that failed \
-         typing has no fields to write",
-    ),
-];
+const DROPPED_NATIVE_ARENAS: &[(&str, &str)] = &[(
+    "product_occurrence_expansion",
+    "which the bounded semantic writer does not regenerate",
+)];
 
 const UNREFERENCED_DIRECTION: &str =
     "that are directions no written analytic surface references, which the semantic writer \
@@ -104,14 +95,65 @@ const NATIVE_TOPOLOGY: &str = "that are native topology, which has no neutral pr
 const WITHHELD_TOPOLOGY: &str = "whose neutral topology the semantic writer withholds";
 const OPEN_SHELL: &str = "that are shells the semantic writer writes as separate trimmed \
                           surfaces with no shell record";
+const JOINED_LOOP: &str = "that are loops of more than one edge of shells the semantic writer \
+                           writes as trimmed surfaces, whose boundaries state the edges of a \
+                           loop as one composite curve";
+const UNUSED_COLOR: &str =
+    "that are colour definitions no written body or face states with their colour and name";
+const COLOR_NUMBER: &str = "that are colour definitions whose Directory colour number the \
+                            semantic writer writes as 0";
+const DISPLAY_FIELDS: &str = "that are Directory line font, level, view, or line weight \
+                              fields the semantic writer writes with its own values";
+const DISPLAY_COLOR: &str =
+    "that are Directory colours the semantic writer does not write on the entity";
+const DISPLAY_VISIBILITY: &str =
+    "that are Directory blank statuses the semantic writer does not write on the entity";
 const SHEET_TOPOLOGY: &str = "that are vertex or edge lists of shells the semantic writer \
                               writes as trimmed surfaces, whose boundaries state no vertex or \
                               edge list";
 
+/// The colour and blank status the Directory entry of a written entity
+/// states, and the body and the face whose colour it states.
+pub(super) struct Presented {
+    color: Option<Color>,
+    visible: bool,
+    body: Option<BodyId>,
+    face: Option<FaceId>,
+}
+
+impl Presented {
+    pub(super) fn of(presentation: &Presentation) -> Self {
+        Self {
+            color: match presentation.color {
+                DirectoryColor::Standard(number) => {
+                    crate::entities::presentation::standard_color(number)
+                }
+                DirectoryColor::Custom(color) => Color::new(color.r(), color.g(), color.b(), 1.0),
+                DirectoryColor::Definition(_) => None,
+            },
+            visible: presentation.visible != Some(false),
+            body: presentation.body.clone(),
+            face: presentation.face.clone(),
+        }
+    }
+}
+
+/// The Directory sequence of the source Type 314 whose appearance is `id`.
+pub(super) fn color_definition_sequence(id: &str) -> Option<u32> {
+    let sequence = id.strip_prefix("iges:appearance:color#D")?.parse().ok()?;
+    (crate::ids::appearance_color(&crate::ids::Stem::directory(sequence)).as_str() == id)
+        .then_some(sequence)
+}
+
 /// What the semantic writer does with each native arena and record, from the
 /// entities it emitted. An arena this declares nothing for is dropped, and
 /// the export wrapper charges every dropped record.
-pub(super) fn native_dispositions(ir: &CadIr, entities: &[Entity]) -> NativeDispositions {
+pub(super) fn native_dispositions(
+    ir: &CadIr,
+    synthesis: &Synthesis,
+    version: crate::IgesVersion,
+) -> NativeDispositions {
+    let entities = synthesis.entities.as_slice();
     let mut native = NativeDispositions::dropped("which the semantic writer does not encode");
     let Some(namespace) = ir.native.namespace("iges") else {
         return native;
@@ -132,9 +174,11 @@ pub(super) fn native_dispositions(ir: &CadIr, entities: &[Entity]) -> NativeDisp
         };
         if !held.holds(sequence) {
             drops.insert(record.id().to_owned(), reasons.of(record, sequence));
+        } else if reasons.joins_edges(sequence, &sources) {
+            drops.insert(record.id().to_owned(), JOINED_LOOP);
         }
     }
-    for record in sources.unsequenced {
+    for record in &sources.unsequenced {
         drops.insert(record.id().to_owned(), WITHOUT_SEQUENCE);
     }
     let mut dropped = Vec::<(String, String)>::new();
@@ -157,6 +201,18 @@ pub(super) fn native_dispositions(ir: &CadIr, entities: &[Entity]) -> NativeDisp
             }
         }
     }
+    dropped.extend(color_number_drops(namespace, &drops));
+    dropped.extend(display_drops(
+        namespace,
+        &sources,
+        &held,
+        &drops,
+        &Written {
+            entities,
+            presented: &synthesis.presented,
+            version,
+        },
+    ));
     dropped.extend(card_drops(namespace, &drops));
     let mut by_reason = BTreeMap::<String, Vec<String>>::new();
     for (id, reason) in drops
@@ -252,6 +308,9 @@ impl<'a> Sources<'a> {
     fn resolve(&self, id: &str) -> Option<u32> {
         if let Some(sequence) = self.objects.get(id) {
             return Some(*sequence);
+        }
+        if let Some(sequence) = color_definition_sequence(id) {
+            return Some(sequence);
         }
         let id = model_id(id)?;
         if let Some(sequence) = self.objects.get(id.as_str()) {
@@ -429,8 +488,12 @@ impl Held {
                 .collect::<BTreeSet<_>>()
         };
         // A vertex or edge list is stated again only by a written list of its
-        // type: a trimmed surface boundary states its curves with no list.
+        // type: a trimmed surface boundary states its curves with no list. A
+        // written Type 406 states only the names of the entity it names.
         for (index, entity) in entities.iter().enumerate() {
+            if entity.type_code == 406 {
+                continue;
+            }
             for sequence in resolved(entity) {
                 let list = sources
                     .records
@@ -583,6 +646,18 @@ impl Reasons {
         }
     }
 
+    /// Whether the entity at `sequence` is a Type 508 loop of more than one
+    /// edge use that the writer writes as one trimmed surface boundary.
+    fn joins_edges(&self, sequence: u32, sources: &Sources<'_>) -> bool {
+        self.shells_as_sheets
+            && sources
+                .pointers
+                .get(&sequence)
+                .is_some_and(|(entity_type, parameters)| {
+                    *entity_type == 508 && integer(parameters, 1).is_some_and(|uses| uses > 1)
+                })
+    }
+
     fn of(&self, record: &NativeRecord, sequence: u32) -> &'static str {
         match entity_type(record) {
             Some(406) if is_name_form(record) => OMITTED_NAME,
@@ -613,6 +688,7 @@ impl Reasons {
             }
             Some(123) => UNREFERENCED_DIRECTION,
             Some(124) => UNUSED_TRANSFORMATION,
+            Some(314) => UNUSED_COLOR,
             Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198) => {
                 if self.surfaces.contains(&sequence) {
                     WITHHELD_SURFACE
@@ -634,6 +710,190 @@ impl Reasons {
             _ => UNENCODED_ENTITY,
         }
     }
+}
+
+/// The colour definitions of held Type 314 entities whose Directory colour
+/// number is not 0: the writer writes 0 there.
+fn color_number_drops(
+    namespace: &NativeNamespace,
+    drops: &BTreeMap<String, &'static str>,
+) -> Vec<(String, String)> {
+    namespace
+        .arenas()
+        .get("colors")
+        .into_iter()
+        .flatten()
+        .filter(|record| {
+            record
+                .field("source_entity")
+                .and_then(|value| value.as_str().map(|source| !drops.contains_key(source)))
+                .unwrap_or(false)
+                && record
+                    .field("fallback_color_number")
+                    .and_then(|value| value.as_i64())
+                    .is_some_and(|number| number != 0)
+        })
+        .map(|record| (record.id().to_owned(), COLOR_NUMBER.to_owned()))
+        .collect()
+}
+
+/// What the writer emitted, for the Directory display fields it writes.
+struct Written<'a> {
+    entities: &'a [Entity],
+    presented: &'a BTreeMap<usize, Presented>,
+    version: crate::IgesVersion,
+}
+
+/// The display fields the writer writes in a Directory entry.
+#[derive(PartialEq)]
+struct Display {
+    line_font: i64,
+    color: Option<Color>,
+    visible: bool,
+}
+
+impl Written<'_> {
+    /// The display fields of emitted entity `index`.
+    fn display(&self, index: usize) -> Option<Display> {
+        let entity = self.entities.get(index)?;
+        let presented = self.presented.get(&index);
+        Some(Display {
+            line_font: super::generated_line_font(self.version, entity.type_code, entity.form),
+            color: presented.and_then(|presented| presented.color),
+            visible: presented.is_none_or(|presented| presented.visible),
+        })
+    }
+}
+
+/// The display attribute records the writer does not write: each of an
+/// entity it drops, with the entity's reason, and each whose fields an
+/// emitted entity that states the entity writes with other values. A Type
+/// 124 is written as a transformation of its own with no colour, a visible
+/// status, and the line font of a Type 124.
+fn display_drops(
+    namespace: &NativeNamespace,
+    sources: &Sources<'_>,
+    held: &Held,
+    drops: &BTreeMap<String, &'static str>,
+    written: &Written<'_>,
+) -> Vec<(String, String)> {
+    let colors = namespace
+        .arenas()
+        .get("colors")
+        .into_iter()
+        .flatten()
+        .map(|record| (record.id(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut dropped = Vec::new();
+    for record in namespace
+        .arenas()
+        .get("display_attributes")
+        .into_iter()
+        .flatten()
+    {
+        let source = record.field("source_entity");
+        let source = source.as_ref().and_then(|value| value.as_str());
+        let holders = source
+            .filter(|source| !drops.contains_key(*source))
+            .and_then(entity_sequence)
+            .and_then(|sequence| Some((sequence, held.0.get(&sequence)?)));
+        let Some((sequence, holders)) = holders else {
+            let reason = source
+                .and_then(|source| drops.get(source).copied())
+                .unwrap_or(UNENCODED_ENTITY);
+            dropped.push((record.id().to_owned(), reason.to_owned()));
+            continue;
+        };
+        let source_type = sources
+            .records
+            .get(&sequence)
+            .and_then(|record| entity_type(record));
+        let stated = source_display(record, &colors);
+        // The entity that carries the body or face of a source entity states
+        // its display fields. The curves of its boundary state it with the
+        // display fields of a curve.
+        let presenting = holders
+            .iter()
+            .filter(|index| written.presented.contains_key(index))
+            .collect::<Vec<_>>();
+        let holders = if presenting.is_empty() {
+            holders.iter().collect()
+        } else {
+            presenting
+        };
+        let writes = |index: &usize| {
+            if source_type == Some(124) {
+                Some(Display {
+                    line_font: super::generated_line_font(written.version, 124, 0),
+                    color: None,
+                    visible: true,
+                })
+            } else {
+                written.display(*index)
+            }
+        };
+        let reason = match stated {
+            Some(stated) if !holders.is_empty() => holders.into_iter().find_map(|index| {
+                let display = writes(index)?;
+                if display.line_font != stated.line_font {
+                    Some(DISPLAY_FIELDS)
+                } else if display.color != stated.color {
+                    Some(DISPLAY_COLOR)
+                } else if display.visible != stated.visible {
+                    Some(DISPLAY_VISIBILITY)
+                } else {
+                    None
+                }
+            }),
+            _ => Some(DISPLAY_FIELDS),
+        };
+        if let Some(reason) = reason {
+            dropped.push((record.id().to_owned(), reason.to_owned()));
+        }
+    }
+    dropped
+}
+
+/// The display fields a source display attribute record states, when the
+/// writer can write each: a line font number, level 0, view 0, line weight
+/// 0, and a colour that is none, a standard colour, or a colour definition.
+fn source_display(
+    record: &NativeRecord,
+    colors: &BTreeMap<&str, &NativeRecord>,
+) -> Option<Display> {
+    let number = |field: &str| record.field(field).and_then(|value| value.as_i64());
+    if number("level_number") != Some(0)
+        || number("view") != Some(0)
+        || number("line_weight_number") != Some(0)
+    {
+        return None;
+    }
+    let line_font = number("line_font_number").filter(|number| *number >= 0)?;
+    let color = match number("color_number")? {
+        0 => None,
+        standard @ 1.. => Some(crate::entities::presentation::standard_color(standard)?),
+        _ => {
+            let definition = record.field("color_definition");
+            let definition = colors.get(definition.as_ref()?.as_str()?)?;
+            let percent = |field: &str| {
+                definition
+                    .field(field)
+                    .and_then(|value| value.as_f64())
+                    .map(|percent| percent / 100.0)
+            };
+            Some(Color::new(
+                percent("red_percent")?,
+                percent("green_percent")?,
+                percent("blue_percent")?,
+                1.0,
+            )?)
+        }
+    };
+    Some(Display {
+        line_font,
+        color,
+        visible: record.field("visible").and_then(|value| value.as_bool())?,
+    })
 }
 
 /// The physical cards the semantic writer does not write, each with its
@@ -863,5 +1123,6 @@ fn degenerate_native_line(record: &NativeRecord) -> bool {
     endpoints[0] == endpoints[3] && endpoints[1] == endpoints[4] && endpoints[2] == endpoints[5]
 }
 
+pub(super) mod appearances;
 #[cfg(test)]
 mod tests;

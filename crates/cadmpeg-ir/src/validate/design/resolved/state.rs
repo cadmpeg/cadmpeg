@@ -402,14 +402,16 @@ impl<'a> State<'a> {
         }
     }
 
-    /// The ids of the component of the changed records in the union of the
-    /// base's and this state's reference graphs: the records of the state it
-    /// holds, and the base's records that the state removes. Every other
-    /// record has the same record and the same neighbours in both states.
-    fn region(
+    /// The ids of the component of the changed records and of the ids of
+    /// `also` in the union of the base's and this state's reference graphs:
+    /// the records of the state it holds, and the base's records that the
+    /// state removes. Every other record has the same record and the same
+    /// neighbours in both states.
+    fn region<'i>(
         &self,
         ctx: &DecodeContext<'_>,
         applied: &Applied<'a>,
+        also: impl IntoIterator<Item = &'i str>,
     ) -> Result<BTreeSet<&'a str>, CodecError> {
         let node = |id: &str| match self.records.get_key_value(id) {
             Some((&id, _)) => Node::Record(id),
@@ -417,6 +419,7 @@ impl<'a> State<'a> {
         };
         let mut seen: HashSet<Node<'a>> = HashSet::new();
         let mut pending: Vec<Node<'a>> = applied.seeds.iter().map(|id| node(id)).collect();
+        pending.extend(also.into_iter().map(node));
         while let Some(at) = pending.pop() {
             if !seen.insert(at) {
                 continue;
@@ -465,7 +468,7 @@ impl<'a> State<'a> {
         ctx: &DecodeContext<'_>,
         applied: &Applied<'a>,
     ) -> Result<(Topology, Topology), CodecError> {
-        let region = self.region(ctx, applied)?;
+        let region = self.region(ctx, applied, [])?;
         let base = region.iter().filter_map(|id| match applied.base.get(id) {
             Some(located) => *located,
             None => self.records.get(id).copied(),
@@ -484,10 +487,26 @@ impl<'a> State<'a> {
                 None => base.remove(id),
             };
         }
-        (
-            topology(base.into_values()),
-            topology(self.records.values().copied()),
-        )
+        (topology(base.into_values()), self.topology())
+    }
+
+    /// The state's records of the region of the changed records and of the
+    /// ids of `also`, as a `Topology` with its records in id order.
+    pub(super) fn region_topology<'i>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        applied: &Applied<'a>,
+        also: impl IntoIterator<Item = &'i str>,
+    ) -> Result<Topology, CodecError> {
+        let region = self.region(ctx, applied, also)?;
+        Ok(topology(
+            region.iter().filter_map(|id| self.records.get(id).copied()),
+        ))
+    }
+
+    /// The state as a `Topology` with its records in id order.
+    pub(super) fn topology(&self) -> Topology {
+        topology(self.records.values().copied())
     }
 }
 
