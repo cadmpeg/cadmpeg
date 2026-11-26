@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
@@ -797,7 +798,7 @@ fn drawing_wire_rejects_non_page_views() {
         "views": ["a"], "template": null, "sources": [],
         "relationships": {}, "parameters": {}, "side_entries": []
     });
-    let error = cadmpeg_core::serde_erase::json::from_value::<crate::native::DrawingRecord>(wire)
+    let error = json::from_value::<crate::native::DrawingRecord>(wire)
         .expect_err("non-page payload must reject page views");
     assert!(error
         .to_string()

@@ -20,9 +20,15 @@
 //! did not read is a new body where nothing precedes it that can hold a body,
 //! and states no boolean after one.
 //!
-//! A partial or two-sided turn, whose sense the decoder does not read, stays
-//! `Unresolved`, and so does a revolution whose axis lies outside its
-//! sketch's plane (open item DI-85) or whose sketch holds no profile curve.
+//! A partial turn on one side is typed where its record stores the axis and
+//! the turn sense: it turns about the axis direction the record stores,
+//! reversed where the reverse byte is `1` (open item EV-25). Each revolve
+//! whose decoded axis carries that sense and whose solid depends on it, a
+//! partial turn on one side or a two-sided turn, is named with a warning,
+//! typed or not. A partial turn whose sense the decoder does not read, a
+//! two-sided turn, a revolution whose axis lies outside its sketch's plane
+//! (open item DI-85), and one whose sketch holds no profile curve stay
+//! `Unresolved`.
 
 use std::collections::HashMap;
 
@@ -84,6 +90,9 @@ pub(super) struct Revolves {
     /// The typed revolves whose sketch's closed regions the check did not
     /// compare with the stored profile, with their name and why.
     pub(super) unchecked: Vec<(FeatureId, Option<String>, Unchecked)>,
+    /// The revolves whose decoded axis carries the turn sense their record
+    /// stores and whose solid depends on it, with their name.
+    pub(super) sense_assumed: Vec<(FeatureId, Option<String>)>,
 }
 
 /// The line a revolve's axis picks, and how many of its sketch's lines lie
@@ -111,6 +120,10 @@ struct Notes {
 pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Revolves {
     let mut out = Revolves::default();
     swept::walk(features, OperationFamily::Revolve, |feature, before| {
+        if sense_applies(feature, context) {
+            out.sense_assumed
+                .push((feature.id.clone(), feature.name.clone()));
+        }
         let mut notes = Notes::default();
         match revolve(feature, context, before, &mut out.bound, &mut notes) {
             Ok(revolve) => {
@@ -193,8 +206,15 @@ fn revolve(
             .as_ref(),
         _ => return Err("the revolve's profile is no whole sketch"),
     };
+    let stored = source.source_properties.contains_key("AxisOrigin")
+        && source.source_properties.contains_key("AxisDirection");
+    let sensed = stored
+        && source
+            .source_properties
+            .contains_key(crate::records::TURN_SENSE_PROPERTY);
     let span = span(
         extent,
+        sensed,
         |angle| angle_dimension(&feature.id, context, angle),
         bound,
     )?;
@@ -215,8 +235,6 @@ fn revolve(
             .flat_map(|history| &history.features)
             .find(|record| record.id == native)
     });
-    let stored = source.source_properties.contains_key("AxisOrigin")
-        && source.source_properties.contains_key("AxisDirection");
     let (axis, line) = axis_construction(axis, sketch, context)?;
     if !stored && line.is_none() {
         return Err(
@@ -256,6 +274,38 @@ fn revolve(
     })
 }
 
+/// Whether the decoded axis of `feature` carries the turn sense its record
+/// stores, and its solid depends on that sense: a turn on one side other
+/// than a full turn, or a two-sided turn.
+fn sense_applies(feature: &Feature, context: &Context<'_>) -> bool {
+    let Some(source) = context
+        .model
+        .features
+        .iter()
+        .find(|candidate| candidate.id == feature.id)
+    else {
+        return false;
+    };
+    if !crate::records::REVOLUTION_AXIS_DERIVED_PROPERTIES
+        .iter()
+        .all(|key| source.source_properties.contains_key(*key))
+    {
+        return false;
+    }
+    let FeatureDefinition::Operation(v10::FeatureOperation::Revolve { construction, .. }) =
+        source.evaluation.definition()
+    else {
+        return false;
+    };
+    match construction.extent() {
+        Some(RevolveExtent::OneSided {
+            termination: AngularTermination::Angle { angle },
+        }) => (angle.get() - std::f64::consts::TAU).abs() > EPS_REVOLVE_ANGLE_RAD,
+        Some(RevolveExtent::OneSided { .. } | RevolveExtent::TwoSided { .. }) => true,
+        Some(RevolveExtent::Symmetric { .. }) | None => false,
+    }
+}
+
 /// The boolean of a revolution whose decoded operation is `op`: a cut cuts
 /// and a join joins, into a part that holds no body yet as a new body (§6).
 /// A revolution of a class that adds material (`adds`) whose operation the
@@ -275,9 +325,12 @@ fn boolean(op: DecodedOp, adds: bool, body_before: bool) -> Option<Boolean> {
 
 /// The span of `extent`, each angle bound to the dimension `dimension`
 /// gives for it. A full turn on one side and a mid-plane angle are the same
-/// solid in either sense of the axis; the others are not.
+/// solid in either sense of the axis; the others are not, and a partial turn
+/// on one side takes its sense from the record only where the record stores
+/// it (`sensed`).
 fn span(
     extent: &RevolveExtent,
+    sensed: bool,
     dimension: impl Fn(f64) -> Option<ParameterId>,
     bound: &mut HashMap<ParameterId, Quantity>,
 ) -> Result<Span<Angle>, &'static str> {
@@ -300,7 +353,7 @@ fn span(
     match extent {
         RevolveExtent::OneSided { termination } => {
             let (angle, amount) = amount(termination)?;
-            if (angle - std::f64::consts::TAU).abs() > EPS_REVOLVE_ANGLE_RAD {
+            if (angle - std::f64::consts::TAU).abs() > EPS_REVOLVE_ANGLE_RAD && !sensed {
                 return Err("the revolve turns less than a full turn on one side, and its sense is not read");
             }
             Ok(Span::Between {

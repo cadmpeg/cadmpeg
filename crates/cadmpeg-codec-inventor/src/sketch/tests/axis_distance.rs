@@ -9,11 +9,12 @@ use crate::sketch::{
     SKETCH_TYPE,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 /// The same record read as a distance dimension driven by parameter
 /// reference 5.
 fn as_distance(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(relation).expect("relation wire");
+    let mut wire = json::to_value(relation).expect("relation wire");
     wire["kind"] = serde_json::json!({
         "form": "distance",
         "first": wire["kind"]["first"].clone(),
@@ -22,7 +23,7 @@ fn as_distance(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
         "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     });
     wire["header"]["parameter"] = serde_json::json!({"index": 5, "qualified": true});
-    cadmpeg_core::serde_erase::json::from_value(wire).expect("distance wire")
+    json::from_value(wire).expect("distance wire")
 }
 
 /// Project a distance dimension between entities at ordinals 7 and 3,
@@ -46,7 +47,7 @@ fn distance_definition(axis: &[u32]) -> serde_json::Value {
         crate::sketch::project_constraint(&ctx, &distance, &entities, &parameters, &axis_lines)
             .expect("distance operands resolve")
             .expect("distance projection");
-    cadmpeg_core::serde_erase::json::to_value(projected.definition).expect("definition wire")
+    json::to_value(projected.definition).expect("definition wire")
 }
 
 #[test]
@@ -103,9 +104,7 @@ fn a_projected_distance_to_an_axis_line_is_counted_native() {
         let projected = project(&ctx, &inventory, &[parameter]).expect("sketch projection");
         assert_eq!(projected.constraints.len(), 1);
         assert_eq!(projected.native_axis_distances, native);
-        let definition =
-            cadmpeg_core::serde_erase::json::to_value(&projected.constraints[0].definition)
-                .expect("wire");
+        let definition = json::to_value(&projected.constraints[0].definition).expect("wire");
         assert_eq!(
             definition["kind"],
             if flagged { "native" } else { "distance_loci" }

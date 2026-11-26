@@ -24,12 +24,13 @@ pub(super) fn from_str<T: de::DeserializeOwned>(text: &str) -> Result<T, serde_j
     Ok(value)
 }
 
-/// Reads `value` as one value of `T`, every float zero as 0.
+/// Reads `value` as one value of `T`, every float zero as 0. A refusal
+/// carries no position: the text it would name is written here, not read.
 pub(super) fn from_value<T: de::DeserializeOwned>(
     value: &serde_json::Value,
 ) -> Result<T, serde_json::Error> {
     let text = serde_json::to_string(value)?;
-    from_str(&text)
+    from_str(&text).map_err(cadmpeg_core::serde_erase::without_position)
 }
 
 /// Rewrites every negative-zero JSON number token outside string literals to a

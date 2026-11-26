@@ -18,6 +18,7 @@ mod output;
 mod schema;
 mod schema_infer;
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -397,6 +398,7 @@ impl LossCodeProbe {
 #[cfg(test)]
 mod tests {
     use super::{push_decode_dialect_summary, DecodeReportProbe};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn summary_cells_keep_text_and_json_distinct_from_field_names() {
@@ -408,30 +410,29 @@ mod tests {
             ("ordinary_dialects", text),
             ("other_name", structured),
         ]);
-        let value = cadmpeg_core::serde_erase::json::to_value(&rows).unwrap();
+        let value = json::to_value(&rows).unwrap();
         assert_eq!(value["ordinary_dialects"], "not JSON");
         assert_eq!(value["other_name"], serde_json::json!({"a": 1}));
     }
 
     #[test]
     fn decode_summary_names_every_extra_dialect_layer() {
-        let decode: DecodeReportProbe =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "dialects": {
-                    "primary": {
-                        "dialect": "f3d:archive-2",
-                        "declared": {"manifest_version": "2"},
-                        "admission": {"kind": "admitted"}
-                    },
-                    "extra": [{
-                        "dialect": "acis:sab-22300",
-                        "declared": {"save_format": "22300"},
-                        "admission": {"kind": "unverified", "using": "sab-22200"},
-                        "instance": "member:model.sab"
-                    }]
-                }
-            }))
-            .unwrap();
+        let decode: DecodeReportProbe = json::from_value(serde_json::json!({
+            "dialects": {
+                "primary": {
+                    "dialect": "f3d:archive-2",
+                    "declared": {"manifest_version": "2"},
+                    "admission": {"kind": "admitted"}
+                },
+                "extra": [{
+                    "dialect": "acis:sab-22300",
+                    "declared": {"save_format": "22300"},
+                    "admission": {"kind": "unverified", "using": "sab-22200"},
+                    "instance": "member:model.sab"
+                }]
+            }
+        }))
+        .unwrap();
         let mut rows = Vec::new();
 
         push_decode_dialect_summary(&mut rows, &decode).unwrap();
@@ -661,14 +662,13 @@ enum ArtifactKind {
 /// The sniff skips every value it does not name, so a view that goes on to
 /// materialize the document pays for one body parse, not two.
 fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
-    let sniff: KindProbe =
-        cadmpeg_core::serde_erase::json::from_slice(bytes).with_context(|| {
-            format!(
-                "{} is not a JSON object; query reads a command report (--report/-o), \
+    let sniff: KindProbe = json::from_slice(bytes).with_context(|| {
+        format!(
+            "{} is not a JSON object; query reads a command report (--report/-o), \
              a decoded CADIR document, or a .fidelity.json decode sidecar",
-                path.display()
-            )
-        })?;
+            path.display()
+        )
+    })?;
     classify_kind(&sniff, path)
 }
 
@@ -702,17 +702,17 @@ fn classify_kind(sniff: &KindProbe, path: &Path) -> Result<ArtifactKind> {
 fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
     match sniff_kind(bytes, path)? {
         ArtifactKind::Report => {
-            let report: ReportProbe = cadmpeg_core::serde_erase::json::from_slice(bytes)
+            let report: ReportProbe = json::from_slice(bytes)
                 .with_context(|| format!("parsing the command report {}", path.display()))?;
             Ok(Artifact::Report(Box::new(report)))
         }
         ArtifactKind::Cadir => {
-            let cadir: CadirProbe = cadmpeg_core::serde_erase::json::from_slice(bytes)
+            let cadir: CadirProbe = json::from_slice(bytes)
                 .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
             Ok(Artifact::Cadir(cadir))
         }
         ArtifactKind::Sidecar => {
-            let sidecar: SidecarProbe = cadmpeg_core::serde_erase::json::from_slice(bytes)
+            let sidecar: SidecarProbe = json::from_slice(bytes)
                 .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
             Ok(Artifact::Sidecar(sidecar))
         }

@@ -184,6 +184,7 @@ mod tests {
     use super::hash_records;
     use crate::records::Configuration;
     use crate::records::FeatureHistory;
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     fn history(part_name: &str) -> FeatureHistory {
@@ -213,10 +214,8 @@ mod tests {
     #[test]
     fn a_record_digests_the_same_as_the_record_read_back_from_its_bytes() {
         let record = history("Bracket");
-        let bytes =
-            cadmpeg_core::serde_erase::json::to_vec(&record).expect("the record serializes");
-        let read_back: FeatureHistory =
-            cadmpeg_core::serde_erase::json::from_slice(&bytes).expect("the record reads back");
+        let bytes = json::to_vec(&record).expect("the record serializes");
+        let read_back: FeatureHistory = json::from_slice(&bytes).expect("the record reads back");
 
         assert_eq!(read_back, record);
         assert_eq!(

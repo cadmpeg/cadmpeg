@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::feature::path_features::DesignRevolveConstruction;
+use cadmpeg_core::serde_erase::json;
 
 const PREFIX: &str = r#"{"operation":"join","operation_offset":25"#;
 const OWNER: &str = r#""angle_record_index":95,"angle_offset":2040"#;
@@ -18,10 +19,7 @@ fn to_object_targets_preserve_their_wire() {
     ] {
         let wire = format!(r#"{PREFIX},{targets},{OWNER},"solid":true}}"#);
         let value = decode(&wire).expect("to-object revolve");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).expect("revolve wire"),
-            wire
-        );
+        assert_eq!(json::to_string(&value).expect("revolve wire"), wire);
     }
 }
 

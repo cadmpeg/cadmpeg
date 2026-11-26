@@ -5,7 +5,7 @@ use crate::design::feature::FeatureOperation;
 use crate::validate::design::fixture::{assert_finding, document};
 
 fn operation(value: &serde_json::Value) -> FeatureOperation {
-    serde_json::from_value(json!({"kind":"sheet_metal", "value":{
+    cadmpeg_core::serde_erase::json::from_value(json!({"kind":"sheet_metal", "value":{
         "kind":value,"native_options":{},"source_settings":{}
     }}))
     .unwrap()
@@ -110,24 +110,25 @@ fn attached_literals_require_positive_material_and_nonnegative_clearance() {
     for field in ["inside_radius", "transition_radius"] {
         let mut value = bend("test:design:feature#plate");
         value["value"][field]["value"] = json!(-1.0);
-        assert!(
-            serde_json::from_value::<crate::design::ops::sheet_metal::SheetMetalKind>(value)
-                .is_err()
-        );
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
+            crate::design::ops::sheet_metal::SheetMetalKind,
+        >(value)
+        .is_err());
     }
     for field in ["width", "depth", "minimum_remnant", "seam_gap"] {
         let mut value = bend("test:design:feature#plate");
         value["value"]["relief"][field]["value"] = json!(-1.0);
-        assert!(
-            serde_json::from_value::<crate::design::ops::sheet_metal::SheetMetalKind>(value)
-                .is_err()
-        );
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
+            crate::design::ops::sheet_metal::SheetMetalKind,
+        >(value)
+        .is_err());
     }
     let mut value = plate();
     value["value"]["thickness"]["value"] = json!(0.0);
-    assert!(
-        serde_json::from_value::<crate::design::ops::sheet_metal::SheetMetalKind>(value).is_err()
-    );
+    assert!(cadmpeg_core::serde_erase::json::from_value::<
+        crate::design::ops::sheet_metal::SheetMetalKind,
+    >(value)
+    .is_err());
 }
 
 #[test]
@@ -159,8 +160,10 @@ fn attached_wire_requires_every_operand() {
             let mut value = original.clone();
             value["value"].as_object_mut().unwrap().remove(&key);
             assert!(
-                serde_json::from_value::<crate::design::ops::sheet_metal::SheetMetalKind>(value)
-                    .is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<
+                    crate::design::ops::sheet_metal::SheetMetalKind,
+                >(value)
+                .is_err(),
                 "missing {key}"
             );
         }

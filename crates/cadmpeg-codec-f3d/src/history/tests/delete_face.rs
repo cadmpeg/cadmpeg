@@ -3,6 +3,7 @@ use crate::history::face_selections::bind_feature_face_selections;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureInputTopology};
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -66,7 +67,7 @@ fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandG
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": GROUP_ID,
         "byte_offset": 0,
         "class_tag": "261",

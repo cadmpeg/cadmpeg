@@ -1,4 +1,5 @@
 use super::{SheetMetalBendLinesConstruction, SheetMetalLineBend};
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 #[test]
@@ -14,42 +15,39 @@ fn edge_partial_extent_inputs_keep_each_known_member() {
             "height":{"kind":"to_object","value":{"target":{"kind":"native","value":"test:target"}}},
             "width":width
         }});
-        let value: FeatureOperation = cadmpeg_core::serde_erase::json::from_value(wire.clone())
-            .expect("independent extent inputs");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(value).expect("extent wire"),
-            wire
-        );
+        let value: FeatureOperation =
+            json::from_value(wire.clone()).expect("independent extent inputs");
+        assert_eq!(json::to_value(value).expect("extent wire"), wire);
     }
     for (field, ty) in [("width", 0), ("first", 1), ("second", 1)] {
         let value = json!({field: null});
         let error = if ty == 0 {
-            cadmpeg_core::serde_erase::json::from_value::<super::SheetMetalFlangeSymmetricWidth>(
+            json::from_value::<super::SheetMetalFlangeSymmetricWidth>(value)
+                .expect_err("null width")
+                .to_string()
+        } else {
+            json::from_value::<crate::features::sheet_metal_forms::SheetMetalFlangeTwoSidedWidth>(
                 value,
             )
-            .expect_err("null width")
-            .to_string()
-        } else {
-            cadmpeg_core::serde_erase::json::from_value::<
-                crate::features::sheet_metal_forms::SheetMetalFlangeTwoSidedWidth,
-            >(value)
             .expect_err("null distance")
             .to_string()
         };
         assert!(error.contains(field), "{error}");
     }
     for field in ["target", "offset"] {
-        assert!(cadmpeg_core::serde_erase::json::from_value::<
-            super::SheetMetalFlangeTargetConstruction,
-        >(json!({field:null}))
-        .expect_err("null height input")
-        .to_string()
-        .contains(field));
+        assert!(
+            json::from_value::<super::SheetMetalFlangeTargetConstruction>(json!({field:null}))
+                .expect_err("null height input")
+                .to_string()
+                .contains(field)
+        );
     }
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::features::sheet_metal_forms::SheetMetalFlangeWidth,
-    >(json!({"kind":"two_sides_per_edge","widths":[]}))
-    .is_err());
+    assert!(
+        json::from_value::<crate::features::sheet_metal_forms::SheetMetalFlangeWidth>(
+            json!({"kind":"two_sides_per_edge","widths":[]})
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -61,19 +59,13 @@ fn edge_complete_extent_laws_keep_their_existing_wire() {
         json!({"kind":"two_sides_per_edge","widths":[{"first":4.0,"second":2.0}]}),
     ] {
         let value: SheetMetalFlangeWidth =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("complete width law");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(value).expect("complete width wire"),
-            wire
-        );
+            json::from_value(wire.clone()).expect("complete width law");
+        assert_eq!(json::to_value(value).expect("complete width wire"), wire);
     }
     let wire = json!({"kind":"to_object","value":{"target":{"kind":"native","value":"test:plane"},"offset":-2.0}});
     let value: SheetMetalFlangeHeight =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("complete height law");
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(value).expect("complete height wire"),
-        wire
-    );
+        json::from_value(wire.clone()).expect("complete height law");
+    assert_eq!(json::to_value(value).expect("complete height wire"), wire);
 }
 
 #[test]
@@ -89,23 +81,15 @@ fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
         "width": {"kind": "full_edge"},
         "bend_radius": 0.5
     }});
-    let operation: FeatureOperation =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("complete edge wire");
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(operation).expect("edge wire"),
-        wire
-    );
+    let operation: FeatureOperation = json::from_value(wire.clone()).expect("complete edge wire");
+    assert_eq!(json::to_value(operation).expect("edge wire"), wire);
     let sparse = json!({"kind": "sheet_metal_edge_flange", "value": {}});
-    let operation: FeatureOperation =
-        cadmpeg_core::serde_erase::json::from_value(sparse.clone()).expect("sparse edge wire");
+    let operation: FeatureOperation = json::from_value(sparse.clone()).expect("sparse edge wire");
     assert_eq!(
         operation,
         FeatureOperation::SheetMetalEdgeFlange(SheetMetalEdgeFlangeConstruction::default())
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(operation).expect("sparse edge wire"),
-        sparse
-    );
+    assert_eq!(json::to_value(operation).expect("sparse edge wire"), sparse);
     for key in [
         "edges",
         "height",
@@ -117,17 +101,17 @@ fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
     ] {
         let mut invalid = wire.clone();
         invalid["value"][key] = serde_json::Value::Null;
-        let error = cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(invalid)
+        let error = json::from_value::<FeatureOperation>(invalid)
             .expect_err("null construction member")
             .to_string();
         assert!(error.contains(key), "{error}");
     }
     let mut unknown = wire.clone();
     unknown["value"]["extra"] = json!(true);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(unknown).is_err());
+    assert!(json::from_value::<FeatureOperation>(unknown).is_err());
     let mut zero_radius = wire;
     zero_radius["value"]["bend_radius"] = json!(0.0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(zero_radius).is_ok());
+    assert!(json::from_value::<FeatureOperation>(zero_radius).is_ok());
 }
 
 #[test]
@@ -139,45 +123,30 @@ fn edge_offset_rows_keep_signed_and_missing_members() {
         {"first": -5.0}
     ]});
     let width: SheetMetalFlangeWidth =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("signed source offsets");
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(width).expect("offset wire"),
-        wire
-    );
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<SheetMetalFlangeWidth>(
-            json!({"kind":"two_offsets_per_edge","offsets":[]})
-        )
-        .is_err()
-    );
+        json::from_value(wire.clone()).expect("signed source offsets");
+    assert_eq!(json::to_value(width).expect("offset wire"), wire);
+    assert!(json::from_value::<SheetMetalFlangeWidth>(
+        json!({"kind":"two_offsets_per_edge","offsets":[]})
+    )
+    .is_err());
     for key in ["first", "second", "first_reference", "second_reference"] {
         let mut invalid = json!({});
         invalid[key] = serde_json::Value::Null;
-        let error = cadmpeg_core::serde_erase::json::from_value::<SheetMetalFlangeOffset>(invalid)
+        let error = json::from_value::<SheetMetalFlangeOffset>(invalid)
             .expect_err("null offset member")
             .to_string();
         assert!(error.contains(key), "{error}");
     }
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<SheetMetalFlangeOffset>(
-            json!({"first_reference":""})
-        )
-        .is_err()
-    );
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<SheetMetalFlangeOffset>(json!({"extra": 1}))
-            .is_err()
-    );
+    assert!(json::from_value::<SheetMetalFlangeOffset>(json!({"first_reference":""})).is_err());
+    assert!(json::from_value::<SheetMetalFlangeOffset>(json!({"extra": 1})).is_err());
 }
 
 #[cfg(feature = "schema")]
 #[test]
 fn edge_construction_schema_admits_absence_and_excludes_null() {
     use super::SheetMetalEdgeFlangeConstruction;
-    let schema = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(
-        SheetMetalEdgeFlangeConstruction
-    ))
-    .expect("edge schema");
+    let schema = json::to_value(schemars::schema_for!(SheetMetalEdgeFlangeConstruction))
+        .expect("edge schema");
     assert!(schema.get("required").is_none());
     for key in [
         "edges",
@@ -194,15 +163,13 @@ fn edge_construction_schema_admits_absence_and_excludes_null() {
         );
     }
     for schema in [
-        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(
-            super::SheetMetalFlangeSymmetricWidth
-        ))
-        .expect("width schema"),
-        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(
+        json::to_value(schemars::schema_for!(super::SheetMetalFlangeSymmetricWidth))
+            .expect("width schema"),
+        json::to_value(schemars::schema_for!(
             crate::features::sheet_metal_forms::SheetMetalFlangeTwoSidedWidth
         ))
         .expect("side schema"),
-        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(
+        json::to_value(schemars::schema_for!(
             super::SheetMetalFlangeTargetConstruction
         ))
         .expect("target schema"),
@@ -268,15 +235,11 @@ fn edge_construction_rewrite_visits_optional_height_feature() {
 #[test]
 fn bend_construction_omits_absent_optional_inputs() {
     let value = json!({"bends": [{}]});
-    let construction: SheetMetalBendLinesConstruction =
-        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+    let construction: SheetMetalBendLinesConstruction = json::from_value(value.clone()).unwrap();
     assert_eq!(construction.bends, vec![SheetMetalLineBend::default()]);
     assert_eq!(construction.stationary, None);
     assert_eq!(construction.inside_radius, None);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(construction).unwrap(),
-        value
-    );
+    assert_eq!(json::to_value(construction).unwrap(), value);
 }
 
 #[test]
@@ -289,14 +252,10 @@ fn bend_construction_round_trips_present_inputs() {
         "stationary": {"kind": "native", "value": "test:stationary"},
         "inside_radius": 2.5
     });
-    let construction: SheetMetalBendLinesConstruction =
-        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+    let construction: SheetMetalBendLinesConstruction = json::from_value(value.clone()).unwrap();
     assert_eq!(construction.bends[0].angle.unwrap().get(), -0.75);
     assert_eq!(construction.inside_radius.unwrap().get(), 2.5);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(construction).unwrap(),
-        value
-    );
+    assert_eq!(json::to_value(construction).unwrap(), value);
 }
 
 #[test]
@@ -304,16 +263,15 @@ fn bend_optional_inputs_refuse_named_nulls() {
     for key in ["stationary", "inside_radius"] {
         let mut value = json!({"bends": []});
         value[key] = serde_json::Value::Null;
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<SheetMetalBendLinesConstruction>(value)
-                .unwrap_err()
-                .to_string();
+        let error = json::from_value::<SheetMetalBendLinesConstruction>(value)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains(key), "{error}");
     }
     for key in ["line", "angle"] {
         let mut value = json!({});
         value[key] = serde_json::Value::Null;
-        let error = cadmpeg_core::serde_erase::json::from_value::<SheetMetalLineBend>(value)
+        let error = json::from_value::<SheetMetalLineBend>(value)
             .unwrap_err()
             .to_string();
         assert!(error.contains(key), "{error}");
@@ -323,68 +281,45 @@ fn bend_optional_inputs_refuse_named_nulls() {
 #[test]
 fn fold_constructions_distinguish_absent_present_and_null_inputs() {
     use super::{SheetMetalRefoldConstruction, SheetMetalUnfoldConstruction};
-    let empty: SheetMetalUnfoldConstruction =
-        cadmpeg_core::serde_erase::json::from_value(json!({})).unwrap();
+    let empty: SheetMetalUnfoldConstruction = json::from_value(json!({})).unwrap();
     assert_eq!(empty, SheetMetalUnfoldConstruction::default());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(empty).unwrap(),
-        json!({})
-    );
+    assert_eq!(json::to_value(empty).unwrap(), json!({}));
     let value = json!({
         "stationary": {"kind": "native", "value": "test:stationary"},
         "bends": {"kind": "native", "value": "test:bends"},
         "all_bends": false,
         "neutral_factor": 1.0
     });
-    let construction: SheetMetalUnfoldConstruction =
-        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+    let construction: SheetMetalUnfoldConstruction = json::from_value(value.clone()).unwrap();
     assert_eq!(construction.all_bends, Some(false));
     assert_eq!(construction.neutral_factor.unwrap().get(), 1.0);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(construction).unwrap(),
-        value
-    );
+    assert_eq!(json::to_value(construction).unwrap(), value);
     for key in ["stationary", "bends", "all_bends", "neutral_factor"] {
         let mut value = json!({});
         value[key] = serde_json::Value::Null;
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<SheetMetalUnfoldConstruction>(value)
-                .unwrap_err()
-                .to_string();
+        let error = json::from_value::<SheetMetalUnfoldConstruction>(value)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains(key), "{error}");
     }
-    let empty: SheetMetalRefoldConstruction =
-        cadmpeg_core::serde_erase::json::from_value(json!({})).unwrap();
+    let empty: SheetMetalRefoldConstruction = json::from_value(json!({})).unwrap();
     assert_eq!(empty, SheetMetalRefoldConstruction::default());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(empty).unwrap(),
-        json!({})
-    );
+    assert_eq!(json::to_value(empty).unwrap(), json!({}));
     let value = json!({"unfold": "test:model:feature#unfold"});
-    let construction: SheetMetalRefoldConstruction =
-        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(construction).unwrap(),
-        value
-    );
-    let error = cadmpeg_core::serde_erase::json::from_value::<SheetMetalRefoldConstruction>(
-        json!({"unfold": null}),
-    )
-    .unwrap_err()
-    .to_string();
+    let construction: SheetMetalRefoldConstruction = json::from_value(value.clone()).unwrap();
+    assert_eq!(json::to_value(construction).unwrap(), value);
+    let error = json::from_value::<SheetMetalRefoldConstruction>(json!({"unfold": null}))
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("unfold"), "{error}");
 }
 
 #[test]
 fn contour_construction_roundtrips_signed_travel_and_rejects_named_nulls() {
     use super::SheetMetalContourFlangeConstruction;
-    let empty: SheetMetalContourFlangeConstruction =
-        cadmpeg_core::serde_erase::json::from_value(json!({})).unwrap();
+    let empty: SheetMetalContourFlangeConstruction = json::from_value(json!({})).unwrap();
     assert_eq!(empty, SheetMetalContourFlangeConstruction::default());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(empty).unwrap(),
-        json!({})
-    );
+    assert_eq!(json::to_value(empty).unwrap(), json!({}));
     let value = json!({
         "profile": {"kind": "native", "value": "test:profile"},
         "direction": {"x": 0.0, "y": -1.0, "z": 0.0},
@@ -395,11 +330,8 @@ fn contour_construction_roundtrips_signed_travel_and_rejects_named_nulls() {
         "neutral_factor": 0.44
     });
     let construction: SheetMetalContourFlangeConstruction =
-        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(construction).unwrap(),
-        value
-    );
+        json::from_value(value.clone()).unwrap();
+    assert_eq!(json::to_value(construction).unwrap(), value);
     for key in [
         "profile",
         "direction",
@@ -411,11 +343,9 @@ fn contour_construction_roundtrips_signed_travel_and_rejects_named_nulls() {
     ] {
         let mut invalid = value.clone();
         invalid[key] = serde_json::Value::Null;
-        let error = cadmpeg_core::serde_erase::json::from_value::<
-            SheetMetalContourFlangeConstruction,
-        >(invalid)
-        .unwrap_err()
-        .to_string();
+        let error = json::from_value::<SheetMetalContourFlangeConstruction>(invalid)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains(key), "{error}");
     }
 }
@@ -424,10 +354,8 @@ fn contour_construction_roundtrips_signed_travel_and_rejects_named_nulls() {
 #[test]
 fn contour_schema_declares_absence_and_rejects_explicit_nulls() {
     use super::SheetMetalContourFlangeConstruction;
-    let schema = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(
-        SheetMetalContourFlangeConstruction
-    ))
-    .unwrap();
+    let schema =
+        json::to_value(schemars::schema_for!(SheetMetalContourFlangeConstruction)).unwrap();
     let properties = schema["properties"].as_object().unwrap();
     assert!(schema.get("required").is_none());
     for name in [
@@ -446,12 +374,7 @@ fn contour_schema_declares_absence_and_rejects_explicit_nulls() {
         );
         let mut value = json!({});
         value[name] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<SheetMetalContourFlangeConstruction>(
-                value
-            )
-            .is_err()
-        );
+        assert!(json::from_value::<SheetMetalContourFlangeConstruction>(value).is_err());
     }
 }
 

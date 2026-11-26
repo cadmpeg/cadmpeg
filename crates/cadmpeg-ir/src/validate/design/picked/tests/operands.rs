@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::text::NonBlankString;
 
 use super::super::super::fixture::{self, id};
-use super::{body, bottom, current, edge, face, positive, ruled, sheet, with};
+use super::{body, bottom, current, edge, face, positive, ruled, sheet, turn_body, with};
 use crate::design::construction::{Construction, ConstructionKind};
 use crate::design::feature::FeatureOperation;
 use crate::design::ops::assembly::{AssemblyContext, ContextEffect};
@@ -364,4 +364,27 @@ fn a_break_corner_reads_the_sheet_of_its_state_configuration() {
         },
     );
     assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
+#[test]
+fn a_break_corner_edge_of_a_placed_body_is_no_shorter_than_the_sheet() {
+    let rule = "design.break-corner-edge-shorter-than-sheet";
+    let mut ir = fixture::document();
+    ir.design.features[1].definition.operation = sheet(SheetMetalKind::BreakCorner {
+        corners: input(current(vec![edge(&ir, 0)])),
+        size: positive(0.5),
+        shape: CornerBreak::Chamfer,
+    });
+    turn_body(&mut ir);
+    for (thickness, found) in [(0.1, 0), (100.0, 1)] {
+        with(&mut ir, |_| {
+            sheet(SheetMetalKind::Wall {
+                profile: current(Vec::new()),
+                thickness: Some(positive(thickness)),
+                side: None,
+                rule: None,
+            })
+        });
+        assert_eq!(ruled(&ir, rule).len(), found, "thickness {thickness}");
+    }
 }

@@ -3,6 +3,7 @@
 
 use super::CatiaConsolidatedDomainRelation;
 use crate::native::CatiaNative;
+use cadmpeg_core::serde_erase::json;
 
 fn stream() -> Vec<u8> {
     let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
@@ -26,7 +27,7 @@ fn native_class24_domain_relation_retains_exact_frame_and_wire() {
     let [relation] = native.consolidated_domain_relations.as_slice() else {
         panic!("one relation");
     };
-    let wire = cadmpeg_core::serde_erase::json::to_value(relation).expect("serialize relation");
+    let wire = json::to_value(relation).expect("serialize relation");
     assert_eq!(wire["class"], 0x24);
     assert_eq!(wire["data"]["kind"], "domain24");
     assert_eq!(wire["data"]["selector"], 0x0d87);
@@ -37,28 +38,15 @@ fn native_class24_domain_relation_retains_exact_frame_and_wire() {
         serde_json::json!(relation.definition.frame().payload)
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(
-            wire.clone()
-        )
-        .expect("load relation"),
+        json::from_value::<CatiaConsolidatedDomainRelation>(wire.clone()).expect("load relation"),
         *relation
     );
     let mut contradictory = wire.clone();
     contradictory["data"]["source"]["offset"] = serde_json::json!(1.0);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(
-            contradictory
-        )
-        .is_err()
-    );
+    assert!(json::from_value::<CatiaConsolidatedDomainRelation>(contradictory).is_err());
     let mut contradictory = wire;
     contradictory["data"]["selector"] = serde_json::json!(0x0587);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(
-            contradictory
-        )
-        .is_err()
-    );
+    assert!(json::from_value::<CatiaConsolidatedDomainRelation>(contradictory).is_err());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store domain relation");
     let mut owned_namespace = cadmpeg_ir::NativeNamespace::default();
@@ -108,18 +96,13 @@ fn native_class25_maps_round_trip_and_decline_conflicting_sample_pairs() {
         let [relation] = native.consolidated_domain_relations.as_slice() else {
             panic!("one map")
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(relation).expect("serialize map");
+        let wire = json::to_value(relation).expect("serialize map");
         assert_eq!(wire["class"], 0x25);
         assert_eq!(wire["data"]["kind"], "domain25");
         for flag in [0x13, 0x83] {
             let mut wrong_header = wire.clone();
             wrong_header["flag"] = serde_json::json!(flag);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(
-                    wrong_header
-                )
-                .is_err()
-            );
+            assert!(json::from_value::<CatiaConsolidatedDomainRelation>(wrong_header).is_err());
             let mut wrong_frame = bytes.clone();
             wrong_frame[1] = flag;
             assert!(CatiaNative::decode(&wrong_frame)
@@ -127,10 +110,8 @@ fn native_class25_maps_round_trip_and_decline_conflicting_sample_pairs() {
                 .is_empty());
         }
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(
-                wire.clone()
-            )
-            .expect("load complete map"),
+            json::from_value::<CatiaConsolidatedDomainRelation>(wire.clone())
+                .expect("load complete map"),
             *relation
         );
         let mut contradictory = wire;
@@ -139,12 +120,7 @@ fn native_class25_maps_round_trip_and_decline_conflicting_sample_pairs() {
         } else {
             contradictory["data"]["source"]["offset"] = serde_json::json!(1.0);
         }
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(
-                contradictory
-            )
-            .is_err()
-        );
+        assert!(json::from_value::<CatiaConsolidatedDomainRelation>(contradictory).is_err());
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         native.store(&mut namespace).expect("borrowed store");
         let mut owned = cadmpeg_ir::NativeNamespace::default();
@@ -190,28 +166,19 @@ fn class25_use_pair_keeps_source_frames_and_rejects_conflicting_wire() {
     let [relation] = native.consolidated_domain_relations.as_slice() else {
         panic!("one map");
     };
-    let wire = cadmpeg_core::serde_erase::json::to_value(relation).expect("serialize relation");
+    let wire = json::to_value(relation).expect("serialize relation");
     assert_eq!(wire["adjacent_uses"][0]["source_offset"], boundary);
     assert_eq!(wire["adjacent_uses"][1]["source_offset"], second_boundary);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(
-            wire.clone()
-        )
-        .expect("load"),
+        json::from_value::<CatiaConsolidatedDomainRelation>(wire.clone()).expect("load"),
         *relation
     );
     let mut wrong = wire.clone();
     wrong["adjacent_uses"][1]["source_offset"] = serde_json::json!(second_boundary + 1);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(wrong)
-            .is_err()
-    );
+    assert!(json::from_value::<CatiaConsolidatedDomainRelation>(wrong).is_err());
     let mut wrong = wire;
     wrong["adjacent_uses"][0]["frame"]["payload"] = serde_json::json!("8305082d01085a028a");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedDomainRelation>(wrong)
-            .is_err()
-    );
+    assert!(json::from_value::<CatiaConsolidatedDomainRelation>(wrong).is_err());
 
     let records = crate::wire::records::consolidated_records_in_ranges(
         &bytes,

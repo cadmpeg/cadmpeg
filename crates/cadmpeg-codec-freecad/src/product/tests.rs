@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-structure transfer unit tests.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::assembly;
 
 use crate::native;
@@ -873,22 +874,19 @@ fn link_group_retains_element_list_on_the_native_wire() {
     };
     assert_eq!(group.element_objects(), ["fcstd:native:object#Member"]);
     assert!(matches!(group.node, native::ProductNode::LinkGroup { .. }));
-    let wire = cadmpeg_core::serde_erase::json::to_value(group).expect("link group wire");
+    let wire = json::to_value(group).expect("link group wire");
     assert_eq!(wire["kind"], "link_group");
     assert_eq!(
         wire["element_objects"],
         serde_json::json!(["fcstd:native:object#Member"])
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<native::ProductNodeRecord>(wire.clone())
-            .unwrap(),
+        json::from_value::<native::ProductNodeRecord>(wire.clone()).unwrap(),
         *group
     );
     let mut invalid = wire;
     invalid["prototype"] = serde_json::json!("fcstd:native:object#Member");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<native::ProductNodeRecord>(invalid).is_err()
-    );
+    assert!(json::from_value::<native::ProductNodeRecord>(invalid).is_err());
 }
 
 #[test]
@@ -1674,10 +1672,9 @@ fn preserves_unknown_numeric_copy_on_change_index() {
         .arena_as::<native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
     assert_eq!(records[0].copy_on_change(), Some("99"));
-    let restored = cadmpeg_ir::CadIr::from_json(
-        &cadmpeg_core::serde_erase::json::to_string(result.ir()).expect("CADIR serialization"),
-    )
-    .expect("complete CADIR admission");
+    let restored =
+        cadmpeg_ir::CadIr::from_json(&json::to_string(result.ir()).expect("CADIR serialization"))
+            .expect("complete CADIR admission");
     let restored_records = restored
         .native
         .namespace("fcstd")

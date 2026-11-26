@@ -2,6 +2,7 @@
 use super::*;
 use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::identity::ReferenceRun;
+use cadmpeg_core::serde_erase::json;
 
 fn scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
@@ -57,9 +58,8 @@ fn intent_scope() -> DesignParameterScope {
 #[test]
 fn occurrence_transfer_wire_admits_valid_scope_and_rejects_inconsistent_fields() {
     let scope = scope();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-    let admitted: DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let wire = json::to_value(&scope).unwrap();
+    let admitted: DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(admitted.occurrence_transfer, scope.occurrence_transfer);
     for (field, value) in [
         ("target_transform_offset", serde_json::json!(1)),
@@ -73,13 +73,13 @@ fn occurrence_transfer_wire_admits_valid_scope_and_rejects_inconsistent_fields()
         let mut changed = wire.clone();
         changed["occurrence_transfer"][field] = value;
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err(),
+            json::from_value::<DesignParameterScope>(changed).is_err(),
             "{field}"
         );
     }
     let mut changed = wire;
     changed["occurrence_transfer"]["source"]["source_transform_offset"] = 1.into();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err());
+    assert!(json::from_value::<DesignParameterScope>(changed).is_err());
 }
 
 #[test]
@@ -111,9 +111,8 @@ fn occurrence_transfer_links_require_existing_owners_and_prior_records() {
 #[test]
 fn occurrence_transfer_intent_wire_keeps_unresolved_optionals_and_rejects_bad_indices() {
     let scope = intent_scope();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-    let admitted: DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let wire = json::to_value(&scope).unwrap();
+    let admitted: DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(
         admitted.occurrence_transfer_intent,
         scope.occurrence_transfer_intent
@@ -130,13 +129,13 @@ fn occurrence_transfer_intent_wire_keeps_unresolved_optionals_and_rejects_bad_in
         let mut changed = wire.clone();
         changed["occurrence_transfer_intent"][field] = value;
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err(),
+            json::from_value::<DesignParameterScope>(changed).is_err(),
             "{field}"
         );
     }
     let mut changed = wire.clone();
     changed["occurrence_transfer_intent"]["source_owner_component_record_index"] = 3.into();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err());
+    assert!(json::from_value::<DesignParameterScope>(changed).is_err());
 
     let mut changed = wire.clone();
     changed
@@ -145,7 +144,7 @@ fn occurrence_transfer_intent_wire_keeps_unresolved_optionals_and_rejects_bad_in
         .remove("occurrence_transfer");
     changed["kind"] = "CutPaste".into();
     changed["occurrence_transfer_intent"]["mode"] = "reparent".into();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err());
+    assert!(json::from_value::<DesignParameterScope>(changed).is_err());
 
     let mut unresolved = intent_scope();
     let intent = unresolved.occurrence_transfer_intent.as_mut().unwrap();
@@ -155,9 +154,6 @@ fn occurrence_transfer_intent_wire_keeps_unresolved_optionals_and_rejects_bad_in
     intent.target_owner_component_record_index = None;
     intent.source_transform = None;
     intent.target_transform = None;
-    let unresolved_wire = cadmpeg_core::serde_erase::json::to_value(unresolved).unwrap();
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(unresolved_wire)
-            .is_ok()
-    );
+    let unresolved_wire = json::to_value(unresolved).unwrap();
+    assert!(json::from_value::<DesignParameterScope>(unresolved_wire).is_ok());
 }

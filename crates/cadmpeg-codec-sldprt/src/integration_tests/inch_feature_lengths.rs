@@ -2,6 +2,7 @@
 //! Feature lengths of the NIST inch specimens: each is the stored metres
 //! value of its dimension, in millimetres.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
@@ -17,7 +18,7 @@ fn operation(ir: &CadIr, name: &str) -> Value {
         .iter()
         .find(|feature| feature.name.as_deref() == Some(name))
         .unwrap_or_else(|| panic!("missing feature {name}"));
-    let definition = cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition())
+    let definition = json::to_value(feature.evaluation.definition())
         .unwrap_or_else(|error| panic!("serialize {name}: {error}"));
     definition["value"]["value"].clone()
 }

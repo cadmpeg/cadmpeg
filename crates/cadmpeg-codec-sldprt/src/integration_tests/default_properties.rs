@@ -252,7 +252,7 @@ fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
     });
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap();
     crate::test_support::UnwrittenLosses::of(&plan.report().losses).assert_charged(

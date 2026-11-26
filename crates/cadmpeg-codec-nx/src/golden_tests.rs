@@ -6,6 +6,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_bytes::zlib_compress;
@@ -993,8 +994,8 @@ fn snapshot(bytes: &[u8]) -> String {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
-                "ir": cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir"),
-                "report": cadmpeg_core::serde_erase::json::to_value(result.report()).expect("serialize report"),
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
                 "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }
@@ -1002,9 +1003,7 @@ fn snapshot(bytes: &[u8]) -> String {
     };
     let inspect =
         match NxCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => {
-                cadmpeg_core::serde_erase::json::to_value(&summary).expect("serialize inspect")
-            }
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect"),
             Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
         };
     snapshot_text(&serde_json::json!({ "decode": decode, "inspect": inspect }))

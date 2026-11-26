@@ -17,23 +17,24 @@ fn scan_optional_fields_omit_absence_and_reject_null() {
         assert!(value.get(field).is_none(), "{field}");
         let mut invalid = value.clone();
         invalid[field] = serde_json::Value::Null;
-        let error =
-            serde_json::from_value::<DesignScan>(invalid).expect_err("optional null refusal");
+        let error = crate::serde_erase::json::from_value::<DesignScan>(invalid)
+            .expect_err("optional null refusal");
         assert!(error.to_string().contains(field), "{error}");
     }
     assert_eq!(
-        serde_json::from_value::<DesignScan>(value).expect("scan round trip"),
+        crate::serde_erase::json::from_value::<DesignScan>(value).expect("scan round trip"),
         scan
     );
     let census = FeatureCensus::default();
     let mut value = serde_json::to_value(&census).expect("census serialization");
     assert!(value.get("total").is_none());
     assert_eq!(
-        serde_json::from_value::<FeatureCensus>(value.clone()).expect("census round trip"),
+        crate::serde_erase::json::from_value::<FeatureCensus>(value.clone())
+            .expect("census round trip"),
         census
     );
     value["total"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<FeatureCensus>(value)
+    assert!(crate::serde_erase::json::from_value::<FeatureCensus>(value)
         .expect_err("total null refusal")
         .to_string()
         .contains("total"));
@@ -57,7 +58,8 @@ fn scan_payload_enums_use_adjacent_wire_forms() {
             expected
         );
         assert_eq!(
-            serde_json::from_value::<Readability>(expected).expect("readability round trip"),
+            crate::serde_erase::json::from_value::<Readability>(expected)
+                .expect("readability round trip"),
             value
         );
     }
@@ -81,7 +83,8 @@ fn scan_payload_enums_use_adjacent_wire_forms() {
             expected
         );
         assert_eq!(
-            serde_json::from_value::<StopReason>(expected).expect("stop reason round trip"),
+            crate::serde_erase::json::from_value::<StopReason>(expected)
+                .expect("stop reason round trip"),
             value
         );
     }
@@ -97,7 +100,7 @@ where
         tag
     );
     assert_eq!(
-        &serde_json::from_value::<T>(tag).expect("bare tag reads"),
+        &crate::serde_erase::json::from_value::<T>(tag).expect("bare tag reads"),
         expected
     );
     for payload in [serde_json::Value::Null, json!({}), json!([]), json!(true)] {

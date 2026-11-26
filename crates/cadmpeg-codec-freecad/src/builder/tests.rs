@@ -72,7 +72,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
 
     let mut encoded = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("write graph");
     let round_trip = FcstdCodec

@@ -2,6 +2,8 @@
 //! Shared synthetic IGES byte-fixture builders for crate tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
+
 pub(crate) mod test_cards;
 pub(crate) mod test_closed_cylinder;
 pub(crate) mod test_curves_and_surfaces;
@@ -165,9 +167,7 @@ pub(crate) fn with_policy_context<T>(
 
 /// Decodes the exact bytes of a native wire payload for byte assertions.
 pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
-    cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(
-        value.clone(),
-    )
-    .expect("native hexadecimal byte string")
-    .into_inner()
+    json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
+        .expect("native hexadecimal byte string")
+        .into_inner()
 }

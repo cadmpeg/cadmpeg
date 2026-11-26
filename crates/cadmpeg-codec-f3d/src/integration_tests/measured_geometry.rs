@@ -16,7 +16,7 @@ use crate::F3dCodec;
 fn round_tripped(ir: &CadIr) -> CadIr {
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less encode");
     F3dCodec
