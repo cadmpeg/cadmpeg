@@ -4221,7 +4221,8 @@ impl<'a> F3dDecodeSession<'a> {
                         sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
                         reference_images: self.native.design_canvas_images.len(),
-                        design_records: self.native.declared_record_count(),
+                        design_records: self.native.geometry_record_count(),
+                        xref_unparsed: xref.is_err(),
                         design_decoded: projected
                             && scan.entries.iter().any(|entry| {
                                 scan.is_design_stream(
@@ -5463,6 +5464,8 @@ pub(crate) struct DesignCarriers {
     /// A Design stream was read and design intent decoded, so
     /// `design_records` is a complete count.
     pub(crate) design_decoded: bool,
+    /// The XREF table failed to parse, so the document may hold components.
+    pub(crate) xref_unparsed: bool,
 }
 
 /// Classify the geometry transfer of a design from the carriers it stores.
@@ -5489,6 +5492,19 @@ pub(crate) fn apply_carrier_classification(
                 ),
             );
         } else {
+            // One rule for every path: the design is empty when its Design
+            // stream was read, no BREP entry can hold a body (or the model-body
+            // maps are explicitly empty), no mesh container went untransferred,
+            // the xref table parsed, and no Design record states geometry.
+            let bodies_resolved =
+                carriers.model_body_maps_explicitly_empty || carriers.brep_entries == 0;
+            let empty = carriers.design_decoded
+                && !carriers.xref_unparsed
+                && bodies_resolved
+                && carriers.design_records == 0
+                && carriers.sketch_entities == 0
+                && carriers.reference_images == 0
+                && untransferred_mesh_containers.is_none();
             apply_bodyless_design_classification(
                 report,
                 carriers.selected_brep_streams,
@@ -5496,21 +5512,14 @@ pub(crate) fn apply_carrier_classification(
                 carriers.declared_bodies,
                 carriers.sketch_entities,
                 carriers.reference_images,
-                (carriers.model_body_maps_explicitly_empty
-                    || (carriers.design_decoded
-                        && carriers.brep_entries == 0
-                        && carriers.design_records == 0))
-                    && untransferred_mesh_containers.is_none(),
+                empty,
             );
-            if !report.transfer.geometry_transferred()
-                && carriers.brep_entries == 0
-                && carriers.design_records > 0
-            {
+            if !report.transfer.geometry_transferred() && carriers.design_records > 0 {
                 push_loss_vec(
                     &mut report.losses,
                     F3dLossCode::DesignRecordsUntransferred,
                     format_args!(
-                        "the Design stream holds {} record(s) of parameters, features, sketches, components, or construction, and no geometry carrier transferred",
+                        "the Design stream holds {} record(s) of features, sketches, components, or construction that transferred no geometry",
                         carriers.design_records
                     ),
                 );
@@ -5549,8 +5558,8 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, brep_streams: usize, 
 ///
 /// The Design segment selects no BREP stream and declares zero bodies.
 /// Sketch entities can supply the complete geometry. Reference-image timeline
-/// objects are presentation content and require no geometry carrier. Empty
-/// modern model-body maps with none of these carriers make an empty design.
+/// objects are presentation content and require no geometry carrier. A design
+/// that is `empty` (the caller's rule) holds neither.
 fn apply_bodyless_design_classification(
     report: &mut DecodeBody,
     brep_streams: usize,
@@ -5558,13 +5567,13 @@ fn apply_bodyless_design_classification(
     declared_bodies: usize,
     sketch_entities: usize,
     reference_images: usize,
-    model_body_maps_explicitly_empty: bool,
+    empty: bool,
 ) {
-    let empty_design = sketch_entities == 0 && reference_images == 0;
+    let empty_design = empty;
     if brep_streams != 0
         || text_brep_streams != 0
         || declared_bodies != 0
-        || (empty_design && !model_body_maps_explicitly_empty)
+        || (!empty_design && sketch_entities == 0 && reference_images == 0)
     {
         return;
     }

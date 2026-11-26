@@ -1935,33 +1935,55 @@ pub(crate) struct F3dNative {
 }
 
 impl F3dNative {
-    /// Design records that declare content a design can hold without a BREP:
-    /// parameters and their scopes, feature timelines, sketch carriers,
-    /// component occurrences, mesh features, configurations, joints and
-    /// material assignments.
-    pub(crate) fn declared_record_count(&self) -> usize {
-        self.design_parameters.len()
-            + self.design_parameter_scopes.len()
-            + self.design_feature_timelines.len()
+    /// Design records that state intended geometry: feature timeline items,
+    /// framed records of no typed kind, sketch
+    /// and construction carriers, component occurrences, mesh features,
+    /// joints, selections, operands and dimension geometry. Parameters, their
+    /// scopes and owners, material assignments, configurations and image
+    /// carriers state no geometry and do not count.
+    pub(crate) fn geometry_record_count(&self) -> usize {
+        self.design_feature_timelines
+            .iter()
+            .map(|timeline| timeline.frame().items().len())
+            .sum::<usize>()
+            + self.design_record_headers.len()
             + self.design_sketch_placements.len()
             + self.design_placement_constructions.len()
-            + self.design_component_occurrences.len()
-            + self.design_component_paths.len()
-            + self.design_mesh_features.len()
-            + self.design_configurations.len()
-            + self.design_joint_motions.len()
-            + self.design_material_assignments.len()
-            + self.design_decal_images.len()
-            + self.design_surface_trim_operations.len()
-            + self.design_sheet_metal_settings.len()
-            + self.construction_recipes.len()
-            + self.persistent_references.len()
             + self.sketch_points.len()
-            + self.sketch_relations.len()
             + self.sketch_curve_identities.len()
             + self.sketch_surfaces.len()
             + self.sketch_geometry_groups.len()
             + self.sketch_texts.len()
+            + self.sketch_relations.len()
+            + self.design_component_occurrences.len()
+            + self.design_component_paths.len()
+            + self.design_mesh_features.len()
+            + self.design_joint_motions.len()
+            + self.design_surface_trim_operations.len()
+            + self.design_sheet_metal_settings.len()
+            + self.construction_recipes.len()
+            + self.persistent_references.len()
+            + self.design_body_bounds.len()
+            + self.design_body_recipe_operands.len()
+            + self.design_loft_legacy_body_carriers.len()
+            + self.design_edge_operands.len()
+            + self.design_edge_treatment_vertex_operands.len()
+            + self.design_edge_identity_operands.len()
+            + self.design_face_operands.len()
+            + self.design_face_source_groups.len()
+            + self.design_profile_curve_selections.len()
+            + self.design_construction_operand_groups.len()
+            + self.design_construction_operand_identities.len()
+            + self.design_extrude_selection_groups.len()
+            + self.design_extrude_selection_members.len()
+            + self.design_entity_selection_operands.len()
+            + self.design_fillet_radius_groups.len()
+            + self.design_dimension_annotation_frames.len()
+            + self.design_dimension_presentation_frames.len()
+            + self.design_dimension_locus_pairs.len()
+            + self.design_dimension_locus_groups.len()
+            + self.design_dimension_null_locus_pairs.len()
+            + self.design_dimension_recipe_records.len()
     }
 
     pub(crate) fn load(

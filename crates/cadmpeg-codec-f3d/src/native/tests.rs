@@ -1712,3 +1712,15 @@ fn canonical_asm_change_and_history_record_fast_paths_match_serde() {
         assert_eq!(&parsed, record);
     }
 }
+
+/// Geometry-stating Design records count toward the design's content; an empty
+/// native store, and parameters, state none.
+#[test]
+fn geometry_record_count_counts_geometry_records_only() {
+    let mut native = crate::native::F3dNative::default();
+    assert_eq!(native.geometry_record_count(), 0);
+    native
+        .sketch_texts
+        .push(crate::test_support::sketch_text::neutral_text_record());
+    assert_eq!(native.geometry_record_count(), 1);
+}
