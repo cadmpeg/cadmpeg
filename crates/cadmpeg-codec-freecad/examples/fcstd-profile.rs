@@ -1659,8 +1659,7 @@ mod tests {
 
     #[test]
     fn appearance_gate_checks_owner_and_override_precedence() {
-        let bytes =
-            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/gui_appearance.FCStd");
+        let bytes = include_bytes!("../../../corpus/freecad_fcstd/fixtures/gui_appearance.FCStd");
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode appearance fixture");
@@ -1669,7 +1668,7 @@ mod tests {
         let uniform = FcstdCodec
             .decode(
                 &mut Cursor::new(include_bytes!(
-                    "../../../../corpus/freecad_fcstd/fixtures/uniform_appearance.FCStd"
+                    "../../../corpus/freecad_fcstd/fixtures/uniform_appearance.FCStd"
                 )),
                 &DecodeOptions::default(),
             )
@@ -1694,8 +1693,7 @@ mod tests {
 
     #[test]
     fn design_gate_checks_census_and_a_real_operation_parameter_edit() {
-        let bytes =
-            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd");
+        let bytes = include_bytes!("../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd");
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode design fixture");
@@ -1723,7 +1721,7 @@ mod tests {
         let decoded = FcstdCodec
             .decode(
                 &mut Cursor::new(include_bytes!(
-                    "../../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+                    "../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
                 )),
                 &DecodeOptions::default(),
             )
@@ -1811,7 +1809,7 @@ mod tests {
     #[test]
     fn semantic_fingerprint_ignores_repacking_but_retains_property_edits() {
         let bytes =
-            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd");
+            include_bytes!("../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd");
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode fixture");

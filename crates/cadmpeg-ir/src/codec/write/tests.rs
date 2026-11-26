@@ -7,7 +7,8 @@ use cadmpeg_core::serde_erase::json;
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
     ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeError,
-    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    EncodeInput, Encoder, EncoderBackend, ExportBody, NativeDispositions, PatchConsumption,
+    WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
@@ -47,7 +48,8 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
 }
 
 /// The CADIR writer drops a record nested past the document bound and
-/// removes the stub link that names it; the record at the bound stays.
+/// removes the stub link that names it; the record at the bound stays. The
+/// dropped native record is charged only as an omitted native record.
 #[test]
 fn cadir_encoder_drops_a_record_past_the_document_bound() {
     const WITHIN: &str = "test:native:within#1";
@@ -82,20 +84,22 @@ fn cadir_encoder_drops_a_record_past_the_document_bound() {
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .expect("a record past the bound does not refuse the write");
-    let unwritable = plan
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.local_code() == "value.unwritable")
-        .collect::<Vec<_>>();
-    let [loss] = unwritable.as_slice() else {
-        panic!("one loss for the one record: {unwritable:?}");
+    let messages = |code: &str| {
+        plan.report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == code)
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>()
     };
-    assert!(
-        loss.message.contains(PAST) && loss.message.contains("native.test.deep"),
-        "{}",
-        loss.message
+    assert_eq!(
+        messages("native.records-omitted"),
+        [format!(
+            "the CADIR write omits 1 native record(s) of `test` arena `deep` which {}: {PAST}",
+            crate::bounds::Bound::Document.describe()
+        )]
     );
+    assert_eq!(messages("value.unwritable"), Vec::<&str>::new());
     let mut encoded = Vec::new();
     plan.write_to(&mut encoded).unwrap();
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
@@ -387,6 +391,7 @@ struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
@@ -398,6 +403,7 @@ impl EncoderBackend for NeutralEncoder {
             Vec::new(),
             input.ir,
             ArenaCoverage::Complete,
+            NativeDispositions::written(),
         ))
     }
 }
@@ -446,6 +452,7 @@ struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
     const FORMAT: FormatId = FormatId::new("test");
+    const NAME: &'static str = "test";
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
@@ -455,7 +462,12 @@ impl EncoderBackend for CatalogEncoder {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        let mut body = ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        );
         body.notes
             .push(format!("resolved {}", target.target_id().as_str()));
         body.write_path = WritePath::Synthesized {
@@ -690,12 +702,18 @@ struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            self.0,
+            NativeDispositions::written(),
+        ))
     }
 }
 
@@ -1052,12 +1070,18 @@ struct F3dCoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for F3dCoverageEncoder {
     const FORMAT: FormatId = FormatId::new("f3d");
+    const NAME: &'static str = "F3D";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            self.0,
+            NativeDispositions::written(),
+        ))
     }
 }
 
@@ -1268,12 +1292,18 @@ struct LossyEncoder(Vec<crate::report::loss::LossNote>);
 
 impl EncoderBackend for LossyEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        let mut body = ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        );
         body.losses.clone_from(&self.0);
         Ok(body)
     }
