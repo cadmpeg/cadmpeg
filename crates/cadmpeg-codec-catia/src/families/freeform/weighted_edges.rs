@@ -48,15 +48,12 @@ struct Plan {
     plane_pcurve: Option<(usize, PcurveGeometry, ParameterInterval, usize)>,
     plane_fit_tolerance: Option<FitTolerance>,
     plane_projection_gap: Option<f64>,
-    vertex_misses: [(usize, f64); 2],
 }
 
 #[derive(Default)]
 pub(in crate::families) struct AttachResult {
     pub(in crate::families) edges: usize,
     pub(in crate::families) pcurves: usize,
-    pub(in crate::families) widened_vertices: usize,
-    pub(in crate::families) max_vertex_widening: f64,
 }
 
 fn rounds_to_stored(exact: cadmpeg_ir::math::Point3, stored: cadmpeg_ir::math::Point3) -> bool {
@@ -848,7 +845,7 @@ pub(in crate::families) fn attach(
                 }
                 break;
             }
-            let mut endpoint_misses = Vec::new();
+            let mut matched_ends = 0;
             for (parameter, vertex_id, stored) in [
                 (
                     curve_range.endpoints()[0],
@@ -879,11 +876,11 @@ pub(in crate::families) fn attach(
                 if miss > existing && !rounds_to_stored(point, stored) {
                     break;
                 }
-                endpoint_misses.push((vertex_index, miss));
+                matched_ends += 1;
             }
-            let Ok(vertex_misses) = <[(usize, f64); 2]>::try_from(endpoint_misses) else {
+            if matched_ends != 2 {
                 continue;
-            };
+            }
             plan = Some(Plan {
                 edge: edge_index,
                 curve: curve_index,
@@ -898,7 +895,6 @@ pub(in crate::families) fn attach(
                 plane_pcurve,
                 plane_fit_tolerance,
                 plane_projection_gap,
-                vertex_misses,
             });
         }
         if let Some(plan) = plan {
@@ -910,14 +906,7 @@ pub(in crate::families) fn attach(
         .iter()
         .map(|plan| plan.face_pcurves.len() + usize::from(plan.plane_pcurve.is_some()))
         .sum();
-    let mut vertex_misses = HashMap::<usize, f64>::new();
     for plan in plans {
-        for (vertex, miss) in plan.vertex_misses {
-            vertex_misses
-                .entry(vertex)
-                .and_modify(|old| *old = old.max(miss))
-                .or_insert(miss);
-        }
         let curve = &mut ir.geometry.curves[plan.curve];
         let CurveGeometry::Procedural { cache, .. } = &mut curve.geometry else {
             continue;
@@ -1022,29 +1011,9 @@ pub(in crate::families) fn attach(
             annotations.derived(&ir.geometry.coedges[coedge_index].id, "pcurves")?;
         }
     }
-    let mut widened_vertices = 0;
-    let mut max_vertex_widening = 0.0_f64;
-    for (index, miss) in vertex_misses {
-        let vertex = &mut ir.geometry.vertices[index];
-        let previous = vertex
-            .tolerance
-            .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
-        if miss <= previous.max(ir.tolerances.linear.get()) {
-            continue;
-        }
-        let Some(tolerance) = cadmpeg_ir::scalar::PositiveLength::new(miss.next_up()) else {
-            continue;
-        };
-        vertex.tolerance = Some(tolerance);
-        annotations.derived(&vertex.id, "tolerance")?;
-        widened_vertices += 1;
-        max_vertex_widening = max_vertex_widening.max(tolerance.get() - previous);
-    }
     Ok(AttachResult {
         edges: count,
         pcurves: pcurve_count,
-        widened_vertices,
-        max_vertex_widening,
     })
 }
 
