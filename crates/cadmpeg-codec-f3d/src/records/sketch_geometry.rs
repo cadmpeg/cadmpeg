@@ -1378,7 +1378,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 persistent_id,
                 flags: seven_flags(flags)?,
                 closure: SketchPointClosure10Inline::from_closure(closure).ok_or_else(|| {
-                    "sketch point version-10 inline closure must be (0,0), (0,1), or (2,1)"
+                    "sketch point version-10 inline closure must be (0,0), (0,1), (1,0), (2,1), or (4,0)"
                         .to_string()
                 })?,
             },
@@ -2552,6 +2552,29 @@ mod tests {
             });
             let error = json::from_value::<SketchPoint>(version_ten).unwrap_err();
             assert!(error.to_string().contains("version-10"));
+        }
+    }
+
+    #[test]
+    fn version_ten_inline_point_closure_admits_its_five_pairs() {
+        let form = json!({"kind": "version10_inline_typed", "trailing_reference": 17});
+        for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0)] {
+            let mut wire = native_point_wire(&form);
+            wire["closure"] = json!({"selector": selector, "state": state});
+            let point: SketchPoint = serde_json::from_value(wire).unwrap();
+            let serialized = serde_json::to_value(&point).unwrap();
+            assert_eq!(
+                serialized["closure"],
+                json!({"selector": selector, "state": state})
+            );
+            let restored: SketchPoint = serde_json::from_value(serialized).unwrap();
+            assert_eq!(restored, point);
+        }
+        for (selector, state) in [(1, 1), (4, 1)] {
+            let mut wire = native_point_wire(&form);
+            wire["closure"] = json!({"selector": selector, "state": state});
+            let error = serde_json::from_value::<SketchPoint>(wire).unwrap_err();
+            assert!(error.to_string().contains("version-10 inline closure"));
         }
     }
 
