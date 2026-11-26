@@ -92,7 +92,14 @@ fn findings(ir: &CadIr) -> Vec<Finding> {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let index = crate::index::ModelIndex::build(ir);
     let mut findings = Vec::new();
-    super::check_history_bodies(&ctx, ir, &index, &mut findings).expect("validation runs");
+    super::check_history_bodies(
+        &ctx,
+        ir,
+        &index,
+        super::super::ALL_NEST_RULES,
+        &mut findings,
+    )
+    .expect("validation runs");
     findings
 }
 
@@ -158,12 +165,9 @@ fn a_nest_is_checked_at_its_documents_tolerances() {
     assert_eq!(gaps(loose), 0);
 }
 
-#[test]
-fn a_nest_pcurve_miss_is_reported_and_gives_up_no_history_body() {
-    // The line v = 5 on a face of the unit cube maps away from its edge.
-    let mut ir = crate::examples::unit_cube().expect("cube");
-    crate::examples::add_document_root(&mut ir);
-    ir.model.features.push(feature("test:model:feature#base"));
+/// The cube nest with a pcurve on the line v = 5 on a face of the unit cube,
+/// which maps away from its edge.
+fn off_face_pcurve_nest() -> BodyTopology {
     let mut nest = cube_nest();
     let pcurve = PcurveId::mint("test:model:pcurve#off-face").expect("identity");
     nest.pcurves.push(Pcurve {
@@ -179,12 +183,23 @@ fn a_nest_pcurve_miss_is_reported_and_gives_up_no_history_body() {
         isoparametric: None,
         parameter_range: None,
     });
-    let mut body = history_body("0", scoped(nest));
+    scoped(nest)
+}
+
+const PCURVE_MISS: &str = "geometry_consistency.pcurve-mapped-through-face-surface-misses";
+
+#[test]
+fn a_nest_pcurve_miss_is_reported_and_gives_up_no_history_body() {
+    let mut ir = crate::examples::unit_cube().expect("cube");
+    crate::examples::add_document_root(&mut ir);
+    ir.model.features.push(feature("test:model:feature#base"));
+    let mut body = history_body("0", off_face_pcurve_nest());
     body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
     ir.model.history_bodies.push(body);
     assert!(
-        findings(&ir).iter().any(|finding| finding.rule.as_str()
-            == "geometry_consistency.pcurve-mapped-through-face-surface-misses"),
+        findings(&ir)
+            .iter()
+            .any(|finding| finding.rule.as_str() == PCURVE_MISS),
         "{:?}",
         findings(&ir)
     );
@@ -196,6 +211,64 @@ fn a_nest_pcurve_miss_is_reported_and_gives_up_no_history_body() {
     };
     assert!(admitted(crate::HISTORY_BODY_ADMISSION));
     assert!(!admitted(crate::DRAFT_CORE));
+}
+
+/// The findings on `nest` of the admission rules, of the identity,
+/// reference, typed reference, coedge pairing, shell connectivity, wire
+/// topology, edge end, and topology tolerance checks run one by one, and of
+/// every topology rule.
+fn nest_findings(nest: &BodyTopology) -> [Vec<Finding>; 3] {
+    use super::super::topology::nested::{check, NestRules};
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let document = CadIr::empty();
+    let file_keys = std::collections::BTreeSet::new();
+    let topology = nest.to_topology();
+    let run = |rules| {
+        check(
+            &ctx,
+            crate::native::view::NativeView::new(&document, None),
+            topology.clone(),
+            Some(&file_keys),
+            rules,
+        )
+        .expect("validation runs")
+    };
+    let mut alone = CadIr::empty();
+    alone.geometry = topology.clone();
+    let index = crate::index::ModelIndex::build(&alone);
+    let mut checks = Vec::new();
+    super::super::check_identity_and_order(&index, &file_keys, &mut checks).unwrap();
+    super::super::check_references(&ctx, &alone, &index, &mut checks).unwrap();
+    super::super::check_typed_references(&ctx, &alone, &index, &mut checks).unwrap();
+    super::super::check_coedge_pairing(&alone, &mut checks).unwrap();
+    super::super::check_shell_connectivity(&alone, &mut checks);
+    super::super::check_wire_topology(&alone, &mut checks);
+    super::super::check_edge_endpoint_consistency(&ctx, &alone, &mut checks).unwrap();
+    super::super::check_topology_tolerances(&alone, &mut checks);
+    [
+        run(NestRules::Admission),
+        checks,
+        run(NestRules::All { caches: true }),
+    ]
+}
+
+#[test]
+fn a_history_body_admission_runs_the_closure_and_admission_checks_on_its_nest() {
+    let [admission, checks, all] = nest_findings(&off_face_pcurve_nest());
+    assert_eq!(admission, checks);
+    assert!(all
+        .iter()
+        .any(|finding| finding.rule.as_str() == PCURVE_MISS));
+    assert!(!admission
+        .iter()
+        .any(|finding| finding.rule.as_str() == PCURVE_MISS));
+
+    let mut leaving = scoped(cube_nest());
+    leaving.surfaces.remove(0);
+    let [admission, checks, all] = nest_findings(&leaving);
+    assert_eq!(admission, checks);
+    assert!(!errors(&admission).is_empty(), "{admission:?}");
+    assert!(admission.iter().all(|finding| all.contains(finding)));
 }
 
 #[test]

@@ -69,7 +69,13 @@ impl<'a, 'c, 'd> StateRules<'a, 'c, 'd> {
         if let Some(checked) = key.and_then(|key| self.checked.get(&(key, caches))) {
             return Ok(Rc::clone(checked));
         }
-        let findings = nested::check(self.ctx, self.document, state.topology(), None, caches)?;
+        let findings = nested::check(
+            self.ctx,
+            self.document,
+            state.topology(),
+            None,
+            nested::NestRules::All { caches },
+        )?;
         let breaches = findings
             .iter()
             .map(|finding| format!("{finding:?}"))

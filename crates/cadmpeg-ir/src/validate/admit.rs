@@ -9,6 +9,7 @@
 
 pub(crate) mod incremental;
 
+use super::topology::nested::NestRules;
 use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::report::{
@@ -19,19 +20,26 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 /// A decoder admission route: the rules whose Error findings refuse a
-/// candidate, and whether the route validates annotations.
+/// candidate, whether the route validates annotations, and the rules it runs
+/// on each history body's nest.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Admission {
     rules: &'static [RuleName],
     annotations: bool,
+    nests: NestRules,
 }
 
 impl Admission {
     /// A route that admits a candidate unless it breaks one of `rules`, and
-    /// validates annotations where `annotations` holds.
+    /// validates annotations where `annotations` holds. It runs every
+    /// topology rule on each history body's nest.
     #[must_use]
     pub const fn new(rules: &'static [RuleName], annotations: bool) -> Self {
-        Self { rules, annotations }
+        Self {
+            rules,
+            annotations,
+            nests: super::ALL_NEST_RULES,
+        }
     }
 
     /// Whether `finding` counts toward this route: its rule is listed, and
@@ -306,135 +314,15 @@ pub const RHINO_INSTANCE: &Admission = DRAFT_CORE;
 /// [`admit_with_additional_native_identities`].
 pub const CATIA_ADMISSION: &Admission = DRAFT_CORE;
 
-/// History-body admission: the rules whose Error findings give up a history
-/// body. They are its links to its features and to the identities of other
-/// records, and the nest rules of identities, references, typed references,
-/// coedge pairing, shell connectivity, wire topology, edge ends, and topology
-/// tolerances. The other topology rules report on a nest and give up no body.
-/// `scripts/test_admission_routes.py` holds this list to those checks.
-pub const HISTORY_BODY_ADMISSION: &Admission = &Admission::new(HISTORY_BODY_RULES, false);
-
-const HISTORY_BODY_RULES: &[RuleName] = &[
-    crate::rule_name!("geometry_consistency.coedge-use-curve-endpoints-miss-traversal"),
-    crate::rule_name!("geometry_consistency.edge-curve-endpoints-miss-edge-vertex"),
-    crate::rule_name!("geometry_consistency.edge-no-vertex-lies-open-carrier"),
-    crate::rule_name!("geometry_consistency.edge-runs-against-curve-start-vertex"),
-    crate::rule_name!("history_bodies.history-body-names-neither-producing-nor"),
-    crate::rule_name!("history_bodies.history-body-names-no-feature"),
-    crate::rule_name!("history_bodies.history-body-record-repeats-identity-another"),
-    crate::rule_name!("history_bodies.history-body-record-repeats-top-level"),
-    crate::rule_name!("identity_order.entity-id-does-not-match-format"),
-    crate::rule_name!("identity_order.entity-id-not-globally-unique"),
-    crate::rule_name!("referential_integrity.entity-schema-cannot-state-typed-references"),
-    crate::rule_name!("referential_integrity.unresolved-typed-reference"),
-    crate::rule_name!("topology.active-configuration-suppression-disagrees-current-feature"),
-    crate::rule_name!("topology.attached-plate-profile-not-planar"),
-    crate::rule_name!("topology.attached-plate-requires-exactly-one-bend"),
-    crate::rule_name!("topology.axisrotate-must-bind-axis-component"),
-    crate::rule_name!("topology.bend-attached-plate-must-precede-bend"),
-    crate::rule_name!("topology.binder-target-feature-does-not-precede"),
-    crate::rule_name!("topology.cage-must-belong-exactly-one"),
-    crate::rule_name!("topology.child-parent-lists"),
-    crate::rule_name!("topology.component-transfer-placement-contains-non-finite"),
-    crate::rule_name!("topology.composite-curve-graph-contains-cycle"),
-    crate::rule_name!("topology.configuration-definition-feature-does-not-precede"),
-    crate::rule_name!("topology.configuration-feature-dependency-does-not-precede"),
-    crate::rule_name!("topology.configuration-feature-state-omits-referenced-feature"),
-    crate::rule_name!("topology.configuration-parameter-value-invalid"),
-    crate::rule_name!("topology.configuration-state-closure-uses-suppressed-dependency"),
-    crate::rule_name!("topology.construction-arc-endpoint-outside-radius-plane"),
-    crate::rule_name!("topology.construction-frame-must-orthonormal-right-handed"),
-    crate::rule_name!("topology.construction-no-input-step-resolved-value"),
-    crate::rule_name!("topology.construction-plane-axes-must-perpendicular"),
-    crate::rule_name!("topology.construction-relation-does-not-admit-reversed"),
-    crate::rule_name!("topology.construction-relation-incompatible-operand-count"),
-    crate::rule_name!("topology.construction-relation-incompatible-scalar-value"),
-    crate::rule_name!("topology.construction-solution-must-positive"),
-    crate::rule_name!("topology.construction-subject-not-part-result-kind"),
-    crate::rule_name!("topology.content-child-does-not-follow-parent"),
-    crate::rule_name!("topology.content-parameter-belongs-another-feature"),
-    crate::rule_name!("topology.coordinates-requires-frame-reference"),
-    crate::rule_name!("topology.corner-bend-must-precede-corner-occur"),
-    crate::rule_name!("topology.datum-axis"),
-    crate::rule_name!("topology.datum-axis-datum-part-incompatible-selected"),
-    crate::rule_name!("topology.datum-axis-datum-point-part-remains"),
-    crate::rule_name!("topology.datum-axis-datum-selection-must-target"),
-    crate::rule_name!("topology.datum-axis-dimension-binds-parameter-incompatible"),
-    crate::rule_name!("topology.datum-axis-dimension-must-bind-parameter"),
-    crate::rule_name!("topology.datum-axis-dimension-target-must-name"),
-    crate::rule_name!("topology.datum-axis-feature-input-must-precede"),
-    crate::rule_name!("topology.datum-axis-parameter-owner-must-precede"),
-    crate::rule_name!("topology.datum-axis-region-boundary-must-belong"),
-    crate::rule_name!("topology.datum-axis-target-no-declared-arena"),
-    crate::rule_name!("topology.datum-plane-feature-reference-does-not"),
-    crate::rule_name!("topology.datum-plane-reference-cycle-contains"),
-    crate::rule_name!("topology.datum-point-omits-plane-feature-dependencies"),
-    crate::rule_name!("topology.datum-point-plane-does-not-precede"),
-    crate::rule_name!("topology.datum-point-plane-reference-does-not"),
-    crate::rule_name!("topology.datum-point-sketch-point-selection-invalid"),
-    crate::rule_name!("topology.dependency-feature-does-not-precede-consumer"),
-    crate::rule_name!("topology.derived-geometry-omits-source-feature-dependencies"),
-    crate::rule_name!("topology.does-not-precede-consuming-feature"),
-    crate::rule_name!("topology.draft-pull-plane-frame-normal-not"),
-    crate::rule_name!("topology.draft-pull-states-both-datum-plane"),
-    crate::rule_name!("topology.feature-omits-dependency"),
-    crate::rule_name!("topology.feature-reference-does-not-name-datum"),
-    crate::rule_name!("topology.fixed-construction-cannot-carry-resolved-values"),
-    crate::rule_name!("topology.fold-requires-four-picked-edges"),
-    crate::rule_name!("topology.fold-requires-whole-plane-frame"),
-    crate::rule_name!("topology.free-vertex-also-referenced-edge"),
-    crate::rule_name!("topology.free-vertex-must-belong-exactly-one"),
-    crate::rule_name!("topology.generated-body-selection-invalid"),
-    crate::rule_name!("topology.generated-edge-selection-invalid"),
-    crate::rule_name!("topology.generated-face-selection-invalid"),
-    crate::rule_name!("topology.generated-profile-curve-invalid"),
-    crate::rule_name!("topology.generated-vertex-invalid"),
-    crate::rule_name!("topology.historical-selection-uses-another-feature-input"),
-    crate::rule_name!("topology.literal-false-flip-redundant"),
-    crate::rule_name!("topology.offset-plane-omits-reference-feature-dependencies"),
-    crate::rule_name!("topology.owner-does-not-precede-profile-consumer"),
-    crate::rule_name!("topology.parameter-dependency-does-not-precede-consumer"),
-    crate::rule_name!("topology.pattern-omits-seed-feature-dependencies"),
-    crate::rule_name!("topology.plane-equation-normal-cannot-zero"),
-    crate::rule_name!("topology.point-operand-cannot-supply-construction-direction"),
-    crate::rule_name!("topology.profile-feature-not-preceding-dependency"),
-    crate::rule_name!("topology.radial-ring-crosses-edges"),
-    crate::rule_name!("topology.radial-ring-does-not-close"),
-    crate::rule_name!("topology.radius-limit-require-curve-construction"),
-    crate::rule_name!("topology.reference-plane-does-not-precede-offset"),
-    crate::rule_name!("topology.references-missing"),
-    crate::rule_name!("topology.refold-unfold-must-precede-refold-occur"),
-    crate::rule_name!("topology.revolution-angular-travel-must-not-exceed"),
-    crate::rule_name!("topology.scale-transform-invalid"),
-    crate::rule_name!("topology.seed-feature-does-not-precede-pattern"),
-    crate::rule_name!("topology.selection-rule-incompatible-seed-count"),
-    crate::rule_name!("topology.sheet-metal-edge-flange-height-invalid"),
-    crate::rule_name!("topology.shell-faces-disconnected-through-shared-edges"),
-    crate::rule_name!("topology.single-explicit-selection-term-must-use"),
-    crate::rule_name!("topology.sketch-block-does-not-precede-instance"),
-    crate::rule_name!("topology.sketch-block-instance-omits-block-feature"),
-    crate::rule_name!("topology.sketch-block-target-not-block-definition"),
-    crate::rule_name!("topology.sketch-entity-belongs-different-sketch"),
-    crate::rule_name!("topology.sketch-multiple-owning-features"),
-    crate::rule_name!("topology.sketch-owner-does-not-precede-datum"),
-    crate::rule_name!("topology.sketch-owner-does-not-precede-path"),
-    crate::rule_name!("topology.sketch-path-curves-empty-repeated-owned"),
-    crate::rule_name!("topology.sketch-profile-entities-empty-repeated-missing"),
-    crate::rule_name!("topology.sketch-profile-indices-empty-repeated-out"),
-    crate::rule_name!("topology.sketch-regions-empty-repeated-invalid-out"),
-    crate::rule_name!("topology.source-feature-does-not-precede-derived"),
-    crate::rule_name!("topology.spatial-sketch-path-curves-empty-repeated"),
-    crate::rule_name!("topology.spatial-sketch-profile-indices-empty-repeated"),
-    crate::rule_name!("topology.split-face-direction-input-run-inconsistent"),
-    crate::rule_name!("topology.text-dimensions-cannot-negate-parameter"),
-    crate::rule_name!("topology.two-member-radial-ring-equal-coedge"),
-    crate::rule_name!("topology.two-sided-draft-no-neutral-plane"),
-    crate::rule_name!("topology.whole-coincident-frame-requires-frame-result"),
-    crate::rule_name!("topology.wire-body-contains-faces"),
-    crate::rule_name!("topology.wire-edge-also-referenced-coedge"),
-    crate::rule_name!("topology.wire-edge-must-belong-exactly-one"),
-    crate::rule_name!("topology.zaxis-constraint-must-act-whole-construction"),
-];
+/// History-body admission: [`DRAFT_CORE`], with the nest rules of coedge
+/// pairing, shell connectivity, wire topology, edge ends, and topology
+/// tolerances on each history body's nest. The other topology rules report
+/// on a nest and give up no history body.
+pub const HISTORY_BODY_ADMISSION: &Admission = &Admission {
+    rules: DRAFT_CORE.rules,
+    annotations: false,
+    nests: NestRules::Admission,
+};
 
 /// Drop the findings whose rule `allowed` does not list.
 fn filter_rules(mut report: ValidationReport, allowed: &Admission) -> ValidationReport {
@@ -450,7 +338,7 @@ pub fn admit(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     Ok(filter_rules(
-        super::validate_model(ctx, ir, losses)?,
+        super::validate_model(ctx, ir, losses, allowed.nests)?,
         allowed,
     ))
 }
@@ -464,7 +352,7 @@ pub fn admit_with_annotations(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     Ok(filter_rules(
-        super::validate_model_with_annotations(ctx, ir, annotations, losses)?,
+        super::validate_model_with_annotations(ctx, ir, annotations, losses, allowed.nests)?,
         allowed,
     ))
 }
@@ -479,7 +367,7 @@ pub fn admit_with_additional_native_identities<'a>(
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
     Ok(filter_rules(
-        super::validate_model_with_index(ctx, ir, losses, &index)?,
+        super::validate_model_with_index(ctx, ir, losses, &index, allowed.nests)?,
         allowed,
     ))
 }
@@ -499,7 +387,7 @@ pub fn admit_with_native_unknowns(
         Err(error) => return Ok(Err(error)),
     };
     let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions);
-    let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = super::validate_model_with_index(ctx, ir, losses, &index, allowed.nests)?;
     if let Some(annotations) = annotations {
         super::validate_annotations(
             ctx,
@@ -525,7 +413,7 @@ pub(crate) fn admit_annotation_delta(
         Err(error) => return Ok(Err(error)),
     };
     let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions);
-    let mut report = super::validate_model_with_index(ctx, ir, Vec::new(), &index)?;
+    let mut report = super::validate_model_with_index(ctx, ir, Vec::new(), &index, allowed.nests)?;
     let mut old = Vec::new();
     super::validate_annotations(
         ctx,
@@ -644,10 +532,7 @@ mod native_unknown_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        admit, Admission, CATIA_ADMISSION, DRAFT_CORE, HISTORY_BODY_ADMISSION, RHINO_DRAFT,
-        RHINO_INSTANCE,
-    };
+    use super::{admit, Admission, CATIA_ADMISSION, DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE};
     use crate::report::check::{Check, Finding, RuleName, ValidationReport};
     use crate::report::Severity;
     use crate::test_support::admissibility::{
@@ -723,13 +608,7 @@ mod tests {
             entity: None,
             related: Vec::new(),
         };
-        for allowed in [
-            DRAFT_CORE,
-            RHINO_DRAFT,
-            RHINO_INSTANCE,
-            CATIA_ADMISSION,
-            HISTORY_BODY_ADMISSION,
-        ] {
+        for allowed in [DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE, CATIA_ADMISSION] {
             let report = ValidationReport {
                 entity_counts: std::collections::BTreeMap::new(),
                 findings: vec![finding.clone()],
@@ -765,13 +644,7 @@ mod tests {
     /// process rule (§3.3) and no codec's own rule.
     #[test]
     fn routes_list_only_model_class_validator_rules() {
-        for allowed in [
-            DRAFT_CORE,
-            RHINO_DRAFT,
-            RHINO_INSTANCE,
-            CATIA_ADMISSION,
-            HISTORY_BODY_ADMISSION,
-        ] {
+        for allowed in [DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE, CATIA_ADMISSION] {
             for rule in allowed.rules() {
                 let name = rule.as_str();
                 assert!(
@@ -789,10 +662,6 @@ mod tests {
             &RHINO_DRAFT.rules()[..DRAFT_CORE.rules().len()],
             DRAFT_CORE.rules()
         );
-        assert!(HISTORY_BODY_ADMISSION
-            .rules()
-            .iter()
-            .all(|rule| DRAFT_CORE.rules().contains(rule)));
         assert!(RHINO_DRAFT.annotations() && !DRAFT_CORE.annotations());
         let mut names: Vec<&str> = RHINO_DRAFT.rules().iter().map(RuleName::as_str).collect();
         names.sort_unstable();
@@ -805,13 +674,7 @@ mod tests {
 
         let accepted = accepted_empty();
         let rejected = rejected_missing_point("test:model").expect("valid identity");
-        for allowed in [
-            DRAFT_CORE,
-            RHINO_DRAFT,
-            RHINO_INSTANCE,
-            CATIA_ADMISSION,
-            HISTORY_BODY_ADMISSION,
-        ] {
+        for allowed in [DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE, CATIA_ADMISSION] {
             assert!(admit(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 &accepted,

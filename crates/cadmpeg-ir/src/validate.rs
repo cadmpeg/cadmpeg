@@ -65,10 +65,15 @@ use topology::graphs::{
     check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_loopless_faces,
     check_partial_topology, check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
+use topology::nested::NestRules;
 use topology::procedural_owners::check_procedural_owners;
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
 };
+
+/// Every topology rule, with procedural curves compared with their solved
+/// carriers: the rules validation runs on a history body's nest.
+const ALL_NEST_RULES: NestRules = NestRules::All { caches: true };
 
 fn record_finding(
     findings: &mut Vec<Finding>,
@@ -132,14 +137,16 @@ fn state_chain_refusal(limit: u64, depth: u64) -> Option<CodecError> {
     ))
 }
 
-/// Validate `ir` and copy `losses` into the returned report unchanged.
+/// Validate `ir`, running `nests` on each history body's nest, and copy
+/// `losses` into the returned report unchanged.
 fn validate_model(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     losses: Vec<LossNote>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    validate_model_with_index(ctx, ir, losses, &index)
+    validate_model_with_index(ctx, ir, losses, &index, nests)
 }
 
 fn validate_model_with_index<'ir>(
@@ -147,6 +154,7 @@ fn validate_model_with_index<'ir>(
     ir: &'ir CadIr,
     losses: Vec<LossNote>,
     ids: &crate::index::ModelIndex<'ir>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let _depth = ctx.enter_nested("IR neutral validation")?;
 
@@ -173,7 +181,7 @@ fn validate_model_with_index<'ir>(
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
-    history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
+    history_bodies::check_history_bodies(ctx, ir, ids, nests, &mut findings)?;
     process::check_design_and_process(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
@@ -284,9 +292,10 @@ fn validate_model_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index, nests)?;
     validate_annotations(
         ctx,
         &index,
@@ -305,7 +314,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
         let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
-        validate_model_with_index(ctx, ir, losses, &index)
+        validate_model_with_index(ctx, ir, losses, &index, ALL_NEST_RULES)
     })
 }
 
@@ -320,7 +329,7 @@ pub fn validate_neutral_for_decode(
     ir: &CadIr,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    validate_model(ctx, ir, losses)
+    validate_model(ctx, ir, losses, ALL_NEST_RULES)
 }
 
 /// Validate an application-owned model together with borrowed annotations.
@@ -329,7 +338,9 @@ pub fn validate_neutral_with_annotations(
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    standalone_validation(|ctx| validate_model_with_annotations(ctx, ir, annotations, losses))
+    standalone_validation(|ctx| {
+        validate_model_with_annotations(ctx, ir, annotations, losses, ALL_NEST_RULES)
+    })
 }
 
 /// Validate an application-owned model together with its decode-time source sidecar.
@@ -351,7 +362,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index, ALL_NEST_RULES)?;
     validate_annotations(
         ctx,
         &index,

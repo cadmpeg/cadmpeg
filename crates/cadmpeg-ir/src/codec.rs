@@ -284,7 +284,7 @@ impl DecodeResult {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.give_up_repeated_ids(ctx, format)?;
         if !ctx.container_only() {
-            result.widen_vertex_tolerances(ctx.policy())?;
+            result.widen_vertex_tolerances(ctx.policy());
         }
         if record_digests {
             result.record_content_digest(ctx, format)?;
@@ -455,14 +455,11 @@ impl DecodeResult {
 
     /// States the tolerance of each vertex the source stores farther from a
     /// position part 10 compares it with than the coincidence allowance
-    /// there, and charges the pass's loss (§2.3).
-    fn widen_vertex_tolerances(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
-        if let Some(loss) =
-            vertex_tolerance::widen(&mut self.ir, &mut self.source_fidelity.annotations, policy)?
-        {
-            self.report.losses.push(loss);
-        }
-        Ok(())
+    /// there, and charges the pass's losses (§2.3).
+    fn widen_vertex_tolerances(&mut self, policy: &DecodePolicy) {
+        let losses =
+            vertex_tolerance::widen(&mut self.ir, &mut self.source_fidelity.annotations, policy);
+        self.report.losses.extend(losses);
     }
 
     /// Records the SHA-256 of the canonical JSON of the document the decode

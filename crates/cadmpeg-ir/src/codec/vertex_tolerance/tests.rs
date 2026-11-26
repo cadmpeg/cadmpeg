@@ -117,8 +117,8 @@ fn a_vertex_on_its_edges_ends_keeps_its_tolerance() {
     let mut ir = unit_cube().unwrap();
     let mut annotations = Annotations::default();
     assert_eq!(
-        widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap(),
-        None
+        widen(&mut ir, &mut annotations, &DecodePolicy::default()),
+        Vec::new()
     );
     assert_eq!(ir, unit_cube().unwrap());
     assert_eq!(annotations, Annotations::default());
@@ -132,8 +132,8 @@ fn a_vertex_on_a_carrier_far_from_its_end_keeps_its_tolerance() {
     let before = ir.clone();
     let mut annotations = Annotations::default();
     assert_eq!(
-        widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap(),
-        None
+        widen(&mut ir, &mut annotations, &DecodePolicy::default()),
+        Vec::new()
     );
     assert_eq!(ir, before);
 }
@@ -154,8 +154,8 @@ fn a_vertex_whose_point_the_decoder_computed_keeps_its_tolerance() {
     let mut annotations = builder.build();
     let before = ir.clone();
     assert_eq!(
-        widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap(),
-        None
+        widen(&mut ir, &mut annotations, &DecodePolicy::default()),
+        Vec::new()
     );
     assert_eq!(ir, before);
 }
@@ -291,8 +291,8 @@ fn a_vertex_off_its_face_surface_states_its_distance_from_the_pcurve_images() {
     // pcurve images are compared.
     let (mut ir, mut annotations) =
         cube_with_face_pcurves(Point3::new(0.0, 0.0, -0.03), Vector3::new(0.0, 0.0, 1.0));
-    let widened = widen(&mut ir, &mut annotations, &DecodePolicy::default())
-        .unwrap()
+    let [widened] = widen(&mut ir, &mut annotations, &DecodePolicy::default())
+        .try_into()
         .unwrap();
     assert!(
         widened.message.starts_with("widened 1 vertex tolerance(s)"),
@@ -314,8 +314,8 @@ fn a_vertex_on_its_face_surface_keeps_its_tolerance_against_the_pcurve_images() 
         cube_with_face_pcurves(Point3::new(0.0, 0.0, -0.03), Vector3::new(1.0, 0.0, 0.0));
     let before = ir.clone();
     assert_eq!(
-        widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap(),
-        None
+        widen(&mut ir, &mut annotations, &DecodePolicy::default()),
+        Vec::new()
     );
     assert_eq!(ir, before);
 }
@@ -327,12 +327,36 @@ fn a_session_refusal_widens_nothing_and_is_charged() {
     let mut annotations = Annotations::default();
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 0;
-    let loss = widen(&mut ir, &mut annotations, &policy).unwrap().unwrap();
+    let [loss] = widen(&mut ir, &mut annotations, &policy)
+        .try_into()
+        .unwrap();
     assert_eq!(
         loss.code,
         DecodeLossCode::VertexToleranceUnmeasured.note("").code
     );
     assert_eq!(loss.severity, crate::report::Severity::Warning);
+    assert_eq!(ir, before);
+    assert_eq!(annotations, Annotations::default());
+}
+
+#[test]
+fn a_tolerance_whose_mark_fails_is_left_as_stored_and_charged() {
+    let mut ir = cube_with_corner_at(0, Point3::new(-0.02, -0.02, -0.02));
+    let before = ir.clone();
+    let vertex = ir.geometry.vertices[0].id.as_str().to_owned();
+    let mut annotations = Annotations::default();
+    let tolerances = std::collections::BTreeMap::from([(vertex.clone(), 0.05)]);
+    let losses = super::state(&mut ir, &mut annotations, &tolerances, "");
+    let [loss] = losses.as_slice() else {
+        panic!("one loss for the unmarked vertex: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        DecodeLossCode::VertexToleranceUnmeasured.note("").code
+    );
+    assert!(loss.message.ends_with(&format!(
+        ": {vertex} (an exactness field name cannot be empty)"
+    )));
     assert_eq!(ir, before);
     assert_eq!(annotations, Annotations::default());
 }
@@ -356,8 +380,8 @@ fn assert_unwidened(mut ir: CadIr) {
     let before = ir.clone();
     let mut annotations = Annotations::default();
     assert_eq!(
-        widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap(),
-        None
+        widen(&mut ir, &mut annotations, &DecodePolicy::default()),
+        Vec::new()
     );
     assert_eq!(ir, before);
     assert_eq!(annotations, Annotations::default());
@@ -381,8 +405,9 @@ fn moved_origin_corner(ir: &CadIr) -> crate::topology::Point {
 fn an_evaluation_vertex_off_an_edge_its_delta_does_not_restate_is_reported_not_widened() {
     // The evaluation is stored against the current state, and its delta
     // restates only the corner's point: the miss is against the current
-    // state's edges. The delta's records have no annotation key, so the
-    // pass widens nothing and validation reports the gap on the evaluation.
+    // state's edges. Widening a delta's records is the scope of a follow-up
+    // change, so the pass widens nothing and validation reports the gap on
+    // the evaluation.
     let mut ir = crate::validate::design::fixture::document();
     let corner = moved_origin_corner(&ir);
     let evaluation = &mut ir.design.evaluations[0];

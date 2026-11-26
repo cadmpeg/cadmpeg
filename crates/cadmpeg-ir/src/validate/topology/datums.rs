@@ -698,7 +698,7 @@ impl Walk<'_, '_, '_> {
                     self.ids.native_view(),
                     body.as_ref().clone(),
                     Some(self.file_keys),
-                    true,
+                    super::nested::NestRules::All { caches: true },
                 )?;
                 for mut finding in nested {
                     if let Some(entity) = finding.entity.replace(self.owner.id.as_str().to_owned())

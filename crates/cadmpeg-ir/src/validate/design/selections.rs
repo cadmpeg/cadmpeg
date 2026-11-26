@@ -354,7 +354,7 @@ fn check_witness_body(
         document,
         body.clone(),
         Some(&file_keys),
-        true,
+        crate::validate::topology::nested::NestRules::All { caches: true },
     )?;
     for finding in nested {
         findings.push(crate::validate::nested_finding(

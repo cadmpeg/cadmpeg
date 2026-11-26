@@ -17,7 +17,7 @@ use crate::report::Severity;
 use crate::schema::EntitySchema;
 
 use super::record_finding;
-use super::topology::nested;
+use super::topology::nested::{self, NestRules};
 
 /// Identities of every record of a nest.
 fn nest_identities(geometry: &crate::document::Topology) -> Vec<&str> {
@@ -39,13 +39,14 @@ fn nest_identities(geometry: &crate::document::Topology) -> Vec<&str> {
         .collect()
 }
 
-/// Run the topology checks over one nest as if it were a model of its own.
+/// Run `rules` over one nest as if it were a model of its own.
 /// A reference that leaves the nest is a failed reference check there.
 fn check_nest(
     ctx: &DecodeContext<'_>,
     ids: &ModelIndex<'_>,
     body: &HistoryBody,
     file_keys: &BTreeSet<&str>,
+    rules: NestRules,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let nested = nested::check(
@@ -53,7 +54,7 @@ fn check_nest(
         ids.native_view(),
         body.topology.to_topology(),
         Some(file_keys),
-        true,
+        rules,
     )?;
     for mut finding in nested {
         finding.message = format!("history body nest: {}", finding.message);
@@ -67,6 +68,7 @@ pub(super) fn check_history_bodies(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     ids: &ModelIndex<'_>,
+    nests: NestRules,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     if ir.model.history_bodies.is_empty() {
@@ -133,7 +135,7 @@ pub(super) fn check_history_bodies(
                 );
             }
         }
-        check_nest(ctx, ids, body, &file_keys, findings)?;
+        check_nest(ctx, ids, body, &file_keys, nests, findings)?;
         let geometry = body.topology.to_topology();
         for id in nest_identities(&geometry) {
             if IdentitySet::contains(ids, id) {

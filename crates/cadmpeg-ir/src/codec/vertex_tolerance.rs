@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget};
 use cadmpeg_core::CodecError;
 
-use crate::annotations::{AnnotationBuilder, AnnotationFieldError, Annotations};
+use crate::annotations::{AnnotationBuilder, Annotations};
 use crate::codec::loss::DecodeLossCode;
 use crate::eval::admission::ModelEvaluationPass;
 use crate::eval::decode::{curve_point, surface_point_solved};
@@ -56,36 +56,45 @@ const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 
 /// Widens the tolerance of each vertex of the current geometry of `ir` that
 /// a compared position misses, marks each widened tolerance derived in
-/// `annotations`, and returns the `geometry.vertex-tolerance-widened` loss.
-/// The pass measures in a session of its own under `policy`, so a ceiling
-/// it meets refuses no part of the decode: it then widens nothing and
-/// returns the `geometry.vertex-tolerance-unmeasured` loss.
-///
-/// # Errors
-///
-/// A resource refusal while marking the widened tolerances.
+/// `annotations`, and returns the losses [`state`] charges. The pass measures in a session of its own under `policy`. Where it meets
+/// a resource ceiling of that session, it widens nothing and returns the
+/// `geometry.vertex-tolerance-unmeasured` loss.
 pub(super) fn widen(
     ir: &mut CadIr,
     annotations: &mut Annotations,
     policy: &DecodePolicy,
-) -> Result<Option<LossNote>, AnnotationFieldError> {
+) -> Vec<LossNote> {
     let arena = DecodeArena::new();
     let measured = DecodeContext::from_root_bytes(&[], &arena, policy)
         .and_then(|(ctx, _)| measure(&ctx, ir, &|id: &str| !computed(annotations, id)));
-    let tolerances = match measured {
-        Ok(tolerances) => tolerances,
-        Err(error) => {
-            return Ok(Some(DecodeLossCode::VertexToleranceUnmeasured.note(
-                format!(
-                "the decode wrapper's vertex tolerance pass stopped ({error}), so it widened no \
-                 vertex tolerance"
-            ),
-            )));
-        }
-    };
+    match measured {
+        Ok(tolerances) => state(ir, annotations, &tolerances, TOLERANCE),
+        Err(error) => vec![DecodeLossCode::VertexToleranceUnmeasured.note(format!(
+            "the decode wrapper's vertex tolerance pass stopped ({error}), so it widened no \
+             vertex tolerance"
+        ))],
+    }
+}
+
+/// The annotated field of a vertex's tolerance.
+const TOLERANCE: &str = "tolerance";
+
+/// States each of `tolerances` on its vertex of `ir`'s geometry once
+/// `annotations` marks the vertex's `field` derived, and returns the
+/// `geometry.vertex-tolerance-widened` loss for the vertices it widens and
+/// the `geometry.vertex-tolerance-unmeasured` loss for the vertices whose
+/// mark fails, which keep their stored tolerance.
+fn state(
+    ir: &mut CadIr,
+    annotations: &mut Annotations,
+    tolerances: &BTreeMap<String, f64>,
+    field: &str,
+) -> Vec<LossNote> {
     let linear = ir.tolerances.linear;
     let mut largest = 0.0_f64;
     let mut widened = Vec::new();
+    let mut unmarked = Vec::new();
+    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for vertex in &mut ir.geometry.vertices {
         let Some(tolerance) = tolerances
             .get(vertex.id.as_str())
@@ -94,27 +103,36 @@ pub(super) fn widen(
         else {
             continue;
         };
+        if let Err(error) = builder.derived(vertex.id.as_str(), field) {
+            unmarked.push(format!("{} ({error})", vertex.id.as_str()));
+            continue;
+        }
         let before = vertex.tolerance.unwrap_or(linear).get();
         vertex.tolerance = Some(tolerance);
         largest = largest.max(tolerance.get() - before);
         widened.push(vertex.id.as_str().to_owned());
     }
-    if widened.is_empty() {
-        return Ok(None);
-    }
-    widened.sort_unstable();
-    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    let derived = widened
-        .iter()
-        .try_for_each(|id| builder.derived(id, "tolerance").map(|_| ()));
     *annotations = builder.build();
-    derived?;
-    Ok(Some(DecodeLossCode::VertexToleranceWidened.note(format!(
-        "widened {} vertex tolerance(s) to each vertex's largest distance from the positions \
-         compared with it; the largest widening is {largest} mm: {}",
-        widened.len(),
-        widened.join(", ")
-    ))))
+    let mut losses = Vec::new();
+    if !widened.is_empty() {
+        widened.sort_unstable();
+        losses.push(DecodeLossCode::VertexToleranceWidened.note(format!(
+            "widened {} vertex tolerance(s) to each vertex's largest distance from the positions \
+             compared with it; the largest widening is {largest} mm: {}",
+            widened.len(),
+            widened.join(", ")
+        )));
+    }
+    if !unmarked.is_empty() {
+        unmarked.sort_unstable();
+        losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
+            "the decode wrapper's vertex tolerance pass could not mark {} widened vertex \
+             tolerance(s) derived, so it left them as stored: {}",
+            unmarked.len(),
+            unmarked.join(", ")
+        )));
+    }
+    losses
 }
 
 /// Whether the annotations mark the record computed rather than read.
