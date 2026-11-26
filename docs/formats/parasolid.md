@@ -184,7 +184,7 @@ the same form in both encodings. The terminator is node type `1` and the null
 index. A node of one encoding has the same fields, in the same order, as the
 node of the other encoding.
 
-## 5. Colour attributes
+## 6. Colour attributes
 
 An ATTRIBUTE node (type `81`) whose definition (type `80`) names the identifier
 `SDL/TYSA_COLOUR` states a colour. Its `fields` list names one REAL_VALUES node

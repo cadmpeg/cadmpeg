@@ -50,7 +50,7 @@ pub(crate) fn decode(
 }
 
 /// The colour of each FACE node whose attribute chain holds a
-/// `SDL/TYSA_COLOUR` attribute (`parasolid.md` §5), keyed by node index.
+/// `SDL/TYSA_COLOUR` attribute (`parasolid.md` §6), keyed by node index.
 fn face_colours(neutral: &[u8]) -> Result<BTreeMap<u32, Color>, CodecError> {
     let Some(primary) = PrimaryRecords::read(neutral)? else {
         return Ok(BTreeMap::new());
