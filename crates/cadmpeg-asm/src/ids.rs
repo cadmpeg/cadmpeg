@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity of the format that owns entity IDs decoded from an ASM stream.
 
-use cadmpeg_core::text::StaticCodecId;
 use cadmpeg_ir::codec::FormatId;
 use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespace};
 
@@ -16,14 +15,12 @@ pub struct IdFormat {
 }
 
 impl IdFormat {
-    /// Admit a format literal, returning `None` when it is not a codec id.
+    /// Admit a format literal that is a codec id. In a constant, text of
+    /// another form fails compilation.
     #[must_use]
-    pub const fn from_literal(value: &'static str) -> Option<Self> {
-        match StaticCodecId::new(value) {
-            Some(_) => Some(Self {
-                format: FormatId::new(value),
-            }),
-            None => None,
+    pub const fn from_literal(value: &'static str) -> Self {
+        Self {
+            format: FormatId::new(value),
         }
     }
 
@@ -71,11 +68,7 @@ impl std::fmt::Display for IdFormat {
 #[macro_export]
 macro_rules! asm_format {
     ($value:literal) => {{
-        const STATIC_FORMAT: $crate::ids::IdFormat =
-            match $crate::ids::IdFormat::from_literal($value) {
-                Some(format) => format,
-                None => panic!("ASM identity format literal has invalid grammar"),
-            };
+        const STATIC_FORMAT: $crate::ids::IdFormat = $crate::ids::IdFormat::from_literal($value);
         STATIC_FORMAT
     }};
 }

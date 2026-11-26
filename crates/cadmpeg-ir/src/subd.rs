@@ -479,7 +479,7 @@ pub enum SubdSymmetryKind {
 /// Radial controls and the native radial maps that the source stores.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SubdRadialSymmetryWire")]
+#[serde(deny_unknown_fields)]
 pub struct SubdRadialSymmetry {
     /// Number of radial segments.
     pub segments: std::num::NonZeroU32,
@@ -487,56 +487,6 @@ pub struct SubdRadialSymmetry {
     pub sweep: crate::scalar::FiniteReal,
     /// Native maps in source order.
     pub radial_maps: Vec<SubdRadialSymmetryMap>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct SubdRadialSymmetryWire {
-    /// Number of radial segments.
-    segments: std::num::NonZeroU32,
-    /// Finite native radial sweep.
-    sweep: f64,
-    /// Native maps in source order.
-    radial_maps: Vec<SubdRadialSymmetryMap>,
-}
-
-impl TryFrom<SubdRadialSymmetryWire> for SubdRadialSymmetry {
-    type Error = SubdError;
-
-    fn try_from(wire: SubdRadialSymmetryWire) -> Result<Self, Self::Error> {
-        Self::new(wire.segments, wire.sweep, wire.radial_maps)
-    }
-}
-
-impl SubdRadialSymmetry {
-    fn new(
-        segments: std::num::NonZeroU32,
-        sweep: f64,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        let Some(sweep) = FiniteReal::new(sweep) else {
-            return Err(SubdError::Admission(
-                "kind.radial.sweep must be finite".to_owned(),
-            ));
-        };
-        Ok(Self {
-            segments,
-            sweep,
-            radial_maps,
-        })
-    }
-}
-
-impl SubdSymmetryKind {
-    /// Radial controls with a finite sweep.
-    pub fn radial(
-        segments: std::num::NonZeroU32,
-        sweep: f64,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        SubdRadialSymmetry::new(segments, sweep, radial_maps).map(Self::Radial)
-    }
 }
 
 /// Selector of one native radial-symmetry map.
@@ -752,7 +702,8 @@ impl SubdVertex {
         Ok(Self::from_parts(point, tag, secondary_grips))
     }
 
-    /// Construct a control vertex from its admitted finite position.
+    /// Construct a control vertex from its admitted finite position. A layout
+    /// with no wedges is stored as absent.
     #[must_use]
     pub fn from_parts(
         point: FinitePoint3,
@@ -762,7 +713,7 @@ impl SubdVertex {
         Self {
             point,
             tag,
-            secondary_grips,
+            secondary_grips: secondary_grips.filter(|layout| !layout.wedges.is_empty()),
         }
     }
 

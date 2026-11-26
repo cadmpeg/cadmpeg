@@ -572,7 +572,7 @@
       ]
     },
     "LossTaxonomy": {
-      "description": "Shared cross-codec loss taxonomy.\n\nCategory and default severity live here. Codec-local loss enums map into a\ntaxonomy variant for subsystem reporting. A taxonomy pins no strict floor:\na floor belongs to the code that states it (§3.2).",
+      "description": "Shared cross-codec loss taxonomy.\n\nCategory and default severity live here. Codec-local loss enums map into a\ntaxonomy variant for subsystem reporting; strict-mode floors on a\n[`LossKind`] are pinned at construction so a later local→taxonomy remap in\nsource does not silently change rejection.",
       "oneOf": [
         {
           "description": "No geometry stream was located in the container, so no B-rep could be\ntransferred.",

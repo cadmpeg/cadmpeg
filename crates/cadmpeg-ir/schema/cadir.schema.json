@@ -59902,9 +59902,8 @@
               "minimum": 1
             },
             "sweep": {
-              "description": "Finite native radial sweep.",
-              "type": "number",
-              "format": "double"
+              "description": "Native radial sweep.",
+              "$ref": "#/$defs/FiniteReal"
             },
             "radial_maps": {
               "description": "Native maps in source order.",

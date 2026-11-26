@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::math::{Point3, Vector3};
+use crate::scalar::FiniteReal;
 use crate::subd::{
-    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetryMap, SubdSymmetry, SubdSymmetryKind,
-    EPS_SUBD_SYMMETRY_FRAME,
+    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdSymmetry,
+    SubdSymmetryKind, EPS_SUBD_SYMMETRY_FRAME,
 };
 
 fn plane() -> SubdPlaneFrame {
@@ -91,9 +92,17 @@ fn plane_frame_admission_preserves_the_unit_and_orthogonality_tolerance() {
     .is_err());
 }
 
+fn radial_kind(sweep: f64, radial_maps: Vec<SubdRadialSymmetryMap>) -> SubdSymmetryKind {
+    SubdSymmetryKind::Radial(SubdRadialSymmetry {
+        segments: std::num::NonZeroU32::new(1).unwrap(),
+        sweep: FiniteReal::new(sweep).unwrap(),
+        radial_maps,
+    })
+}
+
 fn radial(sweep: f64) -> Result<SubdSymmetry, crate::subd::SubdError> {
     SubdSymmetry::new(
-        SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), sweep, Vec::new())?,
+        radial_kind(sweep, Vec::new()),
         plane(),
         Vec::new(),
         Vec::new(),
@@ -102,10 +111,7 @@ fn radial(sweep: f64) -> Result<SubdSymmetry, crate::subd::SubdError> {
 }
 
 #[test]
-fn radial_controls_require_nonzero_segments_and_finite_sweeps() {
-    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(radial(invalid).is_err());
-    }
+fn radial_controls_require_nonzero_segments_and_keep_finite_sweeps() {
     let mut wire = serde_json::to_value(radial(1.0).unwrap()).unwrap();
     wire["kind"]["segments"] = 0.into();
     assert!(serde_json::from_value::<SubdSymmetry>(wire)
@@ -191,9 +197,7 @@ fn radial_maps_keep_repeated_selectors_and_sources() {
         vec![map(vec![]), map(vec![])],
         vec![map(vec![[0, 0], [0, 1]])],
     ] {
-        let kind =
-            SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), 0.0, maps.clone())
-                .unwrap();
+        let kind = radial_kind(0.0, maps.clone());
         assert!(matches!(&kind, SubdSymmetryKind::Radial(radial) if radial.radial_maps == maps));
         let mut wire = serde_json::to_value(radial(0.0).unwrap()).unwrap();
         wire["kind"]["radial_maps"] = serde_json::to_value(&maps).unwrap();
@@ -201,12 +205,7 @@ fn radial_maps_keep_repeated_selectors_and_sources() {
         assert_eq!(serde_json::to_value(read).unwrap(), wire);
     }
     let symmetry = SubdSymmetry::new(
-        SubdSymmetryKind::radial(
-            std::num::NonZeroU32::new(1).unwrap(),
-            0.0,
-            vec![map(vec![[0, 0], [u64::MAX, 0]])],
-        )
-        .unwrap(),
+        radial_kind(0.0, vec![map(vec![[0, 0], [u64::MAX, 0]])]),
         plane(),
         Vec::new(),
         Vec::new(),

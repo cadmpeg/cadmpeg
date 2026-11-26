@@ -482,19 +482,10 @@ fn parse_radial_pairs<'a>(
     if values.len() % 2 != 0 {
         return Err(malformed(name, "radial symmetry map has an unpaired index"));
     }
-    let mut sources = BTreeSet::new();
-    let mut pairs = Vec::new();
-    for pair in values.chunks_exact(2) {
-        if sources.contains(&pair[0]) {
-            return Err(malformed(
-                name,
-                "radial symmetry map repeats a source index",
-            ));
-        }
-        sources.insert(pair[0]);
-        pairs.push([pair[0], pair[1]]);
-    }
-    Ok(pairs)
+    Ok(values
+        .chunks_exact(2)
+        .map(|pair| [pair[0], pair[1]])
+        .collect())
 }
 
 fn validate_symmetry_map(
