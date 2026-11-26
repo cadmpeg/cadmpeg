@@ -17,7 +17,7 @@ use crate::math::portable::Portable;
 use crate::scalar::{Angle, Length};
 use crate::sketches::{
     SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition as Geometry, SketchLocus, SketchPlacement,
+    SketchGeometryDefinition, SketchLocus, SketchPlacement,
 };
 use crate::units::{UnitVector2, UnitVector3};
 
@@ -27,12 +27,12 @@ use crate::units::{UnitVector2, UnitVector3};
 #[must_use]
 pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
     Some(match geometry.definition() {
-        Geometry::Point { position } => PlanarCurve::Point(*position),
-        Geometry::Line { start, end } => PlanarCurve::Line {
+        SketchGeometryDefinition::Point { position } => PlanarCurve::Point(*position),
+        SketchGeometryDefinition::Line { start, end } => PlanarCurve::Line {
             start: *start,
             end: *end,
         },
-        Geometry::ReferenceLine { origin, direction } => {
+        SketchGeometryDefinition::ReferenceLine { origin, direction } => {
             let [u, v] = [direction.get().u, direction.get().v];
             let length = u.portable_hypot(v);
             PlanarCurve::InfiniteLine {
@@ -40,11 +40,11 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
                 direction: UnitVector2::new([u / length, v / length])?,
             }
         }
-        Geometry::Circle { center, radius } => PlanarCurve::Circle {
+        SketchGeometryDefinition::Circle { center, radius } => PlanarCurve::Circle {
             center: *center,
             radius: *radius,
         },
-        Geometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -55,7 +55,7 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
             start: *start_angle,
             end: *end_angle,
         },
-        Geometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             radii,
@@ -69,7 +69,7 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
                 range: *bounds,
             }
         }
-        Geometry::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
+        SketchGeometryDefinition::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
         _ => return None,
     })
 }
@@ -410,7 +410,7 @@ pub fn native_relation(
 #[must_use]
 pub fn native_entity_kind(codec: &str, geometry: &SketchGeometry) -> NonBlankString {
     match geometry.definition() {
-        Geometry::Native { native_kind } => qualified(codec, native_kind.as_str()),
+        SketchGeometryDefinition::Native { native_kind } => qualified(codec, native_kind.as_str()),
         _ => qualified(
             codec,
             &tag(geometry).unwrap_or_else(|| "sketch_entity".to_owned()),
