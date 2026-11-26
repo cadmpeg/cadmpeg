@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 use super::{DrawingPart, InstanceTarget, ReferenceEntity, ReferenceSelection, ReferenceTarget};
@@ -27,8 +28,8 @@ fn round_trip<T>(value: &T, wire: serde_json::Value)
 where
     T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
 {
-    assert_eq!(serde_json::to_value(value).unwrap(), wire);
-    assert_eq!(&serde_json::from_value::<T>(wire).unwrap(), value);
+    assert_eq!(json::to_value(value).unwrap(), wire);
+    assert_eq!(&json::from_value::<T>(wire).unwrap(), value);
 }
 
 #[test]
@@ -63,7 +64,7 @@ fn an_instance_target_refuses_a_second_spelling() {
         json!({"entity": {"kind": "document", "value": null}}),
     ] {
         assert!(
-            serde_json::from_value::<InstanceTarget<AttributeTarget>>(wire.clone()).is_err(),
+            json::from_value::<InstanceTarget<AttributeTarget>>(wire.clone()).is_err(),
             "{wire}"
         );
     }
@@ -148,7 +149,7 @@ fn a_drawing_annotation_or_pmi_target_names_its_record() {
         json!({"kind": "pmi", "value": "bad id"}),
     ] {
         assert!(
-            serde_json::from_value::<ReferenceTarget>(wire.clone()).is_err(),
+            json::from_value::<ReferenceTarget>(wire.clone()).is_err(),
             "{wire}"
         );
     }
@@ -164,7 +165,7 @@ fn a_reference_target_refuses_a_value_beside_a_bare_tag() {
         json!({"kind": "external", "document": "d", "object": "o"}),
     ] {
         assert!(
-            serde_json::from_value::<ReferenceTarget>(wire.clone()).is_err(),
+            json::from_value::<ReferenceTarget>(wire.clone()).is_err(),
             "{wire}"
         );
     }
@@ -172,7 +173,7 @@ fn a_reference_target_refuses_a_value_beside_a_bare_tag() {
 
 #[test]
 fn a_reference_selection_keeps_the_source_token_of_an_unresolved_target() {
-    let native: crate::design::names::NativeName = serde_json::from_value(
+    let native: crate::design::names::NativeName = json::from_value(
         json!({"codec": "fcstd", "value": {"kind": "text", "value": "Front.Edge1"}}),
     )
     .unwrap();
@@ -193,7 +194,7 @@ fn a_reference_selection_keeps_the_source_token_of_an_unresolved_target() {
         json!({"native": {"codec": "fcstd", "value": {"kind": "text", "value": "Box"}}}),
     ] {
         assert!(
-            serde_json::from_value::<ReferenceSelection>(wire.clone()).is_err(),
+            json::from_value::<ReferenceSelection>(wire.clone()).is_err(),
             "{wire}"
         );
     }
@@ -207,7 +208,7 @@ fn only_a_state_a_local_path_configuration_or_a_feature_reads_the_design() {
     assert!(ReferenceTarget::Entity(target.clone()).reads_design());
     target.state = None;
     target.path = Some(
-        serde_json::from_value(json!([{
+        json::from_value(json!([{
             "occurrence": {"kind": "occurrence", "value": "test:model:occurrence#1"},
             "configuration": {"kind": "named", "value": "Large"}
         }]))
@@ -215,7 +216,7 @@ fn only_a_state_a_local_path_configuration_or_a_feature_reads_the_design() {
     );
     assert!(!target.reads_design());
     target.path = Some(
-        serde_json::from_value(json!([{
+        json::from_value(json!([{
             "occurrence": {"kind": "occurrence", "value": "test:model:occurrence#1"},
             "configuration": {"kind": "local", "value": "test:design:configuration#large"}
         }]))

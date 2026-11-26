@@ -39,12 +39,11 @@
 //! This crate also owns the golden harness in [`crate::golden`]. Both helpers
 //! are test-only and must not be depended on by production builds.
 
-use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeError;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
 
 /// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
@@ -77,7 +76,7 @@ where
     let plan = Encoder::plan(
         codec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
     let path = plan.report().write_path().clone();
@@ -128,7 +127,7 @@ pub enum SemanticOutcome {
     /// The encoder refused.
     Refused {
         /// The refusal error.
-        error: CodecError,
+        error: EncodeError,
     },
 }
 
@@ -166,12 +165,12 @@ pub fn semantic_roundtrip<C>(
         "{label}: the decode's content digest does not match its document, so replacing it cannot \
          force the semantic path; this helper would report whatever the encoder happened to do"
     );
-    source_fidelity.content_digest = Sha256Digest::digest(&[]);
+    source_fidelity.content_digest = None;
     // Plan borrows the document until write completes.
     let written = match Encoder::plan(
         codec,
         EncodeInput::new(&ir, Some(&source_fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     ) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
@@ -216,7 +215,7 @@ pub enum MutationOutcome {
     /// The encoder refused the edit.
     Refused {
         /// The refusal error.
-        error: CodecError,
+        error: EncodeError,
     },
 }
 
@@ -295,7 +294,7 @@ where
     let written = match Encoder::plan(
         codec,
         EncodeInput::new(&edited, Some(&source_fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     ) {
         Ok(plan) => {
             let mut bytes = Vec::new();

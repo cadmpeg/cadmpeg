@@ -10,7 +10,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Orientation carrier of a planar curve offset.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OffsetSide<V = Vector3> {
@@ -34,7 +41,14 @@ pub enum OffsetSide<V = Vector3> {
 }
 
 /// Parameter interval and optional variable-distance law of a curve offset.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveOffsetRange<R = f64> {
@@ -100,7 +114,9 @@ impl CurveOffsetRange {
 }
 
 /// Independent variable used by a curve-offset distance law.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -112,7 +128,9 @@ pub enum CurveOffsetLawBasis {
 }
 
 /// A one-based coordinate of a curve-offset distance function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "u8", into = "u8")]
 pub struct CurveOffsetCoordinate(u8);
@@ -147,7 +165,14 @@ impl From<CurveOffsetCoordinate> for u8 {
 }
 
 /// Variable signed distance law for a planar curve offset.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveOffsetDistanceLaw<R = f64> {

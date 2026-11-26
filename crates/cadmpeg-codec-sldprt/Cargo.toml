@@ -27,6 +27,7 @@ cadmpeg-parasolid.workspace = true
 sha2.workspace = true
 flate2.workspace = true
 crc32fast.workspace = true
+memchr.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -39,9 +40,6 @@ cadmpeg-test-support = { workspace = true }
 cadmpeg-parasolid = { workspace = true, features = ["test-support"] }
 # Measured round-trip assertions on written documents.
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
-# Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
-# the normal library build.
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [lints]
 workspace = true

@@ -8,6 +8,7 @@ use crate::native::attach::ParasolidNumericAttributeSources;
 use crate::native::attach::ParasolidStringAttributeSources;
 use crate::native::attach::ParasolidStructuredAttributeSources;
 use crate::native::attach::ParasolidTopologyAttributeIndex;
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
@@ -63,13 +64,13 @@ fn string_attribute_output_preserves_value() {
         );
         assert_eq!(index.contexts.len(), 1);
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
+        let value_use: ParasolidEntity51StringUse = json::from_value(serde_json::json!({
             "id": "string-use", "stream_ordinal": 3, "entity_51_record": "entity",
             "reference_ordinal": 5, "referenced_xmt": 70, "string_record": "string-value",
             "inflated_offset": 200
         }))
         .unwrap();
-        let value: ParasolidEntity54StringRecord = serde_json::from_value(serde_json::json!({
+        let value: ParasolidEntity54StringRecord = json::from_value(serde_json::json!({
             "id": "string-value", "stream_ordinal": 3, "xmt": 70,
             "value": "TEXT", "byte_len": 18, "inflated_offset": 400
         }))

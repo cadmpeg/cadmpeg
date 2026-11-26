@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::ids::SubdId;
+use crate::ids::{BodyId, RegionId, ShellId, SubdId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::subd::{
@@ -11,11 +11,12 @@ use crate::subd::{
 };
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn subd_round_trip_and_directed_ring_validation() {
     let mut ir = CadIr::empty();
-    ir.geometry.subds.push(SubdSurface {
+    let surface = SubdSurface {
         id: SubdId::mint("synthetic:subd:surface#0").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         source_object: None,
@@ -49,13 +50,20 @@ fn subd_round_trip_and_directed_ring_validation() {
         )
         .unwrap(),
         native_ref: None,
-    });
+    };
+    ir.geometry.push_cage_object(
+        surface,
+        BodyId::mint("synthetic:subd:body#0").unwrap(),
+        RegionId::mint("synthetic:subd:region#0").unwrap(),
+        ShellId::mint("synthetic:subd:shell#0").unwrap(),
+    );
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
-    let wire = serde_json::to_value(&ir.geometry.subds[0]).unwrap();
+    let wire = json::to_value(&ir.geometry.subds[0]).unwrap();
     assert!(wire.get("vertices").is_none());
     assert_eq!(wire["cage"]["vertices"].as_array().unwrap().len(), 3);
     assert_eq!(wire["cage"]["edges"].as_array().unwrap().len(), 3);
@@ -64,7 +72,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         3
     );
     assert_eq!(
-        serde_json::to_value(SubdEdgeTag::SmoothX).unwrap(),
+        json::to_value(SubdEdgeTag::SmoothX).unwrap(),
         serde_json::json!("smooth_x")
     );
     let cage = &ir.geometry.subds[0].cage;
@@ -83,11 +91,11 @@ fn subd_round_trip_and_directed_ring_validation() {
 fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
     let phantom_wire = serde_json::json!({"kind": "phantom"});
     assert_eq!(
-        serde_json::to_value(SubdGripWedge::Phantom {}).unwrap(),
+        json::to_value(SubdGripWedge::Phantom {}).unwrap(),
         phantom_wire
     );
     assert_eq!(
-        serde_json::from_value::<SubdGripWedge>(phantom_wire).unwrap(),
+        json::from_value::<SubdGripWedge>(phantom_wire).unwrap(),
         SubdGripWedge::Phantom {}
     );
 
@@ -103,13 +111,10 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
         "spokes": [],
         "sectors": [],
     });
-    assert_eq!(serde_json::to_value(&slot).unwrap(), slot_wire);
-    assert_eq!(
-        serde_json::from_value::<SubdGripWedge>(slot_wire).unwrap(),
-        slot
-    );
+    assert_eq!(json::to_value(&slot).unwrap(), slot_wire);
+    assert_eq!(json::from_value::<SubdGripWedge>(slot_wire).unwrap(), slot);
 
-    let error = serde_json::from_value::<SubdGripWedge>(serde_json::json!({
+    let error = json::from_value::<SubdGripWedge>(serde_json::json!({
         "kind": "phantom",
         "edge": 3,
     }))
@@ -117,7 +122,7 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
     .to_string();
     assert!(error.contains("edge"), "{error}");
 
-    let error = serde_json::from_value::<SubdGripWedge>(serde_json::json!({
+    let error = json::from_value::<SubdGripWedge>(serde_json::json!({
         "kind": "slot",
         "edge": 3,
         "spokes": [],
@@ -132,15 +137,14 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
 #[test]
 fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
     let symmetry = SubdSymmetry::new(
-        SubdSymmetryKind::radial(
-            std::num::NonZeroU32::new(4).unwrap(),
-            1.0,
-            vec![SubdRadialSymmetryMap {
+        SubdSymmetryKind::Radial(super::SubdRadialSymmetry {
+            segments: std::num::NonZeroU32::new(4).unwrap(),
+            sweep: FiniteReal::new(1.0).unwrap(),
+            radial_maps: vec![SubdRadialSymmetryMap {
                 selector: SubdRadialMapSelector::Ef,
                 pairs: vec![[1, 2]],
             }],
-        )
-        .unwrap(),
+        }),
         SubdPlaneFrame::new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -152,7 +156,7 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
         Vec::new(),
     )
     .unwrap();
-    let wire = serde_json::to_value(&symmetry).unwrap();
+    let wire = json::to_value(&symmetry).unwrap();
     assert_eq!(
         wire,
         serde_json::json!({
@@ -172,10 +176,7 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
             "vertex_pairs": [],
         })
     );
-    assert_eq!(
-        serde_json::from_value::<SubdSymmetry>(wire).unwrap(),
-        symmetry
-    );
+    assert_eq!(json::from_value::<SubdSymmetry>(wire).unwrap(), symmetry);
 }
 
 #[test]
@@ -187,7 +188,7 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     });
     let maps = serde_json::json!([{ "selector": "ef", "pairs": [[1, 2]] }]);
 
-    let error = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
+    let error = json::from_value::<SubdSymmetry>(serde_json::json!({
         "kind": { "kind": "correspondence" },
         "plane": plane,
         "radial_maps": maps,
@@ -199,7 +200,7 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     .to_string();
     assert!(error.contains("radial_maps"), "{error}");
 
-    let error = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
+    let error = json::from_value::<SubdSymmetry>(serde_json::json!({
         "kind": { "kind": "correspondence", "radial_maps": maps },
         "plane": plane,
         "face_pairs": [],
@@ -210,7 +211,7 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     .to_string();
     assert!(error.contains("radial_maps"), "{error}");
 
-    let symmetry = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
+    let symmetry = json::from_value::<SubdSymmetry>(serde_json::json!({
         "kind": { "kind": "radial", "segments": 4, "sweep": 1.0, "radial_maps": maps },
         "plane": plane,
         "face_pairs": [],
@@ -219,7 +220,7 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     }))
     .unwrap();
     assert_eq!(
-        serde_json::to_value(&symmetry).unwrap()["kind"]["radial_maps"],
+        json::to_value(&symmetry).unwrap()["kind"]["radial_maps"],
         maps
     );
 }
@@ -254,12 +255,51 @@ fn triangle_cage() -> crate::subd::SubdCage {
     .unwrap()
 }
 
+#[test]
+fn a_cage_is_closed_where_every_edge_borders_two_faces() {
+    assert!(!triangle_cage().is_closed());
+    let ring = |uses: [(u32, bool); 3]| {
+        SubdFace::from_edge_uses(
+            uses.into_iter()
+                .map(|(edge, reversed)| SubdEdgeUse { edge, reversed })
+                .collect(),
+        )
+        .unwrap()
+    };
+    let tetrahedron = crate::subd::SubdCage::new(
+        [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .map(|point| SubdVertex::new(point, SubdVertexTag::Smooth, None).unwrap())
+        .collect(),
+        [[0, 1], [1, 2], [2, 0], [0, 3], [1, 3], [2, 3]]
+            .into_iter()
+            .map(|vertices| {
+                SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).unwrap()
+            })
+            .collect(),
+        vec![
+            ring([(0, false), (1, false), (2, false)]),
+            ring([(3, false), (4, true), (0, true)]),
+            ring([(4, false), (5, true), (1, true)]),
+            ring([(5, false), (3, true), (2, true)]),
+        ],
+        Vec::new(),
+    )
+    .unwrap();
+    assert!(tetrahedron.is_closed());
+}
+
 fn rejects_cage_wire(wire: serde_json::Value) {
-    let parts: super::SubdCageWire = serde_json::from_value(wire.clone()).unwrap();
+    let parts: super::SubdCageWire = json::from_value(wire.clone()).unwrap();
     assert!(
         super::SubdCage::new(parts.vertices, parts.edges, parts.faces, parts.symmetries,).is_err()
     );
-    assert!(serde_json::from_value::<super::SubdCage>(wire).is_err());
+    assert!(json::from_value::<super::SubdCage>(wire).is_err());
 }
 
 #[test]
@@ -273,7 +313,7 @@ fn face_admission_requires_three_edge_uses() {
             count
         ];
         assert!(SubdFace::from_edge_uses(edges.clone()).is_err());
-        assert!(serde_json::from_value::<SubdFace>(serde_json::json!({ "edges": edges })).is_err());
+        assert!(json::from_value::<SubdFace>(serde_json::json!({ "edges": edges })).is_err());
     }
     assert!(SubdFace::from_edge_uses(vec![
         SubdEdgeUse {
@@ -288,31 +328,49 @@ fn face_admission_requires_three_edge_uses() {
 #[test]
 fn cage_admission_requires_valid_edge_indices_and_closed_directed_rings() {
     for endpoints in [[0, 3], [3, 0]] {
-        let mut wire = serde_json::to_value(triangle_cage()).unwrap();
+        let mut wire = json::to_value(triangle_cage()).unwrap();
         wire["edges"][0]["vertices"] = serde_json::json!(endpoints);
         rejects_cage_wire(wire);
     }
-    let mut wire = serde_json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     wire["faces"][0]["sides"][0]["edges"][0]["edge"] = 3.into();
     rejects_cage_wire(wire);
-    let mut wire = serde_json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     wire["faces"][0]["sides"][0]["edges"][0]["reversed"] = true.into();
     rejects_cage_wire(wire);
 }
 
 #[test]
-fn cage_admission_requires_non_empty_grip_layouts_and_valid_sector_arity() {
-    for wedges in [
-        serde_json::json!([]),
-        serde_json::json!([{
-            "kind": "slot", "edge": 0, "spokes": [null], "sectors": []
-        }]),
-    ] {
-        let mut wire = serde_json::to_value(triangle_cage()).unwrap();
-        wire["vertices"][0]["secondary_grips"] =
-            serde_json::json!({ "direction": "north", "wedges": wedges });
-        assert!(serde_json::from_value::<super::SubdCage>(wire).is_err());
-    }
+fn cage_admission_requires_valid_sector_arity() {
+    let mut wire = json::to_value(triangle_cage()).unwrap();
+    wire["vertices"][0]["secondary_grips"] = serde_json::json!({
+        "direction": "north",
+        "wedges": [{ "kind": "slot", "edge": 0, "spokes": [null], "sectors": [] }]
+    });
+    assert!(json::from_value::<super::SubdCage>(wire).is_err());
+}
+
+/// A vertex with no secondary grips has one form: an absent layout.
+#[test]
+fn an_empty_grip_layout_reads_and_constructs_as_absent() {
+    let mut wire = json::to_value(triangle_cage()).unwrap();
+    wire["vertices"][0]["secondary_grips"] =
+        serde_json::json!({ "direction": "north", "wedges": [] });
+    let cage = json::from_value::<super::SubdCage>(wire).unwrap();
+    assert!(cage.vertices()[0].secondary_grips().is_none());
+    assert_eq!(
+        json::to_value(&cage).unwrap(),
+        json::to_value(triangle_cage()).unwrap()
+    );
+    let empty =
+        super::SubdVertexGripLayout::new(super::SubdGripDirection::North, Vec::new()).unwrap();
+    let vertex = SubdVertex::new(
+        Point3::new(0.0, 0.0, 0.0),
+        SubdVertexTag::Smooth,
+        Some(empty),
+    )
+    .unwrap();
+    assert!(vertex.secondary_grips().is_none());
 }
 
 #[test]
@@ -323,7 +381,7 @@ fn cage_admission_requires_incident_grip_topology() {
         (0, None, Some(1)),
         (3, None, Some(0)),
     ] {
-        let mut wire = serde_json::to_value(triangle_cage()).unwrap();
+        let mut wire = json::to_value(triangle_cage()).unwrap();
         if owner == 3 {
             let extra = wire["vertices"][0].clone();
             wire["vertices"].as_array_mut().unwrap().push(extra);
@@ -343,7 +401,7 @@ fn cage_admission_requires_incident_grip_topology() {
 
 #[test]
 fn grip_indices_are_unique_across_the_whole_cage() {
-    let mut wire = serde_json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     for owner in 0..2 {
         wire["vertices"][owner]["secondary_grips"] = serde_json::json!({
             "direction": "north", "wedges": [{ "kind": "slot", "edge": 0,
@@ -352,7 +410,7 @@ fn grip_indices_are_unique_across_the_whole_cage() {
     }
     rejects_cage_wire(wire.clone());
     wire["vertices"][1]["secondary_grips"]["wedges"][0]["spokes"][0]["source_index"] = 43.into();
-    assert!(serde_json::from_value::<super::SubdCage>(wire).is_ok());
+    assert!(json::from_value::<super::SubdCage>(wire).is_ok());
 }
 
 #[test]
@@ -364,7 +422,12 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
             vertices[0].tag = SubdVertexTag::Corner;
             vertices[1].secondary_grips = Some(super::SubdVertexGripLayout::new(
                 super::SubdGripDirection::North,
-                Vec::new(),
+                vec![SubdGripWedge::Slot {
+                    edge: Some(3),
+                    sector_face: None,
+                    spokes: Vec::new(),
+                    sectors: Vec::new(),
+                }],
             )?);
             Ok(())
         },)
@@ -380,7 +443,7 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
 
 #[test]
 fn cage_symmetry_references_stay_in_range() {
-    let mut wire = serde_json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     wire["symmetries"] = serde_json::json!([{
         "kind": { "kind": "correspondence" },
         "plane": { "origin": { "x": 0.0, "y": 0.0, "z": 0.0 }, "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 }, "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 } },
@@ -390,15 +453,15 @@ fn cage_symmetry_references_stay_in_range() {
     }]);
     rejects_cage_wire(wire.clone());
     wire["symmetries"][0]["vertex_pairs"] = serde_json::json!([[1, 1]]);
-    assert!(serde_json::from_value::<super::SubdCage>(wire).is_ok());
+    assert!(json::from_value::<super::SubdCage>(wire).is_ok());
 }
 
 #[test]
 fn edge_admission_requires_distinct_endpoints() {
     assert!(SubdEdge::new([0, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err());
-    let mut wire = serde_json::to_value(&triangle_cage().edges[0]).unwrap();
+    let mut wire = json::to_value(&triangle_cage().edges[0]).unwrap();
     wire["vertices"] = serde_json::json!([0, 0]);
-    assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+    assert!(json::from_value::<SubdEdge>(wire).is_err());
     assert!(SubdEdge::new(
         [u32::MAX, 0],
         [0.0, 0.0],
@@ -411,7 +474,7 @@ fn edge_admission_requires_distinct_endpoints() {
 
 #[test]
 fn edge_numeric_admission_rejects_invalid_controls() {
-    let base = serde_json::to_value(&triangle_cage().edges[0]).unwrap();
+    let base = json::to_value(&triangle_cage().edges[0]).unwrap();
     for invalid in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for index in 0..2 {
             let mut sharpness = [0.0, 0.0];
@@ -421,7 +484,7 @@ fn edge_numeric_admission_rejects_invalid_controls() {
             );
             let mut wire = base.clone();
             wire["sharpness"] = serde_json::json!(sharpness);
-            assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+            assert!(json::from_value::<SubdEdge>(wire).is_err());
         }
     }
     for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -437,7 +500,7 @@ fn edge_numeric_admission_rejects_invalid_controls() {
     for invalid in [0.0, -1.0] {
         let mut wire = base.clone();
         wire["knot_interval"] = invalid.into();
-        assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+        assert!(json::from_value::<SubdEdge>(wire).is_err());
     }
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for index in 0..2 {
@@ -448,7 +511,7 @@ fn edge_numeric_admission_rejects_invalid_controls() {
             );
             let mut wire = base.clone();
             wire["sector_coefficients"] = serde_json::json!(coefficients);
-            assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+            assert!(json::from_value::<SubdEdge>(wire).is_err());
         }
     }
 }
@@ -468,8 +531,8 @@ fn edge_admission_preserves_signed_coefficients_and_optional_intervals() {
         assert_eq!(edge.sharpness.map(NonNegativeReal::get), [0.0, f64::MAX]);
         assert_eq!(edge.knot_interval.map(PositiveReal::get), interval);
         assert_eq!(edge.sector_coefficients.map(FiniteReal::get), [-2.0, 3.0]);
-        let wire = serde_json::to_value(&edge).unwrap();
-        assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
+        let wire = json::to_value(&edge).unwrap();
+        assert_eq!(json::from_value::<SubdEdge>(wire).unwrap(), edge);
     }
 }
 
@@ -486,26 +549,26 @@ fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
             assert!(super::SubdSecondaryGrip::new(0, point, 1.0).is_err());
             let mut wire = base.clone();
             wire["point"] = serde_json::json!(point);
-            assert!(serde_json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
+            assert!(json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
         }
     }
     for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(super::SubdSecondaryGrip::new(0, point, invalid).is_err());
         let mut wire = base.clone();
         wire["weight"] = serde_json::json!(invalid);
-        assert!(serde_json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
+        assert!(json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
     }
     for weight in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
         let grip = super::SubdSecondaryGrip::new(u32::MAX, point, weight).unwrap();
         assert_eq!(grip.point, point);
         assert_eq!(grip.weight.get(), weight);
-        let wire = serde_json::to_value(&grip).unwrap();
+        let wire = json::to_value(&grip).unwrap();
         assert_eq!(
             wire,
             serde_json::json!({"source_index": u32::MAX, "point": point, "weight": weight})
         );
         assert_eq!(
-            serde_json::from_value::<super::SubdSecondaryGrip>(wire).unwrap(),
+            json::from_value::<super::SubdSecondaryGrip>(wire).unwrap(),
             grip
         );
     }
@@ -525,7 +588,6 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         sectors,
     };
     for wedges in [
-        Vec::new(),
         vec![slot(vec![None], Vec::new())],
         vec![slot(vec![None], vec![None]), SubdGripWedge::Phantom {}],
         vec![
@@ -535,9 +597,10 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
     ] {
         let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
         assert!(SubdVertexGripLayout::new(SubdGripDirection::North, wedges,).is_err());
-        assert!(serde_json::from_value::<SubdVertexGripLayout>(wire).is_err());
+        assert!(json::from_value::<SubdVertexGripLayout>(wire).is_err());
     }
     for wedges in [
+        Vec::new(),
         vec![SubdGripWedge::Phantom {}],
         vec![slot(vec![None], vec![None])],
         vec![
@@ -547,9 +610,9 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
     ] {
         let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
         let layout = SubdVertexGripLayout::new(SubdGripDirection::North, wedges).unwrap();
-        assert_eq!(serde_json::to_value(&layout).unwrap(), wire);
+        assert_eq!(json::to_value(&layout).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<SubdVertexGripLayout>(wire).unwrap(),
+            json::from_value::<SubdVertexGripLayout>(wire).unwrap(),
             layout
         );
     }
@@ -561,7 +624,7 @@ fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
     use crate::units::UnitVector3;
 
     let point = Point3::new(-1.0, 2.0, 3.0);
-    let vertex = super::SubdVertex::new(point, super::SubdVertexTag::Crease, None).unwrap();
+    let vertex = SubdVertex::new(point, super::SubdVertexTag::Crease, None).unwrap();
     assert_eq!(vertex.point(), FinitePoint3::new(point).unwrap());
     let grip = super::SubdSecondaryGrip::new(4, point, 0.5).unwrap();
     assert_eq!(grip.point, FinitePoint3::new(point).unwrap());
@@ -578,7 +641,7 @@ fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
         [UnitVector3::X_AXIS, UnitVector3::Y_AXIS]
     );
     assert_eq!(
-        serde_json::to_value(frame).unwrap(),
+        json::to_value(frame).unwrap(),
         serde_json::json!({
             "origin": point,
             "first_axis": Vector3::new(1.0, 0.0, 0.0),
@@ -596,27 +659,24 @@ fn user_knots_distinguish_absence_inheritance_and_explicit_zero() {
     let mut edge =
         SubdEdge::new([0, 1], [0.0; 2], SubdEdgeTag::Smooth, Some(0.25), [0.0; 2]).unwrap();
     assert_eq!(edge.effective_knot_interval(), Some(0.25));
-    assert!(serde_json::to_value(&edge)
-        .unwrap()
-        .get("user_knot")
-        .is_none());
-    let mut null_wire = serde_json::to_value(&edge).unwrap();
+    assert!(json::to_value(&edge).unwrap().get("user_knot").is_none());
+    let mut null_wire = json::to_value(&edge).unwrap();
     null_wire["user_knot"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<SubdEdge>(null_wire).is_err());
+    assert!(json::from_value::<SubdEdge>(null_wire).is_err());
     edge.user_knot = Some(SubdUserKnot::Inherit);
     assert_eq!(edge.effective_knot_interval(), Some(0.25));
     assert_eq!(
-        serde_json::to_value(&edge).unwrap()["user_knot"],
+        json::to_value(&edge).unwrap()["user_knot"],
         serde_json::json!({"kind":"inherit"})
     );
     edge.user_knot = Some(SubdUserKnot::Override(NonNegativeReal::new(0.0).unwrap()));
     assert_eq!(edge.effective_knot_interval(), Some(0.0));
-    let decoded: SubdEdge = serde_json::from_str(&serde_json::to_string(&edge).unwrap()).unwrap();
+    let decoded: SubdEdge = serde_json::from_str(&json::to_string(&edge).unwrap()).unwrap();
     assert_eq!(decoded, edge);
     assert_eq!(decoded.knot_interval.map(PositiveReal::get), Some(0.25));
-    let mut wire = serde_json::to_value(edge).unwrap();
+    let mut wire = json::to_value(edge).unwrap();
     wire["user_knot"]["value"] = (-0.5).into();
-    assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+    assert!(json::from_value::<SubdEdge>(wire).is_err());
 }
 
 #[test]

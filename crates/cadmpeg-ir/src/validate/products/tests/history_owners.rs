@@ -5,6 +5,7 @@ use crate::features::evaluation::FeatureEvaluation;
 use crate::features::selections::DistinctMembers;
 use crate::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use crate::report::check::Finding;
+use cadmpeg_core::serde_erase::json;
 
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
@@ -19,8 +20,8 @@ fn model() -> CadIr {
         native_ref: None,
     });
     ir.model.product_definitions.push(
-        serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
+        json::from_value(serde_json::json!({
+            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": []
         }))
         .unwrap(),
     );
@@ -50,10 +51,12 @@ fn model() -> CadIr {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
+    let mut ir = ir.clone();
+    crate::examples::add_document_root(&mut ir);
     let mut findings = Vec::new();
     super::super::check_products(
         &cadmpeg_core::decode::test_support::service_decode_context(),
-        ir,
+        &ir,
         &mut findings,
     )
     .unwrap();
@@ -64,17 +67,11 @@ fn findings(ir: &CadIr) -> Vec<Finding> {
 fn product_history_owner_accepts_owned_outputs_and_absent_links() {
     let mut ir = model();
     assert!(findings(&ir).is_empty());
-    let json = serde_json::to_value(&ir.model.features[0]).unwrap();
+    let json = json::to_value(&ir.model.features[0]).unwrap();
     assert_eq!(json["product_definition"], "test:model:product#owner");
-    let read: Feature = serde_json::from_value(json).unwrap();
+    let read: Feature = json::from_value(json).unwrap();
     assert_eq!(
         read.product_definition,
-        ir.model.features[0].product_definition
-    );
-    let wire = serde_json::to_value(&ir.model).unwrap();
-    let restored: crate::document::Model = serde_json::from_value(wire).unwrap();
-    assert_eq!(
-        restored.features[0].product_definition,
         ir.model.features[0].product_definition
     );
     ir.model.features[0].product_definition = None;

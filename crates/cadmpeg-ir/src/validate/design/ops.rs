@@ -24,12 +24,15 @@ mod swept;
 #[cfg(test)]
 mod tests;
 
+use crate::report::check::Ruled;
 use std::collections::BTreeSet;
 
 use serde_json::Value;
 
 use super::records::{DesignRecords, MemberKey};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
+use crate::design::ops::dressup::{EmbossEffect, OffsetResult};
+use crate::design::options::Boolean;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -54,7 +57,10 @@ pub(super) struct Site<'a> {
 /// Check the sketches and every stated operation of `index` against the
 /// rules of §6.1 to §6.7.
 pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
-    let wire = serde_json::to_value(&index.ir.design).unwrap_or(Value::Null);
+    let wire = cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+        serde::Serialize::serialize(&index.ir.design, adapter)
+    })
+    .unwrap_or(Value::Null);
     sketches::check_sketches(index, &wire, findings);
     options::check_native_keys(&wire, findings);
     for (site, definition) in definitions(index) {
@@ -66,10 +72,75 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     for feature in &index.ir.design.features {
         check_feature(index, feature, findings);
     }
-    body::check_template_inputs(index, findings);
+    body::check_generators(index, findings);
     assembly::check_occurrence_creators(index, findings);
     assembly::check_spans(index, findings);
     sheet_metal::check_rules(index, findings);
+}
+
+/// The `Boolean` field of an operation's result.
+pub(super) enum BooleanField<'a> {
+    /// The operation's result has no `Boolean`.
+    Absent,
+    /// The operation leaves its `Boolean` unstated.
+    Unstated,
+    /// The stated `Boolean`.
+    Stated(&'a Boolean),
+}
+
+impl<'a> From<Option<&'a Boolean>> for BooleanField<'a> {
+    fn from(boolean: Option<&'a Boolean>) -> Self {
+        boolean.map_or(Self::Unstated, Self::Stated)
+    }
+}
+
+/// The `Boolean` field of `operation`'s result.
+pub(super) fn boolean_field(operation: &FeatureOperation) -> BooleanField<'_> {
+    match operation {
+        FeatureOperation::Extrude(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Revolve(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Sweep(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::HelicalSweep(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Primitive(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Loft(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::ImplicitSweep(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Rib(op) => op.boolean.as_ref().into(),
+        FeatureOperation::Thicken(op) => op.boolean.as_ref().into(),
+        FeatureOperation::BoundaryFill(op) => op.boolean.as_ref().into(),
+        FeatureOperation::Patch(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Knit(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Extend(op) => op
+            .output
+            .as_ref()
+            .and_then(|output| output.boolean.as_ref())
+            .into(),
+        FeatureOperation::Offset(op) => match &op.result {
+            OffsetResult::Copy(output) => output.boolean.as_ref().into(),
+            OffsetResult::Move {} => BooleanField::Absent,
+        },
+        _ => BooleanField::Absent,
+    }
+}
+
+/// Whether `operation` builds a tool body that it combines with the state
+/// it enters (§5.4): one that states `Boolean::Apply`, a `Hole`, or an
+/// `Emboss` whose effect is not `Scribe`. `None` where the operation is
+/// `Unresolved` or `Native`, or states no Boolean or effect.
+pub(super) fn builds_tool_body(operation: &FeatureOperation) -> Option<bool> {
+    match operation {
+        FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. } => None,
+        FeatureOperation::Hole(_) => Some(true),
+        FeatureOperation::Emboss(op) => match op.effect {
+            EmbossEffect::Emboss { .. } | EmbossEffect::Engrave { .. } => Some(true),
+            EmbossEffect::Scribe => Some(false),
+            EmbossEffect::Native(_) => None,
+        },
+        _ => match boolean_field(operation) {
+            BooleanField::Absent => Some(false),
+            BooleanField::Unstated => None,
+            BooleanField::Stated(boolean) => Some(matches!(boolean, Boolean::Apply { .. })),
+        },
+    }
 }
 
 /// Every feature definition the design states, with where it is stated:
@@ -213,12 +284,12 @@ fn check_feature(index: &DesignRecords<'_>, feature: &Feature, findings: &mut Ve
         FeatureOperation::Primitive(_) if feature.placement.is_some() => error(
             findings,
             id,
-            format_args!("a Primitive feature states a Feature.placement; its placement is Primitive.placement"),
+            crate::rule!("design.primitive-feature-states-feature-placement-placement", "a Primitive feature states a Feature.placement; its placement is Primitive.placement"),
         ),
         FeatureOperation::Place(_) if feature.placement.is_some() => error(
             findings,
             id,
-            format_args!("a Place feature states a Feature.placement; its placement is Place.placement"),
+            crate::rule!("design.place-feature-states-feature-placement-placement", "a Place feature states a Feature.placement; its placement is Place.placement"),
         ),
         _ => {}
     }
@@ -227,11 +298,11 @@ fn check_feature(index: &DesignRecords<'_>, feature: &Feature, findings: &mut Ve
     assembly::check_driven_definition(index, feature, findings);
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::error(findings, entity, message);
 }
 
-fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::super::record_finding(
         findings,
         Check::Design,
@@ -279,7 +350,7 @@ fn strings(value: &Value) -> BTreeSet<&str> {
 
 /// The strings of a value's wire form.
 fn wire_strings<T: serde::Serialize>(value: &T) -> BTreeSet<String> {
-    serde_json::to_value(value)
+    cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| value.serialize(adapter))
         .map(|value| strings(&value).into_iter().map(str::to_owned).collect())
         .unwrap_or_default()
 }

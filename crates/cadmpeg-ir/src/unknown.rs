@@ -202,6 +202,7 @@ impl UnknownRecord {
 mod tests {
     use super::{NativeUnknownRecord, UnknownRecord};
     use crate::ids::UnknownId;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn product_projection_checks_raw_link_identity_without_changing_evidence() {
@@ -221,8 +222,8 @@ mod tests {
             let error = NativeUnknownRecord::try_from(&raw).unwrap_err();
             assert!(error.to_string().contains(raw.id().as_str()), "{error}");
             assert!(error.to_string().contains("link 0"), "{error}");
-            let wire = serde_json::to_value(&raw).unwrap();
-            assert_eq!(serde_json::from_value::<UnknownRecord>(wire).unwrap(), raw);
+            let wire = json::to_value(&raw).unwrap();
+            assert_eq!(json::from_value::<UnknownRecord>(wire).unwrap(), raw);
         }
         let raw = UnknownRecord::retained(
             UnknownId::mint("test:source:unknown#0").unwrap(),
@@ -243,11 +244,8 @@ mod tests {
             "wire-value",
             vec![],
         );
-        let wire = serde_json::to_value(&record).unwrap();
-        assert_eq!(
-            serde_json::from_value::<UnknownRecord>(wire).unwrap(),
-            record
-        );
+        let wire = json::to_value(&record).unwrap();
+        assert_eq!(json::from_value::<UnknownRecord>(wire).unwrap(), record);
         let mut ir = crate::CadIr::empty();
         ir.native
             .namespace_mut(crate::codec_id!("synthetic"))
@@ -276,19 +274,16 @@ mod tests {
         inline.retain_data(vec![1]);
         assert_eq!(inline.offset(), u64::MAX);
         assert_eq!(inline.data(), Some([1].as_slice()));
-        let wire = serde_json::to_value(&inline).unwrap();
-        assert_eq!(
-            serde_json::from_value::<UnknownRecord>(wire).unwrap(),
-            inline
-        );
+        let wire = json::to_value(&inline).unwrap();
+        assert_eq!(json::from_value::<UnknownRecord>(wire).unwrap(), inline);
     }
 
     #[test]
     fn product_unknown_projection_refuses_extra_fields_and_absent_links() {
         let mut wire = serde_json::json!({"id": "synthetic:source:unknown#0", "links": []});
-        let record = serde_json::from_value::<NativeUnknownRecord>(wire.clone()).unwrap();
+        let record = json::from_value::<NativeUnknownRecord>(wire.clone()).unwrap();
         assert!(record.links.is_empty());
-        let error = serde_json::from_value::<NativeUnknownRecord>(
+        let error = json::from_value::<NativeUnknownRecord>(
             serde_json::json!({"id": "synthetic:source:unknown#0"}),
         )
         .unwrap_err();
@@ -297,7 +292,7 @@ mod tests {
             "{error}"
         );
         wire["zz_bogus"] = true.into();
-        let error = serde_json::from_value::<NativeUnknownRecord>(wire).unwrap_err();
+        let error = json::from_value::<NativeUnknownRecord>(wire).unwrap_err();
         assert_eq!(
             error.to_string(),
             "unknown field `zz_bogus`, expected `id` or `links`"
@@ -329,14 +324,14 @@ mod tests {
         });
 
         let record: UnknownRecord =
-            serde_json::from_value(wire.clone()).expect("deserialize unknown-record wire");
+            json::from_value(wire.clone()).expect("deserialize unknown-record wire");
 
         assert!(
             matches!(&record.retention, super::RawRetainedBytes::Digest { byte_len: 99, sha256 } if sha256 == "wire-value")
         );
         assert_eq!(record.data(), None);
         assert_eq!(
-            serde_json::to_value(record).expect("serialize unknown-record wire"),
+            json::to_value(record).expect("serialize unknown-record wire"),
             wire
         );
     }
@@ -352,9 +347,9 @@ mod tests {
             "links": []
         });
         let record: UnknownRecord =
-            serde_json::from_value(wire.clone()).expect("deserialize unknown-record wire");
+            json::from_value(wire.clone()).expect("deserialize unknown-record wire");
         assert_eq!(
-            serde_json::to_value(record).expect("serialize unknown-record wire"),
+            json::to_value(record).expect("serialize unknown-record wire"),
             wire
         );
 
@@ -364,7 +359,7 @@ mod tests {
         ] {
             let mut restated = wire.clone();
             restated["retention"][key] = value;
-            let error = serde_json::from_value::<UnknownRecord>(restated)
+            let error = json::from_value::<UnknownRecord>(restated)
                 .expect_err("the retained bytes own their extent and digest")
                 .to_string();
             assert_eq!(
@@ -376,7 +371,7 @@ mod tests {
 
         let mut bogus = wire;
         bogus["zz_bogus"] = serde_json::json!(true);
-        let error = serde_json::from_value::<UnknownRecord>(bogus)
+        let error = json::from_value::<UnknownRecord>(bogus)
             .expect_err("an unknown key is refused")
             .to_string();
         assert_eq!(

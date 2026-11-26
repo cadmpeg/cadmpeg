@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// One oriented support of a procedural blend.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct BlendSupport {
@@ -30,7 +30,7 @@ pub struct BlendSupport {
 /// One parameter station of a rolling-ball jet, with its complete value rows.
 // A source states raw values; `RollingBallJetStations` holds the admitted
 // station, whose scalars, vectors and points are checked.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallJetStation<R = f64, V = Vector3, P = Point3> {
@@ -66,7 +66,7 @@ pub(super) fn admit_rolling_ball_radii(
 }
 
 /// Degree and finite clamped station data of a rolling-ball jet.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[serde(try_from = "RollingBallJetReadWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RollingBallJetStations {
@@ -208,7 +208,7 @@ impl Serialize for RollingBallJetStations {
 }
 
 /// One aligned knot site of an exact rolling-ball surface jet.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallJetSite<R = f64, V = Vector3, P = Point3> {
@@ -227,7 +227,7 @@ pub struct RollingBallJetSite<R = f64, V = Vector3, P = Point3> {
 }
 
 /// One derivative row for the four channels of a rolling-ball jet.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallJetDerivative<R = f64, V = Vector3> {
@@ -242,7 +242,9 @@ pub struct RollingBallJetDerivative<R = f64, V = Vector3> {
 }
 
 /// Cross-section family of a procedural blend.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -256,7 +258,7 @@ pub enum BlendCrossSection {
 }
 
 /// Common carrier fields of one G2 blend side.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct G2BlendSide<V = Vector3> {
@@ -273,10 +275,17 @@ pub struct G2BlendSide<V = Vector3> {
 }
 
 /// Singularity-specific payload of the first G2 blend side.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[serde(bound(deserialize = "R: ::serde::de::DeserializeOwned"))]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum G2BlendFirstShape<R = f64> {
     /// Full singularity with an optional BS3 support surface.
@@ -313,7 +322,7 @@ pub enum G2BlendFirstShape<R = f64> {
 }
 
 /// Exact support surface and fit tolerance of a full G2 first-side shape.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct G2BlendFullSupport {
@@ -326,13 +335,14 @@ pub struct G2BlendFullSupport {
 /// Full native G2 blend construction graph.
 // A source states raw values; a `G2BlendSurfacePayload` holds the admitted
 // construction, whose scalars and vectors are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "schema",
     schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
 )]
+#[serde(bound(deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned"))]
 pub struct G2BlendConstruction<R = f64, V = Vector3> {
     /// First side common fields.
     pub first: G2BlendSide<V>,
@@ -359,7 +369,7 @@ pub struct G2BlendConstruction<R = f64, V = Vector3> {
 }
 
 /// A present rolling-ball support surface and its native UV bounds.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallSupportSurface<S = SurfaceId, R = f64> {
@@ -370,7 +380,7 @@ pub struct RollingBallSupportSurface<S = SurfaceId, R = f64> {
 }
 
 /// A present rolling-ball side curve and its native parameter bounds.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallSupportCurve<C = CurveId, R = f64> {
@@ -381,9 +391,9 @@ pub struct RollingBallSupportCurve<C = CurveId, R = f64> {
 }
 
 /// The optional rolling-ball extension clause.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(bound(deserialize = "P: Deserialize<'de>"))]
+#[serde(bound(deserialize = "P: ::serde::de::DeserializeOwned"))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallSideExtension<P = PcurveGeometry> {
     /// Native integer introducing the clause.
@@ -401,11 +411,11 @@ pub struct RollingBallSideExtension<P = PcurveGeometry> {
 // A source states raw values; a blend construction holds the admitted side,
 // whose endpoints are `FiniteReal` values and whose location is a
 // `FinitePoint3`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(bound(
     serialize = "S: Serialize, C: Serialize, P: Serialize, R: Serialize, L: Serialize",
-    deserialize = "S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>, R: Deserialize<'de>, L: Deserialize<'de>"
+    deserialize = "S: ::serde::de::DeserializeOwned, C: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned, R: ::serde::de::DeserializeOwned, L: ::serde::de::DeserializeOwned"
 ))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -457,7 +467,7 @@ pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry, R = f
 }
 
 /// Third support graph appended by `sss_blend_spl_sur`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallThirdSide<V = Vector3> {
@@ -497,7 +507,14 @@ pub struct RollingBallThirdSide<V = Vector3> {
 }
 
 /// Native optional-radius selector in a rolling-ball construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RollingBallRadiusSelector<T = f64> {
@@ -513,10 +530,12 @@ pub enum RollingBallRadiusSelector<T = f64> {
 /// Complete byte-backed rolling-ball or three-surface blend context.
 // A source states raw values; a `BlendSurfacePayload` holds the admitted
 // construction, whose scalars, vectors and points are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 #[cfg_attr(
     feature = "schema",
     schemars(
@@ -564,7 +583,7 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
 }
 
 /// One boundary record in a native vertex-blend patch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -573,6 +592,9 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
         bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
     )
 )]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 pub struct VertexBlendBoundary<R = f64, V = Vector3, P = Point3> {
     /// Native cross flag. The wire form is a logical, so the value is the
     /// tag itself and no payload follows.
@@ -591,7 +613,14 @@ pub struct VertexBlendBoundary<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Twist payload selected by a vertex-blend circle form.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -633,11 +662,20 @@ impl<P> VertexBlendTwists<P> {
 }
 
 /// Type-specific geometry of a vertex-blend boundary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 #[cfg_attr(
     feature = "schema",
     schemars(
@@ -701,7 +739,7 @@ pub enum VertexBlendBoundaryGeometry<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Complete native vertex-blend surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -710,6 +748,9 @@ pub enum VertexBlendBoundaryGeometry<R = f64, V = Vector3, P = Point3> {
         bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
     )
 )]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 pub struct VertexBlendConstruction<R = f64, V = Vector3, P = Point3> {
     /// Positive serializer-revision integer selecting the revision-gated
     /// layout; absent from the pre-revision layout.
@@ -728,7 +769,14 @@ pub struct VertexBlendConstruction<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Radius law for a procedural blend.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

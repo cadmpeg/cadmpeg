@@ -26,6 +26,8 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) persistent_design_links: &'a [crate::records::sketch_links::PersistentDesignLink],
     /// Independent ASM history graphs.
     pub(crate) histories: &'a [AsmHistory],
+    /// The ASM history id that each bound Design scope reads.
+    pub(crate) scope_histories: &'a HashMap<String, String>,
     /// Neutral top-level bodies.
     pub(crate) bodies: &'a [cadmpeg_ir::topology::Body],
     /// Neutral body regions.
@@ -663,7 +665,8 @@ pub(crate) fn native_combine_operand_refusal_notes(
 ///
 /// The target binds when its node names a body of the preceding history
 /// state. The tools bind when every tool node names a distinct body of that
-/// state. A body that both sides name leaves both selections native, and the
+/// state. A node whose creating scope is bound to another history names no
+/// body of that state. A body that both sides name leaves both selections native, and the
 /// result is `Some(true)`. Each refusal names the operand side that it
 /// concerns.
 pub(super) fn bind_operand_list_combine_bodies(
@@ -674,9 +677,10 @@ pub(super) fn bind_operand_list_combine_bodies(
     scope: &crate::records::feature::scope::DesignParameterScope,
     operation: &crate::records::feature::combine::DesignCombineOperation,
     (feature_id, previous_state_id): (&cadmpeg_ir::features::FeatureId, i64),
-    (histories, scopes): (
+    (histories, scopes, scope_histories): (
         &[AsmHistory],
         &[crate::records::feature::scope::DesignParameterScope],
+        &HashMap<String, String>,
     ),
     refusals: &mut Vec<CombineOperandRefusal>,
 ) -> Option<bool> {
@@ -696,6 +700,12 @@ pub(super) fn bind_operand_list_combine_bodies(
                     && crate::ids::native_stream(&candidate.id) == Some(stream)
             })
             .ok_or("its creating scope is not decoded")?;
+        if scope_histories
+            .get(&creator.id)
+            .is_some_and(|bound| *bound != history.id)
+        {
+            return Err("its creating scope reads another history");
+        }
         let creator_state = creator
             .history_state_id()
             .ok_or("its creating scope has no history state")?;

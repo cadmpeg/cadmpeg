@@ -672,7 +672,7 @@ fn unsupported_configuration_manager_roots_retain_bytes_without_scalar_attribute
         assert!(!annotations
             .provenance
             .keys()
-            .any(|id| id.contains(":configuration_manager#")));
+            .any(|id| id.as_str().contains(":configuration_manager#")));
         assert_eq!(scan.sections().next().unwrap().payload(), payload);
     }
 }

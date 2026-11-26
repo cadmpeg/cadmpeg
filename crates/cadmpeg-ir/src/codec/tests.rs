@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::test_support::wire;
+use cadmpeg_core::serde_erase::json;
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -10,6 +11,8 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::examples::unit_cube;
 use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
+use crate::report::strictness::{code_name, Strictness};
+use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
@@ -19,7 +22,7 @@ use super::{
 };
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    ContentScope, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
+    ContentScope, DecodeContext, DecodeDepth, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_core::CodecError;
 
@@ -66,7 +69,13 @@ fn with_parameter(mut ir: CadIr) -> CadIr {
 struct RejectFloorCodec;
 
 fn reject_floor_kind() -> LossKind {
-    LossKind::shared(LossTaxonomy::TopologyNotTransferred)
+    crate::report::loss::NamespacedLossKind::new(
+        crate::loss_namespace!("test"),
+        "synthetic.reject-floor",
+        LossTaxonomy::TopologyNotTransferred,
+    )
+    .with_strict_floor(Some(crate::report::Severity::Warning))
+    .into()
 }
 
 impl CodecBackend for RejectFloorCodec {
@@ -139,7 +148,7 @@ impl CodecBackend for GeometryOnlyCodec {
 }
 
 #[test]
-fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
+fn the_sealed_decode_flags_a_shallower_delivery_that_a_strict_decode_admits() {
     let options = DecodeOptions {
         depth: DecodeDepth::Full,
         ..DecodeOptions::default()
@@ -150,19 +159,18 @@ fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
     assert_eq!(result.ir().scope(), ContentScope::geometry());
     assert_eq!(depth_losses(&result).len(), 2);
 
-    let error = GeometryOnlyCodec
+    let strict = GeometryOnlyCodec
         .decode(
             &mut Cursor::new(vec![1u8, 2, 3, 4]),
             &strict_options(DecodeDepth::Full),
         )
-        .unwrap_err();
-    let DecodeFailure::StrictRejected { rejection } = error else {
-        panic!("expected a strict refusal, got {error:?}")
-    };
-    assert_eq!(
-        rejection.loss().code.to_string(),
-        "decode/depth.not-delivered"
-    );
+        .unwrap();
+    let losses = depth_losses(&strict);
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.severity == crate::report::Severity::Error
+            && loss.code.strict_floor().is_none()));
 
     let admitted = GeometryOnlyCodec
         .decode(
@@ -223,7 +231,7 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(serde_json::from_value(serde_json::json!({
+        Ok(json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "foreign"},
             "container_kind": "flat",
             "entries": [],
@@ -423,7 +431,7 @@ fn strict_options(depth: DecodeDepth) -> DecodeOptions {
         depth,
         ..DecodeOptions::default()
     };
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     options
 }
 
@@ -472,6 +480,79 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
     );
 }
 
+fn decode_with(depth: DecodeDepth, strictness: Strictness) -> Result<DecodeResult, DecodeFailure> {
+    RejectFloorCodec.decode(
+        &mut Cursor::new(vec![1u8, 2, 3, 4]),
+        &DecodeOptions {
+            depth,
+            strictness,
+            ..DecodeOptions::default()
+        },
+    )
+}
+
+fn refused_code(failure: DecodeFailure) -> LossKind {
+    match failure {
+        DecodeFailure::StrictRejected { rejection } => rejection.loss().code.clone(),
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_admits_a_reject_floor_loss() {
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let result = decode_with(depth, Strictness::default()).unwrap();
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == reject_floor_kind()));
+    }
+}
+
+#[test]
+fn a_severity_floor_refuses_a_full_and_a_container_only_decode() {
+    let severity = LossNote::new(reject_floor_kind(), "probe").severity;
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let strictness = Strictness {
+            floor: Some(severity),
+            ..Strictness::default()
+        };
+        assert_eq!(
+            refused_code(decode_with(depth, strictness).unwrap_err()),
+            reject_floor_kind()
+        );
+    }
+}
+
+#[test]
+fn a_severity_floor_above_every_loss_admits_the_decode() {
+    let severity = LossNote::new(reject_floor_kind(), "probe").severity;
+    assert!(severity < Severity::Blocking);
+    let strictness = Strictness {
+        floor: Some(Severity::Blocking),
+        ..Strictness::default()
+    };
+    decode_with(DecodeDepth::Full, strictness).unwrap();
+}
+
+#[test]
+fn a_refused_code_refuses_a_full_and_a_container_only_decode() {
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let strictness = Strictness::default().with_code(&code_name(&reject_floor_kind()));
+        assert_eq!(
+            refused_code(decode_with(depth, strictness).unwrap_err()),
+            reject_floor_kind()
+        );
+    }
+}
+
+#[test]
+fn a_code_the_report_does_not_hold_admits_the_decode() {
+    let strictness = Strictness::default().with_code("export:output.empty");
+    decode_with(DecodeDepth::Full, strictness).unwrap();
+}
+
 #[test]
 fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -508,7 +589,7 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
 fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -639,16 +720,61 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
         assert_eq!(losses.len(), missing.len(), "{losses:?}");
         for (loss, class) in losses.into_iter().zip(missing) {
             assert_eq!(loss.severity, crate::report::Severity::Error);
-            assert_eq!(
-                loss.strict_consequence(),
-                crate::report::loss::StrictConsequence::Reject
-            );
+            assert!(!strict_options(requested).strictness.refuses(loss, false));
             assert!(loss
                 .message
                 .contains(&format!("requested {requested} depth")));
             assert!(loss
                 .message
                 .contains(&format!("did not deliver the {class} class")));
+        }
+    }
+}
+
+/// A decoder that states the source holds design records beyond the depth it
+/// delivers charges `design` once, and the wrapper adds no second charge.
+#[test]
+fn a_class_the_source_holds_beyond_the_delivered_depth_is_charged_once() {
+    use cadmpeg_core::decode::ArenaClass::{Design, Process};
+    for (delivered, requested, missing) in [
+        (DecodeDepth::Geometry, DecodeDepth::Geometry, &[Design][..]),
+        (DecodeDepth::Geometry, DecodeDepth::Design, &[Design]),
+        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design, Process]),
+        (DecodeDepth::Design, DecodeDepth::Design, &[]),
+        (DecodeDepth::Full, DecodeDepth::Full, &[]),
+    ] {
+        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
+        decoded.body.transfer = crate::report::decode::DecodeTransfer::at(delivered, true);
+        decoded.body.source_holds(Design);
+        decoded.body.source_holds(Design);
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            requested,
+            &DecodePolicy::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result.ir().scope(), delivered.scope());
+        let losses = depth_losses(&result);
+        assert_eq!(losses.len(), missing.len(), "{losses:?}");
+        for class in missing {
+            assert_eq!(
+                losses
+                    .iter()
+                    .filter(|loss| loss.message.contains(&format!(" {class} ")))
+                    .count(),
+                1,
+                "{class}: {losses:?}"
+            );
+        }
+        let held = losses.iter().find(|loss| {
+            loss.message
+                .contains("the source holds design records that a geometry-depth decode")
+        });
+        assert_eq!(held.is_some(), !missing.is_empty(), "{losses:?}");
+        if let Some(loss) = held {
+            assert_eq!(loss.severity, crate::report::Severity::Error);
         }
     }
 }
@@ -670,24 +796,35 @@ fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty(
     }
 }
 
+/// A decode that holds records of a class its scope excludes keeps them and
+/// the scope; the breach is a part 10 finding (§2.1).
 #[test]
-fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
+fn the_wrapper_keeps_records_of_a_class_the_scope_excludes() {
+    use crate::document::{ArenaName, ScopeViolation};
+
     let ir = with_parameter(unit_cube().expect("valid unit cube fixture"));
-    for (depth, expected) in [
-        (DecodeDepth::Container, "model arena `bodies`"),
-        (DecodeDepth::Geometry, "design arena `parameters`"),
+    for (depth, arena) in [
+        (DecodeDepth::Container, "bodies"),
+        (DecodeDepth::Geometry, "parameters"),
     ] {
         let mut decoded = decoded(ir.clone());
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(depth, true);
-        let error = DecodeResult::new(
+        let result = DecodeResult::new(
             decoded,
             FormatId::new("test"),
             depth,
             &DecodePolicy::default(),
         )
-        .unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(_)), "{error}");
-        assert!(error.to_string().contains(expected), "{error}");
+        .expect("a breach of the scope does not refuse the decode");
+        assert_eq!(result.ir().scope(), depth.scope());
+        assert_eq!(result.ir().model.parameters.len(), 1);
+        let violations = result.ir().scope_violations();
+        assert!(
+            violations.contains(&ScopeViolation::Populated {
+                arena: ArenaName::parse(arena).unwrap(),
+            }),
+            "{violations:?}"
+        );
     }
 
     let mut decoded = decoded(ir.clone());
@@ -750,12 +887,12 @@ impl CodecBackend for RepeatedIdentityCodec {
 }
 
 #[test]
-fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_one_loss() {
+fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_charges_one_loss() {
     let result = RepeatedIdentityCodec { differ: true }
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
         .expect("a decoder's repeated id does not refuse the file");
     let cube = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    assert_eq!(result.ir().geometry.points, cube.geometry.points[1..]);
     let repeated = result
         .report()
         .losses
@@ -768,10 +905,61 @@ fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_
     assert_eq!(loss.severity, crate::report::Severity::Error);
     assert!(
         loss.message.contains(cube.geometry.points[0].id.as_str())
-            && loss.message.contains("2 dropped"),
+            && loss.message.contains("3 times"),
         "{}",
         loss.message
     );
+    let [stub]: [_; 1] = result
+        .ir()
+        .native_unknowns("test")
+        .expect("the test stubs")
+        .try_into()
+        .expect("one stub for the one repeated id");
+    assert!(stub.links.is_empty());
+    assert!(
+        loss.message
+            .contains(&format!("record={}", stub.id.as_str()))
+            && loss.message.contains(cube.geometry.vertices[0].id.as_str()),
+        "{}",
+        loss.message
+    );
+    assert!(result
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some());
+    assert!(!result
+        .ir()
+        .geometry
+        .vertices
+        .iter()
+        .any(|vertex| vertex.point == cube.geometry.points[0].id));
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_given_up_repeated_id_and_an_unpinned_decode_admits_it() {
+    let id_repeated = super::loss::DecodeLossCode::IdRepeated.note("").code;
+    let error = RepeatedIdentityCodec { differ: true }
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &strict_options(DecodeDepth::Full),
+        )
+        .unwrap_err();
+    assert_eq!(refused_code(error), id_repeated);
+
+    let result = RepeatedIdentityCodec { differ: true }
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &DecodeOptions {
+                depth: DecodeDepth::Full,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("an unpinned decode admits a given-up id");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == id_repeated));
 }
 
 #[test]
@@ -796,40 +984,719 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         result.source_fidelity().content_digest,
-        crate::hash::content_digest(&ctx, result.ir()).unwrap()
+        Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
     );
     assert!(!result.source_fidelity().edited(result.ir()).unwrap());
 
     let (mut ir, _, fidelity) = result.into_parts();
     let mut scope = ContentScope::full();
     scope.process = false;
-    ir.set_scope(scope).unwrap();
+    ir.set_scope(scope);
     assert!(
         fidelity.edited(&ir).unwrap(),
         "a change of scope alone is an edit"
     );
 }
 
+/// A decoder that states the unit cube with repro metadata whose context
+/// nests past the levels the digest walk admits, outside every record.
+struct DeepContextCodec;
+
+impl CodecBackend for DeepContextCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _prefix: View<'_>,
+    ) -> Result<Confidence, CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the digest test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let finding = crate::report::check::Finding {
+            rule: crate::rule_name!("test.unresolved-link"),
+            check: crate::report::check::Check::NativeLinks,
+            severity: crate::report::Severity::Error,
+            entity: None,
+            related: Vec::new(),
+            message: "unresolved link".into(),
+        };
+        let levels = usize::try_from(crate::bounds::DIGEST_WALK_DEPTH).unwrap();
+        ir.repro = Some(Box::new(crate::repro::BundleMetadata {
+            signature: crate::repro::Signature::new(
+                &finding,
+                crate::codec_id!("cadir"),
+                crate::repro::Stage::Check,
+            ),
+            roots: Vec::new(),
+            context: (0..levels).fold(crate::attributes::AttributeJson::Null, |inner, _| {
+                crate::attributes::AttributeJson::Array(vec![inner])
+            }),
+            manifest: Vec::new(),
+            incomplete_reason: None,
+        }));
+        Ok(decoded(ir))
+    }
+}
+
+/// A value outside every record that passes a bound is stated as the value
+/// it takes when unstated, with one `record.unreadable` Error that names its
+/// field, so the decode returns a document within the bounds (§2.5, §3.3)
+/// and digests it.
 #[test]
-fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited() {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_recursion_depth = 1;
-    let result = RepeatedIdentityCodec { differ: false }
-        .decode(&mut Cursor::new(Vec::new()), &options)
-        .expect("a digest the depth limit refuses does not refuse the decode");
+fn a_value_past_the_bound_outside_every_record_is_unstated_with_its_loss() {
+    let result = DeepContextCodec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a value past the bound does not refuse the decode");
+    assert!(result.ir().repro.is_none());
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         result.source_fidelity().content_digest,
-        crate::hash::digest::Sha256Digest::digest(&[])
+        Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
     );
-    assert!(result.source_fidelity().edited(result.ir()).unwrap());
-    let unavailable = result
+    let unreadable = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.to_string() == "decode/content-digest.unavailable")
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
         .collect::<Vec<_>>();
-    let [loss] = unavailable.as_slice() else {
-        panic!("one loss for the missing digest: {unavailable:?}");
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the value outside every record: {unreadable:?}");
     };
-    assert_eq!(loss.severity, crate::report::Severity::Warning);
+    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert!(loss.message.contains("(repro)"), "{}", loss.message);
+}
+
+/// A decoder that states, beside the unit cube, two native records: one at
+/// the document's depth bound and one a level past it. A native record sits
+/// at the document's fifth level, so its field nests at most 123 levels.
+struct PastTheBoundCodec;
+
+impl PastTheBoundCodec {
+    const WITHIN: &'static str = "test:native:within#1";
+    const PAST: &'static str = "test:native:past#1";
+}
+
+impl CodecBackend for PastTheBoundCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the depth bound test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let record = |id: &str, depth: usize| {
+            let field = (0..depth).fold(serde_json::Value::Null, |inner, _| {
+                serde_json::Value::Array(vec![inner])
+            });
+            crate::NativeRecord::new(
+                crate::ids::Identity::new(id).expect("valid native identity"),
+                [("field".to_owned(), field)].into_iter().collect(),
+            )
+            .expect("valid native record")
+        };
+        let within = crate::bounds::MAX_DOCUMENT_DEPTH - 5;
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new("test").expect("a codec id"))
+            .set_arena_records(
+                "deep",
+                vec![record(Self::WITHIN, within), record(Self::PAST, within + 1)],
+            )
+            .expect("a valid arena");
+        Ok(decoded(ir))
+    }
+}
+
+/// The wrapper digests a document at the bound and gives up the record past
+/// it under a policy whose recursion ceiling is the bound's, too.
+#[test]
+fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
+    for policy in [DecodePolicy::desktop(), DecodePolicy::service()] {
+        let options = DecodeOptions {
+            policy,
+            ..DecodeOptions::default()
+        };
+        let result = PastTheBoundCodec
+            .decode(&mut Cursor::new(Vec::new()), &options)
+            .expect("a record past the bound does not refuse the file");
+        let arena = result
+            .ir()
+            .native
+            .namespace("test")
+            .expect("the test namespace")
+            .arenas()
+            .get("deep")
+            .expect("the deep arena");
+        let kept = arena
+            .iter()
+            .map(crate::NativeRecord::id)
+            .collect::<Vec<_>>();
+        assert_eq!(kept, [PastTheBoundCodec::WITHIN]);
+        let unreadable = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+            .collect::<Vec<_>>();
+        let [loss] = unreadable.as_slice() else {
+            panic!("one loss for the one record: {unreadable:?}");
+        };
+        assert_eq!(loss.severity, crate::report::Severity::Error);
+        assert!(
+            loss.message.contains(PastTheBoundCodec::PAST)
+                && loss.message.contains("native.test.deep"),
+            "{}",
+            loss.message
+        );
+        let [stub]: [_; 1] = result
+            .ir()
+            .native_unknowns("test")
+            .expect("the test stubs")
+            .try_into()
+            .expect("one stub for the one record");
+        assert!(
+            loss.message
+                .contains(&format!("record={}", stub.id.as_str())),
+            "{}",
+            loss.message
+        );
+        let retained = result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .expect("the record's retained text");
+        assert_eq!(
+            retained.stream(),
+            format!("native.test.deep/{}", PastTheBoundCodec::PAST)
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).unwrap();
+        assert_eq!(
+            result.source_fidelity().content_digest,
+            Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
+        );
+        let text = json::to_string(result.ir()).unwrap();
+        assert!(CadIr::from_json(&text).is_ok());
+    }
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_record_given_up_past_the_document_bound() {
+    let error = PastTheBoundCodec
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &strict_options(DecodeDepth::Full),
+        )
+        .unwrap_err();
+    assert_eq!(
+        refused_code(error),
+        crate::unknown::part::record_unreadable_kind()
+    );
+}
+
+/// A decoder that states, beside the unit cube, [`Self::RECORDS`] native
+/// records past the document's depth bound, each holding the whole input as
+/// its innermost string. Their retained text passes the base retained
+/// allowance while the input stays small.
+struct LargePastTheBoundCodec;
+
+impl LargePastTheBoundCodec {
+    const RECORDS: usize = 10;
+    const INPUT_BYTES: usize = 2 << 20;
+
+    fn id(index: usize) -> String {
+        format!("test:native:large#{index}")
+    }
+}
+
+impl CodecBackend for LargePastTheBoundCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _prefix: View<'_>,
+    ) -> Result<Confidence, CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the retained allowance test does not inspect")
+    }
+
+    fn decode_impl(&self, _ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let text = std::str::from_utf8(root.window()).expect("ASCII input");
+        let past = crate::bounds::MAX_DOCUMENT_DEPTH - 5 + 1;
+        let records = (0..Self::RECORDS)
+            .map(|index| {
+                let field = (0..past).fold(serde_json::Value::from(text), |inner, _| {
+                    serde_json::Value::Array(vec![inner])
+                });
+                crate::NativeRecord::new(
+                    crate::ids::Identity::new(Self::id(index)).expect("valid native identity"),
+                    [("field".to_owned(), field)].into_iter().collect(),
+                )
+                .expect("valid native record")
+            })
+            .collect();
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new("test").expect("a codec id"))
+            .set_arena_records("large", records)
+            .expect("a valid arena");
+        Ok(decoded(ir))
+    }
+}
+
+/// The retained-text allowance of the wrapper's give-ups is the decode's: it
+/// grows with the input, and every record past the bound is given up and
+/// reported when their text passes the base allowance.
+#[test]
+fn the_sealed_wrapper_gives_up_records_whose_text_passes_the_base_retained_allowance() {
+    let input = vec![b'a'; LargePastTheBoundCodec::INPUT_BYTES];
+    let result = LargePastTheBoundCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .expect("records past the bound do not refuse the file");
+    assert!(result
+        .ir()
+        .native
+        .namespace("test")
+        .expect("the test namespace")
+        .arenas()
+        .get("large")
+        .is_none_or(|arena| arena.iter().next().is_none()));
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), LargePastTheBoundCodec::RECORDS);
+    for index in 0..LargePastTheBoundCodec::RECORDS {
+        let id = LargePastTheBoundCodec::id(index);
+        let naming = unreadable
+            .iter()
+            .filter(|loss| loss.message.contains(&format!("/{id}\"")))
+            .count();
+        assert_eq!(naming, 1, "one loss names {id}");
+    }
+    let retained: u64 = result
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .map(crate::source_fidelity::RetainedSourceRecord::byte_len)
+        .sum();
+    assert!(retained > 16 << 20, "{retained} retained bytes");
+}
+
+/// `MAX_DOCUMENT_DEPTH` placements of the unit u axis: a pcurve that nests
+/// past the document bound wherever a record holds it.
+fn deep_pcurve() -> crate::geometry::pcurve::PcurveGeometry {
+    use crate::geometry::pcurve::{LinePcurve, PcurveGeometry, PlacedPcurve};
+    (0..crate::bounds::MAX_DOCUMENT_DEPTH).fold(
+        PcurveGeometry::Line(LinePcurve::U_AXIS),
+        |basis, _| {
+            PcurveGeometry::Transformed(
+                PlacedPcurve::try_new(Box::new(basis), crate::transform::Transform2::identity())
+                    .unwrap(),
+            )
+        },
+    )
+}
+
+/// `MAX_DOCUMENT_DEPTH` placements of a unit line: a solved curve that nests
+/// past the document bound wherever a record holds it.
+fn deep_line() -> crate::geometry::SolvedCurveGeometry {
+    use crate::geometry::analytic::LineCurve;
+    use crate::geometry::{PlacedCurve, SolvedCurveGeometry};
+    use crate::math::{Point3, Vector3};
+    let line = LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    (0..crate::bounds::MAX_DOCUMENT_DEPTH).fold(SolvedCurveGeometry::Line(line), |basis, _| {
+        SolvedCurveGeometry::Transformed(
+            PlacedCurve::try_new(Box::new(basis), crate::transform::Transform::identity()).unwrap(),
+        )
+    })
+}
+
+/// Adds curve `test:model:curve#<key>` and the intersection construction
+/// `test:model:construction#<key>` it owns. The construction's support
+/// pcurve is `pcurve`, and the curve's solved cache is `cache`.
+fn add_procedural_curve(
+    ir: &mut CadIr,
+    key: &str,
+    pcurve: Option<crate::geometry::pcurve::PcurveGeometry>,
+    cache: Option<crate::geometry::SolvedCurveGeometry>,
+) {
+    use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use crate::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
+    use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
+    use crate::ids::{CurveId, ProceduralCurveId};
+    let construction = ProceduralCurveId::mint(format!("test:model:construction#{key}")).unwrap();
+    let side = |pcurve: Option<crate::geometry::pcurve::PcurveGeometry>| IntcurveSupportSide {
+        surface: None,
+        pcurve: pcurve.map(SupportPcurve::from),
+    };
+    let context = IntcurveSupportContext::try_new(
+        [side(pcurve), side(None)],
+        [0.0, 1.0],
+        [Vec::new(), Vec::new(), Vec::new()],
+    )
+    .unwrap();
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
+        construction.clone(),
+        ProceduralCurveDefinition::Intersection {
+            context,
+            discontinuity_flag: false,
+            cache: None,
+        },
+    ));
+    ir.geometry.curves.push(Curve {
+        parameter_range: None,
+        id: CurveId::mint(format!("test:model:curve#{key}")).unwrap(),
+        geometry: CurveGeometry::Procedural {
+            construction,
+            cache,
+        },
+        source_object: None,
+        native_ref: None,
+    });
+}
+
+/// Adds surface `test:model:surface#<key>` and the taper construction
+/// `test:model:construction#<key>` it owns, on the first surface and curve
+/// of `ir`. The construction's reference pcurve is `pcurve`.
+fn add_procedural_surface(
+    ir: &mut CadIr,
+    key: &str,
+    pcurve: Option<crate::geometry::pcurve::PcurveGeometry>,
+) {
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::procedural_surfaces::{ProceduralSurfaceDefinition, TaperSurfaceKind};
+    use crate::geometry::surface_payloads::TaperSurfaceConstruction;
+    use crate::geometry::{ProceduralSurface, Surface, SurfaceGeometry};
+    use crate::ids::{ProceduralSurfaceId, SurfaceId};
+    let construction = ProceduralSurfaceId::mint(format!("test:model:construction#{key}")).unwrap();
+    let taper = TaperSurfaceConstruction::try_new(
+        ir.geometry.surfaces[0].id.clone(),
+        ir.geometry.curves[0].id.clone(),
+        pcurve,
+        0.0,
+        TaperSurfaceKind::Standard {},
+        CacheContract::legacy(),
+    )
+    .unwrap();
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Taper(taper),
+        None,
+    ));
+    ir.geometry.surfaces.push(Surface {
+        id: SurfaceId::mint(format!("test:model:surface#{key}")).unwrap(),
+        geometry: SurfaceGeometry::Procedural {
+            construction,
+            cache: None,
+        },
+        source_object: None,
+        native_ref: None,
+    });
+}
+
+/// The decode result of `ir` after the wrapper's digest walk in a decode
+/// under the service policy, the stock policy with the lowest recursion
+/// ceiling, with its `record.unreadable` losses.
+fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
+    let mut result = decode_result(ir);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    result
+        .record_content_digest(&ctx, FormatId::new("test"))
+        .expect("a record past the bound does not refuse the decode");
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .cloned()
+        .collect();
+    (result, unreadable)
+}
+
+/// Every construction has exactly one owning carrier and every carrier's
+/// construction is in the document, every reference resolves, the document
+/// reads back from its JSON, and its digest is the one the wrapper recorded.
+fn assert_resolves(result: &DecodeResult) {
+    let ir = result.ir();
+    let constructions = ir
+        .geometry
+        .procedural_curves
+        .iter()
+        .map(|procedural| procedural.id.as_str())
+        .chain(
+            ir.geometry
+                .procedural_surfaces
+                .iter()
+                .map(|procedural| procedural.id.as_str()),
+        )
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut owned = ir
+        .geometry
+        .curves
+        .iter()
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .map(crate::ids::ProceduralCurveId::as_str)
+        .chain(
+            ir.geometry
+                .surfaces
+                .iter()
+                .filter_map(|surface| surface.geometry.procedural_construction())
+                .map(crate::ids::ProceduralSurfaceId::as_str),
+        )
+        .collect::<Vec<_>>();
+    owned.sort_unstable();
+    assert_eq!(owned, constructions.into_iter().collect::<Vec<_>>());
+    let unresolved = crate::validate::validate_neutral(ir, Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == crate::report::check::Check::ReferentialIntegrity)
+        .collect::<Vec<_>>();
+    assert!(unresolved.is_empty(), "{unresolved:?}");
+    let text = json::to_string(ir).unwrap();
+    assert!(CadIr::from_json(&text).is_ok());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).unwrap();
+    assert_eq!(
+        result.source_fidelity().content_digest,
+        Some(crate::hash::content_digest(&ctx, ir).unwrap())
+    );
+}
+
+/// The record a `record.unreadable` loss gives up, and the ids its
+/// `dropped=[…]` names.
+fn given_up_record(message: &str) -> (String, std::collections::BTreeSet<String>) {
+    let record = message
+        .split_once(": record ")
+        .and_then(|(_, tail)| tail.split_once(" of arena "))
+        .map(|(record, _)| record.to_owned())
+        .unwrap_or_default();
+    let dropped = message
+        .split_once("dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(ids, _)| {
+            ids.split(", ")
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    (record, dropped)
+}
+
+/// The ids of the curves of `result`.
+fn curve_ids(result: &DecodeResult) -> Vec<&str> {
+    result
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .map(|curve| curve.id.as_str())
+        .collect()
+}
+
+/// A carrier past the bound is given up with the construction it owns.
+#[test]
+fn a_carrier_past_the_document_bound_is_given_up_with_its_construction() {
+    let mut ir = unit_cube().unwrap();
+    add_procedural_curve(&mut ir, "deep", None, Some(deep_line()));
+    add_procedural_curve(&mut ir, "kept", None, None);
+    let (result, unreadable) = given_up(ir);
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one record: {unreadable:?}");
+    };
+    assert!(
+        loss.message.contains("of arena geometry.curves"),
+        "{}",
+        loss.message
+    );
+    assert_eq!(
+        given_up_record(&loss.message),
+        (
+            "test:model:curve#deep".to_owned(),
+            ["test:model:construction#deep", "test:model:curve#deep"]
+                .map(str::to_owned)
+                .into()
+        )
+    );
+    assert!(!curve_ids(&result).contains(&"test:model:curve#deep"));
+    assert!(curve_ids(&result).contains(&"test:model:curve#kept"));
+    assert_resolves(&result);
+}
+
+/// A construction past the bound is given up with the carrier that owns it,
+/// so no carrier names a construction the document does not hold.
+#[test]
+fn a_construction_past_the_document_bound_is_given_up_with_its_carrier() {
+    let mut ir = unit_cube().unwrap();
+    add_procedural_curve(&mut ir, "deep", Some(deep_pcurve()), None);
+    add_procedural_curve(&mut ir, "kept", None, None);
+    let (result, unreadable) = given_up(ir);
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one record: {unreadable:?}");
+    };
+    assert!(
+        loss.message.contains("of arena geometry.procedural_curves"),
+        "{}",
+        loss.message
+    );
+    assert_eq!(
+        given_up_record(&loss.message),
+        (
+            "test:model:construction#deep".to_owned(),
+            ["test:model:construction#deep", "test:model:curve#deep"]
+                .map(str::to_owned)
+                .into()
+        )
+    );
+    assert!(!curve_ids(&result).contains(&"test:model:curve#deep"));
+    assert!(curve_ids(&result).contains(&"test:model:curve#kept"));
+    assert_resolves(&result);
+}
+
+/// A surface construction past the bound is given up with the surface that
+/// owns it, so no surface names a construction the document does not hold.
+#[test]
+fn a_surface_construction_past_the_document_bound_is_given_up_with_its_surface() {
+    let mut ir = unit_cube().unwrap();
+    add_procedural_surface(&mut ir, "deep", Some(deep_pcurve()));
+    add_procedural_surface(&mut ir, "kept", None);
+    let (result, unreadable) = given_up(ir);
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one record: {unreadable:?}");
+    };
+    assert!(
+        loss.message
+            .contains("of arena geometry.procedural_surfaces"),
+        "{}",
+        loss.message
+    );
+    assert_eq!(
+        given_up_record(&loss.message),
+        (
+            "test:model:construction#deep".to_owned(),
+            ["test:model:construction#deep", "test:model:surface#deep"]
+                .map(str::to_owned)
+                .into()
+        )
+    );
+    let surfaces = result
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(!surfaces.contains(&"test:model:surface#deep"));
+    assert!(surfaces.contains(&"test:model:surface#kept"));
+    assert_resolves(&result);
+}
+
+/// An edge whose carrier is given up names it no longer: the give-up names
+/// the edge among the records it drops and marks, and every reference of the
+/// document resolves.
+#[test]
+fn an_edge_on_a_carrier_past_the_document_bound_names_no_given_up_curve() {
+    let mut ir = unit_cube().unwrap();
+    add_procedural_curve(&mut ir, "deep", None, Some(deep_line()));
+    let deep = crate::ids::CurveId::mint("test:model:curve#deep").unwrap();
+    ir.geometry.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(Some(deep.clone()), None).unwrap();
+    let edge = ir.geometry.edges[0].id.clone();
+    let (result, unreadable) = given_up(ir);
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one record: {unreadable:?}");
+    };
+    assert!(loss.message.contains(edge.as_str()), "{}", loss.message);
+    assert!(!curve_ids(&result).contains(&deep.as_str()));
+    assert!(result
+        .ir()
+        .geometry
+        .edges
+        .iter()
+        .all(|edge| edge.carrier.curve() != Some(&deep)));
+    assert_resolves(&result);
+}
+
+/// A give-up that drops another record moves the places after it, and each
+/// record past the bound is given up at its own place. The deep
+/// construction `#a` is given up first and drops `curve#a`, which moves the
+/// deep `curve#b` one place: a stale place would remove `curve#c`.
+#[test]
+fn records_past_the_bound_in_one_walk_are_each_given_up_at_their_place() {
+    let mut ir = unit_cube().unwrap();
+    add_procedural_curve(&mut ir, "a", Some(deep_pcurve()), None);
+    add_procedural_curve(&mut ir, "b", None, Some(deep_line()));
+    add_procedural_curve(&mut ir, "c", None, None);
+    let (result, unreadable) = given_up(ir);
+    let mut named = unreadable
+        .iter()
+        .map(|loss| given_up_record(&loss.message))
+        .collect::<Vec<_>>();
+    named.sort();
+    let ids = |ids: [&str; 2]| ids.map(str::to_owned).into();
+    assert_eq!(
+        named,
+        [
+            (
+                "test:model:construction#a".to_owned(),
+                ids(["test:model:construction#a", "test:model:curve#a"])
+            ),
+            (
+                "test:model:curve#b".to_owned(),
+                ids(["test:model:construction#b", "test:model:curve#b"])
+            ),
+        ]
+    );
+    assert!(curve_ids(&result).contains(&"test:model:curve#c"));
+    assert!(result
+        .ir()
+        .geometry
+        .procedural_curves
+        .iter()
+        .any(|procedural| procedural.id.as_str() == "test:model:construction#c"));
+    assert_resolves(&result);
 }

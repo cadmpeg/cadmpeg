@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model arenas the 3DM write does not represent are reported, not dropped.
 
+use cadmpeg_core::serde_erase::json;
+use std::collections::BTreeMap;
+use std::io::Cursor;
+
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind,
@@ -133,8 +142,187 @@ fn unrepresented_product_structure_is_an_export_loss() {
     assert_eq!(
         omitted,
         [
-            "the rhino write does not represent model arena `product_definitions`: 2 record(s) omitted",
-            "the rhino write does not represent model arena `occurrences`: 2 record(s) omitted",
+            "the rhino write does not represent model arena `product_definitions`: 2 record(s) \
+             omitted: cadir:model:product#pin, cadir:model:product#root",
+            "the rhino write does not represent model arena `occurrences`: 2 record(s) omitted: \
+             cadir:model:occurrence#pin.0, cadir:model:occurrence#pin.1",
         ]
     );
+}
+
+/// Adds one feature, one parameter and one attribute on the first body: the
+/// design content a part from a history-based system holds beside its shape.
+fn with_design_content(ir: &mut CadIr) {
+    ir.model.features.push(
+        json::from_value(serde_json::json!({
+            "id": "cadir:model:feature#boss", "ordinal": 0, "name": "Boss", "suppressed": false,
+            "definition": {"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}},
+            "outputs": [], "dependencies": [], "source_properties": {},
+            "source_content": []
+        }))
+        .expect("feature"),
+    );
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint("cadir:model:parameter#height").expect("identity"),
+        owner: None,
+        ordinal: 0,
+        name: "Height".into(),
+        expression: "12mm".into(),
+        display: None,
+        value: None,
+        dependencies: DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.attributes.push(SourceAttribute {
+        id: "cadir:model:attribute#finish".try_into().expect("identity"),
+        target: AttributeTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
+        name: "Finish".into(),
+        values: vec![Some(AttributeValue::String("anodized".into()))],
+        native_ref: None,
+    });
+}
+
+/// The archive and the messages of its `export` losses.
+fn write_v8(ir: &CadIr) -> (Vec<u8>, Vec<String>) {
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("the document is writable");
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).expect("write");
+    let messages = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .map(|loss| loss.message.clone())
+        .collect();
+    (bytes, messages)
+}
+
+#[test]
+fn a_body_with_design_content_is_written_and_the_content_reported() {
+    let mut ir = super::planar_tetrahedron();
+    with_design_content(&mut ir);
+
+    let (bytes, omitted) = write_v8(&ir);
+    assert_eq!(
+        omitted,
+        [
+            "the rhino write does not represent model arena `features`: 1 record(s) omitted: \
+             cadir:model:feature#boss",
+            "the rhino write does not represent model arena `parameters`: 1 record(s) omitted: \
+             cadir:model:parameter#height",
+            "the rhino write does not represent model arena `attributes`: 1 record(s) omitted: \
+             cadir:model:attribute#finish",
+        ]
+    );
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 4);
+}
+
+#[test]
+fn design_content_alone_writes_an_empty_archive_and_says_so() {
+    let mut ir = super::planar_tetrahedron();
+    with_design_content(&mut ir);
+    ir.model.attributes.clear();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+
+    let (_, omitted) = write_v8(&ir);
+    assert_eq!(
+        omitted,
+        [
+            "the written 3DM archive holds no object: the document states no geometry or mesh \
+             this writer encodes",
+            "the rhino write does not represent model arena `features`: 1 record(s) omitted: \
+             cadir:model:feature#boss",
+            "the rhino write does not represent model arena `parameters`: 1 record(s) omitted: \
+             cadir:model:parameter#height",
+        ]
+    );
+}
+
+#[test]
+fn the_display_mesh_of_a_brep_body_is_withheld_and_named() {
+    let mut ir = super::planar_tetrahedron();
+    let mut mesh = cadmpeg_ir::tessellation::Tessellation::new(
+        cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#display")
+            .expect("identity"),
+        cadmpeg_ir::tessellation::TessellationMesh::List {
+            vertices: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .expect("mesh");
+    mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+        body: ir.geometry.bodies[0].id.clone(),
+        faces: Vec::new(),
+    };
+    ir.model.tessellations.push(mesh);
+
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("the body is written without its display mesh");
+    let withheld = crate::loss::RhinoLossCode::WriterBodyMeshWithheld.kind();
+    assert!(
+        plan.report().losses.iter().any(|loss| loss.code == withheld
+            && loss.message.ends_with("cadir:model:tessellation#display")),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    assert_eq!(decoded.ir().geometry.faces.len(), 4);
+    assert!(decoded.ir().model.tessellations.is_empty());
+}
+
+#[test]
+fn a_carrier_from_another_format_is_written_without_its_source_identity() {
+    let mut ir = super::planar_tetrahedron();
+    ir.geometry.surfaces[0].source_object = Some(cadmpeg_ir::SourceObjectAssociation {
+        format: cadmpeg_ir::codec_id!("iges"),
+        object_id: cadmpeg_core::nonblank_literal!("D7"),
+        geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Independent),
+        instance_path: Vec::new(),
+    });
+
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("the surface is written without its source identity");
+    let omitted = crate::loss::RhinoLossCode::WriterSourceAssociationOmitted.kind();
+    assert!(
+        plan.report().losses.iter().any(|loss| loss.code == omitted
+            && loss
+                .message
+                .starts_with("1 source-object association(s) were not written")),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    assert_eq!(decoded.ir().geometry.faces.len(), 4);
 }

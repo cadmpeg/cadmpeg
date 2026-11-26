@@ -2,6 +2,7 @@
 //! Validation of distance dimensions measured to an axis line.
 
 use super::{empty_data, TestResult};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::check::Finding;
 
 const SEGMENT: &str = "generated";
@@ -19,7 +20,7 @@ fn header() -> serde_json::Value {
 }
 
 fn line(ordinal: u32, entity_flags: u32) -> TestResult<crate::sketch::PmDcSketchEntity> {
-    Ok(serde_json::from_value(serde_json::json!({
+    Ok(json::from_value(serde_json::json!({
         "id": format!("inventor:pmdc:sketch-entity#{SEGMENT}-{ordinal}"),
         "entity_flags": entity_flags,
         "header": header(),
@@ -37,7 +38,7 @@ fn line(ordinal: u32, entity_flags: u32) -> TestResult<crate::sketch::PmDcSketch
 
 fn distance(ordinal: u32, operands: [u32; 2]) -> TestResult<crate::sketch::PmDcSketchConstraint> {
     let reference = |index: u32| serde_json::json!({"index": index, "qualified": false});
-    Ok(serde_json::from_value(serde_json::json!({
+    Ok(json::from_value(serde_json::json!({
         "id": format!("inventor:pmdc:sketch-constraint#{SEGMENT}-{ordinal}"),
         "header": {
             "content": header(),
@@ -67,7 +68,7 @@ fn neutral(
     ordinal: u32,
     definition: &serde_json::Value,
 ) -> TestResult<cadmpeg_ir::SketchConstraint> {
-    Ok(serde_json::from_value(serde_json::json!({
+    Ok(json::from_value(serde_json::json!({
         "id": format!("inventor:design:sketch-constraint#{SEGMENT}-{ordinal}"),
         "sketch": "inventor:design:sketch#generated-1",
         "definition": definition,

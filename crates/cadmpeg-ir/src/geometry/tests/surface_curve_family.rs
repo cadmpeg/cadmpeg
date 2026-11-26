@@ -8,6 +8,7 @@ use crate::geometry::surface_curves::{
     CacheFirstCurveParameterization, ParametricSurfaceCurveFlags, SurfaceCurveCacheFirst,
     SurfaceCurveFamily, SurfaceCurveTail,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn support_context() -> IntcurveSupportContext {
     IntcurveSupportContext::try_new(
@@ -50,12 +51,12 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
             flags: true,
         }),
     };
-    let wire = serde_json::to_value(&blend).expect("serializes");
+    let wire = json::to_value(&blend).expect("serializes");
     assert_eq!(wire["kind"], "blend");
     assert_eq!(wire["tail"]["flags"], serde_json::json!(true));
     assert_eq!(wire["tail"]["form"]["extension"], serde_json::json!(7));
     assert_eq!(
-        serde_json::from_value::<SurfaceCurveFamily>(wire.clone()).expect("round trip"),
+        json::from_value::<SurfaceCurveFamily>(wire.clone()).expect("round trip"),
         blend
     );
 
@@ -66,14 +67,14 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
             // `flags` is a bare bool on a blend tail, so the key cannot be
             // written beside it at all.
             *node = serde_json::json!({"flag": true, "second_flag": false});
-            let error = serde_json::from_value::<SurfaceCurveFamily>(mutated)
+            let error = json::from_value::<SurfaceCurveFamily>(mutated)
                 .unwrap_err()
                 .to_string();
             assert!(error.contains("bool"), "{pointer}: {error}");
             continue;
         };
         object.insert("second_flag".to_string(), serde_json::json!(false));
-        let error = serde_json::from_value::<SurfaceCurveFamily>(mutated)
+        let error = json::from_value::<SurfaceCurveFamily>(mutated)
             .unwrap_err()
             .to_string();
         assert!(error.contains("second_flag"), "{pointer}: {error}");
@@ -89,7 +90,7 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
             },
         }),
     };
-    let wire = serde_json::to_value(&parametric).expect("serializes");
+    let wire = json::to_value(&parametric).expect("serializes");
     assert_eq!(wire["kind"], "parametric");
     assert_eq!(wire["tail"]["flags"]["flag"], serde_json::json!(true));
     assert_eq!(
@@ -97,7 +98,7 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
         serde_json::json!(false)
     );
     assert_eq!(
-        serde_json::from_value::<SurfaceCurveFamily>(wire).expect("round trip"),
+        json::from_value::<SurfaceCurveFamily>(wire).expect("round trip"),
         parametric
     );
 }
@@ -130,7 +131,7 @@ fn degenerate_tail(
 #[test]
 fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
     let admitted = tail();
-    let wire = serde_json::to_value(&admitted).expect("serializes");
+    let wire = json::to_value(&admitted).expect("serializes");
     assert_eq!(wire["extension"], serde_json::json!(7));
     assert_eq!(wire["revision"], serde_json::json!(23_100));
     assert_eq!(
@@ -142,7 +143,7 @@ fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
     // newtype variant, so the interval is one level up from the variant name.
     assert_eq!(wire["cache"]["interval"], serde_json::json!([0.0, 1.0]));
     assert_eq!(
-        serde_json::from_value::<SurfaceCurveTail>(wire).expect("round trip"),
+        json::from_value::<SurfaceCurveTail>(wire).expect("round trip"),
         admitted
     );
 
@@ -164,13 +165,13 @@ fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
 
 #[test]
 fn the_surface_curve_tail_refuses_a_non_positive_revision() {
-    let value = serde_json::to_value(tail()).expect("serialize the tail");
+    let value = json::to_value(tail()).expect("serialize the tail");
 
     for revision in [0_i64, -1] {
         assert!(crate::scalar::PositiveI64::new(revision).is_none());
         let mut invalid = value.clone();
         invalid["revision"] = serde_json::json!(revision);
-        assert!(serde_json::from_value::<SurfaceCurveTail>(invalid).is_err());
+        assert!(json::from_value::<SurfaceCurveTail>(invalid).is_err());
     }
 
     let maximum = SurfaceCurveTail::try_new(
@@ -188,7 +189,7 @@ fn the_surface_curve_tail_refuses_a_non_positive_revision() {
     let mut maximum = value;
     maximum["revision"] = serde_json::json!(i64::MAX);
     assert_eq!(
-        serde_json::from_value::<SurfaceCurveTail>(maximum)
+        json::from_value::<SurfaceCurveTail>(maximum)
             .expect("maximum JSON revision is admitted")
             .revision()
             .get(),
@@ -213,11 +214,11 @@ fn an_admitted_revision_builds_the_tail_that_the_raw_revision_admits() {
         [Some(-1.0), Some(2.0)],
     )
     .expect("finite surface curve tail");
-    let mut raw = serde_json::to_value(tail()).expect("serializes");
+    let mut raw = json::to_value(tail()).expect("serializes");
     raw["revision"] = serde_json::json!(23_100_i64);
     assert_eq!(
         admitted,
-        serde_json::from_value::<SurfaceCurveTail>(raw).expect("the raw revision is admitted")
+        json::from_value::<SurfaceCurveTail>(raw).expect("the raw revision is admitted")
     );
     assert_eq!(admitted.revision(), revision);
     assert!(SurfaceCurveTail::try_new(
@@ -254,7 +255,7 @@ fn a_surface_curve_tail_holds_its_admitted_bounds() {
         ]
     );
     assert_eq!(*tail.solved_range(), [FiniteReal::new(-1.0), None]);
-    let wire = serde_json::to_value(&tail).expect("serialize the tail");
+    let wire = json::to_value(&tail).expect("serialize the tail");
     assert_eq!(
         wire["support_bounds"],
         serde_json::json!([[0.5, null, null, 2.0], [null, null, null, null]])

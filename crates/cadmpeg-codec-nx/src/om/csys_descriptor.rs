@@ -180,6 +180,7 @@ mod tests {
         CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor,
         CSYS_IDENTITY_INTO_WIRE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn identity_lengths_and_maximal_runs_are_checked_at_construction() {
@@ -221,8 +222,8 @@ mod tests {
         }
         let identity = CsysIdentity::try_from("a".repeat(30)).unwrap();
         assert_eq!(
-            serde_json::to_vec(&identity).unwrap(),
-            serde_json::to_vec(&String::from(identity.clone())).unwrap()
+            json::to_vec(&identity).unwrap(),
+            json::to_vec(&String::from(identity.clone())).unwrap()
         );
         let record = Record {
             id: "nx:feature:csys-identity#0",

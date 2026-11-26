@@ -4,6 +4,7 @@ use super::{
     AdmissionViolation, ReadDisposition, RegistryRows, DECLARED_CARRIER, DECLARED_SCHEMA,
 };
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
 use serde_json::{json, Value};
@@ -51,19 +52,16 @@ fn layers(primary: DialectMatch, extras: Vec<DialectMatch>) -> DialectLayers {
         })
 }
 
-fn kernel_loss_note(host: &str) -> LossNote {
-    LossNote::new(
+fn kernel_loss(host: &str) -> Value {
+    json::to_value(LossNote::new(
         LossKind::namespaced(
             LossNamespace::new(host).expect("host namespace is not reserved"),
             "source.kernel-dialect-unverified",
             LossTaxonomy::SourceDialectUnverified,
         ),
         "test kernel dialect loss",
-    )
-}
-
-fn kernel_loss(host: &str) -> Value {
-    serde_json::to_value(kernel_loss_note(host)).expect("typed kernel loss serializes")
+    ))
+    .expect("typed kernel loss serializes")
 }
 
 fn report_view(layers: &DialectLayers, losses: &[Value]) -> Value {

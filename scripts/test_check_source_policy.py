@@ -474,6 +474,16 @@ class PatternFilters(unittest.TestCase):
                     text = f"fn make() ->{gap}{name}\n{{ code.note(message) }}"
                     self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
 
+    def test_loss_note_reference_returns_are_types(self) -> None:
+        for reference in ["&", "& ", "&'a ", "&mut ", "&'a mut "]:
+            for name in ["LossNote", "cadmpeg_ir::LossNote"]:
+                with self.subTest(reference=reference, name=name):
+                    text = f"fn loss(&self) -> {reference}{name} {{ &self.losses[0] }}"
+                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+                    text = f"fn loss(&self) -> {reference}{name} {{ LossNote {{ message }} }}"
+                    hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
+                    self.assertEqual([hit.rule for hit in hits], ["loss_note_literal"])
+
     def test_loss_note_type_occurrence_does_not_hide_inline_literals(self) -> None:
         for text, expected in [
             ("fn make() -> LossNote { LossNote { message } }", [1]),
@@ -1775,6 +1785,36 @@ class WorkerCountTests(unittest.TestCase):
                 patch.object(policy.os, "sched_getaffinity", None, create=True), \
                 patch.object(policy.os, "cpu_count", return_value=None):
             self.assertEqual(policy.worker_count(), 1)
+
+
+class JsonSecondDeserializerTests(TempSourceCase):
+    def test_value_and_slice_reads_fail_in_production_and_tests(self) -> None:
+        self.write("crates/cadmpeg-ir/src/read.rs",
+                   "fn f(v: Value) { let _: T = serde_json::from_value(v).unwrap(); }\n"
+                   "#[cfg(test)]\nmod tests {\n    use serde_json::{from_slice, Value};\n}\n")
+        self.write("crates/cadmpeg-codec-f3d/src/json.rs",
+                   "fn f(b: &[u8]) { serde_json::Deserializer::from_slice(b); }\n")
+        findings = self.findings("json_second_deserializer")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/src/json.rs", 1),
+                          ("crates/cadmpeg-ir/src/read.rs", 1),
+                          ("crates/cadmpeg-ir/src/read.rs", 4)])
+
+    def test_a_hub_wire_type_reads_only_from_its_deserializer(self) -> None:
+        self.write("crates/cadmpeg-test-support/src/sweep.rs",
+                   "fn f(v: &Value) { CadIr::deserialize(v); }\n"
+                   "fn g<D>(deserializer: D) { CadIr::deserialize(deserializer); }\n")
+        findings = self.findings("json_second_deserializer")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-test-support/src/sweep.rs", 1)])
+
+    def test_text_reads_comments_and_exempt_files_pass(self) -> None:
+        self.write("crates/cadmpeg-ir/src/read.rs",
+                   "// serde_json::from_value reads a Value.\n"
+                   "fn f(t: &str) { serde_json::from_str::<T>(t); }\n")
+        self.write("crates/cadmpeg-core/src/tagged/tests.rs",
+                   "fn f(v: Value) { serde_json::from_value::<T>(v); }\n")
+        self.assertEqual(self.findings("json_second_deserializer"), [])
 
 
 if __name__ == "__main__":

@@ -2793,6 +2793,21 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `revolution_turn_block`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 9 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/turn_sense.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `lead` | `bytes[2]` | little | spec | the nine-byte turn block: two zero bytes · value `[0, 0]` |
+| 2 | 1 | `reverse` | `u8` | little | spec | the reverse byte at +2 |
+| 3 | 2 | `pad` | `bytes[2]` | little | spec | two zero bytes at +3 · value `[0, 0]` |
+| 5 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +5 |
+
 ## `revolution_line_reference_record_tail`
 
 Spec §2 · layout: byte offsets · size: 57 B
@@ -2801,6 +2816,7 @@ Offsets begin at the tail, the last seven values of an moLineRef_w scalar record
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2808,6 +2824,20 @@ Parsed by:
 | 8 | 24 | `point` | `f64[3]` | little | spec | a point on the axis in metres at tail offset `+8` |
 | 32 | 24 | `direction` | `f64[3]` | little | spec | the unit axis direction at tail offset `+32` |
 | 56 | 1 | `zero` | `bytes[1]` | little | spec | one zero byte at tail offset `+56` · value `[0]` |
+
+## `axis_tail_version_15000_prefix`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 24 B
+
+Offsets begin at the handle block's version word; the seven f64 of the tail follow at +24.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `version` | `u32` | little | spec | twenty zero bytes in files of `swVersion` 15000 · value `15000` |
+| 4 | 20 | `zeros` | `bytes[20]` | little | spec | twenty zero bytes in files of `swVersion` 15000 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `revolution_line_reference_nested_end`
 

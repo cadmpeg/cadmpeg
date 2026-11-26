@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -232,8 +233,7 @@ fn stored_base_keeps_history_order_suppression_and_native_result_identity() {
         "{findings:?}"
     );
     let round_trip: cadmpeg_ir::CadIr =
-        serde_json::from_slice(&serde_json::to_vec(&ir).expect("serialize")).expect("deserialize");
-    assert_eq!(round_trip.model.features, ir.model.features);
+        json::from_slice(&json::to_vec(&ir).expect("serialize")).expect("deserialize");
     let findings = InventorCodec
         .validate_native(&ctx, &round_trip, None)
         .expect("round-trip native validation");
@@ -244,7 +244,7 @@ fn stored_base_keeps_history_order_suppression_and_native_result_identity() {
         "{findings:?}"
     );
     for change in 0..2 {
-        let mut changed = round_trip.clone();
+        let mut changed = ir.clone();
         if change == 0 {
             changed.model.features[0].source_properties.insert(
                 cadmpeg_core::nonblank_literal!("result_body_link"),

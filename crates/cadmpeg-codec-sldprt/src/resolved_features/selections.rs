@@ -2389,12 +2389,31 @@ pub(crate) fn generated_surface_identities(
         prefixes.insert(prefix);
     }
 
+    if prefixes.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut result = Vec::<SurfaceIdentityFields>::new();
     let mut identities_by_hash = HashMap::<u64, Vec<usize>>::new();
     let Some(last) = lane.native_payload.len().checked_sub(16) else {
         return Ok(Vec::new());
     };
-    for terminal in 0..=last {
+    let search_slice = &lane.native_payload[..last + 4];
+    let mut candidate_terminals = Vec::new();
+    for prefix in &prefixes {
+        let finder = memchr::memmem::Finder::new(prefix);
+        let mut cursor = 0usize;
+        while let Some(relative) = search_slice
+            .get(cursor..)
+            .and_then(|rest| finder.find(rest))
+        {
+            let terminal = cursor + relative;
+            candidate_terminals.push(terminal);
+            cursor = terminal + 1;
+        }
+    }
+    candidate_terminals.sort_unstable();
+    candidate_terminals.dedup();
+    for terminal in candidate_terminals {
         let Some(window) = lane
             .native_payload
             .get(terminal..terminal + 16)
@@ -2404,9 +2423,6 @@ pub(crate) fn generated_surface_identities(
         };
         let [p0, p1, p2, p3, .., t0, t1, t2, t3] = *window;
         let prefix = [p0, p1, p2, p3];
-        if !prefixes.contains(&prefix) {
-            continue;
-        }
         let Some(feature_source_id) = signature_prefix(window, prefix) else {
             continue;
         };

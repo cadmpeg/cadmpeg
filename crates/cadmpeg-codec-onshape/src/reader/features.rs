@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
@@ -238,8 +239,11 @@ fn whole_sketch_region_query(query: &Value) -> bool {
         Some(true) => "true",
         Some(false) | None => "false",
     };
-    let expected = format!("query = qSketchRegion(id + \"{sketch}\", {inner});");
-    string.split_whitespace().eq(expected.split_whitespace())
+    let expected = format!("query=qSketchRegion(id+\"{sketch}\",{inner});");
+    let stripped: String = string.chars().filter(|c| !c.is_whitespace()).collect();
+    // The literal keeps its exact text, so ids that differ only in whitespace stay distinct.
+    string.contains(&format!("\"{sketch}\""))
+        && stripped == expected.replace(char::is_whitespace, "")
 }
 fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mapping<Value> {
     sketch_entities_in_order(queries, model, entity_type, false)
@@ -283,7 +287,7 @@ pub(super) fn sketch_entities_in_order(
                 .find(|e| e.id().as_str() == entity_id)
                 .ok_or("the selected sketch entity has no solved geometry")?;
             if entity_type == "VERTEX" {
-                let wire = serde_json::to_value(entity)
+                let wire = json::to_value(entity)
                     .map_err(|_| "the selected sketch entity is unreadable")?;
                 if wire.pointer("/geometry/kind").and_then(Value::as_str) != Some("point") {
                     return Err(
@@ -325,7 +329,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|e| Some(e.id().as_str()) == entity_id.as_str())
         .ok_or("the axis line is missing")?;
-    let entity = serde_json::to_value(entity).map_err(|_| "the axis line is unreadable")?;
+    let entity = json::to_value(entity).map_err(|_| "the axis line is unreadable")?;
     if entity.pointer("/geometry/kind").and_then(Value::as_str) != Some("line")
         || entity.get("construction").and_then(Value::as_bool) != Some(true)
     {
@@ -336,7 +340,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|s| s.id.as_str() == sketch_id)
         .ok_or("the axis sketch has no resolved frame")?;
-    let sketch = serde_json::to_value(sketch).map_err(|_| "the axis sketch is unreadable")?;
+    let sketch = json::to_value(sketch).map_err(|_| "the axis sketch is unreadable")?;
     let frame = sketch
         .pointer("/placement/frame")
         .ok_or("the axis frame is missing")?;
@@ -475,7 +479,9 @@ pub(super) fn dependencies(
         return Ok(result);
     }
     let operation = definition.pointer("/value/kind").and_then(Value::as_str);
-    if operation == Some("sketch") && sketch::built_in_frame(source) {
+    if operation == Some("sketch") && sketch::built_in_frame(source)
+        || operation == Some("datum_offset_plane") && super::planes::built_in(source)
+    {
         return Ok(result);
     }
     let reference = |native: &str| -> Mapping<String> {
@@ -520,6 +526,7 @@ pub(super) fn dependencies(
             continue;
         }
         let consumed = match operation {
+            Some("datum_offset_plane") => key == "entities",
             Some("sketch") => key == "sketchPlane",
             Some("extrude") => {
                 key == if value(source, "bodyType") == Some("THIN") {
@@ -538,7 +545,7 @@ pub(super) fn dependencies(
                 matches!(key, "profiles" | "path")
                     || key == "booleanScope" && value(source, "operationType") != Some("NEW")
             }
-            Some("fillet" | "chamfer") => key == "entities",
+            Some("fillet" | "chamfer" | "shell") => key == "entities",
             Some("hole") => key == "scope" || key == hole_profile,
             _ => false,
         };
@@ -596,10 +603,11 @@ pub(super) fn dependencies(
             let historical = match (operation, key) {
                 (Some("extrude" | "revolve" | "sweep"), "booleanScope")
                 | (Some("hole"), "scope") => Some(topology::OperandKind::Body),
-                (Some("sketch"), "sketchPlane") | (Some("extrude"), "endBoundEntityFace") => {
-                    Some(topology::OperandKind::Face)
-                }
+                (Some("datum_offset_plane"), "entities")
+                | (Some("sketch"), "sketchPlane")
+                | (Some("extrude"), "endBoundEntityFace") => Some(topology::OperandKind::Face),
                 (Some("fillet" | "chamfer"), "entities") => Some(topology::OperandKind::Edge),
+                (Some("shell"), "entities") => Some(topology::OperandKind::Face),
                 (Some("revolve"), "axis")
                     if query.get("queryType").and_then(Value::as_str) != Some("SKETCH_ENTITY") =>
                 {
@@ -608,7 +616,12 @@ pub(super) fn dependencies(
                 _ => None,
             };
             let mut producers = Vec::new();
-            if let Some(kind) = historical.filter(|_| query.get("deterministicIds").is_some()) {
+            if let Some(kind) = historical.filter(|_| {
+                query.get("deterministicIds").is_some()
+                    && !explicit
+                        .iter()
+                        .any(|native| super::planes::created(model, native).is_ok())
+            }) {
                 let ids = rows(&query, "deterministicIds")?;
                 if ids.is_empty() {
                     return Err("feature dependency selection is empty".into());
@@ -737,6 +750,7 @@ pub(super) fn map(
         None
     };
     match text(feature, "featureType")? {
+        "cPlane" => super::planes::map(feature, ordinal, inputs, model, unresolved),
         "newSketch" => sketch::map(feature, ordinal, inputs, model, report, unresolved),
         "assignVariable" => {
             if value(feature, "mode").is_some_and(|m| m != "ASSIGNED") {
@@ -959,8 +973,95 @@ pub(super) fn map(
             Ok(definition(kind, operation))
         }
         "hole" => hole(feature, ordinal, inputs, model, report, unresolved),
+        "shell" => {
+            let state = scoped.map_or_else(|| inputs.load(ordinal, feature), Ok)?;
+            shell(feature, ordinal, &state, model, unresolved)
+        }
         other => Err(format!("{other} features are not supported yet")),
     }
+}
+
+/// Refusal prefix for a shell control outside the stored and specified forms.
+pub(super) const SHELL_REFUSAL: &str = "shell: ";
+
+fn shell_refusal(reason: &str) -> String {
+    format!("{SHELL_REFUSAL}{reason}")
+}
+
+/// Shell parameters named by the Onshape `shell` feature specification.
+const SHELL_PARAMETERS: [&str; 5] = [
+    "isHollow",
+    "entities",
+    "parts",
+    "thickness",
+    "oppositeDirection",
+];
+
+/// Whether every parameter key of a shell record is a specified key.
+pub(super) fn shell_record_valid(feature: &Value) -> bool {
+    rows(feature, "parameters").is_ok_and(|rows| {
+        rows.iter().all(|row| {
+            row.get("parameterId")
+                .and_then(Value::as_str)
+                .is_some_and(|key| SHELL_PARAMETERS.contains(&key))
+        })
+    })
+}
+
+/// Maps a face-removal shell. A stored `oppositeDirection` of `false` is the
+/// inward wall; the opposite sense and the hollow form carry no stored case.
+fn shell(
+    feature: &Value,
+    ordinal: usize,
+    state: &topology::State,
+    model: &mut Model,
+    unresolved: &BTreeSet<String>,
+) -> Mapping<Value> {
+    if !shell_record_valid(feature) {
+        return Err(shell_refusal(
+            "a parameter is outside the shell specification",
+        ));
+    }
+    if enabled(feature, "isHollow")? {
+        return Err(shell_refusal("hollow shells are not supported yet"));
+    }
+    // Any `parts` row refuses, a repeated one too (`parameter` reports a repeat as an error).
+    if rows(feature, "parameters")?
+        .iter()
+        .any(|p| p.get("parameterId").and_then(Value::as_str) == Some("parts"))
+    {
+        return Err(shell_refusal(
+            "a hollow part selection on a face-removal shell is not supported yet",
+        ));
+    }
+    if enabled(feature, "oppositeDirection")? {
+        return Err(shell_refusal(
+            "outward walls are not supported yet (ONSHAPE-030)",
+        ));
+    }
+    let faces = state.selection(feature, "entities", "faces")?;
+    if faces
+        .pointer("/value/faces")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty)
+    {
+        return Err(shell_refusal("no faces to remove are selected"));
+    }
+    let thickness = length(feature, "thickness", model, unresolved)?;
+    owned_variable(
+        feature,
+        ordinal,
+        "thickness",
+        "Thickness",
+        super::expression::Dimension::Length,
+        model,
+        unresolved,
+    )?;
+    push(&mut model.feature_input_topologies, state.row.clone())?;
+    Ok(definition(
+        "shell",
+        json!({"removed_faces": faces, "thickness": thickness, "outward": false}),
+    ))
 }
 
 fn hole(

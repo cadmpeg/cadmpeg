@@ -10,6 +10,7 @@ use crate::pmdc::{PmDcListMetadata, PmDcReferenceList, PmDcU32List};
 use crate::record_identity::{Located, RecordTypeId};
 use crate::sketch::PmDcTransformPayload;
 use crate::test_support::test_fixtures::{content_at, parse};
+use cadmpeg_core::serde_erase::json;
 
 fn reference(index: u32) -> PmDcReference {
     PmDcReference::new(index, true).expect("valid synthetic motion")
@@ -518,9 +519,9 @@ fn validation_detects_changed_translation_rotation_selection_and_copy_count() {
         &FeatureDefinition::Operation(original.clone()),
         &std::collections::HashMap::new()
     ));
-    let mut changed_source = serde_json::to_value(&source).expect("synthetic source");
+    let mut changed_source = json::to_value(&source).expect("synthetic source");
     changed_source["properties"]["marker"] = serde_json::json!(3);
-    let changed_source = serde_json::from_value(changed_source).expect("synthetic source");
+    let changed_source = json::from_value(changed_source).expect("synthetic source");
     assert!(!index.matches(
         &changed_source,
         &FeatureDefinition::Operation(original.clone()),
@@ -695,9 +696,9 @@ fn native_motion_lists_require_type_2_markers_after_deserialization() {
             },
         );
         assert!(property_is_valid(&valid, |_| None));
-        let mut changed = serde_json::to_value(&valid).expect("synthetic property");
+        let mut changed = json::to_value(&valid).expect("synthetic property");
         changed["kind"]["items"]["marker"] = serde_json::json!(3);
-        let changed = serde_json::from_value(changed).expect("synthetic property");
+        let changed = json::from_value(changed).expect("synthetic property");
         assert!(!property_is_valid(&changed, |_| None));
     }
     let valid = property(
@@ -707,9 +708,9 @@ fn native_motion_lists_require_type_2_markers_after_deserialization() {
         },
     );
     assert!(property_is_valid(&valid, |_| None));
-    let mut changed = serde_json::to_value(&valid).expect("synthetic face item");
+    let mut changed = json::to_value(&valid).expect("synthetic face item");
     changed["kind"]["index_references"]["marker"] = serde_json::json!(3);
-    let changed = serde_json::from_value(changed).expect("synthetic face item");
+    let changed = json::from_value(changed).expect("synthetic face item");
     assert!(!property_is_valid(&changed, |_| None));
 }
 

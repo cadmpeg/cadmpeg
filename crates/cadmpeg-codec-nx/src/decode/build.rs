@@ -164,6 +164,9 @@ pub(super) fn try_decode_geometry(
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
     let mut topology_losses = parsed.primary_losses();
+    // Losses that state a face partial, kept for the faces the document holds
+    // once inactive bodies are pruned.
+    let mut partial_face_losses = Vec::new();
     let mut native_losses: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
@@ -1304,7 +1307,10 @@ pub(super) fn try_decode_geometry(
                 adaptive_geometry: &adaptive_geometry_budget,
                 completion_geometry: &completion_geometry_budget,
             },
-            &mut topology_losses,
+            crate::decode::emit::TopologyLosses {
+                losses: &mut topology_losses,
+                partial_faces: &mut partial_face_losses,
+            },
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
@@ -1533,6 +1539,14 @@ pub(super) fn try_decode_geometry(
         &ir,
         &model,
     )?;
+    let stated_faces: std::collections::BTreeSet<_> =
+        ir.geometry.faces.iter().map(|face| &face.id).collect();
+    topology_losses.extend(
+        partial_face_losses
+            .into_iter()
+            .filter(|(face, _)| stated_faces.contains(face))
+            .map(|(_, note)| note),
+    );
     for losses in [carrier_refusals, topology_losses, native_losses] {
         report.losses.extend(losses);
     }
@@ -1679,33 +1693,7 @@ fn retain_live_annotations(
     for unknown in unknowns {
         ids.insert(unknown.id().as_str());
     }
-    let mut live_ids = ids.iter().peekable();
-    annotations.retain_provenance(|id| ordered_live_identity_contains(&mut live_ids, id));
-    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    let mut live_ids = ids.iter().peekable();
-    builder.retain_exactness(|id| ordered_live_identity_contains(&mut live_ids, id));
-    *annotations = builder.build();
-}
-
-/// Annotation retention visits B-tree keys in order. Advance the live identity
-/// cursor in that same order, without copying model identities or restarting
-/// an indexed search for each annotation.
-fn ordered_live_identity_contains(
-    live_ids: &mut std::iter::Peekable<std::collections::btree_set::Iter<'_, &str>>,
-    id: &str,
-) -> bool {
-    loop {
-        let Some(&&live_id) = live_ids.peek() else {
-            return false;
-        };
-        match live_id.cmp(id) {
-            std::cmp::Ordering::Less => {
-                live_ids.next();
-            }
-            std::cmp::Ordering::Equal => return true,
-            std::cmp::Ordering::Greater => return false,
-        }
-    }
+    annotations.retain_entities(|id| ids.contains(id));
 }
 
 fn retain_live_unknown_links(

@@ -161,6 +161,8 @@ pub(crate) enum CatiaLossCode {
     TopologyZeroEntityNotTransferred,
     /// Zero-entity wire loops transferred; face topology remains unresolved.
     TopologyZeroEntityFaceUnresolved,
+    /// A face on a plane, cylinder, or cone states no loop, so it is stated partial.
+    TopologyFaceBoundaryUnstated,
     /// Outer declarations do not select one physically contained object graph.
     HistoryModelingScopeUnresolved,
     /// Modeling-scope object-graph field records remain unresolved.
@@ -173,6 +175,8 @@ pub(crate) enum CatiaLossCode {
     HistoryRelationDependenciesBounded,
     /// Typed two-definition value chains stay native without a neutral parameter.
     HistoryDefinitionChainsRetained,
+    /// The part's feature history is not read, so its bodies are unproduced.
+    HistoryFeaturesUnread,
     /// Design parameters and `Range` nominals read stored `E7` and `E8` literals
     /// as the values one and zero.
     HistoryParameterLiteralAssumed,
@@ -260,12 +264,14 @@ impl CatiaLossCode {
         Self::TopologyZeroEntityGaugeSubstituted,
         Self::TopologyZeroEntityNotTransferred,
         Self::TopologyZeroEntityFaceUnresolved,
+        Self::TopologyFaceBoundaryUnstated,
         Self::HistoryModelingScopeUnresolved,
         Self::HistoryObjectRecordsUnresolved,
         Self::HistoryLegacyRunsUnresolved,
         Self::HistoryConfigurationRowOrderBounded,
         Self::HistoryRelationDependenciesBounded,
         Self::HistoryDefinitionChainsRetained,
+        Self::HistoryFeaturesUnread,
         Self::HistoryParameterLiteralAssumed,
         Self::DesignParameterReferenceAsText,
         Self::AttributesMaterialsMetadataNotTransferred,
@@ -352,12 +358,14 @@ impl CatiaLossCode {
             Self::TopologyZeroEntityGaugeSubstituted => "topology.zero-entity-gauge-substituted",
             Self::TopologyZeroEntityNotTransferred => "topology.zero-entity-not-transferred",
             Self::TopologyZeroEntityFaceUnresolved => "topology.zero-entity-face-unresolved",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::HistoryModelingScopeUnresolved => "history.modeling-scope-unresolved",
             Self::HistoryObjectRecordsUnresolved => "history.object-records-unresolved",
             Self::HistoryLegacyRunsUnresolved => "history.legacy-runs-unresolved",
             Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
             Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
             Self::HistoryDefinitionChainsRetained => "history.definition-chains-retained",
+            Self::HistoryFeaturesUnread => "history.features-unread",
             Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::AttributesMaterialsMetadataNotTransferred => {
@@ -388,7 +396,7 @@ impl CatiaLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::GeometryCarrierSummary => Severity::Info,
+            Self::GeometryCarrierSummary | Self::GeometryVertexToleranceWidened => Severity::Info,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::TopologyBoundaryGraphNotEmitted
@@ -455,7 +463,8 @@ impl CatiaLossCode {
             | Self::TopologyZeroEntityCandidatesBounded
             | Self::TopologyZeroEntitySupportsRetained
             | Self::TopologyZeroEntityNotTransferred
-            | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
+            | Self::TopologyZeroEntityFaceUnresolved
+            | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted
             | Self::TopologyAffineVertexReconciled
             | Self::TopologyOwnedPatchSenseInferred
@@ -478,7 +487,8 @@ impl CatiaLossCode {
             | Self::HistoryLegacyRunsUnresolved
             | Self::HistoryConfigurationRowOrderBounded
             | Self::HistoryRelationDependenciesBounded
-            | Self::HistoryDefinitionChainsRetained => LossTaxonomy::FeatureHistoryRetained,
+            | Self::HistoryDefinitionChainsRetained
+            | Self::HistoryFeaturesUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
         }
@@ -502,7 +512,7 @@ impl CatiaLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `catia/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -574,12 +584,14 @@ mod tests {
                 "topology.zero-entity-gauge-substituted",
                 "topology.zero-entity-not-transferred",
                 "topology.zero-entity-face-unresolved",
+                "topology.face-boundary-unstated",
                 "history.modeling-scope-unresolved",
                 "history.object-records-unresolved",
                 "history.legacy-runs-unresolved",
                 "history.configuration-row-order-bounded",
                 "history.relation-dependencies-bounded",
                 "history.definition-chains-retained",
+                "history.features-unread",
                 "history.parameter-literal-assumed",
                 "design.parameter-reference-as-text",
                 "attributes.materials-metadata-not-transferred",

@@ -45,7 +45,8 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             None => super::error(
                 findings,
                 binding.holder,
-                format_args!(
+                crate::rule!(
+                    "design.dimension-binds-no-parameter-design",
                     "a dimension binds {}, which is no parameter of the design",
                     binding.parameter
                 ),
@@ -56,7 +57,7 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                         super::error(
                             findings,
                             binding.holder,
-                            format_args!(
+                            crate::rule!("design.dimension-binds-parameter-not-owner-scope", 
                                 "a dimension binds {}, a parameter of {}, not of its owner's scope {scope}",
                                 binding.parameter,
                                 parameter.scope.as_str()
@@ -86,7 +87,10 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                 super::warning(
                     findings,
                     parameter.id.as_str(),
-                    format_args!("driven parameter is bound by no dimension"),
+                    crate::rule!(
+                        "design.driven-parameter-bound-no-dimension",
+                        "driven parameter is bound by no dimension"
+                    ),
                 );
             }
         }
@@ -212,6 +216,25 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
             Some(rule.scope.as_str()),
             wire_if_bound(&mut scratch, rule),
         );
+    }
+    found
+}
+
+/// The parameters the dimensions of planar and spatial sketch constraints
+/// bind.
+pub(super) fn sketch_constraint_bindings(index: &DesignRecords<'_>) -> BTreeSet<String> {
+    let design = &index.ir.design;
+    let mut scratch = Vec::new();
+    let mut found = BTreeSet::new();
+    for constraint in &design.sketch_constraints {
+        if let Some(wire) = wire_if_bound(&mut scratch, constraint) {
+            found.extend(bound_parameters(&wire));
+        }
+    }
+    for constraint in &design.spatial_sketch_constraints {
+        if let Some(wire) = wire_if_bound(&mut scratch, constraint) {
+            found.extend(bound_parameters(&wire));
+        }
     }
     found
 }
@@ -384,7 +407,7 @@ pub(super) fn from_cache<T: Bound>(value: &ParameterValue, negated: bool) -> Opt
         (ParameterValue::Text(text), false) => Json::String(text.clone()),
         (ParameterValue::Text(_), true) => return None,
     };
-    serde_json::from_value::<T>(wire).ok()
+    cadmpeg_core::serde_erase::from_json_value::<T>(&wire).ok()
 }
 
 /// A bound dimension's parameter has the kind its value type takes, a cached
@@ -416,7 +439,8 @@ fn check_bound(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.dimension-negated-only-signed-quantity-boolean",
                 "a {} dimension is `negated`; only a signed quantity or a Boolean is",
                 value.name
             ),
@@ -432,9 +456,11 @@ fn check_bound(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.dimension-binds-kind",
                 "a {} dimension binds {id}, whose kind is {:?}",
-                value.name, record.kind
+                value.name,
+                record.kind
             ),
         );
         return;
@@ -444,7 +470,8 @@ fn check_bound(
             super::warning(
                 findings,
                 holder,
-                format_args!(
+                crate::rule!(
+                    "design.dimension-binds-cached-value-does-not",
                     "a {} dimension binds {id}, whose cached value {cached:?} it does not admit",
                     value.name
                 ),
@@ -477,7 +504,8 @@ fn check_sketch_constraints<S: SketchSpace>(
             super::error(
                 findings,
                 id(&constraint.id),
-                format_args!(
+                crate::rule!(
+                    "design.diameter-dimension-binds-states-display",
                     "a diameter dimension binds {}, which states a `display`",
                     parameter.as_str()
                 ),

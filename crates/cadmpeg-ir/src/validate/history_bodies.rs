@@ -2,7 +2,7 @@
 //! History bodies: producer and consumer features, and the closure of each
 //! nest under the topology checks.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -44,10 +44,11 @@ fn nest_identities(geometry: &crate::document::Topology) -> Vec<&str> {
 fn check_nest(
     ctx: &DecodeContext<'_>,
     body: &HistoryBody,
+    file_keys: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut nested = Vec::new();
-    nested::check(ctx, body.topology.to_topology(), &mut nested)?;
+    nested::check(ctx, body.topology.to_topology(), file_keys, &mut nested)?;
     for mut finding in nested {
         finding.message = format!("history body nest: {}", finding.message);
         finding.related.insert(0, body.id.as_str().to_owned());
@@ -71,6 +72,13 @@ pub(super) fn check_history_bodies(
         .iter()
         .map(|feature| feature.id.as_str())
         .collect();
+    let model_bodies: HashSet<&str> = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .collect();
+    let file_keys = super::products::decode_set::file_keys(ir);
     let mut owners = HashSet::new();
     for body in &ir.model.history_bodies {
         let owner = body.id.as_str();
@@ -80,7 +88,10 @@ pub(super) fn check_history_bodies(
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(owner),
-                format_args!("history body names neither a producing nor a consuming feature"),
+                crate::rule!(
+                    "history_bodies.history-body-names-neither-producing-nor",
+                    "history body names neither a producing nor a consuming feature"
+                ),
             );
         }
         for (role, feature) in [
@@ -94,12 +105,29 @@ pub(super) fn check_history_bodies(
                         Check::ReferentialIntegrity,
                         Severity::Error,
                         Some(owner),
-                        format_args!("history body {role} {feature} names no feature"),
+                        crate::rule!(
+                            "history_bodies.history-body-names-no-feature",
+                            "history body {role} {feature} names no feature"
+                        ),
                     );
                 }
             }
         }
-        check_nest(ctx, body, findings)?;
+        if let Some(state_of) = body.state_of.as_ref().map(crate::ids::BodyId::as_str) {
+            if !model_bodies.contains(state_of) {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    Severity::Error,
+                    Some(owner),
+                    crate::rule!(
+                        "history_bodies.history-body-state-names-no-body",
+                        "history body state_of {state_of} names no model body"
+                    ),
+                );
+            }
+        }
+        check_nest(ctx, body, &file_keys, findings)?;
         let geometry = body.topology.to_topology();
         for id in nest_identities(&geometry) {
             if IdentitySet::contains(ids, id) {
@@ -108,7 +136,10 @@ pub(super) fn check_history_bodies(
                     Check::Identity,
                     Severity::Error,
                     Some(owner),
-                    format_args!("history body record {id} repeats a top-level identity"),
+                    crate::rule!(
+                        "history_bodies.history-body-record-repeats-top-level",
+                        "history body record {id} repeats a top-level identity"
+                    ),
                 );
             } else if !owners.insert(id.to_owned()) {
                 record_finding(
@@ -116,7 +147,8 @@ pub(super) fn check_history_bodies(
                     Check::Identity,
                     Severity::Error,
                     Some(owner),
-                    format_args!(
+                    crate::rule!(
+                        "history_bodies.history-body-record-repeats-identity-another",
                         "history body record {id} repeats an identity of another history body"
                     ),
                 );

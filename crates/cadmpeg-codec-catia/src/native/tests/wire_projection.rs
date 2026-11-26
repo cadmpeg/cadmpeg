@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource admission for native wire views built during binary decode.
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn entity_reference_borrowed_wire_preserves_json_bytes() {
     for reference in [
@@ -14,8 +16,8 @@ fn entity_reference_borrowed_wire_preserves_json_bytes() {
     ] {
         let owned: crate::native::CatiaEntityReferenceWire = reference.clone().into();
         assert_eq!(
-            serde_json::to_vec(&reference).expect("borrowed reference JSON"),
-            serde_json::to_vec(&owned).expect("owned reference JSON")
+            json::to_vec(&reference).expect("borrowed reference JSON"),
+            json::to_vec(&owned).expect("owned reference JSON")
         );
     }
 }
@@ -39,7 +41,7 @@ fn entity_reference_retained_limit_refuses_json_record() {
         reference: &reference,
     };
     let arena_name = "entity_references";
-    let json_len = serde_json::to_vec(&record).expect("reference JSON").len();
+    let json_len = json::to_vec(&record).expect("reference JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -77,8 +79,8 @@ fn signature_cohort_borrowed_wire_preserves_json_bytes() {
     let cohort = signature_cohort();
     let owned: crate::native::CatiaReferenceSignatureCohortWire = cohort.clone().into();
     assert_eq!(
-        serde_json::to_vec(&cohort).expect("borrowed cohort JSON"),
-        serde_json::to_vec(&owned).expect("owned cohort JSON")
+        json::to_vec(&cohort).expect("borrowed cohort JSON"),
+        json::to_vec(&owned).expect("owned cohort JSON")
     );
 }
 
@@ -86,7 +88,7 @@ fn signature_cohort_borrowed_wire_preserves_json_bytes() {
 fn signature_cohort_retained_limit_refuses_json_record() {
     let cohort = signature_cohort();
     let arena_name = "reference_signature_cohorts";
-    let json_len = serde_json::to_vec(&cohort).expect("cohort JSON").len();
+    let json_len = json::to_vec(&cohort).expect("cohort JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -118,8 +120,8 @@ fn object_record_reference_borrowed_wire_preserves_json_bytes() {
     let reference = object_record_reference();
     let owned: crate::native::CatiaObjectRecordReferenceWire = reference.clone().into();
     assert_eq!(
-        serde_json::to_vec(&reference).expect("borrowed record reference JSON"),
-        serde_json::to_vec(&owned).expect("owned record reference JSON")
+        json::to_vec(&reference).expect("borrowed record reference JSON"),
+        json::to_vec(&owned).expect("owned record reference JSON")
     );
 }
 
@@ -138,9 +140,7 @@ fn object_record_reference_retained_limit_refuses_json_record() {
         reference: &reference,
     };
     let arena_name = "object_record_references";
-    let json_len = serde_json::to_vec(&record)
-        .expect("record reference JSON")
-        .len();
+    let json_len = json::to_vec(&record).expect("record reference JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();

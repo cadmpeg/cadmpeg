@@ -606,26 +606,227 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D11",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D11"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D13",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D13"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE4"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D15",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D15"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE5"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D17",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D17"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE6"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D19",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D19"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE7"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D7",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D7"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D9",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D9"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURFACE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "body": "iges:model:body#D37",
+                "kind": "body"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D37:D31",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D37:D33",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D37:D35",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D7",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D9",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D11",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D13",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D15",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D17",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D19",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D5"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [
@@ -636,7 +837,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -645,14 +845,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

@@ -117,7 +117,9 @@ pub struct ProductDefinition {
     /// Named contents an occurrence can show in place of the full content.
     pub representations: Vec<Representation>,
     /// The sketches of the model's sketch arena that the definition owns.
-    /// The list names records of that arena and goes with it.
+    /// The list names records of that arena and, like it, stays out of the
+    /// CADIR wire.
+    #[serde(skip)]
     pub sketches: Vec<SketchId>,
     /// The unit system the definition's source document is authored and
     /// displayed in.
@@ -533,17 +535,18 @@ mod tests {
     mod wire;
     use super::{ExternalDocument, JointLimits, JointOperand};
     use crate::ids::OccurrenceId;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn a_blank_selection_id_has_no_wire_spelling() {
         assert!(
-            serde_json::from_value::<crate::features::evaluation::SelectionMember>(
+            json::from_value::<crate::features::evaluation::SelectionMember>(
                 serde_json::json!({"kind": "face", "id": "   "})
             )
             .is_err()
         );
         assert!(
-            serde_json::from_value::<crate::features::evaluation::SelectionMember>(
+            json::from_value::<crate::features::evaluation::SelectionMember>(
                 serde_json::json!({"kind": "face", "id": " a "})
             )
             .is_ok()
@@ -556,38 +559,34 @@ mod tests {
             })
         };
         assert!(
-            serde_json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(
-                "   "
-            ))
-            .is_err()
+            json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology("   "))
+                .is_err()
         );
         assert!(
-            serde_json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(
-                " a "
-            ))
-            .is_ok()
+            json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(" a "))
+                .is_ok()
         );
     }
 
     #[test]
     fn a_joint_operand_states_the_container_that_owns_its_object() {
         let root = JointOperand::root("Body1", Vec::new());
-        let root_wire = serde_json::to_value(&root).unwrap();
+        let root_wire = json::to_value(&root).unwrap();
         assert_eq!(
             root_wire,
             serde_json::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
         );
         assert_eq!(
-            serde_json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
+            json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
             root
         );
 
         let occurrence_id = OccurrenceId::mint("test:model:occurrence#0").unwrap();
         let occurrence = JointOperand::occurrence(occurrence_id.clone(), "Body1", Vec::new());
-        let occurrence_wire = serde_json::to_value(&occurrence).unwrap();
+        let occurrence_wire = json::to_value(&occurrence).unwrap();
         assert_eq!(occurrence_wire["container"]["kind"], "occurrence");
         assert_eq!(
-            serde_json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
+            json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
             occurrence
         );
 
@@ -596,34 +595,34 @@ mod tests {
             "Body1",
             Vec::new(),
         );
-        let external_wire = serde_json::to_value(&external).unwrap();
+        let external_wire = json::to_value(&external).unwrap();
         assert_eq!(external_wire["container"]["kind"], "external");
         assert_eq!(
             external_wire["container"]["external_document"],
             serde_json::json!({"path": "parts/widget.FCStd"})
         );
         assert_eq!(
-            serde_json::from_value::<JointOperand>(external_wire).unwrap(),
+            json::from_value::<JointOperand>(external_wire).unwrap(),
             external
         );
 
         let mut both = occurrence_wire;
         both["container"]["external_document"] = serde_json::json!({});
-        let error = serde_json::from_value::<JointOperand>(both)
+        let error = json::from_value::<JointOperand>(both)
             .unwrap_err()
             .to_string();
         assert!(error.contains("external_document"), "{error}");
 
         let mut stray = root_wire.clone();
         stray["container"]["occurrence"] = serde_json::json!(occurrence_id.as_str());
-        let error = serde_json::from_value::<JointOperand>(stray)
+        let error = json::from_value::<JointOperand>(stray)
             .unwrap_err()
             .to_string();
         assert!(error.contains("occurrence"), "{error}");
 
         let mut without_object = root_wire;
         without_object.as_object_mut().unwrap().remove("object");
-        let error = serde_json::from_value::<JointOperand>(without_object)
+        let error = json::from_value::<JointOperand>(without_object)
             .unwrap_err()
             .to_string();
         assert!(error.contains("object"), "{error}");
@@ -644,8 +643,7 @@ mod tests {
         ] {
             let limits = JointLimits::new(minimum, maximum).unwrap();
             assert_eq!(
-                serde_json::from_value::<JointLimits>(serde_json::to_value(&limits).unwrap())
-                    .unwrap(),
+                json::from_value::<JointLimits>(json::to_value(&limits).unwrap()).unwrap(),
                 limits
             );
         }
@@ -680,16 +678,16 @@ mod tests {
             [bound(-2.0), bound(3.0)]
         );
 
-        let wire = serde_json::to_value(JointLimits::Range(range)).unwrap();
+        let wire = json::to_value(JointLimits::Range(range)).unwrap();
         assert_eq!(
             wire,
             serde_json::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
         );
         assert_eq!(
-            serde_json::from_value::<JointLimits>(wire).unwrap(),
+            json::from_value::<JointLimits>(wire).unwrap(),
             JointLimits::Range(range)
         );
-        let error = serde_json::from_value::<JointLimits>(
+        let error = json::from_value::<JointLimits>(
             serde_json::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
         )
         .unwrap_err()

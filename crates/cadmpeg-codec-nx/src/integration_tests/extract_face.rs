@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `EXTRACT_FACE` extraction and composed neutral, fidelity, and native admission.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 
 fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
@@ -29,7 +30,7 @@ fn extract_face_pipeline_retains_relations_without_inventing_authored_face_roles
     let records = &result.ir().native.namespace("nx").unwrap().arenas()
         ["feature_extract_face_construction_envelopes"];
     assert_eq!(records.len(), 1);
-    let wire = serde_json::to_value(&records[0]).unwrap();
+    let wire = json::to_value(&records[0]).unwrap();
     let relation = serde_json::json!({"key":7,"left":{"object_index":0,"raw_object_index":"00"},"right":{"object_index":1,"raw_object_index":"8001"}});
     assert_eq!(
         wire["lanes"],
@@ -38,7 +39,7 @@ fn extract_face_pipeline_retains_relations_without_inventing_authored_face_roles
     assert_eq!(wire["navigator_text"], "é");
     assert_eq!(wire["byte_len"], 55);
     assert_eq!(
-        serde_json::to_value(result.ir().model.features[0].evaluation.definition()).unwrap(),
+        json::to_value(result.ir().model.features[0].evaluation.definition()).unwrap(),
         serde_json::json!({"kind": "operation", "value": {"kind": "unresolved", "value": {"family":"extract_face"}}})
     );
     let (mut ir, report, fidelity) = result.into_parts();

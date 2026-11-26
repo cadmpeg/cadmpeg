@@ -2,6 +2,7 @@
 //! Persistent polyedge-reference construction decoding.
 
 use crate::loss::Diagnostics;
+use cadmpeg_core::serde_erase::json;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -343,7 +344,7 @@ impl Serialize for SemanticUuid {
 }
 
 pub(crate) fn semantic_json(polyedge: &PersistentPolyEdge) -> Option<String> {
-    serde_json::to_string(&SemanticJson(polyedge)).ok()
+    json::to_string(&SemanticJson(polyedge)).ok()
 }
 
 #[cfg(test)]

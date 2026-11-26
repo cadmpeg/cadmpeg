@@ -66,9 +66,12 @@ fn write_3dm(ir: &CadIr, path: &str) -> Result<(), Box<dyn std::error::Error>> {
 source-less semantic regeneration from a narrowly writable IR. `fidelity` is
 ignored and resolves to `NotConsumed`. Writable families are points and point
 clouds, circles, canonical NURBS curves and surfaces, planes, restricted
-planar and NURBS sheet and solid Breps, and triangle meshes. Unsupported
-arenas and retained non-writer namespaces are refused. Generated archives
-declare millimetre units. The CLI accepts the same archive-version choice:
+planar and NURBS sheet and solid Breps, and triangle meshes. Model content
+the archive is not written with (features, parameters, sketches,
+configurations, attributes, appearances, procedural definitions, SubD) is left
+out and reported as `export:arena.omitted`; an archive that holds no object
+reports `export:output.empty`. Retained non-writer namespaces are refused.
+Generated archives declare millimetre units. The CLI accepts the same archive-version choice:
 
 ```sh
 cadmpeg inspect model.3dm

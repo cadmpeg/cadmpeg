@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::design::geometry::ProfileGeometryWork;
@@ -1060,7 +1061,7 @@ fn unresolved_explicit_region_fixture(
         entities.push(SketchEntity::new(
             crate::ids::neutral_sketch_curve_id(&sketch_id, u64::from(primary), 0),
             sketch_id.clone(),
-            serde_json::from_value::<SketchGeometry>(geom).unwrap(),
+            json::from_value::<SketchGeometry>(geom).unwrap(),
         ));
         curves.push(crate::records::sketch_geometry::SketchCurveIdentity {
             id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
@@ -1088,7 +1089,7 @@ fn unresolved_explicit_region_fixture(
         ],
     );
     let operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "scope_reference_ordinal": 0,
             "record_index": 100,
             "byte_offset": 10,
@@ -1164,7 +1165,7 @@ fn unresolved_explicit_region_rejects_conflicting_group_and_accepts_agreeing_gro
                     secondary_id: 0,
                 }),
             );
-            let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+            let mut feature: cadmpeg_ir::features::Feature = json::from_value(json!({
                 "id": "synthetic:test:feature#ext",
                 "ordinal": 0,
                 "suppressed": false,
@@ -1249,7 +1250,7 @@ fn unresolved_explicit_region_rejects_conflicting_transition_and_accepts_agreein
             let topo0 = AsmHistoricalTopology::default();
             let topo1 = cylinder_face_topology(0, radius, 0.0);
             let history = history_with_topologies(&[topo0, topo1]);
-            let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+            let mut feature: cadmpeg_ir::features::Feature = json::from_value(json!({
                 "id": "synthetic:test:feature#ext_trans",
                 "ordinal": 0,
                 "suppressed": false,
@@ -1356,7 +1357,7 @@ fn unresolved_explicit_region_requires_hole_agreement() {
     // Two separately selected explicit regions (region 0 = loop 0, region 1 = loop 1)
     // must reject a single A-with-hole-B candidate and accept two hole-free regions.
     let two_regions_operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "scope_reference_ordinal": 0,
             "record_index": 100,
             "byte_offset": 10,
@@ -1465,7 +1466,7 @@ fn explicit_region_with_extended_incidence_refuses_fallback_for_trimmed_curve_po
 
         let run_portion = |incidence_words: [u32; 8]| -> ProfileRef {
             let operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
-                serde_json::from_value(json!({
+                json::from_value(json!({
                     "scope_reference_ordinal": 0,
                     "record_index": 100,
                     "byte_offset": 10,
@@ -1508,7 +1509,7 @@ fn explicit_region_with_extended_incidence_refuses_fallback_for_trimmed_curve_po
                 )),
                 7,
             );
-            let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+            let mut feature: cadmpeg_ir::features::Feature = json::from_value(json!({
                 "id": "synthetic:test:feature#ext_trimmed",
                 "ordinal": 0,
                 "suppressed": false,
@@ -1604,7 +1605,7 @@ fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
             entities.push(SketchEntity::new(
                 crate::ids::neutral_sketch_curve_id(&sketch_id, u64::from(primary), 0),
                 sketch_id.clone(),
-                serde_json::from_value::<SketchGeometry>(geom).unwrap(),
+                json::from_value::<SketchGeometry>(geom).unwrap(),
             ));
             curves.push(crate::records::sketch_geometry::SketchCurveIdentity {
                 id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
@@ -1637,7 +1638,7 @@ fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
 
         // Explicit region selection resolves via resolved_sketch_profile_regions to Some(vec![0, 1]).
         let two_regions_operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
-            serde_json::from_value(json!({
+            json::from_value(json!({
                 "scope_reference_ordinal": 0,
                 "record_index": 100,
                 "byte_offset": 10,
@@ -1786,7 +1787,7 @@ fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
         ]);
         let history = history_with_topologies(&[topo0, topo1]);
 
-        let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+        let mut feature: cadmpeg_ir::features::Feature = json::from_value(json!({
             "id": "synthetic:test:feature#ext_resolved_exp",
             "ordinal": 0,
             "suppressed": false,

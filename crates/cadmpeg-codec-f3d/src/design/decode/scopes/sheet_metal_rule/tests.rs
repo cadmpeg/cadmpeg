@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 
 fn material_scalar(
     bytes: &[u8],
@@ -210,7 +211,7 @@ fn linked_settings_rule_takes_the_decoded_record_for_the_owning_scope() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use crate::records::sheet_metal_settings::DesignSheetMetalSettings;
     let settings = |stream: &str, owner: u64| -> DesignSheetMetalSettings {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": format!("f3d:{stream}/BulkStream.dat:design-sheet-metal-settings#20"),
             "record_index": 30, "byte_offset": 20, "paired_byte_offset": 100,
             "inputs": {"version": "v3_leading_reference", "first": 55, "rule_reference_tail": "0000"},

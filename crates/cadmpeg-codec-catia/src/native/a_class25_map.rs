@@ -84,6 +84,7 @@ pub(super) fn derive(
 mod tests {
     use super::CatiaConsolidatedAClass25Map;
     use crate::native::CatiaNative;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn a5_class25_map_round_trips_with_its_payload() {
@@ -101,13 +102,13 @@ mod tests {
         let [map] = native.consolidated_a_class25_maps.as_slice() else {
             panic!("one A-family map");
         };
-        let wire = serde_json::to_value(map).expect("serialize map");
+        let wire = json::to_value(map).expect("serialize map");
         assert_eq!(wire["data"]["selector"], 0x1587);
         let mut contradictory = wire.clone();
         contradictory["data"]["selector"] = serde_json::json!(0x1586);
-        assert!(serde_json::from_value::<CatiaConsolidatedAClass25Map>(contradictory).is_err());
+        assert!(json::from_value::<CatiaConsolidatedAClass25Map>(contradictory).is_err());
         assert_eq!(
-            serde_json::from_value::<CatiaConsolidatedAClass25Map>(wire).expect("load map"),
+            json::from_value::<CatiaConsolidatedAClass25Map>(wire).expect("load map"),
             *map
         );
         assert!(native.consolidated_domain_relations.is_empty());

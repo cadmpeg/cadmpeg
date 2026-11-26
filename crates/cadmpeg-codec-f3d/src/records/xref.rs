@@ -333,6 +333,7 @@ pub(crate) struct XrefReference {
 #[cfg(test)]
 mod tests {
     use super::{XrefDesign, XrefReference};
+    use cadmpeg_core::serde_erase::json;
     #[test]
     fn native_xref_required_text_refuses_empty_fields() {
         let design = serde_json::json!({"id":"f3d:xref:design#0","ordinal":0,"file_version":1,
@@ -341,25 +342,21 @@ mod tests {
             "from":"root.f3d","relative_path":"part.f3d","neutron_role":"role","neutron_data":""});
         let mut empty = design.clone();
         empty["target_file_name"] = serde_json::json!("");
-        assert!(serde_json::from_value::<XrefDesign>(empty).is_err());
+        assert!(json::from_value::<XrefDesign>(empty).is_err());
         for field in ["from", "relative_path", "neutron_role"] {
             let mut empty = reference.clone();
             empty[field] = serde_json::json!("");
-            assert!(
-                serde_json::from_value::<XrefReference>(empty).is_err(),
-                "{field}"
-            );
+            assert!(json::from_value::<XrefReference>(empty).is_err(), "{field}");
             let mut whitespace = reference.clone();
             whitespace[field] = serde_json::json!(" ");
-            let record = serde_json::from_value::<XrefReference>(whitespace.clone()).unwrap();
+            let record = json::from_value::<XrefReference>(whitespace.clone()).unwrap();
             whitespace["occurrence_ordinal"] = serde_json::json!(0);
-            assert_eq!(serde_json::to_value(record).unwrap(), whitespace);
+            assert_eq!(json::to_value(record).unwrap(), whitespace);
         }
         let mut whitespace = design;
         whitespace["target_file_name"] = serde_json::json!(" ");
         assert_eq!(
-            serde_json::to_value(serde_json::from_value::<XrefDesign>(whitespace.clone()).unwrap())
-                .unwrap(),
+            json::to_value(json::from_value::<XrefDesign>(whitespace.clone()).unwrap()).unwrap(),
             whitespace
         );
     }
@@ -371,12 +368,12 @@ mod tests {
             "from": "root.f3d", "relative_path": "source.f3d",
             "neutron_role": "role", "neutron_data": "data"
         });
-        let restored: super::DerivedReference = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+        let restored: super::DerivedReference = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(restored).unwrap(), wire);
         for field in ["from", "relative_path", "neutron_role"] {
             let mut invalid = wire.clone();
             invalid[field] = serde_json::json!("");
-            assert!(serde_json::from_value::<super::DerivedReference>(invalid).is_err());
+            assert!(json::from_value::<super::DerivedReference>(invalid).is_err());
         }
     }
 }

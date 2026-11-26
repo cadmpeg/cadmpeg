@@ -9,6 +9,7 @@
 //! Shared harness: [`cadmpeg_test_support::golden`].
 
 use crate::IgesVersion;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
@@ -44,7 +45,7 @@ fn branches() -> [Branch; 3] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match IgesCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect summary"),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
             Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
@@ -58,8 +59,8 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     {
         Ok(result) => {
             serde_json::json!({
-                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
                 "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }

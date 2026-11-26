@@ -3,6 +3,7 @@
 
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
 use crate::records::feature::thread::{DesignThreadConstruction, DesignThreadForm};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn split_face_collector_retains_metadata_selected_carrier_header_for_native_admission() {
@@ -144,7 +145,7 @@ fn compact_thread_trailer_record_is_a_related_record() {
 
 #[test]
 fn extended_compact_thread_retains_the_hole_header_outside_its_reference_table() {
-    let construction: DesignThreadConstruction = serde_json::from_value(serde_json::json!({
+    let construction: DesignThreadConstruction = json::from_value(serde_json::json!({
         "form": "compact_extended", "designation_offset": 46,
         "designation": "M8x1", "nominal_size_text": "8.0", "nominal_size": 8.0,
         "profile": "ISO Metric profile", "major_diameter": 0.8,

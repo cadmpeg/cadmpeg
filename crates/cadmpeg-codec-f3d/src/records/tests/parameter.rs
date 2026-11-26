@@ -5,6 +5,7 @@ use super::super::{
     },
     references::DesignClassTag,
 };
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 fn draft() -> DesignParameterDraft {
@@ -37,24 +38,24 @@ fn draft() -> DesignParameterDraft {
 
 #[test]
 fn parameter_keeps_literal_names_and_checks_required_text_and_units() {
-    let wire = serde_json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
+    let wire = json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
     let mut unnamed = wire.clone();
     unnamed["name"] = json!("");
     unnamed["name_offset"] = unnamed["evaluated_value_offset"].clone();
-    let decoded = serde_json::from_value::<DesignParameter>(unnamed.clone()).unwrap();
+    let decoded = json::from_value::<DesignParameter>(unnamed.clone()).unwrap();
     assert_eq!(decoded.name(), "");
-    assert_eq!(serde_json::to_value(decoded).unwrap(), unnamed);
+    assert_eq!(json::to_value(decoded).unwrap(), unnamed);
     for field in ["expression", "unit"] {
         let mut invalid = wire.clone();
         invalid[field] = json!("");
-        assert!(serde_json::from_value::<DesignParameter>(invalid)
+        assert!(json::from_value::<DesignParameter>(invalid)
             .unwrap_err()
             .to_string()
             .contains(field));
     }
     let mut invalid = wire;
     invalid.as_object_mut().unwrap().remove("unit_offset");
-    assert!(serde_json::from_value::<DesignParameter>(invalid)
+    assert!(json::from_value::<DesignParameter>(invalid)
         .unwrap_err()
         .to_string()
         .contains("unit_offset"));
@@ -62,7 +63,7 @@ fn parameter_keeps_literal_names_and_checks_required_text_and_units() {
 
 #[test]
 fn parameter_rejects_unordered_offsets_on_the_wire() {
-    let wire = serde_json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
+    let wire = json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
     for (field, value) in [
         ("byte_offset", 140),
         ("expression_offset", 100),
@@ -77,7 +78,7 @@ fn parameter_rejects_unordered_offsets_on_the_wire() {
         let mut invalid = wire.clone();
         invalid[field] = json!(value);
         assert!(
-            serde_json::from_value::<DesignParameter>(invalid).is_err(),
+            json::from_value::<DesignParameter>(invalid).is_err(),
             "{field}"
         );
     }
@@ -85,7 +86,7 @@ fn parameter_rejects_unordered_offsets_on_the_wire() {
     no_unit.as_object_mut().unwrap().remove("unit");
     no_unit.as_object_mut().unwrap().remove("unit_offset");
     no_unit["name_offset"] = json!(160);
-    assert!(serde_json::from_value::<DesignParameter>(no_unit).is_err());
+    assert!(json::from_value::<DesignParameter>(no_unit).is_err());
 }
 
 #[test]

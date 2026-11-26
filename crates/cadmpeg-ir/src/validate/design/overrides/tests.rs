@@ -2,9 +2,10 @@
 //! D16: a configuration's definition override restates every dimension at a
 //! place of the base definition with the base's value.
 
+use cadmpeg_core::serde_erase::json;
 use serde_json::{json, Value};
 
-use super::super::fixture::{design_findings, document, feature};
+use super::super::fixture::{design_findings, document, feature, on_the_smallest_default_stack};
 use crate::design::configuration::FeatureStateOverride;
 use crate::design::feature::FeatureDefinition;
 use crate::document::CadIr;
@@ -17,7 +18,7 @@ fn offset_plane(offset: &Value, after: &Value) -> FeatureDefinition {
 }
 
 fn optioned_plane(offset: &Value, after: &Value, options: &Value) -> FeatureDefinition {
-    serde_json::from_value(json!({"operation": {"kind": "datum", "value": {
+    json::from_value(json!({"operation": {"kind": "datum", "value": {
         "element": {"kind": "plane", "value": {
             "inputs": [{
                 "role": {"subject": "whole", "relation": {"kind": "offset"}},
@@ -102,32 +103,30 @@ fn a_dimension_at_a_place_the_base_lacks_is_not_compared() {
 }
 
 #[test]
-fn the_comparison_at_the_construction_ceiling_runs_on_a_small_stack() {
-    let ceiling =
-        usize::try_from(cadmpeg_core::decode::ResourceLimits::desktop().max_construction_depth)
-            .unwrap();
-    let mut inputs = json!([{
-        "role": {"subject": "whole", "relation": {"kind": "offset"}},
-        "reference": {"kind": "picks", "value": {
-            "at": {"kind": "input"},
-            "picks": {"kind": "named", "value": [
-                {"target": {"kind": "principal", "value": {"entity": "xy_plane"}}}
-            ]}
-        }},
-        "value": {"kind": "length", "value": literal(10.0)}
-    }]);
-    for _ in 1..ceiling {
-        inputs = json!([{
-            "role": {"subject": "whole", "relation": {"kind": "parallel"}},
-            "reference": {"kind": "built", "value": {"kind": "plane", "inputs": inputs, "after": [], "resolved_in": {}}}
-        }]);
-    }
+fn the_comparison_of_the_deepest_construction_runs_on_the_smallest_default_stack() {
+    // A nested construction is four levels of JSON: inputs, input, reference
+    // and construction, so no document holds a deeper nesting.
+    let deepest = crate::bounds::MAX_DOCUMENT_DEPTH / 4;
     let nested = |offset: f64| -> FeatureDefinition {
-        let mut text = serde_json::to_string(&inputs).unwrap();
-        text = text.replace("10.0", &format!("{offset:?}"));
-        serde_json::from_value(json!({"operation": {"kind": "datum", "value": {
+        let mut inputs = json!([{
+            "role": {"subject": "whole", "relation": {"kind": "offset"}},
+            "reference": {"kind": "picks", "value": {
+                "at": {"kind": "input"},
+                "picks": {"kind": "named", "value": [
+                    {"target": {"kind": "principal", "value": {"entity": "xy_plane"}}}
+                ]}
+            }},
+            "value": {"kind": "length", "value": literal(offset)}
+        }]);
+        for _ in 1..deepest {
+            inputs = json!([{
+                "role": {"subject": "whole", "relation": {"kind": "parallel"}},
+                "reference": {"kind": "built", "value": {"kind": "plane", "inputs": inputs, "after": [], "resolved_in": {}}}
+            }]);
+        }
+        json::from_value(json!({"operation": {"kind": "datum", "value": {
             "element": {"kind": "plane", "value": {
-                "inputs": serde_json::from_str::<Value>(&text).unwrap(),
+                "inputs": inputs,
                 "after": [],
                 "resolved_in": {}
             }},
@@ -138,13 +137,7 @@ fn the_comparison_at_the_construction_ceiling_runs_on_a_small_stack() {
     };
     let mut ir = overridden(nested(12.0));
     ir.design.features[0].definition = nested(10.0);
-    let found = std::thread::Builder::new()
-        .stack_size(256 * 1024)
-        .spawn(move || d16(&ir))
-        .unwrap()
-        .join()
-        .unwrap();
-    assert!(found);
+    assert!(on_the_smallest_default_stack(move || d16(&ir)));
 }
 
 #[test]

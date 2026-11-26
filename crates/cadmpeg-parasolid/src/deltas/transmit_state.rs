@@ -86,20 +86,21 @@ impl TryFrom<TransmitWire> for TransmitState {
 #[cfg(test)]
 mod tests {
     use super::TransmitState;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn transmit_wire_preserves_metadata_and_rejects_invalid_fields() {
         let json = r#"{"description":"Transmit (deltas)","schema":"SCH_3501171_35102_13006","maximum_node_type":239,"user_field_size":0}"#;
         let state: TransmitState = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&state).unwrap(), json);
+        assert_eq!(json::to_string(&state).unwrap(), json);
         assert_eq!(
-            serde_json::to_vec(&state).unwrap(),
-            serde_json::to_vec(&super::TransmitWire::from(state.clone())).unwrap()
+            json::to_vec(&state).unwrap(),
+            json::to_vec(&super::TransmitWire::from(state.clone())).unwrap()
         );
-        let mut plain = serde_json::to_value(&state).unwrap();
+        let mut plain = json::to_value(&state).unwrap();
         plain["schema"] = serde_json::json!("SCH_3501171_13006");
-        assert!(serde_json::from_value::<TransmitState>(plain).is_ok());
-        let valid = serde_json::to_value(&state).unwrap();
+        assert!(json::from_value::<TransmitState>(plain).is_ok());
+        let valid = json::to_value(&state).unwrap();
         for (field, value) in [
             ("description", serde_json::json!("Transmit")),
             ("description", serde_json::json!("(deltas)\n")),
@@ -110,7 +111,7 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire[field] = value;
-            assert!(serde_json::from_value::<TransmitState>(wire)
+            assert!(json::from_value::<TransmitState>(wire)
                 .unwrap_err()
                 .to_string()
                 .contains(field));

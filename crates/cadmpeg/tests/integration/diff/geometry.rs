@@ -2,6 +2,7 @@
 //! `diff --geometry`: ID-free comparison of measured bodies, with
 //! expectations from the comparison rules in `docs/measurement.md`.
 
+use cadmpeg_core::serde_erase::json;
 #[cfg(any(feature = "step", feature = "fcstd"))]
 use std::path::Path;
 #[cfg(feature = "step")]
@@ -25,7 +26,7 @@ fn geometry_json(a: &str, b: &str) -> (Option<i32>, Value) {
         .args(["diff", a, b, "--geometry", "--json"])
         .output()
         .unwrap();
-    let report = serde_json::from_slice(&output.stdout)
+    let report = json::from_slice(&output.stdout)
         .unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&output.stderr)));
     (output.status.code(), report)
 }
@@ -71,7 +72,7 @@ fn step_export_loss_codes(source: &Path, written: &Path, report: &Path) -> Vec<S
         .arg(report)
         .assert()
         .success();
-    let report: Value = serde_json::from_slice(&std::fs::read(report).unwrap()).unwrap();
+    let report: Value = json::from_slice(&std::fs::read(report).unwrap()).unwrap();
     report["export"]["losses"]
         .as_array()
         .unwrap()
@@ -211,9 +212,9 @@ fn geometry_diff_detects_a_moved_signature_body() {
 /// Each `FreeCAD` corpus file against itself. Identical documents give
 /// identical rows, so nothing disagrees and no body is unmatched. A body
 /// whose faces lie on procedural carriers without an admitted cache
-/// (`Sweep`) has no comparable quantity, datum bodies with no vertex
-/// (`DatumPlane`, `DatumCoordinateSystem`) compare by a signature that does
-/// not depend on position. A document whose occurrences place bodies
+/// (`Sweep`) has no comparable quantity, so the document's union box is
+/// not compared either; a datum has no body (§6.2). A document whose
+/// occurrences place bodies
 /// (`core_design_product`) compares its instances and agrees with itself, as
 /// does a document with none of these (`geometry_topology`).
 #[cfg(feature = "fcstd")]
@@ -225,7 +226,7 @@ fn geometry_diff_self_comparison() {
             "core_operations.FCStd",
             "inconclusive",
             &["#Sweep:"][..],
-            &["compare.unmeasured-body", "compare.signature-unplaced"][..],
+            &["compare.unavailable", "compare.unmeasured-body"][..],
         ),
         ("geometry_topology.FCStd", "agree", &[][..], &[][..]),
         ("core_design_product.FCStd", "agree", &[][..], &[][..]),
@@ -348,7 +349,7 @@ fn id_diff_report_has_no_geometry_member() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: Value = json::from_slice(&output.stdout).unwrap();
     let mut keys: Vec<&str> = report
         .as_object()
         .unwrap()

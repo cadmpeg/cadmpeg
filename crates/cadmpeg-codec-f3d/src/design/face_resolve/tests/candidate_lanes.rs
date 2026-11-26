@@ -9,12 +9,13 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup, face::DesignFaceOperand,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::FaceId;
 
 #[test]
 fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
     crate::test_support::with_decode_context(|decode_ctx| {
-        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+        let mut operand: DesignFaceOperand = json::from_value(serde_json::json!({
         "id": "f3d:test:face-operand#200",
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,
@@ -65,7 +66,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             reference(20, "selected-b", 201),
         ];
 
-        let mut group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        let mut group: DesignConstructionOperandGroup = json::from_value(serde_json::json!({
             "id": "f3d:test:construction-group#150",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -101,7 +102,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         );
         group.operand_role =
             crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile;
-        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
+        let scope: DesignParameterScope = json::from_value(serde_json::json!({
             "id": "f3d:test:scope#100",
             "byte_offset": 0,
             "class_tag": "304",

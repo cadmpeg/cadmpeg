@@ -4,6 +4,7 @@ use crate::document::CadIr;
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::check::Finding;
 use crate::transform::Transform;
+use cadmpeg_core::serde_erase::json;
 
 fn occurrence(id: &str, prototype: &str) -> Occurrence {
     Occurrence::new(
@@ -23,9 +24,11 @@ fn definition(id: &str, occurrences: &[&str]) -> ProductDefinition {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
+    let mut ir = ir.clone();
+    crate::examples::add_document_root(&mut ir);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::super::check_products(&ctx, ir, &mut findings).unwrap();
+    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
     findings
 }
 
@@ -175,7 +178,7 @@ fn a_definition_does_not_place_itself() {
             ),
             (
                 Some("test:model:product#root".into()),
-                "product definition places itself".into()
+                "product definition is the prototype of an occurrence it owns, directly or transitively".into()
             )
         ]
     );
@@ -192,9 +195,12 @@ fn a_definition_does_not_place_itself() {
         messages(&ir),
         [(
             Some("test:model:product#part".into()),
-            "product definition places itself".into()
+            "product definition is the prototype of an occurrence it owns, directly or transitively".into()
         )]
     );
+    assert!(findings(&ir)
+        .iter()
+        .all(|finding| finding.severity == crate::report::Severity::Error));
 }
 
 #[test]
@@ -250,7 +256,7 @@ fn product_sketch_references_exist_and_have_one_definition() {
     let mut ir = CadIr::empty();
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),
@@ -282,7 +288,7 @@ fn product_sketch_reference_cannot_repeat_in_one_definition() {
     let mut ir = CadIr::empty();
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),

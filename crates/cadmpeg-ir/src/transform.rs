@@ -16,7 +16,7 @@ use crate::units::UnitVector3;
 /// The two stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and is
 /// neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform2 {
@@ -150,7 +150,7 @@ pub enum TransformError {
 /// The three stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and
 /// is neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform {
@@ -403,6 +403,7 @@ mod tests {
     use super::{PositiveReal, Transform, Transform2, TransformError};
     use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
+    use cadmpeg_core::serde_erase::json;
 
     mod numeric;
 
@@ -597,7 +598,7 @@ mod tests {
         assert_eq!(transform, Transform::identity());
         assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(
-            serde_json::to_string(&transform).expect("serializes"),
+            json::to_string(&transform).expect("serializes"),
             "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0]]"
         );
 

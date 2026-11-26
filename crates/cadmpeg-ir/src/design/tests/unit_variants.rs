@@ -5,6 +5,7 @@
 //! operation family under `ops` sweeps its own files with
 //! [`assert_units_refuse_value`].
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -39,7 +40,7 @@ pub(in crate::design) fn reads<T: Serialize + DeserializeOwned>(
     value: &Value,
 ) -> Result<Value, String> {
     let read: T = read_desktop(&value.to_string()).map_err(|error| error.to_string())?;
-    serde_json::to_value(read).map_err(|error| error.to_string())
+    json::to_value(read).map_err(|error| error.to_string())
 }
 
 /// The reader of each adjacently tagged design enum with a unit variant, by

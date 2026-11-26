@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation of borrowed annotations and native product links.
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::annotations::{AnnotationKey, AnnotationTarget};
 use crate::document::CadIr;
 use crate::index::identities::{BorrowedIdentities, IdentitySet};
 use crate::native::view::{NativeEntity, NativeView};
@@ -42,6 +45,87 @@ macro_rules! define_model_entity_projection {
 }
 crate::document::arena_registry!(define_model_entity_projection);
 
+/// The records that annotation keys name outside `all_ids`: the records of
+/// the design and process arenas, and the records of the deltas of the
+/// evaluations and process states that have content, with the structural
+/// JSON value of each delta record that an exactness key with field
+/// overrides names, or `None` where it could not be serialized.
+struct Unindexed<'ir> {
+    records: BTreeSet<&'ir str>,
+    ids: BTreeSet<(&'ir str, &'ir str)>,
+    projected: BTreeMap<(&'ir str, &'ir str), Option<serde_json::Value>>,
+}
+
+impl<'ir> Unindexed<'ir> {
+    /// Indexes the design and process records of `ir` where a key of
+    /// `annotations` names an entity outside `all_ids`, and the deltas of
+    /// `ir` where a key names a delta record.
+    fn of(
+        ctx: &DecodeContext<'_>,
+        ir: &'ir CadIr,
+        annotations: &crate::Annotations,
+        all_ids: &dyn IdentitySet,
+    ) -> Result<Self, CodecError> {
+        let mut unindexed = Self {
+            records: BTreeSet::new(),
+            ids: BTreeSet::new(),
+            projected: BTreeMap::new(),
+        };
+        let keys = || {
+            annotations
+                .provenance
+                .keys()
+                .chain(annotations.exactness().keys())
+        };
+        if keys().any(
+            |key| matches!(key.target(), AnnotationTarget::Entity(id) if !all_ids.contains(id)),
+        ) {
+            unindexed.records = crate::annotations::design_and_process_records(ir);
+        }
+        if !keys().any(|key| matches!(key.target(), AnnotationTarget::Delta { .. })) {
+            return Ok(unindexed);
+        }
+        unindexed.ids = crate::annotations::delta_records(ir);
+        let wanted = annotations
+            .exactness()
+            .iter()
+            .filter_map(|(key, note)| match key.target() {
+                AnnotationTarget::Delta { qualifier, record } if !note.fields().is_empty() => {
+                    Some((qualifier, record))
+                }
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        for (qualifier, records) in crate::annotations::deltas(ir) {
+            for (record, value) in
+                records.project_records(ctx, |record| wanted.contains(&(qualifier, record)))
+            {
+                let value = match value {
+                    Ok(value) => Some(value),
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => None,
+                };
+                unindexed
+                    .projected
+                    .entry((qualifier, record))
+                    .or_insert(value);
+            }
+        }
+        Ok(unindexed)
+    }
+
+    /// Whether `key` names a top-level entity of `all_ids`, a design or
+    /// process record, or a record of a delta.
+    fn resolves(&self, key: &AnnotationKey, all_ids: &dyn IdentitySet) -> bool {
+        match key.target() {
+            AnnotationTarget::Entity(id) => all_ids.contains(id) || self.records.contains(id),
+            AnnotationTarget::Delta { qualifier, record } => {
+                self.ids.contains(&(qualifier, record))
+            }
+        }
+    }
+}
+
 pub(super) fn check_annotations(
     ctx: &DecodeContext<'_>,
     view: NativeView<'_>,
@@ -50,8 +134,9 @@ pub(super) fn check_annotations(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut wanted = BorrowedIdentities::build(|add| {
-        for (id, note) in annotations.exactness() {
-            if !note.fields().is_empty() {
+        for (key, note) in annotations.exactness() {
+            if let (AnnotationTarget::Entity(id), false) = (key.target(), note.fields().is_empty())
+            {
                 add(id, false);
             }
         }
@@ -82,44 +167,67 @@ pub(super) fn check_annotations(
     // Model entities take precedence over native records with the same id.
     // The identity index keeps the last inserted matching value.
     model_entity_projection(ctx, view.ir, &wanted, &mut add)?;
-    for id in annotations.provenance.keys() {
-        if !all_ids.contains(id) {
+    let mut unindexed = Unindexed::of(ctx, view.ir, annotations, all_ids)?;
+    for key in annotations.provenance.keys() {
+        if !unindexed.resolves(key, all_ids) {
             super::record_finding(
                 findings,
                 Check::Annotations,
                 Severity::Error,
-                Some(id),
-                format_args!("provenance key does not resolve to an entity"),
+                Some(key.as_str()),
+                crate::rule!(
+                    "annotations_native.provenance-key-does-not-resolve-entity",
+                    "provenance key does not resolve to an entity"
+                ),
             );
         }
     }
-    for (id, note) in annotations.exactness() {
-        if !all_ids.contains(id) {
+    for (key, note) in annotations.exactness() {
+        let id = key.as_str();
+        if !unindexed.resolves(key, all_ids) {
             super::record_finding(
                 findings,
                 Check::Annotations,
                 Severity::Error,
                 Some(id),
-                format_args!("exactness key does not resolve to an entity"),
+                crate::rule!(
+                    "annotations_native.exactness-key-does-not-resolve-entity",
+                    "exactness key does not resolve to an entity"
+                ),
             );
             continue;
         }
         if note.fields().is_empty() {
             continue;
         }
-        let Some(position) = entities.get(id) else {
+        let projected;
+        let entity = match key.target() {
+            // Field paths are checked against geometry, model, and native records.
+            AnnotationTarget::Entity(id) if !all_ids.contains(id) => continue,
+            AnnotationTarget::Entity(id) => entities.get(id).map(|position| &values[*position]),
+            AnnotationTarget::Delta { qualifier, record } => {
+                match unindexed.projected.remove(&(qualifier, record)).flatten() {
+                    Some(value) => {
+                        projected = AnnotatedEntity::Projected(value);
+                        Some(&projected)
+                    }
+                    None => None,
+                }
+            }
+        };
+        let Some(entity) = entity else {
             super::record_finding(
                 findings,
                 Check::Annotations,
                 Severity::Warning,
                 Some(id),
-                format_args!(
+                crate::rule!(
+                    "annotations_native.entity-could-not-serialized-validate-exactness",
                     "entity could not be serialized to validate its exactness field paths"
                 ),
             );
             continue;
         };
-        let entity = &values[*position];
         let product_fields = match entity {
             AnnotatedEntity::Product(product) => Some(product.fields()?),
             AnnotatedEntity::Projected(_) | AnnotatedEntity::Source(_) => None,
@@ -140,7 +248,10 @@ pub(super) fn check_annotations(
                     Check::Annotations,
                     Severity::Warning,
                     Some(id),
-                    format_args!("exactness field path `{path}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.exactness-field-path-does-not-resolve",
+                        "exactness field path `{path}` does not resolve"
+                    ),
                 );
             }
         }
@@ -256,7 +367,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(feature.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -273,7 +387,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(feature.id.as_str()),
-                    format_args!("helix axis native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.helix-axis-native-ref-does-not",
+                        "helix axis native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -286,7 +403,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(parameter.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -297,7 +417,11 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(parameter.id.as_str()),
-                    format_args!("PMI native_ref `{}` does not resolve", semantic.native_ref),
+                    crate::rule!(
+                        "annotations_native.pmi-native-ref-does-not-resolve",
+                        "PMI native_ref `{}` does not resolve",
+                        semantic.native_ref
+                    ),
                 );
             }
         }
@@ -310,7 +434,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(configuration.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -323,7 +450,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(sketch.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -336,7 +466,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(sketch.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -349,7 +482,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -364,7 +500,10 @@ pub(super) fn check_native_links(
                             Check::NativeLinks,
                             Severity::Error,
                             Some(constraint.id.as_str()),
-                            format_args!("operand native_ref `{target}` does not resolve"),
+                            crate::rule!(
+                                "annotations_native.operand-native-ref-does-not-resolve",
+                                "operand native_ref `{target}` does not resolve"
+                            ),
                         );
                     }
                 }
@@ -379,7 +518,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -395,10 +537,29 @@ pub(super) fn check_native_links(
                             Check::NativeLinks,
                             Severity::Error,
                             Some(constraint.id.as_str()),
-                            format_args!("operand native_ref `{target}` does not resolve"),
+                            crate::rule!(
+                                "annotations_native.operand-native-ref-does-not-resolve",
+                                "operand native_ref `{target}` does not resolve"
+                            ),
                         );
                     }
                 }
+            }
+        }
+    }
+    for mesh in &ir.model.tessellations {
+        if let Some(target) = &mesh.native_ref {
+            if !resolves(target.as_str()) {
+                super::record_finding(
+                    findings,
+                    Check::NativeLinks,
+                    Severity::Error,
+                    Some(mesh.id.as_str()),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
+                );
             }
         }
     }
@@ -416,7 +577,10 @@ pub(super) fn check_native_links(
                             Check::NativeLinks,
                             Severity::Error,
                             Some(entity.id()),
-                            format_args!("native-record link `{target}` does not resolve"),
+                            crate::rule!(
+                                "annotations_native.native-record-link-does-not-resolve",
+                                "native-record link `{target}` does not resolve"
+                            ),
                         );
                     }
                 }
@@ -440,7 +604,11 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(record.id()),
-                    format_args!("{}", "native-record links must be an array of identities"),
+                    crate::rule!(
+                        "annotations_native.native-record-links-must-array-identities",
+                        "{}",
+                        "native-record links must be an array of identities"
+                    ),
                 );
                 continue;
             };
@@ -451,22 +619,53 @@ pub(super) fn check_native_links(
                         Check::NativeLinks,
                         Severity::Error,
                         Some(record.id()),
-                        format_args!("native-record link {index} must be an identity string"),
+                        crate::rule!(
+                            "annotations_native.native-record-link-must-identity-string",
+                            "native-record link {index} must be an identity string"
+                        ),
                     );
                     continue;
                 };
-                if !all_ids.contains(target, crate::index::StandardIndex) {
-                    super::record_finding(
-                        findings,
-                        Check::NativeLinks,
-                        Severity::Error,
-                        Some(record.id()),
-                        format_args!("native-record link `{target}` does not resolve"),
-                    );
-                }
+                check_native_record_link(all_ids, arena, record.id(), target, findings);
             }
         }
     });
+}
+
+/// A native record's link resolves, and to a native record: native records
+/// carry no reference into the neutral model (§2.1 Linkage, part 10). A
+/// given-up part's `unknowns` stub links its innermost containing record,
+/// which may be neutral (§3.3).
+fn check_native_record_link(
+    all_ids: &crate::index::ModelIndex<'_>,
+    arena: &str,
+    record: &str,
+    target: &str,
+    findings: &mut Vec<Finding>,
+) {
+    if !all_ids.contains(target, crate::index::StandardIndex) {
+        super::record_finding(
+            findings,
+            Check::NativeLinks,
+            Severity::Error,
+            Some(record),
+            crate::rule!(
+                "annotations_native.native-record-link-does-not-resolve",
+                "native-record link `{target}` does not resolve"
+            ),
+        );
+    } else if arena != "unknowns" && !all_ids.native_record_owns(target) {
+        super::record_finding(
+            findings,
+            Check::NativeLinks,
+            Severity::Error,
+            Some(record),
+            crate::rule!(
+                "annotations_native.native-record-link-names-neutral-record",
+                "native-record link `{target}` names a neutral record; a native record references no record of the neutral model"
+            ),
+        );
+    }
 }
 
 #[cfg(test)]

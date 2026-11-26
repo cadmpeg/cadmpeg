@@ -102,3 +102,36 @@ fn rollback_and_folders_stay_within_the_container() {
         .push(unresolved("hole", OperationFamily::Hole));
     assert_finding(&ir, "neither nest nor are disjoint");
 }
+
+/// Part 10: a scope holds a root container with a member, or a record that
+/// names it (§5.1).
+#[test]
+fn a_scope_holds_something() {
+    const EMPTY: &str = "design scope holds no member";
+    let with_scope = || {
+        let mut ir = crate::validate::design::fixture::document();
+        let mut scope = ir.design.scopes[0].clone();
+        scope.definition = crate::validate::design::fixture::id("definition", "spare");
+        scope.roots.clear();
+        scope.current.clear();
+        scope.active_configuration = None;
+        ir.design.scopes.push(scope);
+        ir
+    };
+    let empty = |ir: &crate::CadIr| {
+        crate::validate::design::fixture::design_findings(ir)
+            .iter()
+            .any(|finding| finding.message.contains(EMPTY))
+    };
+    assert!(!empty(&crate::validate::design::fixture::document()));
+    let ir = with_scope();
+    assert!(empty(&ir));
+    let mut ir = with_scope();
+    let mut spare = crate::validate::design::fixture::parameter(
+        "spare",
+        crate::design::units::ValueKind::Boolean,
+    );
+    spare.scope = crate::validate::design::fixture::id("definition", "spare");
+    ir.design.parameters.push(spare);
+    assert!(!empty(&ir));
+}

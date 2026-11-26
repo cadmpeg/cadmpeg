@@ -365,12 +365,13 @@ cadmpeg_core::named_optional_field!(
 #[cfg(test)]
 mod tests {
     use super::SemanticAnnotation;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn physical_text_style_roundtrips_and_names_invalid_height() {
         let wire = serde_json::json!({"id":"test:model:annotation#text", "object":"source", "kind":"text", "runtime_type":"Text", "order":0, "native_ref":"native", "text_style":{"height":5.0,"font_family":"osifont"}, "text": [], "references": {}, "reference_anchors": [], "parameters": {}, "assets": []});
-        let annotation: SemanticAnnotation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(annotation).unwrap(), wire);
+        let annotation: SemanticAnnotation = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(annotation).unwrap(), wire);
         for height in [
             serde_json::json!(0),
             serde_json::json!(-1),
@@ -378,7 +379,7 @@ mod tests {
         ] {
             let mut rejected = wire.clone();
             rejected["text_style"]["height"] = height;
-            assert!(serde_json::from_value::<SemanticAnnotation>(rejected)
+            assert!(json::from_value::<SemanticAnnotation>(rejected)
                 .unwrap_err()
                 .to_string()
                 .contains("height"));
@@ -390,8 +391,8 @@ mod tests {
         let wire = serde_json::json!({"id": "synthetic:test:annotation#dimension", "object": "source", "kind": "dimension", "runtime_type": "Dimension", "order": 0, "native_ref": "native",
             "dimension_kind": {"kind": "radius"}, "value": 12.0, "format": "%.2f", "position": [4.0, 5.0, 0.0],
             "text_override": "R12", "upper_tolerance": 0.2, "lower_tolerance": -0.1, "text": [], "references": {}, "reference_anchors": [], "text_style": {}, "parameters": {}, "assets": []});
-        let annotation: SemanticAnnotation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(annotation).unwrap(), wire);
+        let annotation: SemanticAnnotation = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(annotation).unwrap(), wire);
         for field in [
             "dimension_kind",
             "text_override",
@@ -400,21 +401,21 @@ mod tests {
         ] {
             let mut rejected = wire.clone();
             rejected[field] = serde_json::json!([]);
-            assert!(serde_json::from_value::<SemanticAnnotation>(rejected)
+            assert!(json::from_value::<SemanticAnnotation>(rejected)
                 .unwrap_err()
                 .to_string()
                 .contains(field));
         }
         let mut unknown = wire.clone();
         unknown["dimension_kind"]["unexpected"] = serde_json::json!(true);
-        assert!(serde_json::from_value::<SemanticAnnotation>(unknown)
+        assert!(json::from_value::<SemanticAnnotation>(unknown)
             .unwrap_err()
             .to_string()
             .contains("dimension_kind"));
         let mut other = wire;
         other["dimension_kind"] = serde_json::json!({"kind": "other", "native_type": "extension"});
-        let annotation: SemanticAnnotation = serde_json::from_value(other.clone()).unwrap();
-        assert_eq!(serde_json::to_value(annotation).unwrap(), other);
+        let annotation: SemanticAnnotation = json::from_value(other.clone()).unwrap();
+        assert_eq!(json::to_value(annotation).unwrap(), other);
     }
 
     #[test]
@@ -422,33 +423,33 @@ mod tests {
         use super::AnnotationDimensionKind;
         let wire = serde_json::json!({"kind": "distance"});
         assert_eq!(
-            serde_json::to_value(AnnotationDimensionKind::Distance).unwrap(),
+            json::to_value(AnnotationDimensionKind::Distance).unwrap(),
             wire
         );
         assert_eq!(
-            serde_json::from_value::<AnnotationDimensionKind>(wire).unwrap(),
+            json::from_value::<AnnotationDimensionKind>(wire).unwrap(),
             AnnotationDimensionKind::Distance
         );
         for extra in [serde_json::Value::Null, serde_json::json!({})] {
-            assert!(serde_json::from_value::<AnnotationDimensionKind>(
+            assert!(json::from_value::<AnnotationDimensionKind>(
                 serde_json::json!({"kind": "distance", "value": extra})
             )
             .is_err());
         }
         let area = serde_json::json!({"kind": "area", "holes_excluded": true});
         assert_eq!(
-            serde_json::from_value::<AnnotationDimensionKind>(area.clone()).unwrap(),
+            json::from_value::<AnnotationDimensionKind>(area.clone()).unwrap(),
             AnnotationDimensionKind::Area {
                 holes_excluded: Some(true)
             }
         );
-        assert!(serde_json::from_value::<AnnotationDimensionKind>(
+        assert!(json::from_value::<AnnotationDimensionKind>(
             serde_json::json!({"kind": "area", "holes_excluded": null})
         )
         .is_err());
         let extent = serde_json::json!({"kind": "extent", "axis": "y"});
-        let read = serde_json::from_value::<AnnotationDimensionKind>(extent.clone()).unwrap();
-        assert_eq!(serde_json::to_value(read).unwrap(), extent);
+        let read = json::from_value::<AnnotationDimensionKind>(extent.clone()).unwrap();
+        assert_eq!(json::to_value(read).unwrap(), extent);
     }
 
     #[test]
@@ -459,9 +460,9 @@ mod tests {
             "measured_on": "view", "basic": true, "reflex": false, "negated": true,
             "line_directions": {"dimension_line": 0.5, "extension_lines": 2.0},
             "text": [], "references": {}, "reference_anchors": [], "text_style": {}, "parameters": {}, "assets": []});
-        let annotation: SemanticAnnotation = serde_json::from_value(wire.clone()).unwrap();
+        let annotation: SemanticAnnotation = json::from_value(wire.clone()).unwrap();
         assert_eq!(annotation.measured_on, Some(super::MeasuredOn::View));
-        assert_eq!(serde_json::to_value(annotation).unwrap(), wire);
+        assert_eq!(json::to_value(annotation).unwrap(), wire);
         for field in [
             "number_format",
             "measured_on",
@@ -472,7 +473,7 @@ mod tests {
         ] {
             let mut rejected = wire.clone();
             rejected[field] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<SemanticAnnotation>(rejected)
+            assert!(json::from_value::<SemanticAnnotation>(rejected)
                 .unwrap_err()
                 .to_string()
                 .contains(field));
@@ -516,12 +517,14 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_font_family, String, "font_family");
 
 impl SemanticAnnotation {
-    /// Check reference-point population and dimension ownership.
+    /// The most reference anchors this annotation admits: two on a
+    /// `Dimension` with a `dimension_kind`, one on any other annotation.
     #[must_use]
-    pub fn reference_anchors_are_valid(&self) -> bool {
-        self.reference_anchors.is_empty()
-            || (self.reference_anchors.len() == 2
-                && self.kind == SemanticAnnotationKind::Dimension
-                && self.dimension_kind.is_some())
+    pub fn admitted_reference_anchors(&self) -> usize {
+        if self.kind == SemanticAnnotationKind::Dimension && self.dimension_kind.is_some() {
+            2
+        } else {
+            1
+        }
     }
 }

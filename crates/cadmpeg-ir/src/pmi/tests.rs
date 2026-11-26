@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 use std::num::NonZeroU32;
 
@@ -84,13 +85,13 @@ fn a_unit_dimension_kind_states_its_kind_alone() {
         (PmiDimensionKind::CurveLength, "curve_length"),
     ] {
         let wire = json!({"kind": name});
-        assert_eq!(serde_json::to_value(&kind).expect("serialize"), wire);
+        assert_eq!(json::to_value(&kind).expect("serialize"), wire);
         assert_eq!(
-            serde_json::from_value::<PmiDimensionKind>(wire).expect("the bare kind reads"),
+            json::from_value::<PmiDimensionKind>(wire).expect("the bare kind reads"),
             kind
         );
         for value in [serde_json::Value::Null, json!({})] {
-            let error = serde_json::from_value::<PmiDimensionKind>(json!({
+            let error = json::from_value::<PmiDimensionKind>(json!({
                 "kind": name, "value": value
             }))
             .expect_err("a stated value is a second spelling of the unit kind")
@@ -103,26 +104,21 @@ fn a_unit_dimension_kind_states_its_kind_alone() {
 #[test]
 fn dimension_modifiers_and_fit_standards_refuse_a_value_on_a_unit_arm() {
     for name in ["reference", "statistical", "controlled_radius"] {
-        assert!(serde_json::from_value::<DimensionModifier>(json!({"kind": name})).is_ok());
+        assert!(json::from_value::<DimensionModifier>(json!({"kind": name})).is_ok());
         assert!(
-            serde_json::from_value::<DimensionModifier>(json!({"kind": name, "value": null}))
-                .is_err()
+            json::from_value::<DimensionModifier>(json!({"kind": name, "value": null})).is_err()
         );
     }
     for name in ["iso286", "ansi_b41"] {
-        assert!(serde_json::from_value::<FitStandard>(json!({"kind": name})).is_ok());
-        assert!(
-            serde_json::from_value::<FitStandard>(json!({"kind": name, "value": null})).is_err()
-        );
+        assert!(json::from_value::<FitStandard>(json!({"kind": name})).is_ok());
+        assert!(json::from_value::<FitStandard>(json!({"kind": name, "value": null})).is_err());
     }
-    assert!(
-        serde_json::from_value::<FitStandard>(json!({"kind": "native", "value": " "})).is_err()
-    );
+    assert!(json::from_value::<FitStandard>(json!({"kind": "native", "value": " "})).is_err());
 }
 
 #[test]
 fn datum_reference_wire_rejects_zero_precedence() {
-    let error = serde_json::from_value::<DatumReference>(json!({
+    let error = json::from_value::<DatumReference>(json!({
         "datum": "test:model:pmi#datum-a",
         "precedence": 0,
         "modifiers": []
@@ -130,7 +126,7 @@ fn datum_reference_wire_rejects_zero_precedence() {
     .expect_err("zero is not a precedence")
     .to_string();
     assert!(error.contains("nonzero"), "{error}");
-    let reference = serde_json::from_value::<DatumReference>(json!({
+    let reference = json::from_value::<DatumReference>(json!({
         "datum": "test:model:pmi#0",
         "precedence": 1,
         "modifiers": []
@@ -158,9 +154,9 @@ fn a_dimension_nominal_is_a_literal_or_a_parameter_binding() {
         "decimals": 2,
         "modifiers": [{"kind": "statistical"}]
     });
-    assert_eq!(serde_json::to_value(&definition).expect("serialize"), wire);
+    assert_eq!(json::to_value(&definition).expect("serialize"), wire);
     assert_eq!(
-        serde_json::from_value::<PmiDefinition>(wire).expect("read"),
+        json::from_value::<PmiDefinition>(wire).expect("read"),
         definition
     );
 
@@ -170,7 +166,7 @@ fn a_dimension_nominal_is_a_literal_or_a_parameter_binding() {
         "nominal": {"kind": "parameter", "value": "test:design:parameter#angle"},
         "modifiers": []
     });
-    let read = serde_json::from_value::<PmiDefinition>(bound.clone()).expect("a bound nominal");
+    let read = json::from_value::<PmiDefinition>(bound.clone()).expect("a bound nominal");
     let PmiDefinition::Dimension(dimension) = &read else {
         panic!("a dimension");
     };
@@ -182,7 +178,7 @@ fn a_dimension_nominal_is_a_literal_or_a_parameter_binding() {
     );
     assert_eq!(dimension.literal_nominal(), None);
     assert_eq!(dimension.quantity(), Some(PmiQuantity::Angle));
-    assert_eq!(serde_json::to_value(&read).expect("serialize"), bound);
+    assert_eq!(json::to_value(&read).expect("serialize"), bound);
 
     for (field, value) in [
         ("nominal", serde_json::Value::Null),
@@ -192,7 +188,7 @@ fn a_dimension_nominal_is_a_literal_or_a_parameter_binding() {
     ] {
         let mut rejected = bound.clone();
         rejected[field] = value;
-        let error = serde_json::from_value::<PmiDefinition>(rejected)
+        let error = json::from_value::<PmiDefinition>(rejected)
             .expect_err("an optional field states a value or is omitted")
             .to_string();
         assert!(error.contains(field), "{field}: {error}");
@@ -200,7 +196,7 @@ fn a_dimension_nominal_is_a_literal_or_a_parameter_binding() {
     for deleted in ["lower_deviation", "limits_and_fits"] {
         let mut rejected = bound.clone();
         rejected[deleted] = json!({"value": -0.1, "quantity": "length"});
-        assert!(serde_json::from_value::<PmiDefinition>(rejected).is_err());
+        assert!(json::from_value::<PmiDefinition>(rejected).is_err());
     }
 }
 
@@ -227,7 +223,7 @@ fn a_dimension_tolerance_is_the_design_layer_tolerance() {
             upper: real(0.015),
         })),
     });
-    let wire = serde_json::to_value(&dimension).expect("serialize");
+    let wire = json::to_value(&dimension).expect("serialize");
     assert_eq!(wire["tolerance"]["kind"], "fit");
     assert_eq!(wire["tolerance"]["value"]["fit"]["zone"], "hole");
     assert_eq!(
@@ -236,21 +232,21 @@ fn a_dimension_tolerance_is_the_design_layer_tolerance() {
     );
     assert!(wire["tolerance"]["value"]["mate"].get("source").is_none());
     assert_eq!(
-        serde_json::from_value::<PmiDimension>(wire.clone()).expect("read"),
+        json::from_value::<PmiDimension>(wire.clone()).expect("read"),
         dimension
     );
     let mut rejected = wire;
     rejected["tolerance"]["value"]["fit"]["zone_variance"] = json!("");
-    assert!(serde_json::from_value::<PmiDimension>(rejected).is_err());
+    assert!(json::from_value::<PmiDimension>(rejected).is_err());
 
     dimension.tolerance = Some(Tolerance::SingleLimit(LimitSide::Maximum));
-    let wire = serde_json::to_value(&dimension).expect("serialize");
+    let wire = json::to_value(&dimension).expect("serialize");
     assert_eq!(
         wire["tolerance"],
         json!({"kind": "single_limit", "value": "maximum"})
     );
     dimension.tolerance = Some(Tolerance::Basic);
-    let wire = serde_json::to_value(&dimension).expect("serialize");
+    let wire = json::to_value(&dimension).expect("serialize");
     assert_eq!(wire["tolerance"], json!({"kind": "basic"}));
 }
 
@@ -282,7 +278,7 @@ fn a_literal_nominal_whose_quantity_disagrees_with_its_kind_is_a_finding() {
 fn dimension_modifiers_read_into_their_set_from_any_list() {
     let with = |modifiers: serde_json::Value| json!({"dimension": {"kind": "size"}, "modifiers": modifiers});
     let read = |modifiers| {
-        serde_json::from_value::<PmiDimension>(with(modifiers))
+        json::from_value::<PmiDimension>(with(modifiers))
             .expect("modifiers read")
             .modifiers
             .into_iter()
@@ -310,10 +306,10 @@ fn dimension_modifiers_read_into_their_set_from_any_list() {
     let mut dimension = PmiDimension::new(PmiDimensionKind::Size);
     dimension.modifiers = [free, DimensionModifier::Statistical].into();
     assert_eq!(
-        serde_json::to_value(&dimension).expect("serialize")["modifiers"],
+        json::to_value(&dimension).expect("serialize")["modifiers"],
         json!([{"kind": "statistical"}, {"kind": "other", "value": "free state"}])
     );
-    assert!(serde_json::from_value::<PmiDimension>(with(json!([
+    assert!(json::from_value::<PmiDimension>(with(json!([
         {"kind": "statistical", "value": null}
     ])))
     .is_err());
@@ -388,7 +384,7 @@ fn an_annotation_states_its_native_record_and_native_maps() {
             crate::design::dimension::Dimension::Literal(3),
         ),
     );
-    let wire = serde_json::to_value(&value).expect("serialize");
+    let wire = json::to_value(&value).expect("serialize");
     assert_eq!(wire["native_ref"], "native:pmi#1");
     assert_eq!(wire["native_options"], json!({}));
     assert_eq!(
@@ -396,13 +392,13 @@ fn an_annotation_states_its_native_record_and_native_maps() {
         json!({"kind": "integer", "value": {"kind": "literal", "value": 3}})
     );
     assert_eq!(
-        serde_json::from_value::<PmiAnnotation>(wire.clone()).expect("read"),
+        json::from_value::<PmiAnnotation>(wire.clone()).expect("read"),
         value
     );
     for field in ["native_options", "source_settings"] {
         let mut rejected = wire.clone();
         rejected.as_object_mut().expect("an object").remove(field);
-        assert!(serde_json::from_value::<PmiAnnotation>(rejected).is_err());
+        assert!(json::from_value::<PmiAnnotation>(rejected).is_err());
     }
 }
 
@@ -483,8 +479,8 @@ fn a_geometric_tolerance_states_its_zone_fields_in_place() {
         "maximum_upper": 0.3,
         "zones": [{"form": {"kind": "cylindrical_or_circular"}, "projections": []}]
     });
-    let definition = serde_json::from_value::<PmiDefinition>(wire.clone()).expect("read");
-    assert_eq!(serde_json::to_value(&definition).expect("serialize"), wire);
+    let definition = json::from_value::<PmiDefinition>(wire.clone()).expect("read");
+    assert_eq!(json::to_value(&definition).expect("serialize"), wire);
     for (field, value) in [
         ("maximum_upper", json!(0.0)),
         ("maximum_upper", serde_json::Value::Null),
@@ -492,11 +488,11 @@ fn a_geometric_tolerance_states_its_zone_fields_in_place() {
     ] {
         let mut rejected = wire.clone();
         rejected[field] = value;
-        assert!(serde_json::from_value::<PmiDefinition>(rejected).is_err());
+        assert!(json::from_value::<PmiDefinition>(rejected).is_err());
     }
     let mut rejected = wire;
     rejected["constraints"] = json!({"zones": []});
-    assert!(serde_json::from_value::<PmiDefinition>(rejected).is_err());
+    assert!(json::from_value::<PmiDefinition>(rejected).is_err());
 }
 
 #[test]
@@ -514,7 +510,7 @@ fn pmi_magnitude_admission_keeps_signed_dimensions_and_zero_angles() {
         PmiMagnitude::from_parts(crate::scalar::NonNegativeReal::ZERO, PmiQuantity::Angle),
         zero
     );
-    let wire = serde_json::to_string(&zero).expect("serialize");
+    let wire = json::to_string(&zero).expect("serialize");
     assert_eq!(wire, r#"{"value":0.0,"quantity":"angle"}"#);
     assert_eq!(
         serde_json::from_str::<PmiMagnitude>(&wire).expect("deserialize"),
@@ -528,11 +524,10 @@ fn pmi_magnitude_admission_keeps_signed_dimensions_and_zero_angles() {
 #[test]
 fn source_identity_admission_preserves_nonempty_wire() {
     let wire = json!({"kind": "shape_aspect", "source_id": "#42"});
-    let value: PmiTarget = serde_json::from_value(wire.clone()).expect("nonempty source_id");
-    assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
-    let error =
-        serde_json::from_value::<PmiTarget>(json!({"kind": "shape_aspect", "source_id": ""}))
-            .expect_err("empty source_id");
+    let value: PmiTarget = json::from_value(wire.clone()).expect("nonempty source_id");
+    assert_eq!(json::to_value(value).expect("serialize"), wire);
+    let error = json::from_value::<PmiTarget>(json!({"kind": "shape_aspect", "source_id": ""}))
+        .expect_err("empty source_id");
     assert!(error.to_string().contains("source_id"));
 }
 
@@ -552,8 +547,8 @@ fn datum_compartments_are_checked_at_construction_wire_and_replacement() {
     let mut admitted = DatumReferences::try_from(valid.clone()).expect("valid compartments");
     assert_eq!(admitted.as_slice(), valid);
     let wire = json!({"kind": "datum_system", "references": valid});
-    let definition: PmiDefinition = serde_json::from_value(wire.clone()).expect("valid wire");
-    assert_eq!(serde_json::to_value(definition).expect("serialize"), wire);
+    let definition: PmiDefinition = json::from_value(wire.clone()).expect("valid wire");
+    assert_eq!(json::to_value(definition).expect("serialize"), wire);
     assert!(DatumReferences::try_from(Vec::new())
         .expect("empty system")
         .as_slice()
@@ -571,7 +566,7 @@ fn datum_compartments_are_checked_at_construction_wire_and_replacement() {
         ],
     ] {
         assert!(DatumReferences::try_from(invalid.clone()).is_err());
-        let error = serde_json::from_value::<PmiDefinition>(
+        let error = json::from_value::<PmiDefinition>(
             json!({"kind": "datum_system", "references": invalid}),
         )
         .expect_err("invalid compartments");

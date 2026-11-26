@@ -53,7 +53,7 @@
 //! F3dCodec
 //!     .plan(
 //!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Inherit,
+//!         TargetRequest::Unnamed,
 //!     )?
 //!     .write_to(&mut output)?;
 //! # Ok(())
@@ -245,9 +245,8 @@ impl EncoderBackend for F3dCodec {
     /// records it rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0))
-        .with_replay_rows(dialect::REPLAY_ROWS)
-        .synthesizing_preserved_as_default();
+    const TARGET: Catalog =
+        Catalog::new(dialect::TARGETS, Some(0)).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
@@ -255,6 +254,16 @@ impl EncoderBackend for F3dCodec {
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         writer::target::plan(input, &target)
+    }
+
+    fn restore(
+        &self,
+        input: EncodeInput<'_>,
+        target: &ResolvedWrite<'_>,
+        notes: &mut Vec<String>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        writer::saved::restore(input, target, notes, losses)
     }
 }
 

@@ -9,6 +9,7 @@ use crate::records::feature::scope::{
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -51,7 +52,7 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
 }
 
 pub(super) fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": "f3d:test:group#100",
         "scope_record_index": 12,
         "scope_reference_ordinal": 0,
@@ -1066,7 +1067,7 @@ fn owner_in(
     local_ordinal: u32,
     value: f64,
 ) -> DesignParameterOwner {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": format!("{stream}:design-parameter-owner#{record_index}"),
         "byte_offset": 2000 + record_index,
         "frame_length": 104,

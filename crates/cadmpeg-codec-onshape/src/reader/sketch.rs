@@ -2,6 +2,9 @@
 const SPLINE_DOMAIN_TOLERANCE: f64 = 1e-9;
 const POINT_U_TOLERANCE: f64 = 1e-6;
 const POINT_V_TOLERANCE: f64 = 1e-6;
+const EPS_FRAME_X_IN_PLANE: f64 = 64.0 * f64::EPSILON;
+const EPS_FRAME_ROUNDOFF: f64 = 64.0 * f64::EPSILON;
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::Model;
@@ -14,7 +17,11 @@ use super::{
     id, number, optional_rows, push, query as compressed, rows, text, topology, Mapping,
 };
 const ORIGIN_ID: &str = "IB";
-fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Value> {
+pub(super) fn frame(
+    feature: &Value,
+    face: &dyn Fn(&str) -> Mapping<Value>,
+    datum: &dyn Fn(&str) -> Mapping<Value>,
+) -> Mapping<Value> {
     let [query] = queries(feature, "sketchPlane")? else {
         return Err("multiple sketch planes are not supported yet".into());
     };
@@ -34,6 +41,11 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
             return Err("a sketch on more than one face is not supported yet".into());
         };
         let support = face(native.as_str().ok_or("a sketch face id is not a string")?)?;
+        // Without a stored plane object the face closure returns the frame admitted from
+        // the sketch's `sketchMatrix` row, complete with its in-plane axis.
+        if feature.get("plane").is_none() && support.get("u_axis").is_some() {
+            return Ok(support);
+        }
         attachment_frame(feature, &support)
     };
     let plane = if query
@@ -76,10 +88,14 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
             .and_then(|s| s.strip_suffix(".planeOp"))
             .ok_or("this sketch plane has no resolved in-plane frame")?
             .to_owned()
+    } else if let Some(feature_id) = query
+        .get("featureId")
+        .and_then(Value::as_str)
+        .filter(|native| deterministic.is_none() || datum(native).is_ok())
+    {
+        feature_id.to_owned()
     } else if deterministic.is_some() {
         return face_frame();
-    } else if let Some(feature_id) = query.get("featureId").and_then(Value::as_str) {
-        feature_id.to_owned()
     } else {
         let source_query = text(query, "queryString")?;
         let query_string = source_query
@@ -100,7 +116,14 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
         "Top" => ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         "Front" => ([0.0, -1.0, 0.0], [1.0, 0.0, 0.0]),
         "Right" => ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        _ => return Err("this sketch plane has no resolved in-plane frame".into()),
+        _ => {
+            let support = datum(&plane)?;
+            return if feature.get("plane").is_some() {
+                attachment_frame(feature, &support)
+            } else {
+                Ok(support)
+            };
+        }
     };
     let support = json!({"origin": topology::point([0.0; 3]), "normal": topology::point(normal), "u_axis": topology::point(u_axis)});
     if feature.get("plane").is_some() {
@@ -123,7 +146,10 @@ pub(super) fn built_in_frame(feature: &Value) -> bool {
     {
         return false;
     }
-    frame(feature, &|_| Err("historical face".into())).is_ok()
+    frame(feature, &|_| Err("historical face".into()), &|_| {
+        Err("created plane".into())
+    })
+    .is_ok()
 }
 
 fn stored_frame(feature: &Value) -> Mapping<Value> {
@@ -149,7 +175,7 @@ fn stored_frame(feature: &Value) -> Mapping<Value> {
         1.0,
     )?)?;
     let dot: f64 = x.into_iter().zip(normal).map(|(a, b)| a * b).sum();
-    if dot.abs() > 64.0 * f64::EPSILON {
+    if dot.abs() > EPS_FRAME_X_IN_PLANE {
         return Err("the stored sketch x axis is not in its plane".into());
     }
     Ok(
@@ -172,7 +198,7 @@ fn attachment_frame(feature: &Value, support: &Value) -> Mapping<Value> {
         .chain(support_origin)
         .map(f64::abs)
         .fold(1.0_f64, f64::max);
-    let roundoff = 64.0 * f64::EPSILON;
+    let roundoff = EPS_FRAME_ROUNDOFF;
     if (dot(normal, support_normal).abs() - 1.0).abs() > roundoff
         || dot(topology::sub(origin, support_origin), support_normal).abs() > roundoff * scale
     {
@@ -332,9 +358,39 @@ pub(super) fn map(
     }
     let native = text(feature, "featureId")?;
     let sketch_id = id("sketch", native);
-    let plane = frame(feature, &|face| {
-        inputs.load(ordinal, feature)?.face_frame(face)
-    })?;
+    let created_plane = std::cell::Cell::new(false);
+    let mut plane = frame(
+        feature,
+        &|face| {
+            let support = inputs.load(ordinal, feature)?.face_frame(face)?;
+            if feature.get("plane").is_some() {
+                return Ok(support);
+            }
+            let Some(stored) = inputs.sketch_plane(native)? else {
+                return Ok(support);
+            };
+            attachment_frame(&json!({"plane":stored}), &support)
+        },
+        &|native| {
+            let frame = super::planes::created(model, native)?;
+            created_plane.set(true);
+            Ok(frame)
+        },
+    )?;
+    if feature.get("plane").is_none() && created_plane.get() {
+        let attachment = inputs.sketch_plane(native).and_then(|stored| {
+            let stored = stored.ok_or("the sketch attachment matrix is missing")?;
+            attachment_frame(&json!({"plane":stored}), &plane)
+        });
+        match attachment {
+            Ok(stored) => plane = stored,
+            Err(reason) => report.push_coded(
+                native,
+                crate::loss::OnshapeLossCode::SketchPlaneAssumed,
+                format!("{reason}; assumed the support plane's in-plane frame"),
+            ),
+        }
+    }
     let mut loci = BTreeMap::new();
     for entity in rows(feature, "entities")? {
         let native_entity = text(entity, "entityId")?;
@@ -375,7 +431,7 @@ pub(super) fn map(
             &mut model.sketch_entities,
             json!({"id": entity_id, "sketch": sketch_id,
             "endpoint_refs": [], "construction": super::boolean_field(entity,"isConstruction")?, "geometry": match geometry(entity).and_then(|geometry| {
-                serde_json::from_value::<cadmpeg_ir::sketches::SketchGeometry>(geometry.clone()).map_err(|e| format!("sketch geometry admission failed ({e})"))?;
+                json::from_value::<cadmpeg_ir::sketches::SketchGeometry>(geometry.clone()).map_err(|e| format!("sketch geometry admission failed ({e})"))?;
                 Ok(geometry)
             }) {
                 Ok(geometry) => geometry,
@@ -434,8 +490,7 @@ fn locus_position(locus: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|e| e.id().as_str() == entity_id)
         .ok_or("the sketch point's entity is missing")?;
-    let entity =
-        serde_json::to_value(entity).map_err(|_| "the sketch point's entity is unreadable")?;
+    let entity = json::to_value(entity).map_err(|_| "the sketch point's entity is unreadable")?;
     let geometry = entity
         .get("geometry")
         .ok_or("the sketch point's geometry is missing")?;
@@ -702,3 +757,6 @@ fn constraint_row(
     };
     Ok(json!({"id": cid, "sketch": sketch_id, "definition": definition}))
 }
+
+#[cfg(test)]
+mod tests;

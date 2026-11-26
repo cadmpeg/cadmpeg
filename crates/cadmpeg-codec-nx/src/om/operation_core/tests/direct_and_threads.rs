@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{core_for_decode, inherited, wire, OperationCore, OperationPayload};
+use cadmpeg_core::serde_erase::json;
 
 fn body(b: &mut Vec<u8>, endpoint: u8) {
     b.extend([
@@ -93,10 +94,10 @@ fn direct_and_physical_thread_cores_require_complete_storage_and_owning_classes(
     }
     for (kind, label, bytes, names) in cases {
         let value = wire(kind, bytes.clone());
-        let core: OperationCore = serde_json::from_value(value.clone()).unwrap();
+        let core: OperationCore = json::from_value(value.clone()).unwrap();
         assert_eq!(core.as_bytes(), bytes);
         assert_eq!(core.boolean_property(), None);
-        assert_eq!(serde_json::to_value(&core).unwrap(), value);
+        assert_eq!(json::to_value(&core).unwrap(), value);
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &Record {
                 id: "nx:feature:core#0",
@@ -106,18 +107,18 @@ fn direct_and_physical_thread_cores_require_complete_storage_and_owning_classes(
         );
         for end in 0..bytes.len() {
             assert!(
-                serde_json::from_value::<OperationCore>(wire(kind, bytes[..end].to_vec())).is_err(),
+                json::from_value::<OperationCore>(wire(kind, bytes[..end].to_vec())).is_err(),
                 "{kind}: prefix {end}"
             );
         }
         for offset in [0, bytes.len() - 3] {
             let mut invalid = bytes.clone();
             invalid[offset] = 0;
-            assert!(serde_json::from_value::<OperationCore>(wire(kind, invalid)).is_err());
+            assert!(json::from_value::<OperationCore>(wire(kind, invalid)).is_err());
         }
         let mut extra = bytes.clone();
         extra.push(0);
-        assert!(serde_json::from_value::<OperationCore>(wire(kind, extra)).is_err());
+        assert!(json::from_value::<OperationCore>(wire(kind, extra)).is_err());
         let mut classes: Vec<_> = names
             .into_iter()
             .enumerate()

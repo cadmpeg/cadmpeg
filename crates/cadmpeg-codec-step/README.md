@@ -111,8 +111,10 @@ resolved.
 
 [`StepWriteOptions`] controls `FILE_NAME` metadata; the target [`StepSchema`] is
 selected by `Encoder::plan`, not stored in the options. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
-default output deterministic. The first body name, when present, supplies the
-STEP product name. `product_name` supplies the `FILE_NAME` name instead.
+default output deterministic. `product_name` supplies the `FILE_NAME` name and,
+without product definitions, the name of the single `PRODUCT`. A body written
+as a solid or a shell-based surface model gives that item its name, and the
+reader reads a nonempty item name back as the body's name.
 
 The decoder keeps the `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA` strings
 as source attributes, for example `file_name.originating_system` and

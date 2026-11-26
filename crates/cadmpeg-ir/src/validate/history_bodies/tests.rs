@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use crate::document::CadIr;
@@ -54,6 +55,7 @@ fn history_body(key: &str, topology: BodyTopology) -> HistoryBody {
         id: HistoryBodyId::mint(format!("test:history-body:nest#{key}")).expect("identity"),
         produced_by: None,
         consumed_by: None,
+        state_of: None,
         state: HistoryStateRef {
             ordinal: 0,
             identifier: 7,
@@ -106,6 +108,7 @@ fn a_closed_nest_in_its_own_scope_has_no_finding() {
     body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
     ir.model.history_bodies.push(body);
     assert!(findings(&ir).is_empty(), "{:?}", findings(&ir));
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validation runs");
     assert!(
         !report
@@ -249,14 +252,34 @@ fn nest_records_are_not_seen_by_the_top_level_reference_check() {
 }
 
 #[test]
-fn a_document_with_a_nest_round_trips_through_json() {
+fn a_nest_round_trips_through_json_and_stays_out_of_the_document() {
     let mut ir = CadIr::empty();
     ir.model
         .history_bodies
         .push(history_body("0", scoped(cube_nest())));
-    let json = serde_json::to_string(&ir).expect("serialize");
-    let back: CadIr = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(back.model.history_bodies, ir.model.history_bodies);
-    let empty = serde_json::to_value(CadIr::empty()).expect("serialize");
-    assert_eq!(empty["model"]["history_bodies"], serde_json::json!([]));
+    let json = json::to_string(&ir.model.history_bodies).expect("serialize");
+    let back: Vec<crate::history_body::HistoryBody> =
+        serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back, ir.model.history_bodies);
+    let document = json::to_value(&ir).expect("serialize");
+    assert!(document["model"].get("history_bodies").is_none());
+}
+
+#[test]
+fn a_state_of_that_names_no_model_body_is_reported() {
+    let mut ir = crate::examples::unit_cube().expect("cube");
+    let model_body = ir.geometry.bodies[0].id.clone();
+    let mut body = history_body("0", scoped(cube_nest()));
+    body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
+    body.state_of = Some(model_body);
+    ir.model.history_bodies.push(body.clone());
+    let named = |found: &[Finding]| {
+        errors(found)
+            .iter()
+            .any(|finding| finding.message.contains("names no model body"))
+    };
+    assert!(!named(&findings(&ir)));
+    body.state_of = Some(crate::ids::BodyId::mint("test:brep:body#absent").unwrap());
+    ir.model.history_bodies[0] = body;
+    assert!(named(&findings(&ir)));
 }

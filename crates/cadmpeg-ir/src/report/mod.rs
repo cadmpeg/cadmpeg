@@ -12,6 +12,7 @@ pub mod check;
 pub mod decode;
 pub mod export;
 pub mod loss;
+pub mod strictness;
 
 /// Severity of a loss note or validation finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]

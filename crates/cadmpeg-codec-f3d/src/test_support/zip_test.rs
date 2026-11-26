@@ -2,6 +2,7 @@
 //! Synthetic `.f3d` ZIP archive builders.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
@@ -60,7 +61,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .first()
         .expect("revision surface construction");
     let expected = scrubbed_definition(procedural.definition());
-    let kind = serde_json::to_value(procedural.definition()).expect("kind")["kind"]
+    let kind = json::to_value(procedural.definition()).expect("kind")["kind"]
         .as_str()
         .expect("kind string")
         .to_string();
@@ -76,7 +77,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less revision surface encode");
     let round_trip = F3dCodec
@@ -114,6 +115,50 @@ pub(crate) fn f3d_with_smbh_and_manifest_version(smbh: &[u8], version: &str) -> 
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(smbh).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+/// `archive` with `version` as the document version of its root
+/// `Manifest.dat`, which leads that record as a length-prefixed string. The
+/// other members are copied as stored.
+pub(crate) fn with_manifest_version(archive: &[u8], version: &str) -> Vec<u8> {
+    use std::io::Read;
+
+    let archive_len = u64::try_from(archive.len()).unwrap();
+    let mut source = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for index in 0..source.len() {
+        let name = source
+            .by_index_raw(index)
+            .unwrap()
+            .name()
+            .unwrap()
+            .into_owned();
+        if name != "Manifest.dat" {
+            zip.raw_copy_file(source.by_index_raw(index).unwrap())
+                .unwrap();
+            continue;
+        }
+        let payload = if crate::zip_write::is_zstd_member(&mut source, index).unwrap() {
+            let mut entry = source.by_index_raw(index).unwrap();
+            crate::zip_write::expand_zstd_member(&mut entry, &name, archive_len).unwrap()
+        } else {
+            let mut payload = Vec::new();
+            source
+                .by_index(index)
+                .unwrap()
+                .read_to_end(&mut payload)
+                .unwrap();
+            payload
+        };
+        let length = usize::try_from(u32::from_le_bytes(payload[..4].try_into().unwrap())).unwrap();
+        let mut manifest = u32::try_from(version.len()).unwrap().to_le_bytes().to_vec();
+        manifest.extend_from_slice(version.as_bytes());
+        manifest.extend_from_slice(&payload[4 + length..]);
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&manifest).unwrap();
+    }
     zip.finish().unwrap().into_inner()
 }
 

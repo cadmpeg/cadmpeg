@@ -3,6 +3,7 @@
 use super::*;
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::identity::ReferenceRun;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn motion_link_reads_and_retains_two_ordered_rotations() {
@@ -83,12 +84,12 @@ fn motion_link_reads_and_retains_two_ordered_rotations() {
         panic!("MotionLink scope");
     };
     *slot = Some(link);
-    let saved = serde_json::to_value(&scope).unwrap();
+    let saved = json::to_value(&scope).unwrap();
     assert_eq!(
-        serde_json::from_value::<DesignParameterScope>(saved.clone()).unwrap(),
+        json::from_value::<DesignParameterScope>(saved.clone()).unwrap(),
         scope
     );
     let mut malformed = saved;
     malformed["linked_rotations"]["joints"] = serde_json::json!([FIRST, FIRST]);
-    assert!(serde_json::from_value::<DesignParameterScope>(malformed).is_err());
+    assert!(json::from_value::<DesignParameterScope>(malformed).is_err());
 }

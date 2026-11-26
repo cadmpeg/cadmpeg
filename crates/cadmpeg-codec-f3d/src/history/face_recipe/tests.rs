@@ -4,6 +4,7 @@ use crate::history_records::{
     AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalTopology,
 };
 use crate::records::topology::face::{DesignFaceOperand, DesignFaceRecipeNode};
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
 mod profile_cap;
@@ -61,7 +62,7 @@ fn topology() -> AsmHistoricalTopology {
 }
 
 fn operand() -> DesignFaceOperand {
-    let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+    let mut operand: DesignFaceOperand = json::from_value(serde_json::json!({
         "id": "f3d:test:face-operand#21", "scope_record_index": 10, "scope_reference_ordinal": 1,
         "group_record_index": 20, "group_member_ordinal": 0, "record_index": 21, "byte_offset": 0,
         "class_tag": "282", "paired_byte_offset": 12, "paired_class_tag": "259",
@@ -651,7 +652,7 @@ fn delete_face_selection_retains_native_group_until_every_member_has_boundary_pr
         })
         .unwrap();
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": "f3d:test:group#20", "scope_record_index": 10, "scope_reference_ordinal": 0,
             "record_index": 20, "byte_offset": 0, "class_tag": "338", "role": 0,
             "members": [21], "member_offsets": [0], "frame": {

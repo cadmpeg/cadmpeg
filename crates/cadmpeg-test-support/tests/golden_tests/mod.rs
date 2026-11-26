@@ -23,6 +23,7 @@
 //! `cadmpeg-codec-freecad`, which decodes the charter fixtures and runs this
 //! same walk over the live document.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -32,6 +33,7 @@ use cadmpeg_test_support::spelling::SpellingSweep;
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
 
+mod annotation_paths;
 mod schema_sweep;
 
 #[test]
@@ -291,7 +293,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
         ("semantic annotation", annotations),
     ]
     .into_iter()
-    .map(|(name, ir)| (name, serde_json::to_value(&ir).expect("a CadIr serializes")))
+    .map(|(name, ir)| (name, json::to_value(&ir).expect("a CadIr serializes")))
     .collect()
 }
 

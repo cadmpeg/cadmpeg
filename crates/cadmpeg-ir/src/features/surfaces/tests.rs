@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn untrim_surface_preserves_loop_choices_and_signed_distances() {
     use crate::features::selections::{EdgeSelection, FaceSelection};
@@ -24,7 +26,7 @@ fn untrim_surface_preserves_loop_choices_and_signed_distances() {
                 loops: loops.clone(),
                 extension,
             });
-            let wire = serde_json::to_value(&definition).unwrap();
+            let wire = json::to_value(&definition).unwrap();
             assert_eq!(wire["value"]["kind"], "untrim_surface");
             assert_eq!(
                 wire["value"]["value"]["extension"],
@@ -33,7 +35,7 @@ fn untrim_surface_preserves_loop_choices_and_signed_distances() {
                     .map_or(serde_json::Value::Null, |value| serde_json::json!(value))
             );
             assert_eq!(
-                serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+                json::from_value::<FeatureDefinition>(wire).unwrap(),
                 definition
             );
         }
@@ -54,8 +56,8 @@ fn untrim_loops_reject_unknown_fields() {
             "edges": {"kind": "native", "value": "native:loops"}
         }),
     ] {
-        assert!(serde_json::from_value::<UntrimLoops>(wire.clone()).is_ok());
+        assert!(json::from_value::<UntrimLoops>(wire.clone()).is_ok());
         wire["unexpected"] = serde_json::json!(true);
-        assert!(serde_json::from_value::<UntrimLoops>(wire).is_err());
+        assert!(json::from_value::<UntrimLoops>(wire).is_err());
     }
 }

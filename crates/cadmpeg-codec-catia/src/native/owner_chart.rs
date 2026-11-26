@@ -607,6 +607,7 @@ mod tests {
         CatiaOwnerChartBridgeReference, CatiaOwnerChartBridgeReferenceWire,
         CatiaOwnerChartBridgeWire, CatiaOwnerChartRelation, CatiaOwnerChartRelationWire,
     };
+    use cadmpeg_core::serde_erase::json;
     use serde_json::json;
 
     fn owner_chart() -> CatiaOwnerChartRelation {
@@ -627,14 +628,14 @@ mod tests {
         let relation = native.consolidated_owner_packets[0]
             .owner_chart()
             .expect("source-closed extended chart");
-        let wire = serde_json::to_value(relation).expect("serialize extended chart");
+        let wire = json::to_value(relation).expect("serialize extended chart");
         let decoded: CatiaOwnerChartRelation =
-            serde_json::from_value(wire.clone()).expect("backward-distance-one carrier");
+            json::from_value(wire.clone()).expect("backward-distance-one carrier");
         assert_eq!(&decoded, relation);
         for value in [0, 2] {
             let mut invalid = wire.clone();
             invalid["bridge"]["references"][0]["value"] = json!(value);
-            assert!(serde_json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
+            assert!(json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
         }
         for encoding in [
             "owned_child",
@@ -645,7 +646,7 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             invalid["bridge"]["references"][0]["encoding"] = json!(encoding);
-            assert!(serde_json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
+            assert!(json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
         }
     }
 
@@ -669,8 +670,8 @@ mod tests {
         for reference in [carrier_surface, bound] {
             let owned: CatiaOwnerChartBridgeReferenceWire = reference.clone().into();
             assert_eq!(
-                serde_json::to_vec(&reference).expect("borrowed reference JSON"),
-                serde_json::to_vec(&owned).expect("owned reference JSON")
+                json::to_vec(&reference).expect("borrowed reference JSON"),
+                json::to_vec(&owned).expect("owned reference JSON")
             );
         }
     }
@@ -696,7 +697,7 @@ mod tests {
             reference: carrier_surface,
         };
         let arena_name = "bridge_references";
-        let json_len = serde_json::to_vec(&record).expect("reference JSON").len();
+        let json_len = json::to_vec(&record).expect("reference JSON").len();
         let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -726,8 +727,8 @@ mod tests {
                 .expect("owner chart");
             let owned: CatiaOwnerChartRelationWire = chart.clone().into();
             assert_eq!(
-                serde_json::to_vec(chart).expect("borrowed chart JSON"),
-                serde_json::to_vec(&owned).expect("owned chart JSON")
+                json::to_vec(chart).expect("borrowed chart JSON"),
+                json::to_vec(&owned).expect("owned chart JSON")
             );
         }
     }
@@ -747,7 +748,7 @@ mod tests {
             chart: &chart,
         };
         let arena_name = "owner_charts";
-        let json_len = serde_json::to_vec(&record).expect("chart JSON").len();
+        let json_len = json::to_vec(&record).expect("chart JSON").len();
         let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -775,9 +776,9 @@ mod tests {
             let relation = native.consolidated_owner_packets[0]
                 .owner_chart()
                 .expect("owner chart");
-            let wire = serde_json::to_value(relation).expect("serialize owner chart");
+            let wire = json::to_value(relation).expect("serialize owner chart");
             let decoded: CatiaOwnerChartRelation =
-                serde_json::from_value(wire.clone()).expect("valid bridge controls");
+                json::from_value(wire.clone()).expect("valid bridge controls");
             assert_eq!(&decoded, relation);
             for field in ["controls", "terminal_controls"] {
                 if let Some(controls) = wire["bridge"][field].as_str() {
@@ -786,7 +787,7 @@ mod tests {
                         let mut bytes = controls.to_owned();
                         bytes.replace_range(index * 2..index * 2 + 2, "00");
                         invalid["bridge"][field] = json!(bytes);
-                        assert!(serde_json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
+                        assert!(json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
                     }
                 }
             }
@@ -828,7 +829,7 @@ mod tests {
         let relation = native.consolidated_owner_packets[0]
             .owner_chart()
             .expect("source-closed owner chart");
-        let original = serde_json::to_value(relation).expect("serialize owner chart");
+        let original = json::to_value(relation).expect("serialize owner chart");
         for first in [0x03, 0x05] {
             for second in [0x03, 0x05] {
                 let mut wire = original.clone();
@@ -840,9 +841,9 @@ mod tests {
                 controls.replace_range(6..8, &format!("{second:02x}"));
                 wire["bridge"]["controls"] = json!(controls);
                 let decoded: CatiaOwnerChartRelation =
-                    serde_json::from_value(wire.clone()).expect("independent middle controls");
+                    json::from_value(wire.clone()).expect("independent middle controls");
                 assert_eq!(
-                    serde_json::to_value(decoded).expect("serialize admitted middle controls"),
+                    json::to_value(decoded).expect("serialize admitted middle controls"),
                     wire
                 );
             }
@@ -857,16 +858,16 @@ mod tests {
             let relation = native.consolidated_owner_packets[0]
                 .owner_chart()
                 .expect("source-closed owner chart");
-            let mut wire = serde_json::to_value(relation).expect("serialize owner chart");
+            let mut wire = json::to_value(relation).expect("serialize owner chart");
             let decoded: CatiaOwnerChartRelation =
-                serde_json::from_value(wire.clone()).expect("valid owner chart");
+                json::from_value(wire.clone()).expect("valid owner chart");
             assert_eq!(&decoded, relation);
             wire["side_axis"] = json!(if carrier_class == 0x28 {
                 "second_parameter"
             } else {
                 "first_parameter"
             });
-            assert!(serde_json::from_value::<CatiaOwnerChartRelation>(wire).is_err());
+            assert!(json::from_value::<CatiaOwnerChartRelation>(wire).is_err());
         }
     }
 
@@ -881,10 +882,10 @@ mod tests {
             "tagged_u16",
         ] {
             let wire = json!({ "value": 17, "encoding": encoding });
-            let reference: CatiaOwnerChartBridgeReference = serde_json::from_value(wire.clone())
+            let reference: CatiaOwnerChartBridgeReference = json::from_value(wire.clone())
                 .expect("unresolved reference accepts every allocation encoding");
             assert_eq!(
-                serde_json::to_value(reference).expect("serialize reference"),
+                json::to_value(reference).expect("serialize reference"),
                 wire
             );
         }
@@ -894,12 +895,9 @@ mod tests {
             if let Some(tag) = canonical_tag {
                 wire["canonical_surface_tag"] = json!(tag);
             }
-            let reference: CatiaOwnerChartBridgeReference = serde_json::from_value(wire.clone())
+            let reference: CatiaOwnerChartBridgeReference = json::from_value(wire.clone())
                 .expect("width-coded alias may lack a canonical target");
-            assert_eq!(
-                serde_json::to_value(reference).expect("serialize alias"),
-                wire
-            );
+            assert_eq!(json::to_value(reference).expect("serialize alias"), wire);
         }
     }
 
@@ -910,7 +908,7 @@ mod tests {
             if let Some(tag) = canonical_tag {
                 wire["canonical_surface_tag"] = json!(tag);
             }
-            let error = serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire)
+            let error = json::from_value::<CatiaOwnerChartBridgeReference>(wire)
                 .expect_err("empty alias row");
             assert!(error.to_string().contains("alias_row must not be empty"));
         }
@@ -926,10 +924,10 @@ mod tests {
             "tagged_u16",
         ] {
             let wire = json!({ "value": 17, "encoding": encoding, "alias_row": "alias-17" });
-            assert!(serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire).is_err());
+            assert!(json::from_value::<CatiaOwnerChartBridgeReference>(wire).is_err());
         }
         let wire = json!({ "value": 17, "encoding": "width_coded", "canonical_surface_tag": 23 });
-        assert!(serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire).is_err());
+        assert!(json::from_value::<CatiaOwnerChartBridgeReference>(wire).is_err());
     }
 }
 

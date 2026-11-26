@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
 use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
-use crate::CadIr;
 
 const EPS_SPATIAL_LINE_BOUNDARY: f64 = 1.0e-12;
 const EPS_SPATIAL_FRAME_BOUNDARY: f64 = 1.0e-9;
@@ -476,6 +476,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             native_ref: None,
         });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -532,15 +533,16 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     assert!(invalid_distance_findings
         .iter()
         .any(|finding| finding.message == "spatial offset distance does not match its parameter"));
-    let json = ir.to_canonical_json().expect("serialize spatial sketch");
-    let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
-    assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);
     assert_eq!(
-        decoded.model.spatial_sketch_entities,
+        round_trip(&ir.model.spatial_sketches),
+        ir.model.spatial_sketches
+    );
+    assert_eq!(
+        round_trip(&ir.model.spatial_sketch_entities),
         ir.model.spatial_sketch_entities
     );
     assert_eq!(
-        decoded.model.spatial_sketch_constraints,
+        round_trip(&ir.model.spatial_sketch_constraints),
         ir.model.spatial_sketch_constraints
     );
 }
@@ -555,7 +557,7 @@ fn spatial_sketch_paths_round_trip_through_json() {
         vec![SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap()],
     )
     .unwrap();
-    let json = serde_json::to_string(&path).unwrap();
+    let json = json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 
     let native = crate::features::selections::NativeSelections::try_from(vec![
@@ -568,7 +570,7 @@ fn spatial_sketch_paths_round_trip_through_json() {
         },
     )
     .unwrap();
-    let json = serde_json::to_string(&native).unwrap();
+    let json = json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }
 
@@ -590,8 +592,8 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
             "periodic": false
         }
     });
-    let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let geometry: SpatialSketchGeometry = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&geometry).unwrap(), wire);
     for (field, value) in [
         ("degree", serde_json::json!(2)),
         ("knots", serde_json::json!([0.0, 1.0])),
@@ -609,7 +611,7 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         let mut invalid = wire.clone();
         invalid["curve"][field] = value;
         assert!(
-            serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
+            json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
             "{field}"
         );
     }
@@ -630,13 +632,13 @@ fn spatial_surface_wire_checks_rectangular_grid_and_full_knots() {
             ]
         }
     });
-    let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let geometry: SpatialSketchGeometry = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&geometry).unwrap(), wire);
     for field in ["u_knots", "v_knots", "control_points"] {
         let mut invalid = wire.clone();
         invalid["surface"][field].as_array_mut().unwrap().pop();
         assert!(
-            serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
+            json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
             "{field}"
         );
     }
@@ -645,7 +647,7 @@ fn spatial_surface_wire_checks_rectangular_grid_and_full_knots() {
         .as_array_mut()
         .unwrap()
         .pop();
-    let error = serde_json::from_value::<SpatialSketchGeometry>(ragged).unwrap_err();
+    let error = json::from_value::<SpatialSketchGeometry>(ragged).unwrap_err();
     assert!(error.to_string().contains("control_points row"));
 }
 
@@ -675,7 +677,7 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
             .unwrap_err()
             .contains(field));
         let wire = serde_json::json!({"kind": "nurbs", "curve": curve});
-        assert!(serde_json::from_value::<SpatialSketchGeometry>(wire)
+        assert!(json::from_value::<SpatialSketchGeometry>(wire)
             .unwrap_err()
             .to_string()
             .contains(field));
@@ -712,9 +714,9 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
     assert_eq!(curve, before);
     let geometry =
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs { curve }).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    assert_eq!(json::to_value(&geometry).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<SpatialSketchGeometry>(wire).unwrap(),
+        json::from_value::<SpatialSketchGeometry>(wire).unwrap(),
         geometry
     );
 }
@@ -829,8 +831,8 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
         "normal":{"x":0.0,"y":0.0,"z":1.0}, "reference_direction":{"x":1.0,"y":0.0,"z":0.0},
         "radius":2.0, "start_angle":-1.0, "end_angle":-2.0
     });
-    let mut geometry = serde_json::from_value::<SpatialSketchGeometry>(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let mut geometry = json::from_value::<SpatialSketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&geometry).unwrap(), wire);
     for (field, value) in [
         ("radius", serde_json::json!(-1.0)),
         ("normal", serde_json::json!({"x":0.0,"y":0.0,"z":2.0})),
@@ -843,7 +845,7 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;
-        assert!(serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err());
+        assert!(json::from_value::<SpatialSketchGeometry>(invalid).is_err());
     }
     let before = geometry.clone();
     assert!(edit::replace(&mut geometry, |previous| {
@@ -878,7 +880,7 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
         definition.try_into()
     })
     .unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap()["end_angle"], -3.0);
+    assert_eq!(json::to_value(&geometry).unwrap()["end_angle"], -3.0);
 }
 
 #[test]
@@ -908,9 +910,9 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
         "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
         "boundary": [{"entity": "synthetic:test:spatial-entity#profile", "reversed": true}]
     });
-    assert_eq!(serde_json::to_value(&profile).unwrap(), wire);
+    assert_eq!(json::to_value(&profile).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<SpatialSketchProfile>(wire.clone()).unwrap(),
+        json::from_value::<SpatialSketchProfile>(wire.clone()).unwrap(),
         profile
     );
     assert!(SpatialSketchProfile::try_new(origin, normal, u_axis, vec![]).is_err());
@@ -947,7 +949,7 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
     ] {
         let mut invalid_wire = wire.clone();
         invalid_wire[field] = invalid;
-        assert!(serde_json::from_value::<SpatialSketchProfile>(invalid_wire).is_err());
+        assert!(json::from_value::<SpatialSketchProfile>(invalid_wire).is_err());
     }
     let before = profile.clone();
     assert!(profile
@@ -1109,12 +1111,12 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
         invalid.push(kind);
     }
     let mut checked = Checked::try_from(offset.clone()).unwrap();
-    let wire = serde_json::to_value(&checked).unwrap();
-    assert_eq!(wire, serde_json::to_value(&offset).unwrap());
-    assert_eq!(serde_json::from_value::<Checked>(wire).unwrap(), checked);
+    let wire = json::to_value(&checked).unwrap();
+    assert_eq!(wire, json::to_value(&offset).unwrap());
+    assert_eq!(json::from_value::<Checked>(wire).unwrap(), checked);
     for kind in invalid {
         assert!(Checked::try_from(kind.clone()).is_err(), "{kind:?}");
-        assert!(serde_json::from_value::<Checked>(serde_json::to_value(&kind).unwrap()).is_err());
+        assert!(json::from_value::<Checked>(json::to_value(&kind).unwrap()).is_err());
         let before = checked.clone();
         assert!(checked.edit(|value| *value = kind).is_err());
         assert_eq!(checked, before);
@@ -1138,8 +1140,8 @@ fn spatial_native_constraint_admission_requires_kind_and_operands() {
         "kind": "native", "native_kind": "relation",
         "operands": [{"native_kind": "entity", "object_index": 1}]
     });
-    let mut value: Checked = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+    let mut value: Checked = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&value).unwrap(), wire);
     let original = value.clone();
     assert!(value
         .edit(|kind| {
@@ -1153,6 +1155,11 @@ fn spatial_native_constraint_admission_requires_kind_and_operands() {
     for (field, invalid) in [("native_kind", json!("")), ("operands", json!([]))] {
         let mut rejected = wire.clone();
         rejected[field] = invalid;
-        assert!(serde_json::from_value::<Checked>(rejected).is_err());
+        assert!(json::from_value::<Checked>(rejected).is_err());
     }
+}
+
+/// `records` read back from their JSON form.
+fn round_trip<T: serde::Serialize + serde::de::DeserializeOwned>(records: &[T]) -> Vec<T> {
+    json::from_value(json::to_value(records).unwrap()).unwrap()
 }

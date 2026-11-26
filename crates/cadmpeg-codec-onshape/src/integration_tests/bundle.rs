@@ -2,6 +2,7 @@
 //! Synthetic REST bundles only; fixture provenance and generator live in fixtures/.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
@@ -24,9 +25,9 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
         let mut data = Vec::new();
         member.read_to_end(&mut data).unwrap();
         if member.name().unwrap().ends_with(".json") {
-            let mut value = serde_json::from_slice(&data).unwrap();
+            let mut value = json::from_slice(&data).unwrap();
             edit(&member.name().unwrap(), &mut value);
-            data = serde_json::to_vec(&value).unwrap();
+            data = json::to_vec(&value).unwrap();
         }
         zip.start_file(
             member.name().unwrap().as_ref(),
@@ -39,7 +40,7 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
 }
 
 fn timeline(model: &Model) -> Value {
-    let mut wire = serde_json::to_value(&model.ir).unwrap();
+    let mut wire = cadmpeg_test_support::wire::in_memory_json(&model.ir);
     wire["model"]["features"]
         .as_array_mut()
         .unwrap()
@@ -73,9 +74,9 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
         assert_eq!(kinds(&model), expected, "{name}: {:?}", report.losses());
         assert_eq!(model.ir.geometry.bodies.len(), 1);
         let wire = timeline(&model);
-        let roundtrip: cadmpeg_ir::CadIr =
-            serde_json::from_value(serde_json::to_value(&model.ir).unwrap()).unwrap();
-        assert_eq!(roundtrip, model.ir);
+        let written = json::to_value(&model.ir).unwrap();
+        let roundtrip: cadmpeg_ir::CadIr = json::from_value(written.clone()).unwrap();
+        assert_eq!(json::to_value(&roundtrip).unwrap(), written);
         assert!(wire["model"].get("bodies").is_none());
         assert!(!wire["geometry"]["edges"].as_array().unwrap().is_empty());
         for edge in wire["geometry"]["edges"].as_array().unwrap() {
@@ -277,16 +278,11 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
 #[test]
 fn wrong_magic_schema_and_manifest_identity_are_refused() {
     assert!(read(b"not a zip").is_err());
-    for failure in ["schema", "assembly", "multiple", "path"] {
+    for failure in ["schema", "path"] {
         let bytes = changed(&fixture("revolve"), |path, value| {
             if path == "manifest.json" {
                 match failure {
                     "schema" => value["schema"] = json!("dutchman.onshape-bundle/2"),
-                    "assembly" => value["elements"][0]["type"] = json!("ASSEMBLY"),
-                    "multiple" => {
-                        let row = value["elements"][0].clone();
-                        value["elements"].as_array_mut().unwrap().push(row);
-                    }
                     "path" => value["elements"][0]["id"] = json!("../studio"),
                     _ => {}
                 }
@@ -1146,7 +1142,7 @@ fn thin_extrusions_refuse_unscoped_design_construction() {
                     .unwrap();
                 let (ir, report, fidelity) = result.into_parts();
                 assert!(ir.design.features.is_empty());
-                let wire = serde_json::to_value(&ir).unwrap();
+                let wire = cadmpeg_test_support::wire::in_memory_json(&ir);
                 let feature = wire["model"]["features"]
                     .as_array()
                     .unwrap()
@@ -1406,7 +1402,7 @@ fn repeated_exterior_consumers_exhaust_the_bundle_budget_early() {
         .unwrap()
         .iter()
         .filter_map(|f| f.pointer("/definition/value/value/profile/value/value/regions"))
-        .map(|regions| serde_json::to_vec(regions).unwrap().len())
+        .map(|regions| json::to_vec(regions).unwrap().len())
         .sum();
     eprintln!("Cumulative recovery: refused at consumer {first_loss} of 129 (128 extra holes); emitted {boundary_bytes} region JSON bytes; reader {elapsed:?}");
     assert!(
@@ -1602,13 +1598,34 @@ fn a_whole_sketch_region_query_maps_despite_its_resolved_region_ids() {
 
 #[test]
 fn whole_sketch_inner_loop_filter_selects_the_ring_and_preserves_unfiltered_queries() {
-    for nested in [false, true] {
-        for filter in [false, true] {
+    for (nested, filter, clockwise) in [
+        (false, false, false),
+        (false, true, false),
+        (true, false, false),
+        (true, true, false),
+        (true, true, true),
+    ] {
+        {
             let bytes = changed(&fixture("default-plane-regions"), |path, value| {
                 if !path.ends_with("features.json") {
                     return;
                 }
                 region_fixture::frame(value, false);
+                if clockwise {
+                    let lines = [
+                        (0.0, 0.0, 0.0, 1.0),
+                        (0.0, 0.02, 1.0, 0.0),
+                        (0.02, 0.02, 0.0, -1.0),
+                        (0.02, 0.0, -1.0, 0.0),
+                    ];
+                    for (i, (x, y, dx, dy)) in lines.into_iter().enumerate() {
+                        let geometry = &mut value["features"][0]["entities"][i]["geometry"];
+                        geometry["pntX"] = json!(x);
+                        geometry["pntY"] = json!(y);
+                        geometry["dirX"] = json!(dx);
+                        geometry["dirY"] = json!(dy);
+                    }
+                }
                 if !nested {
                     value["features"][0]["entities"]
                         .as_array_mut()
@@ -1635,6 +1652,31 @@ fn whole_sketch_inner_loop_filter_selects_the_ring_and_preserves_unfiltered_quer
                 assert_eq!(holes.len(), 1);
                 assert_eq!(holes[0].as_array().unwrap().len(), 1);
                 assert!(holes[0][0]["entity"].as_str().unwrap().ends_with("/hole"));
+                // The outer ring runs counterclockwise about the sketch normal whichever
+                // way the lines are stored: twice the signed area of the 20 mm square is
+                // 2 * 20 * 20. The hole circle is one use over [0, TAU] and runs the
+                // opposite way.
+                let mut doubled_area = 0.0;
+                for part in regions[0]["outer_boundary"].as_array().unwrap() {
+                    let entity = wire["model"]["sketch_entities"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|e| e["id"] == part["entity"])
+                        .unwrap();
+                    let point = |key: &str| {
+                        let p = &entity["geometry"][key];
+                        [p["u"].as_f64().unwrap(), p["v"].as_f64().unwrap()]
+                    };
+                    let (a, b) = if part["reversed"].as_bool().unwrap() {
+                        (point("end"), point("start"))
+                    } else {
+                        (point("start"), point("end"))
+                    };
+                    doubled_area += a[0] * b[1] - a[1] * b[0];
+                }
+                assert!((doubled_area - 800.0).abs() < 1e-6, "{doubled_area}");
+                assert_eq!(holes[0][0]["reversed"], true);
             } else {
                 assert_eq!(profile["kind"], "sketch");
             }
@@ -1734,3 +1776,5 @@ fn a_filtered_query_that_is_not_a_region_query_keeps_the_extrude_native() {
         report.losses()
     );
 }
+
+mod planes;

@@ -50,7 +50,10 @@ pub(super) fn check_profile(
         super::geometry_error(
             findings,
             owner.as_str(),
-            "attached plate profile is not planar",
+            crate::rule!(
+                "topology.attached-plate-profile-not-planar",
+                "attached plate profile is not planar"
+            ),
         );
     }
 }
@@ -73,7 +76,10 @@ pub(super) fn check_pair(
         super::geometry_error(
             findings,
             feature.id.as_str(),
-            "attached plate requires exactly one bend",
+            crate::rule!(
+                "topology.attached-plate-requires-exactly-one-bend",
+                "attached plate requires exactly one bend"
+            ),
         );
     }
 }
@@ -231,6 +237,7 @@ mod tests {
         };
         let state = |id, input_of| FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
             id,
             input_of,
             bodies: DistinctMembers::default(),
