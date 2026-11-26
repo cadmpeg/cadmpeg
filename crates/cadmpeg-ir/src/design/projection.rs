@@ -12,13 +12,15 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, ExactnessNote};
-use crate::design::feature::Feature;
-use crate::design::parameter::DesignParameter;
 use crate::document::CadIr;
 use crate::provenance::Exactness;
 use crate::report::loss::LossNote;
 use crate::report::Severity;
 use crate::unknown::part::record_unreadable_kind;
+
+use self::fields::{FeatureField, Field, ModelFeatureField, ModelParameterField, ParameterField};
+
+pub mod fields;
 
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.
@@ -58,71 +60,15 @@ pub fn project_layer(
     Ok(())
 }
 
-/// Each serialized field of a design record, with the fields of the model
-/// record it restates and whether the design record states it. A field that
-/// restates no model field is the design record's own.
-type Restated = Vec<(&'static str, &'static [&'static str], bool)>;
-
-fn feature_fields(feature: &Feature) -> Restated {
-    let Feature {
-        id: _,
-        name,
-        suppressed,
-        definition: _,
-        placement: _,
-        component: _,
-        driven_by: _,
-        native_ref,
-    } = feature;
-    vec![
-        ("name", &["name"][..], name.is_some()),
-        ("suppressed", &["suppressed"][..], suppressed.is_some()),
-        ("definition", &["definition", "dependencies"][..], true),
-        ("placement", &[][..], true),
-        ("component", &[][..], true),
-        ("driven_by", &[][..], true),
-        ("native_ref", &["native_ref"][..], native_ref.is_some()),
-    ]
-}
-
-fn parameter_fields(parameter: &DesignParameter) -> Restated {
-    let DesignParameter {
-        id: _,
-        scope: _,
-        owner,
-        name,
-        kind: _,
-        unit,
-        definition: _,
-        value,
-        display: _,
-        tolerance: _,
-        decimals: _,
-        comment: _,
-        native_options: _,
-        source_settings: _,
-        native_ref,
-    } = parameter;
-    vec![
-        ("scope", &[][..], true),
-        ("owner", &["owner"][..], owner.is_some()),
-        ("name", &["name"][..], name.is_some()),
-        ("kind", &["properties"][..], true),
-        ("unit", &["properties"][..], unit.is_some()),
-        (
-            "definition",
-            &["expression", "dependencies", "properties"][..],
-            true,
-        ),
-        ("value", &["value"][..], value.is_some()),
-        ("display", &[][..], true),
-        ("tolerance", &[][..], true),
-        ("decimals", &[][..], true),
-        ("comment", &[][..], true),
-        ("native_options", &[][..], true),
-        ("source_settings", &[][..], true),
-        ("native_ref", &["native_ref"][..], native_ref.is_some()),
-    ]
+/// The model fields a decoder's projection reads to build each field of a
+/// design record. A design field with no model field is the design record's
+/// own.
+#[derive(Clone, Copy)]
+pub struct Restatement {
+    /// The model feature fields each design feature field is built from.
+    pub feature: fn(FeatureField) -> &'static [ModelFeatureField],
+    /// The model parameter fields each design parameter field is built from.
+    pub parameter: fn(ParameterField) -> &'static [ModelParameterField],
 }
 
 /// The less exact of `left` and `right`, in the declared order of
@@ -141,45 +87,72 @@ fn least_exact(left: Exactness, right: Exactness) -> Exactness {
     }
 }
 
-/// The field overrides of `note` on a design record with `fields`.
+/// The marks of `note` on sub-paths of `field`, with their path.
+fn sub_marks<'n>(
+    note: &'n ExactnessNote,
+    field: &'n str,
+) -> impl Iterator<Item = (&'n str, Exactness)> + 'n {
+    note.fields().iter().filter_map(move |(path, exactness)| {
+        let path = path.as_str();
+        path.strip_prefix(field)?
+            .starts_with('.')
+            .then_some((path, *exactness))
+    })
+}
+
+/// The field overrides of `note` on a design record whose fields are
+/// `stated`, built from the model fields `inputs` names.
 ///
-/// A stated design field takes the least exact of the model fields it
-/// restates, each at its own mark or else at the entity exactness, and of its
-/// own mark. A mark on a design field that restates no model field is kept.
-fn restated_fields(note: &ExactnessNote, fields: &Restated) -> Vec<(String, Exactness)> {
+/// A key whose first component names a model field is a model mark. Another
+/// key whose first component names a design field is the design record's own.
+/// A model field counts at the least exact of its mark (else the entity
+/// exactness) and the marks on its sub-paths. A stated design field takes the
+/// least exact of its model fields and its own mark; an own mark on a
+/// sub-path is kept at no more than its field. Marks on a design field the
+/// record does not state, and model marks no stated field reads, leave.
+fn restated_fields<D: Field, M: Field>(
+    note: &ExactnessNote,
+    stated: impl IntoIterator<Item = (D, bool)>,
+    inputs: fn(D) -> &'static [M],
+) -> Vec<(String, Exactness)> {
     let entity = note.entity();
-    let marked = |field: &str| note.fields().get(field).copied();
+    let input = |model: &M| {
+        let key = model.key();
+        sub_marks(note, key).map(|(_, exactness)| exactness).fold(
+            note.fields().get(key).copied().unwrap_or(entity),
+            least_exact,
+        )
+    };
     let mut overrides = Vec::new();
-    for (field, restates, stated) in fields {
-        if restates.is_empty() || !stated {
+    for (field, stated) in stated {
+        if !stated {
             continue;
         }
-        let own = (!restates.contains(field)).then(|| marked(field)).flatten();
-        let exactness = restates
+        let key = field.key();
+        let own = M::parse(key).is_none();
+        let exactness = inputs(field)
             .iter()
-            .map(|model| marked(model).unwrap_or(entity))
-            .chain(own)
-            .fold(Exactness::ByteExact, least_exact);
+            .map(input)
+            .chain(own.then(|| note.fields().get(key).copied()).flatten())
+            .reduce(least_exact)
+            .unwrap_or(entity);
         if exactness != entity {
-            overrides.push(((*field).to_owned(), exactness));
+            overrides.push((key.to_owned(), exactness));
         }
-    }
-    for (path, exactness) in note.fields() {
-        let top = path.as_str().split('.').next().unwrap_or_default();
-        if fields
-            .iter()
-            .any(|(field, restates, _)| *field == top && restates.is_empty())
-        {
-            overrides.push((path.to_string(), *exactness));
+        if own {
+            overrides.extend(
+                sub_marks(note, key)
+                    .map(|(path, mark)| (path.to_owned(), least_exact(mark, exactness))),
+            );
         }
     }
     overrides
 }
 
 /// Restates onto each design feature and parameter of `ir` the exactness of
-/// the model record with its id. The CADIR wire carries the design record in
-/// place of the model record (§10). A model field that no stated design field
-/// restates leaves with the model record.
+/// the model record with its id, through the model fields `restatement`
+/// names for each design field. The CADIR wire carries the design record in
+/// place of the model record (§10).
 ///
 /// # Errors
 ///
@@ -187,6 +160,7 @@ fn restated_fields(note: &ExactnessNote, fields: &Restated) -> Vec<(String, Exac
 pub fn restate_exactness(
     ir: &CadIr,
     annotations: &mut AnnotationBuilder,
+    restatement: Restatement,
 ) -> Result<(), CodecError> {
     let modeled = ir
         .model
@@ -200,22 +174,29 @@ pub fn restate_exactness(
                 .map(|parameter| parameter.id.as_str()),
         )
         .collect::<BTreeSet<_>>();
-    let features = ir
-        .design
-        .features
-        .iter()
-        .filter(|feature| modeled.contains(feature.id.as_str()))
-        .map(|feature| (feature.id.as_str(), feature_fields(feature)));
-    let parameters = ir
-        .design
-        .parameters
-        .iter()
-        .filter(|parameter| modeled.contains(parameter.id.as_str()))
-        .map(|parameter| (parameter.id.as_str(), parameter_fields(parameter)));
+    let exactness = annotations.annotations().exactness();
     let mut restated = Vec::new();
-    for (id, fields) in features.chain(parameters) {
-        if let Some(note) = annotations.annotations().exactness().get(id) {
-            restated.push((id, note.entity(), restated_fields(note, &fields)));
+    for feature in &ir.design.features {
+        if let (true, Some(note)) = (
+            modeled.contains(feature.id.as_str()),
+            exactness.get(feature.id.as_str()),
+        ) {
+            let overrides =
+                restated_fields(note, FeatureField::stated(feature), restatement.feature);
+            restated.push((feature.id.as_str(), note.entity(), overrides));
+        }
+    }
+    for parameter in &ir.design.parameters {
+        if let (true, Some(note)) = (
+            modeled.contains(parameter.id.as_str()),
+            exactness.get(parameter.id.as_str()),
+        ) {
+            let overrides = restated_fields(
+                note,
+                ParameterField::stated(parameter),
+                restatement.parameter,
+            );
+            restated.push((parameter.id.as_str(), note.entity(), overrides));
         }
     }
     let ids = restated.iter().map(|(id, ..)| *id).collect::<BTreeSet<_>>();
@@ -225,6 +206,38 @@ pub fn restate_exactness(
         for (field, exactness) in overrides {
             annotations.field_exactness(id, field, exactness)?;
         }
+    }
+    Ok(())
+}
+
+/// States `exactness` on `path` of record `id` where it is less exact than
+/// the exactness the note gives `path`: the mark on `path` or on its nearest
+/// enclosing field, else the entity exactness.
+///
+/// # Errors
+///
+/// A resource refusal while the override is stated.
+pub fn lower_exactness(
+    annotations: &mut AnnotationBuilder,
+    id: &str,
+    path: &str,
+    exactness: Exactness,
+) -> Result<(), CodecError> {
+    let current =
+        annotations
+            .annotations()
+            .exactness()
+            .get(id)
+            .map_or(Exactness::ByteExact, |note| {
+                std::iter::successors(Some(path), |path| {
+                    path.rsplit_once('.').map(|(head, _)| head)
+                })
+                .find_map(|prefix| note.fields().get(prefix).copied())
+                .unwrap_or_else(|| note.entity())
+            });
+    let lowered = least_exact(current, exactness);
+    if lowered != current {
+        annotations.field_exactness(id, path, lowered)?;
     }
     Ok(())
 }

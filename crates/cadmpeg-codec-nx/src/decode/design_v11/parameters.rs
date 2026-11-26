@@ -19,6 +19,7 @@ use cadmpeg_ir::design::expr::{
     UnaryOp,
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use cadmpeg_ir::design::projection::fields::{ModelParameterField, ParameterField};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::DesignParameter as LegacyParameter;
@@ -66,6 +67,34 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
     }
     ir.design.parameters.extend(parameters);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
+}
+
+/// The model parameter fields [`project`] reads to build `field`. The
+/// declared unit is in `properties`; the names a formula resolves are those
+/// of the parameters with its owner.
+pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
+        ParameterField::Definition => &[
+            ModelParameterField::Expression,
+            ModelParameterField::Properties,
+            ModelParameterField::Owner,
+        ],
+        ParameterField::Value => &[
+            ModelParameterField::Expression,
+            ModelParameterField::Properties,
+        ],
+        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::Scope
+        | ParameterField::Owner
+        | ParameterField::Display
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings => &[],
+    }
 }
 
 /// A parameter's declared quantity and unit, from its expression header.

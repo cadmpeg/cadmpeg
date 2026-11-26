@@ -3705,7 +3705,7 @@ fn finish_decode(
             |ir, losses| crate::design_v11::project(ctx, ir, losses),
         )?;
         let mut restated = cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
-        cadmpeg_ir::design::projection::restate_exactness(&ir, &mut restated)?;
+        crate::design_v11::restate_exactness(&ir, &mut restated)?;
         annotations = restated.build();
     }
     native.store_owned(ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("catia")))?;

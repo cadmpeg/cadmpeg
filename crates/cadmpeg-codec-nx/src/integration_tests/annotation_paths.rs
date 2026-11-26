@@ -29,9 +29,9 @@ fn a_restated_history_feature_keeps_its_entity_exactness() {
     );
 }
 
-/// The expression's derived `owner` and `ordinal` have no stated design
-/// field and leave; `properties` restates as `kind`, `unit` and
-/// `definition`.
+/// The expression's derived `ordinal` feeds no design field and leaves, and
+/// its `owner` counts only toward `definition`. The declared unit in
+/// `properties` feeds `kind`, `unit`, `definition` and `value`.
 #[test]
 fn a_restated_expression_names_the_fields_of_its_design_parameter() {
     let result = super::decode(prt_with_named_payloads(&[(

@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
+use super::fields::{FeatureField, ModelFeatureField, ModelParameterField, ParameterField};
 use super::project_layer;
 use crate::design::scope::DesignScope;
 use crate::ids::ProductDefinitionId;
@@ -140,6 +141,46 @@ fn restated_document() -> CadIr {
 }
 
 const FILLET: &str = "test:design:feature#fillet";
+
+fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
+    match field {
+        FeatureField::Name => &[ModelFeatureField::Name],
+        FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
+        FeatureField::Definition => &[
+            ModelFeatureField::Definition,
+            ModelFeatureField::Dependencies,
+        ],
+        FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
+        FeatureField::Placement | FeatureField::Component | FeatureField::DrivenBy => &[],
+    }
+}
+
+fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Owner => &[ModelParameterField::Owner],
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
+        ParameterField::Definition => &[
+            ModelParameterField::Expression,
+            ModelParameterField::Dependencies,
+            ModelParameterField::Properties,
+        ],
+        ParameterField::Value => &[ModelParameterField::Value],
+        ParameterField::Display => &[ModelParameterField::Display],
+        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::Scope
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings => &[],
+    }
+}
+
+const RESTATEMENT: super::Restatement = super::Restatement {
+    feature: feature_inputs,
+    parameter: parameter_inputs,
+};
 const WIDTH: &str = "test:design:parameter#width";
 
 /// Restates `marks` (id, field, exactness) over entity exactness `entities`
@@ -160,7 +201,7 @@ fn restated(
     for (id, field, exactness) in marks {
         annotations.field_exactness(id, *field, *exactness).unwrap();
     }
-    super::restate_exactness(&ir, &mut annotations).unwrap();
+    super::restate_exactness(&ir, &mut annotations, RESTATEMENT).unwrap();
     let annotations = annotations.build();
     ids.iter()
         .map(|id| {
@@ -237,9 +278,11 @@ fn a_design_field_takes_the_least_exact_of_the_model_fields_it_restates() {
     assert_eq!(width, (ByteExact, fields(&[("definition", Inferred)])));
 }
 
-/// A mark already on a design field is kept: on a field that restates no
-/// model field as it is, and on one that does at the least exact of the mark
-/// and the model fields. A design record with no model record keeps its note.
+/// A mark already on a stated design field is kept: on a field with no model
+/// field as it is, and on one built from model fields at the least exact of
+/// the mark and those fields. A mark on a field the design record does not
+/// state leaves: the fillet states no placement. A design record with no
+/// model record keeps its note.
 #[test]
 fn restated_exactness_keeps_the_marks_of_design_fields() {
     use crate::provenance::Exactness::{Derived, Inferred};
@@ -252,15 +295,12 @@ fn restated_exactness_keeps_the_marks_of_design_fields() {
             (WIDTH, "scope", Inferred),
             (WIDTH, "kind", Inferred),
             (WIDTH, "properties", Derived),
-            (extrude, "placement", Inferred),
+            (extrude, "definition", Inferred),
         ],
         &[FILLET, WIDTH, extrude],
     ))
     .unwrap();
-    assert_eq!(
-        fillet.1,
-        fields(&[("definition", Derived), ("placement", Inferred)])
-    );
+    assert_eq!(fillet.1, fields(&[("definition", Derived)]));
     assert_eq!(
         width.1,
         fields(&[
@@ -269,5 +309,85 @@ fn restated_exactness_keeps_the_marks_of_design_fields() {
             ("scope", Inferred)
         ])
     );
-    assert_eq!(extrude.1, fields(&[("placement", Inferred)]));
+    assert_eq!(extrude.1, fields(&[("definition", Inferred)]));
+}
+
+/// A mark on a sub-path of a model field counts toward that field. A model
+/// mark on a field whose design field the record does not state is written
+/// nowhere, and the design record's own mark on that field leaves.
+#[test]
+fn a_model_sub_path_mark_counts_toward_its_field_and_unstated_fields_take_no_mark() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    let [width] = <[_; 1]>::try_from(restated(
+        &[],
+        &[
+            (WIDTH, "properties", Derived),
+            (WIDTH, "properties.unit", Inferred),
+            (WIDTH, "display", Derived),
+            (WIDTH, "unit", Derived),
+            (WIDTH, "tolerance.upper", Inferred),
+        ],
+        &[WIDTH],
+    ))
+    .unwrap();
+    assert_eq!(
+        width,
+        (
+            ByteExact,
+            fields(&[("definition", Inferred), ("kind", Inferred)])
+        )
+    );
+}
+
+/// A design record's own mark on a sub-path of a stated field is kept, at no
+/// more exactness than its field.
+#[test]
+fn a_design_sub_path_mark_is_kept_at_no_more_than_its_field() {
+    use crate::provenance::Exactness::{Derived, Inferred};
+    let [width] = <[_; 1]>::try_from(restated(
+        &[],
+        &[
+            (WIDTH, "properties", Inferred),
+            (WIDTH, "definition.value", Derived),
+            (WIDTH, "native_options.test", Derived),
+        ],
+        &[WIDTH],
+    ))
+    .unwrap();
+    assert_eq!(
+        width.1,
+        fields(&[
+            ("definition", Inferred),
+            ("definition.value", Inferred),
+            ("kind", Inferred),
+            ("native_options.test", Derived),
+        ])
+    );
+}
+
+/// A lowered path takes the less exact of the given exactness and the
+/// exactness its nearest marked enclosing field, or the entity, gives it.
+#[test]
+fn lowering_a_path_never_raises_its_exactness() {
+    use crate::provenance::Exactness::{Derived, Inferred, Unknown};
+    let mut annotations = crate::AnnotationBuilder::new();
+    super::lower_exactness(&mut annotations, FILLET, "definition", Derived).unwrap();
+    super::lower_exactness(&mut annotations, FILLET, "definition.side", Inferred).unwrap();
+    super::lower_exactness(&mut annotations, FILLET, "definition.side", Derived).unwrap();
+    super::lower_exactness(&mut annotations, FILLET, "definition.span", Derived).unwrap();
+    annotations.exactness(WIDTH, Unknown);
+    super::lower_exactness(&mut annotations, WIDTH, "kind", Inferred).unwrap();
+    let annotations = annotations.build();
+    let marks = |id: &str| {
+        annotations.exactness()[id]
+            .fields()
+            .iter()
+            .map(|(field, exactness)| (field.to_string(), *exactness))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        marks(FILLET),
+        fields(&[("definition", Derived), ("definition.side", Inferred)])
+    );
+    assert!(marks(WIDTH).is_empty());
 }

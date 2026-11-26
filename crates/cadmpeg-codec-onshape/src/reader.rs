@@ -22,6 +22,9 @@ use crate::loss::OnshapeLossCode;
 use archive::{Bundle, SCHEMA};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::codec::Decoded;
+use cadmpeg_ir::design::projection::fields::{
+    FeatureField, ModelFeatureField, ModelParameterField, ParameterField,
+};
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
@@ -613,6 +616,7 @@ fn studio(
     }
     let mut seen = std::collections::BTreeSet::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
+    let mut assumed_sides = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
         let design_length = model.ir.design.features.len();
         let note_start = report.notes.len();
@@ -717,6 +721,7 @@ fn studio(
                     )?;
                     push(&mut model.ir.design.features, design)?;
                     if let Some(assumed) = assumed {
+                        assumed_sides.insert(feature_id.clone());
                         report.push_coded(name, OnshapeLossCode::ThinNotSupported, assumed);
                     }
                     report.push_coded(name, OnshapeLossCode::ThinModelNotSupported,
@@ -876,7 +881,7 @@ fn studio(
     report
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
-    annotate(&mut model, features)?;
+    annotate(&mut model, features, &assumed_sides)?;
     Ok(model)
 }
 
@@ -958,8 +963,15 @@ impl Model {
     }
 }
 
-fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
+/// States the exactness of the decoded records. A thin design feature in
+/// `assumed_sides` takes its wall side from an unresolved convention.
+fn annotate(
+    model: &mut Model,
+    features: &[Value],
+    assumed_sides: &std::collections::BTreeSet<String>,
+) -> Result<(), Error> {
     use cadmpeg_ir::annotations::AnnotationBuilder;
+    use cadmpeg_ir::design::projection::lower_exactness;
     use cadmpeg_ir::Exactness;
     let mut annotations =
         AnnotationBuilder::resume(std::mem::take(&mut model.source_fidelity.annotations));
@@ -1048,9 +1060,56 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations)?;
+    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
+    for feature in &model.ir.design.features {
+        let id = feature.id.as_str();
+        lower_exactness(&mut annotations, id, "definition", Exactness::Derived)?;
+        if assumed_sides.contains(id) {
+            lower_exactness(&mut annotations, id, thin::SIDE, Exactness::Inferred)?;
+        }
+    }
     model.source_fidelity.annotations = annotations.build();
     Ok(())
+}
+
+/// The model fields the decoder reads to build each design field. A design
+/// feature's definition is read from the source feature, and its exactness is
+/// stated in [`annotate`]; the decoder states no design parameter.
+const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
+    cadmpeg_ir::design::projection::Restatement {
+        feature: feature_inputs,
+        parameter: parameter_inputs,
+    };
+
+fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
+    match field {
+        FeatureField::Name => &[ModelFeatureField::Name],
+        FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
+        FeatureField::Definition
+        | FeatureField::Placement
+        | FeatureField::Component
+        | FeatureField::DrivenBy
+        | FeatureField::NativeRef => &[],
+    }
+}
+
+fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Scope
+        | ParameterField::Owner
+        | ParameterField::Name
+        | ParameterField::Kind
+        | ParameterField::Unit
+        | ParameterField::Definition
+        | ParameterField::Value
+        | ParameterField::Display
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings
+        | ParameterField::NativeRef => &[],
+    }
 }
 
 #[cfg(test)]

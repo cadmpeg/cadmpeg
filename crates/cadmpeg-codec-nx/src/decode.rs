@@ -206,7 +206,11 @@ fn decoded(
                 &mut body.losses,
                 |ir, _| design_v11::project(ir, definition.clone()),
             )?;
-            cadmpeg_ir::design::projection::restate_exactness(&ir, &mut builder)?;
+            cadmpeg_ir::design::projection::restate_exactness(
+                &ir,
+                &mut builder,
+                design_v11::RESTATEMENT,
+            )?;
         }
         if minted {
             builder.exactness(definition, Exactness::Derived);

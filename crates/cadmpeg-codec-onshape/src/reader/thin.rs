@@ -46,6 +46,9 @@ pub(super) fn owner(ir: &CadIr) -> Mapping<cadmpeg_ir::ids::ProductDefinitionId>
     Ok(definition.id.clone())
 }
 
+/// The path of a one-sided thin wall's side in its design feature.
+pub(super) const SIDE: &str = "definition.operation.value.output.body.thickness.value.side";
+
 pub(super) fn feature(
     source: &Value,
     definition: &Value,
