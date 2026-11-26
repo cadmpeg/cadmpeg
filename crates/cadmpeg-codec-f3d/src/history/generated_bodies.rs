@@ -870,7 +870,7 @@ fn history_producer(
 }
 
 /// The ASM state number of a history-input state identity.
-fn historical_state_number(id: &str) -> Option<i64> {
+pub(super) fn historical_state_number(id: &str) -> Option<i64> {
     id.strip_prefix("f3d:history-input:state#")?
         .rsplit_once(':')?
         .1
@@ -878,14 +878,14 @@ fn historical_state_number(id: &str) -> Option<i64> {
         .ok()
 }
 
-fn inserts_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
+pub(super) fn inserts_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
     state
         .transition
         .as_ref()
         .is_some_and(|transition| transition.topology.bodies.inserted.contains(&slot))
 }
 
-fn updates_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
+pub(super) fn updates_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
     state
         .transition
         .as_ref()
@@ -894,7 +894,7 @@ fn updates_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> boo
 
 /// The one ASM history that holds the result and input states of `scope`: its
 /// bound history, else the unique history with that state pair.
-fn scope_state_history<'h>(
+pub(super) fn scope_state_history<'h>(
     scope: &crate::records::feature::scope::DesignParameterScope,
     scope_histories: &HashMap<String, String>,
     histories: &'h [AsmHistory],
@@ -918,7 +918,7 @@ fn scope_state_history<'h>(
 
 /// The ASM history of `scope`: its bound history, else the unique history
 /// with its state pair, else the unique history with its result state.
-fn scope_history<'h>(
+pub(super) fn scope_history<'h>(
     scope: &crate::records::feature::scope::DesignParameterScope,
     scope_histories: &HashMap<String, String>,
     histories: &'h [AsmHistory],
