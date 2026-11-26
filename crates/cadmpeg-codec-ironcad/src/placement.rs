@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Part records of the `Public Access` stream (DR-1067).
+//! Part and assembly records of the `Public Access` stream (`ironcad.md` §5).
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::transform::Transform;

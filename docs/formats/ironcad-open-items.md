@@ -34,18 +34,19 @@ The two ACIS streams of a one-block pair hold the same closed body. The body of 
 
 **Need.** Save the same part from another IronCAD release, and save a part with several bodies, then compare the record headers.
 
-### DR-1067. Part placement and scene structure
+### DR-1067. Assembly membership and part binding
 
-**Question.** Is the matrix of a part record (`ironcad.md` §5) the placement of the part frame in the scene, in the row-vector form `p · R + t` of the feature matrices? Which field binds a part record to its kernel records? Is the matrix of a part inside an assembly relative to the assembly, and which records store the assembly hierarchy?
+**Question.** Which field states the part records that an assembly record holds, and how does an assembly record nest in another assembly? Which field binds a part record to its kernel records?
 
-**Known.** The part records come in the stored order of the part result records of `Brep Data` (DR-1063). The part matrices store the identity 3 × 3 block, and translations such as `(0.06318, -0.04831, 0.01487)` and `(-0.02024, 0.07955, 0.05932)` m. A part at the scene origin stores the identity matrix. Two part records before an assembly record store translations `(-0.11908, 0.098, 0.02891)` and `(-0.11908, 0.098, -0.02109)` m. The result body of the second part is a cylinder of height `0.05` m whose base lies at z = `0` in its part frame, so its top meets the frame origin of the first part. The assembly record stores the identity matrix. The decoder binds each part record to the part result record of the same rank, places that part as an occurrence of the root definition by the row-vector reading of its matrix, and charges `ironcad.placement.bound-by-order`. It transfers no assembly record and charges `ironcad.assembly.flattened`.
+**Known.** The part records come in the stored order of the part result records of `Brep Data` (DR-1063). A part record stores the matrix of its part frame in its parent, and an assembly record stores the matrix of the assembly in the scene (`ironcad.md` §5). An assembly record comes after the part records of its parts. An assembly record that follows two part records holds both. An assembly record that follows five part records holds the last two; the first three are parts of the scene. After the matrix, a part record stores the bytes `ff ff ff ff 00 0b 00 00 00` and an assembly record stores `ff ff ff ff 00 02 00 00 00`. The decoder binds each part record to the part result record of the same rank and charges `ironcad.placement.bound-by-order`. It reads the part records between an assembly record and the previous assembly record as the parts of that assembly, composes each part matrix with the assembly matrix, and charges `ironcad.assembly.membership-by-order`. It places each part as an occurrence of the root definition and charges `ironcad.assembly.flattened`.
 
-**Need.** Save one block part at the scene origin, then the same scene after the part is moved by (20, 30, 50) mm, and then after it is rotated by 30° about Z. Compare the matrix of the part record. Then move an assembly that holds two parts, and compare the matrices of the assembly record and of its part records.
+**Need.** Save a scene with one part, then an assembly of two parts, then a second part added after the assembly. Then put that assembly inside a second assembly. Compare the record order of `Public Access` and the records of `Public Access Data` to find the field that names the parts of each assembly.
 
-### DR-1068. Roles of the unit entries of `Document Data`
+### DR-1068. Role of the second length entry of `Document Data`
 
-**Question.** Which unit entry of `Document Data` is the scene length unit, and what does the second length entry select?
+**Question.** What does the second length entry of `Document Data` select?
 
-**Known.** `Document Data` stores a length entry, an angle entry, a second length entry, and a mass entry (`ironcad.md` §4). In a millimetre scene the first length entry names `Millimeters` with scale `0.001`, and the second names `Centimeters`. The decoder reads the first stated length, angle, and mass entry as the scene unit system and charges `ironcad.units.first-stated`.
+**Known.** `Document Data` stores a length entry, an angle entry, a second length entry, and a mass entry (`ironcad.md` §4). The first length entry is the scene length unit. The second length entry names `Centimeters` in a millimetre scene and in an inch scene. ACIS kernel lengths are centimetres (`ironcad.md` §3.2).
 
-**Need.** Save the block with the scene length unit set to inches, then with the second length unit changed in the unit settings. Compare the entries of `Document Data`.
+**Need.** Change each length unit setting of the scene that does not change the first entry, save after each change, and compare the second length entry of `Document Data`.
+

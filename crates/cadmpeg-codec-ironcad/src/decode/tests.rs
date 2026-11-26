@@ -253,3 +253,40 @@ fn a_history_partition_is_charged_and_retained() {
     assert!(bodies.brep.is_some());
     assert_eq!(bodies.retained.len(), 2);
 }
+
+/// A part or assembly record translated by `z` millimetres.
+fn scene_record(name: &str, has_features: bool, z: f64) -> crate::placement::SceneRecord {
+    crate::placement::SceneRecord {
+        name: name.to_owned(),
+        has_features,
+        transform: cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, z],
+        ]),
+        properties: Vec::new(),
+    }
+}
+
+#[test]
+fn an_assembly_places_the_part_records_since_the_previous_assembly() {
+    let scene = [
+        scene_record("a", true, 1.0),
+        scene_record("first", false, 10.0),
+        scene_record("b", true, 2.0),
+        scene_record("c", true, 3.0),
+        scene_record("second", false, 100.0),
+        scene_record("d", true, 4.0),
+    ];
+    let mut losses = Vec::new();
+    let placed = super::scene_placements(&scene, &mut losses);
+    let heights: Vec<_> = placed
+        .iter()
+        .map(|(_, transform)| transform.unwrap().affine_rows()[2][3])
+        .collect();
+    assert_eq!(heights, [11.0, 102.0, 103.0, 4.0]);
+    assert_eq!(
+        count(&losses, IronCadLossCode::AssemblyMembershipByOrder),
+        1
+    );
+}

@@ -16,6 +16,9 @@ const SCENE: &str = "Ironcad_2025_simple_test_parts.ics";
 const ACIS_BLOCK: &str = "Block_ACIS_100x50x20.ics";
 /// Agreement of a decoded corner with the modelled block dimensions.
 const EPS_POINT_MM: f64 = 1.0e-9;
+/// Agreement of a stored rotation coefficient with the cosine or sine of the
+/// modelled angle.
+const EPS_ROTATION: f64 = 1.0e-12;
 /// Agreement of a converted density with the stored steel density.
 const EPS_DENSITY_KG_PER_MM3: f64 = 1.0e-15;
 
@@ -340,7 +343,6 @@ fn single_part_scenes_place_their_part_at_the_origin() {
 #[test]
 fn part_properties_mass_and_scene_units_are_transferred() {
     let result = decode(SCENE);
-    assert_eq!(count(&result, IronCadLossCode::UnitsFirstStated), 1);
     let model = &result.ir().model;
     let part = model
         .product_definitions
@@ -391,4 +393,81 @@ fn every_face_carries_its_kernel_colour() {
         faces.iter().filter(|face| face.color == beige).count(),
         parasolid_faces
     );
+}
+
+/// The affine rows of the occurrence named `name`.
+fn placement(result: &DecodeResult, name: &str) -> [[f64; 4]; 3] {
+    result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some(name))
+        .unwrap()
+        .transform
+        .unwrap()
+        .affine_rows()
+}
+
+/// Asserts the rotation block and the translation of `rows`.
+fn assert_placement(rows: [[f64; 4]; 3], rotation: [[f64; 3]; 3], translation: [f64; 3]) {
+    for (row, expected) in rows.iter().zip(rotation) {
+        for (value, expected) in row[..3].iter().zip(expected) {
+            assert!((value - expected).abs() <= EPS_ROTATION, "{rows:?}");
+        }
+    }
+    for (row, expected) in rows.iter().zip(translation) {
+        assert!((row[3] - expected).abs() <= EPS_POINT_MM, "{rows:?}");
+    }
+}
+
+const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+#[test]
+fn a_moved_block_is_placed_at_its_translation() {
+    let result = decode("Block_moved.ics");
+    assert_placement(
+        placement(&result, "Block_Parasolid_100x50x20"),
+        IDENTITY,
+        [30.0, -20.0, 10.0],
+    );
+    assert_point_box(&result, [-50.0, -25.0, 0.0, 50.0, 25.0, 20.0]);
+}
+
+#[test]
+fn a_rotated_block_is_turned_30_degrees_about_z() {
+    let result = decode("Block_rotated.ics");
+    let (sin, cos) = 30.0_f64.to_radians().sin_cos();
+    assert_placement(
+        placement(&result, "Block_Parasolid_100x50x20"),
+        [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]],
+        [0.0; 3],
+    );
+}
+
+#[test]
+fn an_assembly_matrix_places_its_member_parts() {
+    let result = decode("Assembly_moved.ics");
+    assert_eq!(
+        count(&result, IronCadLossCode::AssemblyMembershipByOrder),
+        1
+    );
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 1);
+    assert_placement(placement(&result, "Part1"), IDENTITY, [30.0, -20.0, 10.0]);
+    assert_placement(placement(&result, "Part2"), IDENTITY, [30.0, -20.0, 35.0]);
+}
+
+#[test]
+fn an_inch_scene_states_inch_units() {
+    let result = decode("Block_inch.ics");
+    let root = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    let units = root.units.as_ref().unwrap();
+    assert_eq!(units.length, cadmpeg_ir::design::units::UnitSymbol::In);
+    assert_point_box(&result, [-50.8, -25.4, 0.0, 50.8, 25.4, 25.4]);
 }

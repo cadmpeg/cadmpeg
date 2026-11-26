@@ -97,7 +97,9 @@ an angle unit, a second length unit, and a mass unit. An entry is an f64 scale
 to the SI unit, the unit name, the unit abbreviation, and a precision string.
 The strings use the record-name form of §5. A scene in millimetres stores
 `0.001`, `Millimeters`, and `mm`, then `π/180`, `Degrees`, and `deg`, then
-`Centimeters`, then `Kilograms`. Parasolid kernel lengths are in metres.
+`Centimeters`, then `Kilograms`. The first length entry is the scene length
+unit: a scene in inches stores `Inches` there, and its second length entry
+stays `Centimeters`. Parasolid kernel lengths are in metres.
 
 ## 5. Scene records
 
@@ -137,8 +139,14 @@ starts 41 bytes after the end of that string.
 | 41 | 128 | `matrix` | Sixteen little-endian f64 values in row order. |
 
 Rows 1 to 3 of `matrix` hold a 3 × 3 block and the value `0`. Row 4 holds a
-translation in metres and the value `1`.
+translation in metres and the value `1`. The matrix of a part record places
+the part frame in the frame of its parent: a point `p` of the part frame lies
+at `p · R + t`, where `R` is the 3 × 3 block and `t` the translation. The
+parent of a part that an assembly holds is that assembly, and the matrix of an
+assembly record places the assembly in the scene in the same form. A part at
+the scene origin stores the identity matrix. A part turned by 30° about the
+scene Z axis stores the rows `(cos 30°, sin 30°, 0)` and `(-sin 30°, cos 30°, 0)`
+in the first two rows of `R`.
 
 `Shape Data` holds one matrix of the same form for each feature. It maps a
-point of the feature body to the part frame as `p · R + t`, where `R` is the
-3 × 3 block and `t` the translation.
+point of the feature body to the part frame as `p · R + t`.
