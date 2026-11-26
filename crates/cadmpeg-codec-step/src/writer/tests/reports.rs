@@ -1942,18 +1942,20 @@ fn procedural_construction_reduction_is_reported() {
 
 #[test]
 fn source_native_record_reduction_is_reported() {
+    use cadmpeg_core::nonblank_literal;
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.native
+    let arenas = ir
+        .native
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
-        .arenas_mut()
-        .insert(
-            cadmpeg_core::nonblank_literal!("asm_histories"),
-            vec![cadmpeg_ir::NativeRecord::new(
-                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-                Default::default(),
-            )
-            .expect("valid native identity")],
-        );
+        .arenas_mut();
+    for (arena, id) in [
+        (nonblank_literal!("asm_histories"), "f3d:test:asm-history#0"),
+        (nonblank_literal!("unknowns"), "f3d:test:unknown#0"),
+    ] {
+        let id = cadmpeg_ir::ids::Identity::new(id).expect("valid identity");
+        let record = cadmpeg_ir::NativeRecord::new(id, Default::default());
+        arenas.insert(arena, vec![record.expect("valid native identity")]);
+    }
     ir.finalize();
 
     let mut buf = Vec::new();
@@ -1964,8 +1966,15 @@ fn source_native_record_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            .contains("source-native record(s) were not represented in STEP")
-    }));
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // A given-up part's `unknowns` stub incurs no omission loss.
+    assert_eq!(
+        omitted,
+        ["the STEP write omits 1 native record(s) of `f3d` arena `asm_histories` which the STEP writer does not write: f3d:test:asm-history#0"]
+    );
 }

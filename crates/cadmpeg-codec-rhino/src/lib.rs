@@ -170,6 +170,7 @@ impl CodecBackend for RhinoCodec {
 
 impl EncoderBackend for RhinoCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "Rhino";
     /// Writes B-rep, meshes and placements only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;

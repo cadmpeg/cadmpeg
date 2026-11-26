@@ -5,7 +5,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeInput, ExportBody, NativeDispositions, WritePath,
 };
 
 use crate::export::write_step_outcome;
@@ -65,6 +65,8 @@ pub(crate) fn plan(
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(coverage(schema)),
+        // STEP holds no native record of any format.
+        native: NativeDispositions::dropped("which the STEP writer does not write"),
         losses,
         notes: outcome.notes,
         written_row: None,

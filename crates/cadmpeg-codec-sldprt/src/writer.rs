@@ -2144,7 +2144,7 @@ fn opaque_blocks(
             continue;
         }
         let Some(data) = record.data else {
-            unavailable.push(format!("{section} ({})", record.id.as_str()));
+            unavailable.push(format!("{} ({section})", record.id.as_str()));
             continue;
         };
         let mut payload = data.to_vec();
@@ -2207,7 +2207,7 @@ struct OpaqueBlocks {
     /// members the write generates for it.
     replaced: Vec<String>,
     /// Each retained block whose bytes the source fidelity does not hold,
-    /// as its stream and id.
+    /// as its id and stream.
     unavailable: Vec<String>,
     /// The losses of the edited records that keep their stored bytes.
     kept_edits: Vec<cadmpeg_ir::report::loss::LossNote>,

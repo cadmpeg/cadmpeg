@@ -80,6 +80,7 @@ struct PerFileEncoder;
 
 impl EncoderBackend for PerFileEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = false;
     const DEFINITION_PER_FILE: bool = true;
@@ -122,6 +123,7 @@ impl EncoderBackend for PerFileEncoder {
                 product_definitions: ArenaDisposition::Omitted,
                 ..uniform_dispositions(ArenaDisposition::Written)
             }),
+            crate::codec::write::NativeDispositions::written(),
         ))
     }
 }
@@ -296,6 +298,7 @@ struct HeldRecordsEncoder {
 
 impl EncoderBackend for HeldRecordsEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = false;
     const DEFINITION_PER_FILE: bool = true;
@@ -334,6 +337,7 @@ impl EncoderBackend for HeldRecordsEncoder {
             payload.into_bytes(),
             input.ir,
             ArenaCoverage::Complete,
+            crate::codec::write::NativeDispositions::written(),
         ))
     }
 }

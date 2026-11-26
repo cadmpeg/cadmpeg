@@ -13,8 +13,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::open_edge_ranges;
 use cadmpeg_ir::codec::write::{
-    native_records_omitted, output_empty, record_invalid, ArenaCoverage, ArenaDisposition,
-    ArenaDispositions, ExportBody, WritePath,
+    output_empty, record_invalid, ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody,
+    NativeDispositions, WritePath,
 };
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
@@ -30,7 +30,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{BodyId, CoedgeId, CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::{
     export::{CensusBasis, EntityCensus},
     loss::LossNote,
@@ -54,22 +53,6 @@ use records::{ModelRecords, TopologyIndex};
 const EPS_WRITE_POSITION: f64 = 1.0e-8;
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
-const ALLOWED_NATIVE_ARENAS: &[&str] = &[
-    "boundary_vertex_sewing",
-    "cards",
-    "copious_data",
-    "directions",
-    "display_attributes",
-    "entities",
-    // Type 186 sits in this writer's encodable entity-type list and
-    // `brep_entities` emits complete 186 records, void pairs included, so
-    // the typed arena never blocks a semantic write.
-    "manifold_solids",
-    "product_occurrence_expansion",
-    "quarantined_directory_records",
-    "quarantined_parameter_records",
-    "transformations",
-];
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // Roundoff guard for geometric plane classification. This is not serialized
 // as an IGES tolerance and never supplies a normal for a non-unique plane.
@@ -163,10 +146,12 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 
 mod covered_uses;
 mod degrade;
+mod dispositions;
 use degrade::{named, naming, Unwritten};
 mod exact;
 mod placement;
 mod rational_support;
+mod source_global;
 pub(crate) mod target;
 mod turn_cut;
 mod unjoined;
@@ -175,6 +160,7 @@ fn body(
     bytes: Vec<u8>,
     write_path: WritePath,
     coverage: ArenaCoverage,
+    native: NativeDispositions,
     losses: Vec<LossNote>,
     note: &str,
     counts: BTreeMap<String, usize>,
@@ -188,6 +174,7 @@ fn body(
         },
         write_path,
         coverage,
+        native,
         losses,
         notes: vec![note.into()],
         written_row: None,
@@ -288,6 +275,8 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
 struct Synthesis {
     bytes: Vec<u8>,
     counts: BTreeMap<String, usize>,
+    /// The entities the file holds, each with the neutral records it states.
+    entities: Vec<Entity>,
     losses: Vec<LossNote>,
 }
 
@@ -397,6 +386,7 @@ fn append_color_definitions(
             )
             .into_bytes(),
             transform: None,
+            restates: Vec::new(),
         });
         presentation.color = BodyColor::Definition(entity_index);
     }
@@ -442,6 +432,7 @@ fn append_name_properties(
         owner
             .parameter_body
             .extend_from_slice(format!(",0,1,{next_sequence};").as_bytes());
+        let restates = owner.restates.clone();
         entities.push(Entity {
             type_code: 406,
             form: 15,
@@ -449,6 +440,7 @@ fn append_name_properties(
             status: EntityStatus::PhysicallyDependent,
             parameter_body: format!("1,{}H{name};", name.len()).into_bytes(),
             transform: None,
+            restates,
         });
         next_sequence = next_sequence.checked_add(2).ok_or_else(|| {
             CodecError::NotImplemented("IGES directory sequence overflows".into())
@@ -511,7 +503,6 @@ fn synthesize(
     losses.extend(placement_losses);
     losses.extend(unbounded_analytic);
     losses.extend(procedural_reduction_losses(ir)?);
-    losses.extend(native_record_losses(ir));
     for body in ir
         .geometry
         .bodies
@@ -621,8 +612,10 @@ fn synthesize(
                 "surface",
                 surface.id.as_str(),
                 |entities, losses| {
-                    append_surface_entities(ctx, entities, ir, surface, version, &ownership, losses)
-                        .map(|_| ())
+                    append_surface_entities(
+                        ctx, entities, ir, surface, version, &ownership, losses,
+                    )?;
+                    Ok(())
                 },
             )?;
         }
@@ -700,9 +693,18 @@ fn synthesize(
         losses.push(loss);
     }
     let counts = entity_counts(&entities);
+    let bytes = encode_file(
+        &entities,
+        &body_presentations,
+        version,
+        minimum_resolution,
+        &source_global::GlobalRestatement::of(ir, version),
+        &mut losses,
+    )?;
     Ok(Synthesis {
-        bytes: encode_file(&entities, &body_presentations, version, minimum_resolution)?,
+        bytes,
         counts,
+        entities,
         losses,
     })
 }
@@ -847,7 +849,7 @@ fn append_free_edge(
     }
     let geometry = flatten_curve(solved_curve(curve)?)?;
     let span = edge_span(ctx, index, edge, &geometry)?;
-    append_curve_entity(
+    let curve_index = append_curve_entity(
         ctx,
         entities,
         ir,
@@ -862,9 +864,13 @@ fn append_free_edge(
         },
     )?;
     mark_curve_descendants(ir, curve_id, consumed_curves, &mut BTreeSet::new())?;
+    let mut restated = vec![edge.id.as_str().to_owned()];
     for vertex in edge.vertices() {
-        consumed_points.insert(vertex_point_id(index, vertex)?);
+        let point = vertex_point_id(index, vertex)?;
+        consumed_points.insert(point.clone());
+        restated.push(point.as_str().to_owned());
     }
+    entities[curve_index].restates.extend(restated);
     Ok(())
 }
 
@@ -2367,6 +2373,7 @@ fn brep_entities(
                 status: EntityStatus::PhysicallyDependent,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
+                restates: vertex_ids.clone(),
             });
 
             let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
@@ -2407,6 +2414,7 @@ fn brep_entities(
                     status: EntityStatus::PhysicallyDependentEdgeList,
                     parameter_body: parameters.into_bytes(),
                     transform: None,
+                    restates: edge_ids.clone(),
                 });
                 Some(index)
             };
@@ -2550,6 +2558,7 @@ fn brep_entities(
                     status: EntityStatus::PhysicallyDependent,
                     parameter_body: parameters.into_bytes(),
                     transform: None,
+                    restates: vec![loop_id.as_str().to_owned()],
                 });
                 loop_indices.insert(loop_id.as_str().to_owned(), index);
             }
@@ -2584,6 +2593,7 @@ fn brep_entities(
                     status: EntityStatus::PhysicallyDependent,
                     parameter_body: parameters.into_bytes(),
                     transform: None,
+                    restates: vec![face_id.as_str().to_owned()],
                 });
                 face_indices.insert(face_id.as_str().to_owned(), index);
             }
@@ -2629,6 +2639,7 @@ fn brep_entities(
                     },
                     parameter_body: parameters.into_bytes(),
                     transform: None,
+                    restates: vec![shell.id.as_str().to_owned()],
                 });
                 if body.kind == BodyKind::Sheet {
                     body_presentations.insert(index, body_presentation(body, losses));
@@ -2672,6 +2683,7 @@ fn brep_entities(
                     status: EntityStatus::Independent,
                     parameter_body: parameters.into_bytes(),
                     transform,
+                    restates: vec![body.id.as_str().to_owned()],
                 });
                 body_presentations.insert(index, body_presentation(body, losses));
             }
@@ -3183,8 +3195,11 @@ fn topology_entities(
                 })?;
             let geometry = flatten_curve(solved_curve(curve)?)?;
             mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
+            let mut restated = vec![edge.id.as_str().to_owned()];
             for vertex in edge.vertices() {
-                consumed_points.insert(vertex_point_id(index, vertex)?.as_str().to_owned());
+                let point = vertex_point_id(index, vertex)?.as_str().to_owned();
+                consumed_points.insert(point.clone());
+                restated.push(point);
             }
             let Some(form) = stored_edges.get(edge.id.as_str()) else {
                 return Ok(());
@@ -3207,6 +3222,15 @@ fn topology_entities(
                     append_curve_constituents(ctx, &mut entities, ir, request)?,
                 ),
             };
+            let stored_indices = match &stored {
+                StoredEdgeCurve::Whole(index) => vec![*index],
+                StoredEdgeCurve::Constituents(indices) => indices.clone(),
+            };
+            for stored_index in stored_indices {
+                entities[stored_index]
+                    .restates
+                    .extend(restated.iter().cloned());
+            }
             edge_indices.insert(edge.id.as_str().to_owned(), stored);
             Ok(())
         })?;
@@ -3273,6 +3297,8 @@ fn topology_entities(
             })
         })?;
         let index = entities.len();
+        let mut entity = entity;
+        entity.restates.push(boundary.loop_.id.as_str().to_owned());
         entities.push(entity);
         let indices = if boundary.trimmed {
             &mut curve_on_surface_indices
@@ -3366,6 +3392,7 @@ fn topology_entities(
                 status: EntityStatus::Independent,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
+                restates: vec![face.id.as_str().to_owned()],
             });
             body_presentations.insert(index, body_presentation(body, losses));
             Ok(())
@@ -4178,6 +4205,7 @@ fn boundary_entity(
         status: EntityStatus::PhysicallyDependent,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        restates: Vec::new(),
     })
 }
 
@@ -4320,6 +4348,7 @@ fn curve_on_surface_entity(
         )
         .into_bytes(),
         transform: None,
+        restates: Vec::new(),
     })
 }
 
@@ -4362,6 +4391,7 @@ fn push_composite_entity_with_reference_offset(
         status,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        restates: Vec::new(),
     });
     Ok(index)
 }
@@ -4817,6 +4847,7 @@ fn oriented_pcurve_entity(
     index: &TopologyIndex<'_>,
     pcurve: &Pcurve,
 ) -> Result<Entity, CodecError> {
+    let id = pcurve.id.as_str();
     let pcurve = source_pcurve(ctx, index, pcurve)?;
     let range = pcurve.parameter_range().ok_or_else(|| {
         CodecError::NotImplemented(format!(
@@ -4826,7 +4857,9 @@ fn oriented_pcurve_entity(
     })?;
     let nurbs = lifted_pcurve(&pcurve, range)?;
     let (reversed, range) = reverse_nurbs(&nurbs, range)?;
-    encode_nurbs(ctx, &reversed, range, "PCURVE")
+    let mut entity = encode_nurbs(ctx, &reversed, range, "PCURVE")?;
+    entity.restates.push(id.to_owned());
+    Ok(entity)
 }
 
 fn reverse_nurbs(
@@ -4864,6 +4897,7 @@ fn pcurve_entity(
     index: &TopologyIndex<'_>,
     pcurve: &Pcurve,
 ) -> Result<Entity, CodecError> {
+    let id = pcurve.id.as_str();
     let pcurve = source_pcurve(ctx, index, pcurve)?;
     let range = pcurve.parameter_range().ok_or_else(|| {
         CodecError::NotImplemented(format!(
@@ -4871,7 +4905,9 @@ fn pcurve_entity(
             pcurve.id
         ))
     })?;
-    encode_nurbs(ctx, &lifted_pcurve(&pcurve, range)?, range, "PCURVE")
+    let mut entity = encode_nurbs(ctx, &lifted_pcurve(&pcurve, range)?, range, "PCURVE")?;
+    entity.restates.push(id.to_owned());
+    Ok(entity)
 }
 
 /// The pcurve as a NURBS curve in the plane z = 0 that keeps its
@@ -5527,369 +5563,6 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), Unwritten> {
     Ok(())
 }
 
-fn represented_name_properties(
-    ir: &CadIr,
-    namespace: &NativeNamespace,
-) -> Option<BTreeSet<String>> {
-    let product_properties = namespace.arenas().get("product_properties");
-    let properties = namespace.arenas().get("properties");
-    if product_properties.is_none_or(Vec::is_empty) && properties.is_none_or(Vec::is_empty) {
-        return Some(BTreeSet::new());
-    }
-    let native_entities = namespace
-        .arenas()
-        .get("entities")
-        .into_iter()
-        .flatten()
-        .map(|record| (record.id(), record))
-        .collect::<BTreeMap<_, _>>();
-    let named_bodies = ir
-        .geometry
-        .bodies
-        .iter()
-        .filter(|body| body.name.is_some())
-        .map(|body| body.id.clone())
-        .collect::<BTreeSet<_>>();
-    let mut product_sources = BTreeSet::new();
-    let mut application_sources = BTreeSet::new();
-    for (records, sources) in [
-        (product_properties, &mut product_sources),
-        (properties, &mut application_sources),
-    ] {
-        for record in records.into_iter().flatten() {
-            if record.field("form").and_then(|value| value.as_i64()) != Some(15) {
-                return None;
-            }
-            let source = record
-                .field("source_entity")
-                .and_then(|value| value.as_str().map(str::to_owned));
-            let value = record.field("value");
-            let owners = record.field("owners");
-            let represented = source.as_ref().is_some_and(|source| {
-                native_entities.get(source.as_str()).is_some_and(|entity| {
-                    entity.field("entity_type").and_then(|value| value.as_i64()) == Some(406)
-                        && entity.field("form").and_then(|value| value.as_i64()) == Some(15)
-                })
-            }) && value
-                .as_ref()
-                .and_then(|value| {
-                    <cadmpeg_ir::native::bytes::NativeBytes as serde::Deserialize>::deserialize(
-                        value,
-                    )
-                    .ok()
-                })
-                .is_some_and(|bytes| {
-                    !bytes.is_empty()
-                        && bytes
-                            .iter()
-                            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-                })
-                && record
-                    .field("property_kind")
-                    .is_some_and(|value| value.as_str() == Some("name"))
-                && record
-                    .field("declared_value_count")
-                    .is_none_or(|value| value.as_i64() == Some(1))
-                && owners
-                    .as_ref()
-                    .and_then(|value| value.as_array())
-                    .is_some_and(|owners| {
-                        !owners.is_empty()
-                            && owners.iter().all(|owner| {
-                                let Some(owner_id) = owner.as_str() else {
-                                    return false;
-                                };
-                                let Some(sequence) = owner_id
-                                    .strip_prefix("iges:entity:directory#")
-                                    .and_then(|sequence| sequence.parse::<u32>().ok())
-                                else {
-                                    return false;
-                                };
-                                if !native_entities.contains_key(owner_id) {
-                                    return false;
-                                }
-                                let stems = [
-                                    crate::ids::Stem::directory(sequence),
-                                    crate::ids::Stem::word_directory(
-                                        crate::ids::Word::BoundedPlane,
-                                        sequence,
-                                    ),
-                                    crate::ids::Stem::word_directory(
-                                        crate::ids::Word::LegacySingleParent,
-                                        sequence,
-                                    ),
-                                ];
-                                stems
-                                    .iter()
-                                    .any(|stem| named_bodies.contains(&crate::ids::body(stem)))
-                            })
-                    });
-            if !represented {
-                return None;
-            }
-            if let Some(source) = source {
-                sources.insert(source);
-            }
-        }
-    }
-    if product_sources != application_sources {
-        return None;
-    }
-    Some(product_sources)
-}
-
-fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
-    if record.field("entity_type").and_then(|value| value.as_i64()) != Some(110) {
-        return false;
-    }
-    let Some(parameters) = record
-        .field("parameters")
-        .and_then(|value| value.as_array().cloned())
-    else {
-        return false;
-    };
-    let mut endpoints = [0.0; 6];
-    for (slot, parameter) in parameters.iter().skip(1).take(6).enumerate() {
-        let Some(number) = parameter
-            .get("value")
-            .and_then(|value| value.get("value"))
-            .and_then(serde_json::Value::as_f64)
-        else {
-            return false;
-        };
-        endpoints[slot] = number;
-    }
-    endpoints[0] == endpoints[3] && endpoints[1] == endpoints[4] && endpoints[2] == endpoints[5]
-}
-
-fn native_record_losses(ir: &CadIr) -> Vec<LossNote> {
-    let Some(namespace) = ir.native.namespace("iges") else {
-        return Vec::new();
-    };
-    let represented_name_properties = represented_name_properties(ir, namespace);
-    let mut losses = Vec::new();
-    let mut omitted_property_sources = BTreeSet::new();
-    if represented_name_properties.is_none() {
-        for arena in ["product_properties", "properties"] {
-            let Some(records) = namespace.arenas().get(arena) else {
-                continue;
-            };
-            if records.is_empty() {
-                continue;
-            }
-            for record in records {
-                if let Some(source) = record
-                    .field("source_entity")
-                    .and_then(|value| value.as_str().map(str::to_owned))
-                {
-                    omitted_property_sources.insert(source);
-                }
-            }
-            losses.push(IgesLossCode::PassthroughRecordOmitted.note(format!(
-                "IGES native arena {arena} holds {} name-property record(s) that the semantic writer omits; body names transfer through the neutral model",
-                records.len()
-            )));
-        }
-    }
-    // W1: a native record the semantic writer does not encode is dropped and
-    // named, never refused for.
-    for (arena, records) in namespace.arenas() {
-        if ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
-            || matches!(arena.as_str(), "product_properties" | "properties")
-        {
-            continue;
-        }
-        losses.extend(native_records_omitted(
-            "IGES",
-            &format!("of native arena `{arena}`, which the semantic writer does not encode"),
-            records.iter().map(|record| record.id().to_owned()),
-        ));
-    }
-    let unencoded_entities = namespace
-        .arenas()
-        .get("entities")
-        .into_iter()
-        .flatten()
-        .filter(|record| {
-            let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
-            let name_property_represented = represented_name_properties
-                .as_ref()
-                .is_some_and(|properties| properties.contains(record.id()));
-            (entity_type == Some(406)
-                && !name_property_represented
-                && !omitted_property_sources.contains(record.id()))
-                || !matches!(
-                    entity_type,
-                    Some(
-                        100 | 102
-                            | 104
-                            | 106
-                            | 108
-                            | 110
-                            | 112
-                            | 114
-                            | 116
-                            | 118
-                            | 120
-                            | 122
-                            | 123
-                            | 124
-                            | 126
-                            | 128
-                            | 130
-                            | 141
-                            | 142
-                            | 143
-                            | 144
-                            | 140
-                            | 190
-                            | 192
-                            | 194
-                            | 196
-                            | 198
-                            | 186
-                            | 406
-                            | 502
-                            | 504
-                            | 508
-                            | 510
-                            | 514,
-                    )
-                )
-        })
-        .map(|record| record.id().to_owned());
-    losses.extend(native_records_omitted(
-        "IGES",
-        "whose entity the semantic writer does not encode",
-        unencoded_entities,
-    ));
-    let mut native_entities = namespace.arenas().get("entities").into_iter().flatten();
-    let mut without_geometry = Vec::new();
-    let mut without_sequence = Vec::new();
-    let directory_sequence = |record: &cadmpeg_ir::native::NativeRecord| {
-        record
-            .field("directory_sequence")
-            .and_then(|value| value.as_i64())
-            .and_then(|value| u32::try_from(value).ok())
-    };
-    for record in native_entities.clone().filter(|record| {
-        let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
-        let form = record.field("form").and_then(|value| value.as_i64());
-        matches!(entity_type, Some(100 | 102 | 104 | 110 | 112 | 126 | 130))
-            || (entity_type == Some(106) && matches!(form, Some(1..=3 | 11..=13 | 63)))
-    }) {
-        if degenerate_native_line(record) {
-            losses.push(IgesLossCode::PassthroughRecordOmitted.note(format!(
-                "IGES native line {} has coincident endpoints; the semantic writer omits zero-length lines",
-                record.id()
-            )));
-            continue;
-        }
-        let Some(sequence) = directory_sequence(record) else {
-            without_sequence.push(record.id().to_owned());
-            continue;
-        };
-        let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
-        if !ir.geometry.curves.iter().any(|curve| {
-            curve.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::codec_id!("iges")
-                    && source.object_id.as_str() == object_id
-            })
-        }) {
-            without_geometry.push(record.id().to_owned());
-        }
-    }
-    for record in native_entities.clone().filter(|record| {
-        record.field("entity_type").and_then(|value| value.as_i64()) == Some(116)
-            && record
-                .field("subordinate_status")
-                .and_then(|value| value.as_i64())
-                != Some(1)
-    }) {
-        let Some(sequence) = directory_sequence(record) else {
-            without_sequence.push(record.id().to_owned());
-            continue;
-        };
-        let point_id = format!("iges:model:point#D{sequence}");
-        if !ir
-            .geometry
-            .points
-            .iter()
-            .any(|point| point.id.as_str() == point_id)
-        {
-            without_geometry.push(record.id().to_owned());
-        }
-    }
-    for record in native_entities.clone().filter(|record| {
-        matches!(
-            record.field("entity_type").and_then(|value| value.as_i64()),
-            Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
-        )
-    }) {
-        let Some(sequence) = directory_sequence(record) else {
-            without_sequence.push(record.id().to_owned());
-            continue;
-        };
-        let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
-        if !ir.geometry.surfaces.iter().any(|surface| {
-            surface.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::codec_id!("iges")
-                    && source.object_id.as_str() == object_id
-            })
-        }) {
-            without_geometry.push(record.id().to_owned());
-        }
-    }
-    let has_native_topology = native_entities.any(|record| {
-        matches!(
-            record.field("entity_type").and_then(|value| value.as_i64()),
-            Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
-        )
-    });
-    losses.extend(native_records_omitted(
-        "IGES",
-        "whose entity has no neutral geometry for the semantic writer to encode",
-        without_geometry,
-    ));
-    losses.extend(native_records_omitted(
-        "IGES",
-        "whose record states no Directory sequence that ties it to a neutral geometry record",
-        without_sequence,
-    ));
-    if has_native_topology && !has_trimmed_sheet_topology(ir) {
-        losses.push(IgesLossCode::PassthroughRecordOmitted.note(
-            "IGES native topology records have no neutral projection; the semantic writer omits unprojected trimming".to_owned(),
-        ));
-    }
-    for (arena, records) in namespace.arenas() {
-        if records.is_empty() {
-            continue;
-        }
-        let message = match arena.as_str() {
-            "directions" => {
-                "IGES direction records are regenerated only for required \
-                 analytic-surface support; native direction identities and unrelated \
-                 records are omitted".to_owned()
-            }
-            "display_attributes" => {
-                "IGES display attributes are not regenerated by the bounded semantic writer".to_owned()
-            }
-            "product_occurrence_expansion" => {
-                "IGES product occurrence expansion is not regenerated by the bounded semantic writer".to_owned()
-            }
-            "quarantined_directory_records" | "quarantined_parameter_records" => format!(
-                "IGES native arena {arena} holds {} quarantined record(s) that the \
-                 bounded semantic writer does not regenerate, because a record that \
-                 failed typing has no fields to write",
-                records.len()
-            ),
-            _ => continue,
-        };
-        losses.push(IgesLossCode::PassthroughRecordOmitted.note(message));
-    }
-    losses
-}
-
 #[derive(Clone, Copy)]
 struct Placement {
     rows: [[FiniteReal; 4]; 3],
@@ -5955,18 +5628,23 @@ fn report_unowned_support(losses: &mut Vec<LossNote>, id: &str) {
     losses.push(code.note(message));
 }
 
+/// Writes `point` as a Type 116 entity and returns whether it did; a
+/// physically dependent point is withheld with a loss.
 fn append_free_point_entity(
     entities: &mut Vec<Entity>,
     point: &cadmpeg_ir::topology::Point,
     ownership: &ownership::SourceOwnership<'_>,
     losses: &mut Vec<LossNote>,
-) {
+) -> bool {
     let status = ownership.status(point.source_object.as_ref());
     if status.is_physically_dependent() {
         report_unowned_support(losses, point.id.as_str());
-        return;
+        return false;
     }
-    entities.push(point_entity_with_status(point.position(), status));
+    let mut entity = point_entity_with_status(point.position(), status);
+    entity.restates.push(point.id.as_str().to_owned());
+    entities.push(entity);
+    true
 }
 
 fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Entity {
@@ -5978,6 +5656,7 @@ fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Ent
         status,
         parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
+        restates: Vec::new(),
     }
 }
 
@@ -5994,6 +5673,7 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         status: EntityStatus::PhysicallyDependent,
         parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
+        restates: Vec::new(),
     })
 }
 
@@ -6070,8 +5750,12 @@ fn append_surface_entities(
     };
     let base_index = entities.len();
     let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
+    restate(&mut additions, surface.id.as_str());
     if let Some(entity) = additions.last_mut() {
         entity.status = status;
+        entity
+            .restates
+            .extend(native_construction_curves(ir, surface)?);
     }
     let surface_offset = additions
         .len()
@@ -6301,6 +5985,7 @@ fn extrusion_surface_entities(
         )
         .into_bytes(),
         transform: None,
+        restates: Vec::new(),
     });
     Ok(entities)
 }
@@ -6514,6 +6199,7 @@ fn revolution_surface_entities(
             )
             .into_bytes(),
             transform: None,
+            restates: Vec::new(),
         },
     ])
 }
@@ -6543,6 +6229,7 @@ fn surface_entities(
                     status: EntityStatus::Independent,
                     parameter_body: b"0,0,1,0,0,0,0,0,0;".to_vec(),
                     transform: Some(placement(origin, u_axis, v_axis)?),
+                    restates: Vec::new(),
                 }]);
             }
             let (mut entities, location, axis, reference) =
@@ -6562,6 +6249,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                restates: Vec::new(),
             });
             Ok(entities)
         }
@@ -6589,6 +6277,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                restates: Vec::new(),
             };
             entities.push(surface);
             Ok(entities)
@@ -6629,6 +6318,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                restates: Vec::new(),
             };
             entities.push(surface);
             Ok(entities)
@@ -6661,6 +6351,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                restates: Vec::new(),
             };
             entities.push(surface);
             Ok(entities)
@@ -6692,6 +6383,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                restates: Vec::new(),
             };
             entities.push(surface);
             Ok(entities)
@@ -6817,6 +6509,7 @@ fn encode_nurbs_surface(
         status: EntityStatus::Independent,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        restates: Vec::new(),
     })
 }
 
@@ -6997,6 +6690,7 @@ impl CurveEntityEmitter<'_> {
                 "IGES composite curve graph contains a cycle at {curve_id}"
             )));
         }
+        let start = self.entities.len();
         let result = match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let children = self.append_composite_constituents(segments, sense)?;
@@ -7040,6 +6734,9 @@ impl CurveEntityEmitter<'_> {
             }
         };
         self.active.remove(curve_id);
+        if result.is_ok() {
+            restate(&mut self.entities[start..], curve_id.as_str());
+        }
         result
     }
 
@@ -7339,67 +7036,79 @@ fn mark_native_construction_curves<'ir>(
     consumed: &mut BTreeSet<String>,
 ) -> Result<(), CodecError> {
     for surface in surfaces {
-        let SurfaceGeometry::Procedural {
-            construction,
-            cache: None,
-        } = &surface.geometry
-        else {
-            continue;
-        };
-        let Some(procedural) = ir
-            .geometry
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.id == *construction)
-        else {
-            continue;
-        };
-        let directrix = match procedural.definition() {
-            ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-                definition_payload.directrix()
-            }
-            ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-                definition_payload.directrix()
-            }
-            _ => continue,
-        };
-        let placement = ir
-            .geometry
-            .curves
-            .iter()
-            .find(|curve| curve.id == *directrix)
-            .and_then(|curve| match curve.geometry.solved() {
-                Some(SolvedCurveGeometry::Transformed(placed)) => Some(placed),
-                _ => None,
-            });
-        let mut curves = vec![directrix];
-        if let Some(placed) = placement {
-            curves.extend(
-                ir.geometry
-                    .curves
-                    .iter()
-                    .filter(|curve| {
-                        is_support_curve(curve) && curve.geometry.solved() == Some(placed.basis())
-                    })
-                    .map(|curve| &curve.id),
-            );
-        }
-        if let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition()
-        {
-            if let Some(axis) = revolution_axis_curve(
-                ir,
-                definition_payload.axis_origin().get(),
-                *definition_payload.axis_direction().as_raw(),
-                placement.map(cadmpeg_ir::geometry::PlacedCurve::transform),
-            ) {
-                curves.push(&axis.id);
-            }
-        }
-        for curve in curves {
-            mark_curve_descendants(ir, curve, consumed, &mut BTreeSet::new())?;
-        }
+        consumed.extend(native_construction_curves(ir, surface)?);
     }
     Ok(())
+}
+
+/// The curves a written procedural surface states again, with every curve
+/// their composite segments name: the directrix of a revolution or
+/// extrusion, the support curves of its placed basis, and the support line
+/// that is the axis of a revolution.
+fn native_construction_curves(
+    ir: &CadIr,
+    surface: &Surface,
+) -> Result<BTreeSet<String>, CodecError> {
+    let mut found = BTreeSet::new();
+    let SurfaceGeometry::Procedural {
+        construction,
+        cache: None,
+    } = &surface.geometry
+    else {
+        return Ok(found);
+    };
+    let Some(procedural) = ir
+        .geometry
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)
+    else {
+        return Ok(found);
+    };
+    let directrix = match procedural.definition() {
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            definition_payload.directrix()
+        }
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            definition_payload.directrix()
+        }
+        _ => return Ok(found),
+    };
+    let placement = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|curve| curve.id == *directrix)
+        .and_then(|curve| match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Transformed(placed)) => Some(placed),
+            _ => None,
+        });
+    let mut curves = vec![directrix];
+    if let Some(placed) = placement {
+        curves.extend(
+            ir.geometry
+                .curves
+                .iter()
+                .filter(|curve| {
+                    is_support_curve(curve) && curve.geometry.solved() == Some(placed.basis())
+                })
+                .map(|curve| &curve.id),
+        );
+    }
+    if let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition() {
+        if let Some(axis) = revolution_axis_curve(
+            ir,
+            definition_payload.axis_origin().get(),
+            *definition_payload.axis_direction().as_raw(),
+            placement.map(cadmpeg_ir::geometry::PlacedCurve::transform),
+        ) {
+            curves.push(&axis.id);
+        }
+    }
+    for curve in curves {
+        mark_curve_descendants(ir, curve, &mut found, &mut BTreeSet::new())?;
+    }
+    Ok(found)
 }
 
 /// Whether the source states `curve` as support geometry.
@@ -7462,9 +7171,10 @@ struct UnownedCurves<'a, 'ir> {
 }
 
 /// Writes each curve that no written entity has consumed, in identity order,
-/// and returns the number of `ignored` curves skipped. A physically dependent
-/// entity is valid only under a written parent, so a physically dependent
-/// curve that no written curve consumes is withheld with a loss.
+/// adds each curve it writes to `written`, and returns the number of
+/// `ignored` curves skipped. A physically dependent entity is valid only
+/// under a written parent, so a physically dependent curve that no written
+/// curve consumes is withheld with a loss.
 fn append_unowned_curves(
     ctx: &DecodeContext<'_>,
     request: UnownedCurves<'_, '_>,
@@ -7520,7 +7230,8 @@ fn append_unowned_curves(
                         reference_offset: 0,
                     },
                 )?;
-                mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())
+                mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())?;
+                Ok(())
             },
         )?;
     }
@@ -7841,6 +7552,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: None,
+                restates: Vec::new(),
             })
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -7875,6 +7587,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(center, reference, y_axis)?),
+                restates: Vec::new(),
             })
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
@@ -7922,6 +7635,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(center, major, y_axis)?),
+                restates: Vec::new(),
             })
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
@@ -7951,6 +7665,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(vertex, x_axis, major)?),
+                restates: Vec::new(),
             })
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
@@ -7992,6 +7707,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(center, major, y_axis)?),
+                restates: Vec::new(),
             })
         }
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(ctx, nurbs, range, "NURBS"),
@@ -8108,6 +7824,7 @@ fn encode_nurbs(
         status,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        restates: Vec::new(),
     })
 }
 
@@ -8619,6 +8336,8 @@ struct Entity {
     status: EntityStatus,
     parameter_body: Vec<u8>,
     transform: Option<Placement>,
+    /// The ids of the neutral records this entity states.
+    restates: Vec<String>,
 }
 
 impl Entity {
@@ -8629,11 +8348,23 @@ impl Entity {
     }
 }
 
+/// Adds `id` to the statements of each entity in `entities` that states no
+/// neutral record yet.
+fn restate(entities: &mut [Entity], id: &str) {
+    for entity in entities {
+        if entity.restates.is_empty() {
+            entity.restates.push(id.to_owned());
+        }
+    }
+}
+
 fn encode_file(
     entities: &[Entity],
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
     minimum_resolution: f64,
+    restated: &source_global::GlobalRestatement,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<u8>, CodecError> {
     let generation_timestamp = generation_timestamp(SystemTime::now(), version)?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
@@ -8642,6 +8373,8 @@ fn encode_file(
         &generation_timestamp,
         finite(minimum_resolution, "Global minimum resolution")?,
         finite(maximum_coordinate, "Global maximum coordinate")?,
+        restated,
+        losses,
     );
     let global_cards = crate::global::layout_global_cards(&global)?;
     let global_count = global_cards.len();
@@ -8664,6 +8397,7 @@ fn encode_file(
                     status: EntityStatus::Independent,
                     parameter_body: format!("{transform_parameters};").into_bytes(),
                     transform: None,
+                    restates: Vec::new(),
                 },
                 0_u32,
                 None,
@@ -8826,6 +8560,8 @@ fn generated_global(
     generation_timestamp: &str,
     minimum_resolution: FiniteReal,
     maximum_coordinate: FiniteReal,
+    restated: &source_global::GlobalRestatement,
+    losses: &mut Vec<LossNote>,
 ) -> Vec<u8> {
     let mut fields = vec![
         "1H,".to_owned(),
@@ -8867,6 +8603,15 @@ fn generated_global(
             fields.push(global_hollerith(""));
         }
     }
+    for (number, text) in restated.fields() {
+        if let Some(field) = number
+            .checked_sub(1)
+            .and_then(|index| fields.get_mut(index))
+        {
+            text.clone_into(field);
+        }
+    }
+    losses.extend(restated.losses(&fields));
     let mut global = fields.join(",");
     global.push(';');
     global.into_bytes()

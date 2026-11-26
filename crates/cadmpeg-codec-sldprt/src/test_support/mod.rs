@@ -8,7 +8,8 @@ use std::io::Write;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
+use cadmpeg_ir::report::export::WritePath;
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::SldprtCodec;
 
@@ -22,6 +23,7 @@ struct SessionWrite<'s, 'f> {
 impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::FORMAT;
+    const NAME: &'static str = <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::NAME;
     const REQUEST: cadmpeg_core::decode::DecodeDepth =
         <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::REQUEST;
     const REUSES_SOURCE: bool =

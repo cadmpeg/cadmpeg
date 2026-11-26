@@ -18,7 +18,7 @@ use crate::records::{
 
 use crate::resolved_features::feature_sources::FeatureSources;
 
-const SLDPRT_ARENA_NAMES: &[&str] = &[
+pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
     "feature_histories",
     "feature_input_body_selections",

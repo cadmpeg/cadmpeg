@@ -118,6 +118,7 @@ impl CodecBackend for UsdCodec {
 
 impl EncoderBackend for UsdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "USD";
     /// Writes topology, geometry, tessellations, appearances, and placements;
     /// design arenas are not read.
     const REQUEST: DecodeDepth = DecodeDepth::Full;

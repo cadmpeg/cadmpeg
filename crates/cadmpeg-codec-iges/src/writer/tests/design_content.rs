@@ -130,7 +130,8 @@ fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
             .losses
             .iter()
             .any(|loss| loss.message.starts_with(&format!(
-                "the IGES write omits {colors} native record(s) of native arena `colors`"
+                "the IGES write omits {colors} native record(s) of `iges` arena `colors` which \
+                 the semantic writer does not encode:"
             ))),
         "{:?}",
         plan.report().losses
@@ -143,5 +144,44 @@ fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
     assert_eq!(
         written.ir().geometry.faces.len(),
         decoded.ir().geometry.faces.len()
+    );
+}
+
+#[test]
+fn a_given_up_part_stub_is_not_charged() {
+    let source = include_bytes!("../../../tests/golden/fixtures/colored_explicit_vertex_loop.igs");
+    let mut ir = IgesCodec
+        .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
+        .expect("decode")
+        .into_parts()
+        .0;
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("iges"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("unknowns"),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("iges:test:unknown#0").expect("valid identity"),
+                serde_json::Map::default(),
+            )
+            .expect("valid native identity")],
+        );
+    ir.finalize();
+
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
+        )
+        .expect("the stub does not refuse the write");
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("iges:test:unknown#0")),
+        "{:?}",
+        plan.report().losses
     );
 }

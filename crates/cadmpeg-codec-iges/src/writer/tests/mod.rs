@@ -96,6 +96,8 @@ mod design_content;
 mod encode;
 mod exact_equivalents;
 mod extrusion_directrix;
+mod native_omissions;
+mod native_restatement;
 mod open_shell_restatement;
 mod ownership;
 mod partial;
@@ -440,7 +442,14 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
         (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
     ] {
-        let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
+        let global_bytes = generated_global(
+            version,
+            timestamp,
+            real(0.001),
+            real(1000.0),
+            &crate::writer::source_global::GlobalRestatement::default(),
+            &mut Vec::new(),
+        );
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) =
@@ -588,6 +597,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: Vec::new(),
         transform: None,
+        restates: Vec::new(),
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
         let entities = emitted_forms
@@ -639,6 +649,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
+        restates: Vec::new(),
     };
     assert!(matches!(
         ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V4_0),
@@ -998,12 +1009,15 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         status: super::EntityStatus::Independent,
         parameter_body,
         transform: None,
+        restates: Vec::new(),
     };
     assert!(encode_file(
         &[entity],
         &std::collections::BTreeMap::new(),
         IgesVersion::V5_3,
         0.001,
+        &crate::writer::source_global::GlobalRestatement::default(),
+        &mut Vec::new(),
     )
     .is_ok());
 }

@@ -7,7 +7,7 @@ use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::sync::Arc;
 
-use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -345,11 +345,6 @@ fn an_edited_compound_file_part_drops_a_global_parameter() {
 /// declines it (§3.4, Paths item 4).
 #[test]
 fn an_edit_no_path_writes_leaves_the_part_as_stored() {
-    use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
-        SketchConstraintId,
-    };
-
     let mut decoded = EditableDecodeResult::from(ftc_06().clone());
     let source = decoded
         .source_fidelity()
@@ -357,6 +352,29 @@ fn an_edit_no_path_writes_leaves_the_part_as_stored() {
         .and_then(|record| record.data())
         .unwrap()
         .to_vec();
+    let constraint = add_horizontal_relation(&mut decoded);
+
+    let (report, output, _) = write(&decoded);
+
+    assert_eq!(output, source);
+    let losses = unwritten(&report);
+    assert_eq!(losses.len(), 1, "{:?}", report.losses);
+    assert!(
+        losses[0].contains(&format!("as stored ({})", crate::SOURCE_IMAGE_ID))
+            && losses[0].contains("sketch relation editing")
+            && losses[0].contains(&constraint),
+        "{}",
+        losses[0]
+    );
+}
+
+/// The sketch relation the history writer cannot write, added to `ftc_06`.
+fn add_horizontal_relation(decoded: &mut EditableDecodeResult) -> String {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId,
+    };
+
     let sketch = decoded.ir().model.sketches[0].id.clone();
     let entity = decoded
         .ir()
@@ -390,19 +408,66 @@ fn an_edit_no_path_writes_leaves_the_part_as_stored() {
             metadata: None,
             native_ref: None,
         });
+    constraint.as_str().to_owned()
+}
 
-    let (report, output, _) = write(&decoded);
+/// A write the history writer declines is synthesized without the `sldprt`
+/// namespace. Each arena of the namespace is declared dropped, so one
+/// `export:native.records-omitted` loss per arena names its records, and no
+/// loss names an `unknowns` stub (§3.4, Rule W3).
+#[test]
+fn a_declined_history_write_charges_each_native_arena_by_id() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    add_horizontal_relation(&mut decoded);
+    let mut output = Vec::new();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+                .with_target(TargetRequest::Explicit("sldprt:unknown")),
+        )
+        .unwrap()
+        .write_to(&mut output)
+        .unwrap();
 
-    assert_eq!(output, source);
-    let losses = unwritten(&report);
-    assert_eq!(losses.len(), 1, "{:?}", report.losses);
-    assert!(
-        losses[0].contains(&format!("as stored ({})", crate::SOURCE_IMAGE_ID))
-            && losses[0].contains("sketch relation editing")
-            && losses[0].contains(constraint.as_str()),
-        "{}",
-        losses[0]
-    );
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let mut charged_arenas = 0;
+    for (arena, records) in namespace.arenas() {
+        let ids = records
+            .iter()
+            .map(cadmpeg_ir::NativeRecord::id)
+            .collect::<Vec<_>>();
+        let naming = omitted
+            .iter()
+            .filter(|message| ids.iter().any(|id| names(message, id)))
+            .collect::<Vec<_>>();
+        if arena.as_str() == "unknowns" || ids.is_empty() {
+            assert!(naming.is_empty(), "{arena}: {naming:?}");
+            continue;
+        }
+        charged_arenas += 1;
+        assert_eq!(naming.len(), 1, "{arena}: {omitted:?}");
+        let message = naming[0];
+        assert!(
+            message.contains(&format!("of `sldprt` arena `{arena}`"))
+                && message.contains("because the patch declined the document")
+                && ids.iter().all(|id| names(message, id)),
+            "{message}"
+        );
+    }
+    assert!(charged_arenas > 0, "{omitted:?}");
+}
+
+/// Whether `message` names `id` as a whole token (§3.2).
+fn names(message: &str, id: &str) -> bool {
+    message
+        .split(|character: char| character.is_whitespace() || matches!(character, ',' | ';'))
+        .any(|token| token == id)
 }
 
 /// A compound-file part with no decode baseline is written into a native

@@ -44,6 +44,7 @@ pub mod edge_ranges;
 pub mod edge_recovery;
 mod encode_set;
 mod loss;
+mod native;
 pub use loss::{
     carried_source_losses, definition_placed, dependency_cycle_broken, edit_dropped,
     edit_dropped_note, edit_unverified, evaluation_missing, evaluation_stale, face_partial,
@@ -64,6 +65,7 @@ pub use coverage::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
     ProcessArenaDispositions,
 };
+pub use native::{NativeDisposition, NativeDispositions};
 pub use scene::{SceneOptions, UpAxis};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
@@ -74,6 +76,10 @@ use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 pub trait EncoderBackend {
     /// Stable output format id, taken from the codec that reads the format.
     const FORMAT: FormatId;
+
+    /// The format's name as this write's losses spell it, as in "the IGES
+    /// write omits".
+    const NAME: &'static str;
 
     /// The decode depth this backend plans from, a hint for the caller.
     /// [`Encoder::plan`] refuses no document for its scope; a shallower one
@@ -259,6 +265,7 @@ fn plan_output<E: EncoderBackend>(
         census,
         write_path,
         coverage,
+        native,
         losses: body_losses,
         mut notes,
         synthesis_cause,
@@ -283,6 +290,7 @@ fn plan_output<E: EncoderBackend>(
     notes.extend(restore_notes);
     losses.extend(restore_losses);
     losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+    losses.extend(native.omission_losses(input.ir, E::NAME));
     losses.extend(placed_definition_loss(
         input.ir,
         &coverage,
@@ -935,6 +943,9 @@ pub struct ExportBody {
     /// Which model arenas the payload carries. The wrapper charges a loss for
     /// every non-empty arena this coverage omits.
     pub coverage: ArenaCoverage,
+    /// What the payload does with each native record. The wrapper charges
+    /// `export:native.records-omitted` for every record this drops.
+    pub native: NativeDispositions,
     /// Losses charged while planning.
     pub losses: Vec<LossNote>,
     /// Free-form notes.
@@ -956,7 +967,12 @@ pub struct ExportBody {
 impl ExportBody {
     /// A synthesized payload counted on IR arenas that consumes no fidelity.
     #[must_use]
-    pub fn synthesized(bytes: Vec<u8>, ir: &CadIr, coverage: ArenaCoverage) -> Self {
+    pub fn synthesized(
+        bytes: Vec<u8>,
+        ir: &CadIr,
+        coverage: ArenaCoverage,
+        native: NativeDispositions,
+    ) -> Self {
         Self {
             bytes,
             census: EntityCensus {
@@ -967,6 +983,7 @@ impl ExportBody {
                 consumption: Consumption::NotConsumed,
             },
             coverage,
+            native,
             losses: Vec::new(),
             notes: Vec::new(),
             synthesis_cause: None,
@@ -1166,6 +1183,7 @@ pub struct CadirEncoder;
 
 impl EncoderBackend for CadirEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     /// The document states its own depth, so a container-only dump is a
     /// faithful CADIR document.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
@@ -1190,6 +1208,7 @@ impl EncoderBackend for CadirEncoder {
             Some((ir, losses)) => (Some(ir), losses),
             None => (None, Vec::new()),
         };
+        let mut native = NativeDispositions::written();
         let (mut bytes, measured) =
             match crate::hash::measured_canonical_json(canonical.as_ref().unwrap_or(input.ir)) {
                 Ok(measured) => measured,
@@ -1198,6 +1217,7 @@ impl EncoderBackend for CadirEncoder {
                         ctx,
                         canonical.as_ref().unwrap_or(input.ir),
                         &refusal,
+                        &mut native,
                     )?;
                     losses.extend(unwritable);
                     let measured = crate::hash::measured_canonical_json(&ir);
@@ -1216,7 +1236,7 @@ impl EncoderBackend for CadirEncoder {
         let ir = if measured.records.is_empty() && measured.outside.is_empty() {
             source
         } else {
-            let (ir, unwritable) = within_the_bounds(ctx, source, &measured)?;
+            let (ir, unwritable) = within_the_bounds(ctx, source, &measured, &mut native)?;
             losses.extend(unwritable);
             bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
                 .map_err(malformed)?
@@ -1243,12 +1263,14 @@ impl EncoderBackend for CadirEncoder {
             ir
         };
         bytes.push(b'\n');
+        declare_absent_native_records(input.ir, ir, &mut native);
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it.
         let mut body = ExportBody::synthesized(
             bytes,
             ir,
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
+            native,
         );
         body.losses = losses;
         body.annotations = input
@@ -1265,9 +1287,11 @@ impl EncoderBackend for CadirEncoder {
 }
 
 /// A copy of `ir` without each record whose canonical JSON is refused and
-/// without each record that needs one, as §3.3 drops a record (§3.4). Each
-/// refused record charges `export:record.invalid`, naming it and the
-/// records dropped and marked with it.
+/// without each record that needs one, as §3.3 drops a record (§3.4).
+/// `native` declares each native record so dropped, which the wrapper
+/// charges as `export:native.records-omitted`. Each refused record charges
+/// `export:record.invalid`, naming it, the other records dropped with it,
+/// and the records marked with it.
 ///
 /// # Errors
 ///
@@ -1276,6 +1300,7 @@ fn without_unwritable_records(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     refusal: &crate::hash::finite_json::CanonicalJsonError,
+    native: &mut NativeDispositions,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
     let unwritable: std::collections::BTreeMap<_, _> =
         ir.arenas().unwritable().into_iter().collect();
@@ -1292,6 +1317,7 @@ fn without_unwritable_records(
         "no record the CADIR wire writes holds a non-finite number: every float of a record \
          is a checked type"
     );
+    let native_codec = native_record_codecs(ir);
     let mut ir = ir.clone();
     let seeds = unwritable.keys().cloned().collect();
     let removed = crate::give_up::drop_records(ctx, &mut ir, seeds)?;
@@ -1299,13 +1325,30 @@ fn without_unwritable_records(
         .into_iter()
         .filter_map(|(seed, released)| {
             let refusal = unwritable.get(&seed)?;
+            let (dependents, others): (
+                std::collections::BTreeSet<String>,
+                std::collections::BTreeSet<String>,
+            ) = released
+                .dropped
+                .into_iter()
+                .partition(|id| native_codec.contains_key(id));
+            for id in &dependents {
+                native.drop_records(
+                    &native_codec[id],
+                    &format!(
+                        "that need record {}, whose canonical JSON is refused",
+                        seed.id
+                    ),
+                    [id.as_str()],
+                );
+            }
             Some(canonical::record_invalid_code(&seed.arena).note(format!(
                 "the {} write drops record {} of arena {}, whose canonical JSON is refused \
                  ({refusal}), with each record that needs it; dropped=[{}], marked=[{}]",
-                CadirEncoder::FORMAT.as_str(),
+                CadirEncoder::NAME,
                 seed.id,
                 seed.arena,
-                canonical::listed(&released.dropped),
+                canonical::listed(&others),
                 canonical::listed(&released.marked)
             )))
         })
@@ -1313,27 +1356,84 @@ fn without_unwritable_records(
     Ok((ir, losses))
 }
 
+/// Declares dropped each native record of `source`, outside the `unknowns`
+/// arenas, that `written` does not hold and that no drop of the write
+/// declared: a record dropped with a record the write does not write, or
+/// left out of the empty document.
+fn declare_absent_native_records(source: &CadIr, written: &CadIr, native: &mut NativeDispositions) {
+    let kept: std::collections::HashSet<&str> = written
+        .native
+        .0
+        .values()
+        .flat_map(|namespace| namespace.arenas().values().flatten())
+        .map(crate::NativeRecord::id)
+        .collect();
+    for (codec, namespace) in &source.native.0 {
+        for (arena, records) in namespace.arenas() {
+            if arena.as_str() == native::UNKNOWNS_ARENA {
+                continue;
+            }
+            let absent: Vec<&str> = records
+                .iter()
+                .map(crate::NativeRecord::id)
+                .filter(|id| {
+                    !kept.contains(id)
+                        && native.disposition(codec.as_str(), arena.as_str(), id)
+                            != NativeDisposition::Dropped
+                })
+                .collect();
+            native.drop_records(
+                codec.as_str(),
+                "that the CADIR write drops with a record it does not write",
+                absent,
+            );
+        }
+    }
+}
+
+/// The codec of each native record of `ir` outside the `unknowns` arenas,
+/// by id. The wrapper charges these records when a write declares them
+/// dropped; it never charges an `unknowns` stub.
+fn native_record_codecs(ir: &CadIr) -> std::collections::HashMap<String, String> {
+    ir.native
+        .0
+        .iter()
+        .flat_map(|(codec, namespace)| {
+            namespace
+                .arenas()
+                .iter()
+                .filter(|(arena, _)| arena.as_str() != native::UNKNOWNS_ARENA)
+                .flat_map(|(_, records)| records)
+                .map(move |record| (record.id().to_owned(), codec.as_str().to_owned()))
+        })
+        .collect()
+}
+
 /// A copy of `ir` within the bounds of §2.5 (§3.4). Each value outside every
 /// record past a bound is written as an unstated value, each expression past
 /// its bound is written in its partial form, and each record still past a
-/// bound is dropped with each record that needs it, as §3.3 drops a record.
+/// bound is dropped with each record that needs it, as §3.3 drops a record;
+/// `native` declares each native record so dropped.
 fn within_the_bounds(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     measured: &crate::bounds::Measured,
+    native: &mut NativeDispositions,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
     let mut ir = ir.clone();
     let mut losses = Vec::new();
     for unstated in crate::bounds::unstate_outside(&mut ir, &measured.outside)? {
         losses.extend(value_unwritable(
-            CadirEncoder::FORMAT.as_str(),
+            CadirEncoder::NAME,
             &format!("writes {}", unstated.what),
             [unstated.field],
         ));
     }
     let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
     losses.extend(restated);
-    losses.extend(drop_records_past_the_bounds(ctx, &mut ir, &records)?);
+    losses.extend(drop_records_past_the_bounds(
+        ctx, &mut ir, &records, native,
+    )?);
     Ok((ir, losses))
 }
 
@@ -1415,7 +1515,7 @@ fn restate_expressions_past_the_bound(
                 seed.arena,
                 crate::bounds::MAX_EXPRESSION_DEPTH
             );
-            value_unwritable(CadirEncoder::FORMAT.as_str(), &reason, [seed.id])
+            value_unwritable(CadirEncoder::NAME, &reason, [seed.id])
         })
         .collect();
     let (_, measured) = crate::hash::measured_canonical_json(&*ir)
@@ -1424,13 +1524,17 @@ fn restate_expressions_past_the_bound(
 }
 
 /// Drops from `ir` each record of `records`, which it holds past a bound of
-/// §2.5, and each record that needs one, as §3.3 drops a record (§3.4). Each
-/// such record charges one `export:value.unwritable` that names it, the
-/// bound, and the records dropped and marked with it.
+/// §2.5, and each record that needs one, as §3.3 drops a record (§3.4).
+/// `native` declares each native record so dropped, which the wrapper
+/// charges as `export:native.records-omitted`. The other records of each
+/// drop charge one `export:value.unwritable` that names them, the bound, and
+/// the records marked with them. A record of a native `unknowns` arena,
+/// which the wrapper never charges, counts as one of those other records.
 fn drop_records_past_the_bounds(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    native: &mut NativeDispositions,
 ) -> Result<Vec<LossNote>, CodecError> {
     if records.is_empty() {
         return Ok(Vec::new());
@@ -1440,32 +1544,61 @@ fn drop_records_past_the_bounds(
         .iter()
         .filter_map(|(place, bound)| ir.record_at(place).map(|seed| (seed, *bound)))
         .collect();
+    let native_codec = native_record_codecs(ir);
     let removed = crate::give_up::drop_records(ctx, ir, bounds.keys().cloned().collect())?;
-    Ok(removed
-        .into_iter()
-        .filter_map(|(seed, released)| {
-            let reason = format!(
-                "drops record {} of arena {}, which {}, with each record that needs it; \
-                 marked=[{}]",
-                seed.id,
-                seed.arena,
-                bounds
-                    .get(&seed)
-                    .map_or_else(String::new, |bound| bound.describe()),
-                released
-                    .marked
-                    .iter()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+    let mut losses = Vec::new();
+    for (seed, released) in removed {
+        let bound = bounds
+            .get(&seed)
+            .map_or_else(String::new, |bound| bound.describe());
+        let marked = released
+            .marked
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (dependents, others): (Vec<String>, Vec<String>) = released
+            .dropped
+            .into_iter()
+            .partition(|id| native_codec.contains_key(id));
+        for id in &dependents {
+            native.drop_records(
+                &native_codec[id],
+                &format!("that need record {}, which {bound}", seed.id),
+                [id.as_str()],
             );
-            value_unwritable(
-                CadirEncoder::FORMAT.as_str(),
-                &reason,
-                std::iter::once(seed.id).chain(released.dropped),
-            )
-        })
-        .collect())
+        }
+        let Some(codec) = native_codec.get(&seed.id) else {
+            losses.extend(value_unwritable(
+                CadirEncoder::NAME,
+                &format!(
+                    "drops record {} of arena {}, which {bound}, with each record that needs \
+                     it; marked=[{marked}]",
+                    seed.id, seed.arena
+                ),
+                std::iter::once(seed.id).chain(others),
+            ));
+            continue;
+        };
+        native.drop_records(codec, &format!("which {bound}"), [seed.id.as_str()]);
+        // The seed is charged as an omitted native record, so this names
+        // only the other records its drop drops, or else marks.
+        let (what, ids) = if others.is_empty() {
+            ("marks", released.marked.into_iter().collect())
+        } else {
+            ("drops", others)
+        };
+        losses.extend(value_unwritable(
+            CadirEncoder::NAME,
+            &format!(
+                "{what} these records, which need a native record of arena {} that {bound}; \
+                 marked=[{marked}]",
+                seed.arena
+            ),
+            ids,
+        ));
+    }
+    Ok(losses)
 }
 
 #[cfg(test)]

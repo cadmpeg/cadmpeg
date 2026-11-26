@@ -238,6 +238,7 @@ impl CodecBackend for F3dCodec {
 
 impl EncoderBackend for F3dCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "F3D";
     /// Patches the retained source, so it plans from the history and design
     /// records it rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
